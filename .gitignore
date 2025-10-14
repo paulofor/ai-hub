@@ -2,6 +2,7 @@
 apps/backend/target/
 apps/frontend/node_modules/
 apps/frontend/dist/
+apps/frontend/tsconfig.tsbuildinfo
 **/.DS_Store
 .env
 npm-debug.log*
