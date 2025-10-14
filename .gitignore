@@ -1,0 +1,7 @@
+# Build artifacts
+apps/backend/target/
+apps/frontend/node_modules/
+apps/frontend/dist/
+**/.DS_Store
+.env
+npm-debug.log*
