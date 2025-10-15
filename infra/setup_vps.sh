@@ -179,6 +179,20 @@ collect_env_values() {
   prompt_with_default OPENAI_MODEL "Modelo da OpenAI" "gpt-5-codex"
 
   prompt_secret OPENAI_API_KEY "OPENAI_API_KEY (Enter para deixar vazio)"
+
+  cat <<'EOF'
+
+Referência rápida para preencher as credenciais da GitHub App:
+  • GitHub → Settings → Developer settings → GitHub Apps → escolha a app (ex.: ai-hub-automations).
+  • Aba General → seção About: copie o número "App ID" (ex.: 212632) para GITHUB_APP_ID.
+  • Aba General → clique em "Generate a private key" caso ainda não tenha o arquivo .pem.
+  • Aba General → seção Webhook: clique em Edit para ver/definir o segredo usado em GITHUB_WEBHOOK_SECRET.
+  • Menu lateral → Install App → abra a instalação e pegue o número final da URL (/installations/<id>) para GITHUB_INSTALLATION_ID.
+
+Se ainda não tiver uma homepage própria, use a URL pública da app (https://github.com/settings/apps/<slug>) temporariamente.
+
+EOF
+
   prompt_with_default GITHUB_APP_ID "GITHUB_APP_ID" ""
   prompt_with_default GITHUB_INSTALLATION_ID "GITHUB_INSTALLATION_ID" ""
   prompt_secret GITHUB_WEBHOOK_SECRET "GITHUB_WEBHOOK_SECRET (Enter para deixar vazio)"
@@ -193,6 +207,8 @@ collect_env_values() {
   echo
   echo "Para o GITHUB_PRIVATE_KEY_PEM você pode informar um caminho para o arquivo .pem."
   echo "Se preferir, cole o valor já com quebras de linha escapadas (\\n)."
+  echo "Se acabou de registrar a app e viu a mensagem 'Registration successful! You must generate a private key...',"
+  echo "clique em 'Generate a private key' na aba General para baixar o arquivo antes de prosseguir."
   local key_path=""
   read -r -p "Caminho do arquivo .pem (Enter para pular): " key_path
   local key_value=""
