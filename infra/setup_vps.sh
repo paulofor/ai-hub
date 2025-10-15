@@ -176,7 +176,7 @@ collect_env_values() {
 
   prompt_with_default VITE_API_BASE_URL "Base da API usada pelo frontend" "/api"
 
-  prompt_with_default OPENAI_MODEL "Modelo da OpenAI" "gpt-4.1-mini"
+  prompt_with_default OPENAI_MODEL "Modelo da OpenAI" "gpt-5-codex"
 
   prompt_secret OPENAI_API_KEY "OPENAI_API_KEY (Enter para deixar vazio)"
   prompt_with_default GITHUB_APP_ID "GITHUB_APP_ID" ""
