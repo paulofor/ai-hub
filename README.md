@@ -7,7 +7,7 @@ AI Hub é um monorepo full-stack que centraliza a criação e governança de sis
 - **UI-first**: nenhuma ação destrutiva é executada sem confirmação explícita na UI.
 - **Integrações GitHub**: criação de repositórios, disparo de workflows, análise de logs, comentários e PRs de correção.
 - **OpenAI Responses API**: geração estruturada de relatórios `CiFix` a partir de falhas em pipelines.
-- **Persistência**: PostgreSQL com Flyway para auditoria, blueprints, projetos, prompts e respostas.
+- **Persistência**: MySQL 5.7 (produção) com Flyway para auditoria, blueprints, projetos, prompts e respostas.
 
 ## Estrutura de pastas
 
@@ -24,8 +24,8 @@ infra/
 
 ## Desenvolvimento local
 
-1. Copie `.env.example` para `.env` na raiz, em `apps/backend` e `apps/frontend` e ajuste variáveis.
-2. Execute `docker-compose up --build` para subir PostgreSQL, backend e frontend.
+1. Copie `.env.example` para `.env` na raiz, em `apps/backend` e `apps/frontend` e ajuste variáveis (principalmente `DB_URL`, `DB_USER` e `DB_PASS`).
+2. Garanta que você tenha um MySQL acessível (pode reutilizar o mesmo da produção ou apontar para outro ambiente) e então execute `docker-compose up --build` para subir backend e frontend.
 3. A UI estará disponível em `http://localhost:5173` e a API em `http://localhost:8080`.
 
 ## Testes
@@ -37,6 +37,7 @@ infra/
 
 - Construa as imagens usando os Dockerfiles dedicados em `apps/backend` e `apps/frontend`.
 - Utilize o exemplo `infra/lightsail/containers.example.json` para provisionar o serviço no AWS Lightsail Container Service.
+- Em uma VPS genérica (como Locaweb), execute `sudo ./infra/setup_vps.sh` para instalar dependências, gerar `.env` com as credenciais do MySQL 5.7 hospedado em `d555d.vps-kinghost.net` e subir os contêineres via Docker Compose.
 
 ## CI/CD
 
