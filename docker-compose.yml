@@ -1,38 +1,20 @@
 version: '3.9'
 services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: aihub
-      POSTGRES_USER: aihub
-      POSTGRES_PASSWORD: aihub
-    ports:
-      - "5432:5432"
-    volumes:
-      - db-data:/var/lib/postgresql/data
   backend:
     build:
       context: ./apps/backend
     env_file:
-      - .env
       - apps/backend/.env.example
-    environment:
-      DB_URL: jdbc:postgresql://db:5432/aihub
-      DB_USER: aihub
-      DB_PASS: aihub
-    depends_on:
-      - db
+      - .env
     ports:
-      - "8080:8080"
+      - "${BACKEND_HTTP_PORT:-8080}:8080"
   frontend:
     build:
       context: ./apps/frontend
     env_file:
-      - .env
       - apps/frontend/.env.example
+      - .env
     depends_on:
       - backend
     ports:
-      - "5173:80"
-volumes:
-  db-data:
+      - "${FRONTEND_HTTP_PORT:-5173}:80"
