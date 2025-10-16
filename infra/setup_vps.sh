@@ -23,16 +23,43 @@ else
 fi
 
 UPDATED_ONCE=0
-install_packages() {
-  if [ "$#" -eq 0 ]; then
-    return
-  fi
+ensure_package_metadata() {
   case "${PACKAGE_MANAGER}" in
     apt)
       if [[ "${UPDATED_ONCE}" -eq 0 ]]; then
         apt-get update
         UPDATED_ONCE=1
       fi
+      ;;
+  esac
+}
+
+package_available() {
+  local pkg="$1"
+  case "${PACKAGE_MANAGER}" in
+    apt)
+      ensure_package_metadata
+      apt-cache show "${pkg}" >/dev/null 2>&1
+      ;;
+    dnf)
+      dnf list --available "${pkg}" >/dev/null 2>&1
+      ;;
+    yum)
+      yum list available "${pkg}" >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+install_packages() {
+  if [ "$#" -eq 0 ]; then
+    return
+  fi
+  case "${PACKAGE_MANAGER}" in
+    apt)
+      ensure_package_metadata
       DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
       ;;
     dnf)
@@ -94,17 +121,20 @@ ensure_compose() {
   fi
 
   echo "Docker Compose não encontrado. Instalando pacote..."
-  case "${PACKAGE_MANAGER}" in
-    apt)
-      install_packages docker-compose-plugin || install_packages docker-compose
-      ;;
-    dnf)
-      install_packages docker-compose-plugin || install_packages docker-compose
-      ;;
-    yum)
-      install_packages docker-compose-plugin || install_packages docker-compose
-      ;;
-  esac
+  local install_candidates=(docker-compose-plugin docker-compose)
+  local installed=0
+  for candidate in "${install_candidates[@]}"; do
+    if package_available "${candidate}"; then
+      if install_packages "${candidate}"; then
+        installed=1
+        break
+      fi
+    fi
+  done
+
+  if [[ "${installed}" -eq 0 ]]; then
+    echo "Nenhum pacote disponível via gerenciador."
+  fi
 
   if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD=(docker compose)
