@@ -93,8 +93,49 @@ ensure_base_packages() {
 install_docker() {
   log_section "Verificando Docker"
   if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker não encontrado. Instalando via script oficial..."
-    curl -fsSL https://get.docker.com | sh
+    if [[ "${PACKAGE_MANAGER}" == "apt" ]]; then
+      echo "Docker não encontrado. Instalando via repositório oficial (apt)..."
+
+      install_packages ca-certificates curl gnupg
+
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+
+      local codename="$(. /etc/os-release && echo "${VERSION_CODENAME}")"
+      local arch="$(dpkg --print-architecture)"
+      echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+      apt-get update
+
+      local docker_packages=(
+        docker-ce
+        docker-ce-cli
+        containerd.io
+        docker-compose-plugin
+        docker-ce-rootless-extras
+        docker-buildx-plugin
+      )
+
+      local available_packages=()
+      local pkg
+      for pkg in "${docker_packages[@]}"; do
+        if package_available "${pkg}"; then
+          available_packages+=("${pkg}")
+        fi
+      done
+
+      if [[ "${#available_packages[@]}" -eq 0 ]]; then
+        echo "[ERRO] Nenhum pacote Docker disponível para instalação via apt." >&2
+        exit 1
+      fi
+
+      install_packages "${available_packages[@]}"
+    else
+      echo "Docker não encontrado. Instalando via script oficial..."
+      curl -fsSL https://get.docker.com | sh
+    fi
   else
     echo "Docker já instalado."
   fi
