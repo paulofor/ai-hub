@@ -82,10 +82,10 @@ ensure_base_packages() {
   log_section "Instalando dependências básicas"
   case "${PACKAGE_MANAGER}" in
     apt)
-      install_packages ca-certificates curl git python3
+      install_packages ca-certificates curl git python3 openssh-client
       ;;
     dnf|yum)
-      install_packages ca-certificates curl git python3
+      install_packages ca-certificates curl git python3 openssh-clients
       ;;
   esac
 }
@@ -201,6 +201,65 @@ ensure_compose() {
     echo "[ERRO] Falha ao instalar o Docker Compose." >&2
     exit 1
   fi
+}
+
+ensure_deploy_key() {
+  log_section "Gerando chave SSH para deploy"
+
+  local ssh_dir="${HOME}/.ssh"
+  local default_key_path="${ssh_dir}/ai_hub_deploy"
+
+  mkdir -p "${ssh_dir}"
+  chmod 700 "${ssh_dir}"
+
+  prompt_with_default DEPLOY_KEY_PATH "Caminho para salvar a chave privada" "${default_key_path}"
+  local key_file="${DEPLOY_KEY_PATH}"
+  local pub_file="${key_file}.pub"
+
+  if [ -f "${key_file}" ] || [ -f "${pub_file}" ]; then
+    echo "Uma chave já existe em ${key_file}."
+    local regenerate="n"
+    read -r -p "Deseja gerar uma nova chave? (s/N): " regenerate
+    case "${regenerate}" in
+      [sS]|[sS][iI][mM])
+        local ts
+        ts="$(date +%Y%m%d%H%M%S)"
+        mv "${key_file}" "${key_file}.backup.${ts}" 2>/dev/null || true
+        mv "${pub_file}" "${pub_file}.backup.${ts}" 2>/dev/null || true
+        echo "Backups criados com sufixo .backup.${ts}."
+        ssh-keygen -t ed25519 -C "ai-hub-deploy" -N "" -f "${key_file}"
+        ;;
+      *)
+        echo "Mantendo chave existente."
+        ;;
+    esac
+  else
+    ssh-keygen -t ed25519 -C "ai-hub-deploy" -N "" -f "${key_file}"
+  fi
+
+  chmod 600 "${key_file}" 2>/dev/null || true
+  chmod 600 "${pub_file}" 2>/dev/null || true
+
+  local authorized_keys="${ssh_dir}/authorized_keys"
+  touch "${authorized_keys}"
+  chmod 600 "${authorized_keys}"
+
+  if ! grep -q "ai-hub-deploy" "${authorized_keys}" 2>/dev/null; then
+    cat "${pub_file}" >> "${authorized_keys}"
+    echo "Chave pública adicionada a ${authorized_keys}."
+  else
+    echo "Chave pública já presente em ${authorized_keys}."
+  fi
+
+  cat <<EOF
+
+Copie o conteúdo do arquivo ${key_file} e cadastre como segredo em:
+  GitHub → Settings → Secrets and variables → Actions → New repository secret
+Sugestão de nome: VPS_SSH_KEY
+
+O conteúdo de ${pub_file} já foi incluído em ${authorized_keys} e permitirá o acesso via deploy.
+
+EOF
 }
 
 prompt_with_default() {
@@ -347,6 +406,8 @@ Configuração concluída! Principais informações:
 - Frontend publicado na porta: ${FRONTEND_HTTP_PORT}
 - Backend publicado na porta: ${BACKEND_HTTP_PORT}
 - Banco de dados externo: jdbc:mysql://d555d.vps-kinghost.net:3306/lookgendb
+- Chave privada do deploy: ${DEPLOY_KEY_PATH}
+- authorized_keys atualizado em: ${HOME}/.ssh/authorized_keys
 
 Use "${COMPOSE_CMD[*]} logs -f" para acompanhar os serviços.
 
@@ -356,6 +417,7 @@ EOF
 ensure_base_packages
 install_docker
 ensure_compose
+ensure_deploy_key
 collect_env_values
 create_env_file
 bring_up_stack
