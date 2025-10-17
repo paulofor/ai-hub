@@ -41,3 +41,33 @@ jobs:
         run: docker build apps/backend -f apps/backend/Dockerfile --target runtime --build-arg BUILDKIT_INLINE_CACHE=1
       - name: Validate frontend Dockerfile
         run: docker build apps/frontend -f apps/frontend/Dockerfile
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - backend
+      - frontend
+      - docker
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: 191.252.120.96
+      DEPLOY_USER: root
+      REMOTE_PATH: /root/ai-hub
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Prepare remote directory
+        run: |
+          ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${REMOTE_PATH}"
+      - name: Sync repository to VPS
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
+      - name: Publish frontend and backend
+        run: |
+          ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && docker compose pull && docker compose up -d --build"
