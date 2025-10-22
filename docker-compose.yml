@@ -2,6 +2,7 @@ services:
   backend:
     build:
       context: ./apps/backend
+    command: ["java", "-jar", "/app/app.jar"]
     env_file:
       - apps/backend/.env.example
       - .env
