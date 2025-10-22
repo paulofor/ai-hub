@@ -3,6 +3,9 @@ spring:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASS}
+    hikari:
+      initialization-fail-timeout: 0
+      connection-timeout: 60000
   jpa:
     hibernate:
       ddl-auto: validate
