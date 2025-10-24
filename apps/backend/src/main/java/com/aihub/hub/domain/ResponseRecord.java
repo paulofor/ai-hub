@@ -44,8 +44,7 @@ public class ResponseRecord {
 
     private Double confidence;
 
-    @Lob
-    @Column(name = "raw_response", columnDefinition = "jsonb")
+    @Column(name = "raw_response", columnDefinition = "json")
     private String rawResponse;
 
     @Column(name = "created_at", nullable = false)

@@ -2,7 +2,7 @@ CREATE TABLE blueprints (
     id SERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL UNIQUE,
     description TEXT,
-    templates JSONB NOT NULL DEFAULT '{}'::JSONB,
+    templates JSON NOT NULL DEFAULT '{}'::JSON,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -21,7 +21,7 @@ CREATE TABLE events (
     repo VARCHAR(200) NOT NULL,
     event_type VARCHAR(80) NOT NULL,
     delivery_id VARCHAR(100) NOT NULL,
-    payload JSONB NOT NULL,
+    payload JSON NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_events_repo ON events(repo);
@@ -64,7 +64,7 @@ CREATE TABLE responses (
     fix_plan TEXT,
     unified_diff TEXT,
     confidence NUMERIC(5,2),
-    raw_response JSONB,
+    raw_response JSON,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_responses_repo ON responses(repo);
@@ -84,7 +84,7 @@ CREATE TABLE audit_log (
     actor VARCHAR(120) NOT NULL,
     action VARCHAR(120) NOT NULL,
     target VARCHAR(200),
-    payload JSONB,
+    payload JSON,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_audit_created_at ON audit_log(created_at);

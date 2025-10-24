@@ -5,7 +5,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.Convert;
 
@@ -24,8 +23,7 @@ public class Blueprint {
 
     private String description;
 
-    @Lob
-    @Column(name = "templates", columnDefinition = "jsonb")
+    @Column(name = "templates", columnDefinition = "json")
     @Convert(converter = JsonNodeConverter.class)
     private TemplateMap templates = new TemplateMap();
 
