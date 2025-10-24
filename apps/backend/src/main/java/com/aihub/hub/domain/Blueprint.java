@@ -25,7 +25,7 @@ public class Blueprint {
     private String description;
 
     @Lob
-    @Column(name = "templates", columnDefinition = "jsonb")
+    @Column(name = "templates")
     @Convert(converter = JsonNodeConverter.class)
     private TemplateMap templates = new TemplateMap();
 

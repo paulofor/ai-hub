@@ -28,7 +28,7 @@ public class EventEntity {
     private String deliveryId;
 
     @Lob
-    @Column(columnDefinition = "jsonb")
+    @Column
     private String payload;
 
     @Column(name = "received_at", nullable = false)
