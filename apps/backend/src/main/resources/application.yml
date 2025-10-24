@@ -10,7 +10,7 @@ spring:
     hibernate:
       ddl-auto: validate
     properties:
-      hibernate.dialect: org.hibernate.dialect.MySQL57Dialect
+      hibernate.dialect: org.hibernate.dialect.MySQLDialect
       hibernate.jdbc.time_zone: UTC
   flyway:
     locations: classpath:db/migration/{vendor}
