@@ -27,7 +27,7 @@ public class AuditLog {
     private String target;
 
     @Lob
-    @Column(columnDefinition = "jsonb")
+    @Column
     private String payload;
 
     @Column(name = "created_at", nullable = false)
