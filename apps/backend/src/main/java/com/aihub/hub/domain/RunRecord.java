@@ -6,6 +6,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -34,6 +36,7 @@ public class RunRecord {
     private String workflowName;
 
     @Column(name = "logs_url")
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     private String logsUrl;
 
     @Column(name = "created_at", nullable = false)

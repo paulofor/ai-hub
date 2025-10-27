@@ -24,6 +24,7 @@ public class Blueprint {
     @Column(nullable = false, unique = true, length = 150)
     private String name;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     private String description;
 
     @Column(name = "templates", nullable = false)
