@@ -10,6 +10,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -42,7 +43,8 @@ public class ResponseRecord {
     @Lob
     private String unifiedDiff;
 
-    private Double confidence;
+    @Column(precision = 5, scale = 2)
+    private BigDecimal confidence;
 
     @Lob
     @Column(name = "raw_response")
@@ -121,11 +123,11 @@ public class ResponseRecord {
         this.unifiedDiff = unifiedDiff;
     }
 
-    public Double getConfidence() {
+    public BigDecimal getConfidence() {
         return confidence;
     }
 
-    public void setConfidence(Double confidence) {
+    public void setConfidence(BigDecimal confidence) {
         this.confidence = confidence;
     }
 

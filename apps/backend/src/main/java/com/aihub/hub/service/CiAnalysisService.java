@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
@@ -61,7 +62,7 @@ public class CiAnalysisService {
         response.setRootCause(fix.getRootCause());
         response.setFixPlan(fix.getFixPlan());
         response.setUnifiedDiff(fix.getUnifiedDiff());
-        response.setConfidence(fix.getConfidence());
+        response.setConfidence(BigDecimal.valueOf(fix.getConfidence()));
         response.setRawResponse(null);
         responseRepository.save(response);
         auditService.record(actor, "analyze_run", owner + "/" + repo, metadata);
