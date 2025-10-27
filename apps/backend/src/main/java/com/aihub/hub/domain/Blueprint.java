@@ -1,15 +1,17 @@
 package com.aihub.hub.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
-import jakarta.persistence.Convert;
 
 import java.time.Instant;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "blueprints")
@@ -24,8 +26,8 @@ public class Blueprint {
 
     private String description;
 
-    @Lob
-    @Column(name = "templates")
+    @Column(name = "templates", nullable = false)
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Convert(converter = JsonNodeConverter.class)
     private TemplateMap templates = new TemplateMap();
 
