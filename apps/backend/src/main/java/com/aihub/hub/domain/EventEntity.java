@@ -5,8 +5,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -27,8 +28,8 @@ public class EventEntity {
     @Column(name = "delivery_id", nullable = false)
     private String deliveryId;
 
-    @Lob
-    @Column
+    @Column(name = "payload", nullable = false, columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     private String payload;
 
     @Column(name = "received_at", nullable = false)
