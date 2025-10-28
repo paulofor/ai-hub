@@ -8,6 +8,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GithubAppAuthTest {
@@ -17,7 +18,7 @@ class GithubAppAuthTest {
     @Test
     void verifiesSignatureInConstantTime() throws Exception {
         RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
-        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, 1L) {
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "1") {
             @Override
             public String getInstallationToken() {
                 return "test";
@@ -29,6 +30,12 @@ class GithubAppAuthTest {
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         String signature = "sha256=" + bytesToHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
         assertTrue(auth.verifySignature(payload, secret, signature));
+    }
+
+    @Test
+    void failsFastWhenInstallationIdIsNotNumeric() {
+        RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
+        assertThrows(IllegalStateException.class, () -> new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "abc"));
     }
 
     private String bytesToHex(byte[] bytes) {

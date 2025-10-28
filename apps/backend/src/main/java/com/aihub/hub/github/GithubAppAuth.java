@@ -37,12 +37,27 @@ public class GithubAppAuth {
                          Clock clock,
                          @Value("${hub.github.app-id}") String appId,
                          @Value("${GITHUB_PRIVATE_KEY_PEM:}") String privateKeyPem,
-                         @Value("${hub.github.installation-id:0}") long installationId) {
+                         @Value("${hub.github.installation-id:}") String installationId) {
         this.githubRestClient = githubRestClient;
         this.clock = clock;
         this.appId = appId;
         this.privateKeyPem = privateKeyPem;
-        this.installationId = installationId;
+        this.installationId = parseInstallationId(installationId);
+    }
+
+    private long parseInstallationId(String installationId) {
+        if (installationId == null) {
+            return 0L;
+        }
+        String trimmed = installationId.trim();
+        if (trimmed.isEmpty()) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(trimmed);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("GitHub installation id must be numeric", e);
+        }
     }
 
     public String createJwt() {
