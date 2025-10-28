@@ -6,9 +6,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -34,20 +36,23 @@ public class ResponseRecord {
     @Column(name = "pr_number")
     private Integer prNumber;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(columnDefinition = "LONGTEXT")
     private String rootCause;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(columnDefinition = "LONGTEXT")
     private String fixPlan;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(columnDefinition = "LONGTEXT")
     private String unifiedDiff;
 
     @Column(precision = 5, scale = 2)
     private BigDecimal confidence;
 
-    @Lob
-    @Column(name = "raw_response")
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "raw_response", columnDefinition = "LONGTEXT")
     private String rawResponse;
 
     @Column(name = "created_at", nullable = false)

@@ -5,8 +5,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -30,8 +32,8 @@ public class SummaryRecord {
     @Column(nullable = false)
     private String granularity;
 
-    @Lob
-    @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String content;
 
     @Column(name = "created_at", nullable = false)
