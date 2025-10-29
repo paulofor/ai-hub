@@ -62,16 +62,19 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          cat <<'EOF' >> "$GITHUB_ENV"
+SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60
+EOF
       - name: Prepare remote directory
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${REMOTE_PATH}"
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${REMOTE_PATH}"
       - name: Sync repository to VPS
         run: |
           rsync -az --delete \
-            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            -e "ssh ${SSH_COMMON_ARGS}" \
             --exclude '.git/' \
             --exclude 'node_modules/' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
       - name: Publish frontend and backend
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && docker compose pull && docker compose up -d --build"
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && docker compose pull && docker compose up -d --build"
