@@ -2,9 +2,9 @@
 
 FROM maven:3.9.6-eclipse-temurin-21 AS build
 
-# Force Maven to use TLSv1.2 during dependency resolution to avoid
-# handshake issues against mirrors that do not support TLSv1.3 yet.
-ENV MAVEN_OPTS="-Dhttps.protocols=TLSv1.2 -Djdk.tls.client.protocols=TLSv1.2"
+# Allow Maven to negotiate TLS 1.3 or 1.2 during dependency resolution to
+# maximise compatibility with Maven Central and any configured mirrors.
+ENV MAVEN_OPTS="-Dhttps.protocols=TLSv1.3,TLSv1.2 -Djdk.tls.client.protocols=TLSv1.3,TLSv1.2"
 WORKDIR /workspace
 COPY pom.xml .
 COPY src ./src
