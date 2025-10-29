@@ -30,6 +30,9 @@ hub:
   openai:
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_MODEL:gpt-4.1-mini}
+  codex:
+    api-url: ${CODEX_API_URL:https://codex.shnprd.com}
+    api-key: ${CODEX_API_KEY:}
   logs:
     max-chars: 20000
 

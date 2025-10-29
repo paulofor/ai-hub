@@ -7,6 +7,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import PromptsPage from './pages/PromptsPage';
 import SummariesPage from './pages/SummariesPage';
 import AuditLogPage from './pages/AuditLogPage';
+import CodexPage from './pages/CodexPage';
 import ShellLayout from './components/ShellLayout';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
+        <Route path="/codex" element={<CodexPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ShellLayout>

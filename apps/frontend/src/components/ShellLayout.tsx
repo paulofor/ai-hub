@@ -8,7 +8,8 @@ const links = [
   { to: '/projects', label: 'Projetos' },
   { to: '/prompts', label: 'Prompts' },
   { to: '/summaries', label: 'Summaries' },
-  { to: '/audit', label: 'Audit Log' }
+  { to: '/audit', label: 'Audit Log' },
+  { to: '/codex', label: 'Codex' }
 ];
 
 export default function ShellLayout({ children }: { children: ReactNode }) {
