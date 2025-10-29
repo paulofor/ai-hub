@@ -7,6 +7,7 @@ const links = [
   { to: '/blueprints', label: 'Blueprints' },
   { to: '/projects', label: 'Projetos' },
   { to: '/prompts', label: 'Prompts' },
+  { to: '/codex', label: 'Codex' },
   { to: '/summaries', label: 'Summaries' },
   { to: '/audit', label: 'Audit Log' }
 ];
