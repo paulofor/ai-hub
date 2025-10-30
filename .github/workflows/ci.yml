@@ -35,12 +35,39 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Validate backend Dockerfile
-        run: docker build apps/backend -f apps/backend/Dockerfile --target runtime --build-arg BUILDKIT_INLINE_CACHE=1
-      - name: Validate frontend Dockerfile
-        run: docker build apps/frontend -f apps/frontend/Dockerfile
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ai-hub-backend:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-backend:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-backend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-backend:buildcache,mode=max
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:buildcache,mode=max
 
   deploy:
     if: github.ref == 'refs/heads/main'
@@ -53,6 +80,8 @@ jobs:
       DEPLOY_HOST: 191.252.120.96
       DEPLOY_USER: root
       REMOTE_PATH: /root/ai-hub
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure SSH
@@ -73,6 +102,10 @@ jobs:
             --exclude '.git/' \
             --exclude 'node_modules/' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
+      - name: Authenticate registry on VPS
+        if: env.GHCR_USERNAME != '' && env.GHCR_TOKEN != ''
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker login ghcr.io -u '${GHCR_USERNAME}' --password-stdin" <<< "${GHCR_TOKEN}"
       - name: Publish frontend and backend
         run: |
-          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && docker compose pull && docker compose up -d --build"
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && docker compose pull && docker compose up -d"

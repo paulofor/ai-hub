@@ -1,5 +1,6 @@
 services:
   backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/paulodb/ai-hub-backend:latest}
     build:
       context: ./apps/backend
     command: ["java", "-jar", "/app/app.jar"]
@@ -9,6 +10,7 @@ services:
     ports:
       - "${BACKEND_HTTP_PORT:-8080}:8080"
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/paulodb/ai-hub-frontend:latest}
     build:
       context: ./apps/frontend
     env_file:

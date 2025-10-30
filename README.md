@@ -35,7 +35,8 @@ infra/
 
 ## Deploy em produção
 
-- Construa as imagens usando os Dockerfiles dedicados em `apps/backend` e `apps/frontend`.
+- As imagens publicadas na pipeline ficam disponíveis em `ghcr.io/<seu-usuário>/ai-hub-backend` e `ghcr.io/<seu-usuário>/ai-hub-frontend`.
+- Para que o deploy automático funcione, crie os secrets `GHCR_USERNAME` e `GHCR_TOKEN` (um PAT com escopo `read:packages`) no repositório — eles serão usados para executar `docker login` na VPS antes de `docker compose pull`.
 - Utilize o exemplo `infra/lightsail/containers.example.json` para provisionar o serviço no AWS Lightsail Container Service.
 - Em uma VPS genérica (como Locaweb), execute `sudo ./infra/setup_vps.sh` para instalar dependências, gerar `.env` com as credenciais do MySQL 5.7 hospedado em `d555d.vps-kinghost.net` e subir os contêineres via Docker Compose.
 
