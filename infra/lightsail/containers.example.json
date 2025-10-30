@@ -4,7 +4,7 @@
     "backend": {
       "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-backend:latest",
       "command": ["java", "-jar", "app.jar"],
-      "ports": { "8080": "HTTP" },
+      "ports": { "8081": "HTTP" },
       "environment": {
         "DB_URL": "jdbc:postgresql://db.internal:5432/aihub",
         "DB_USER": "aihub",
@@ -20,7 +20,7 @@
       "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-frontend:latest",
       "ports": { "80": "HTTP" },
       "environment": {
-        "VITE_API_BASE_URL": "http://backend:8080/api"
+        "VITE_API_BASE_URL": "http://backend:8081/api"
       }
     }
   },
