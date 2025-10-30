@@ -28,7 +28,7 @@ public class ProjectService {
                           BlueprintRepository blueprintRepository,
                           GithubApiClient githubApiClient,
                           AuditService auditService,
-                          @Value("${HUB_PUBLIC_URL:http://localhost:8080}") String publicUrl,
+                          @Value("${HUB_PUBLIC_URL:http://localhost:8081}") String publicUrl,
                           @Value("${hub.github.webhook-secret:${GITHUB_WEBHOOK_SECRET:}}") String webhookSecret) {
         this.projectRepository = projectRepository;
         this.blueprintRepository = blueprintRepository;
