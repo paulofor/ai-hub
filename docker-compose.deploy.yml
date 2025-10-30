@@ -1,0 +1,7 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required for deploy}
+    build: null
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required for deploy}
+    build: null
