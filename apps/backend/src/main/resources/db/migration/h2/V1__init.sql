@@ -22,7 +22,7 @@ CREATE TABLE events (
     repo VARCHAR(200) NOT NULL,
     event_type VARCHAR(80) NOT NULL,
     delivery_id VARCHAR(100) NOT NULL,
-    payload CLOB NOT NULL,
+    payload LONGTEXT NOT NULL,
     received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_events_repo ON events(repo);
@@ -50,7 +50,7 @@ CREATE TABLE prompts (
     run_id BIGINT,
     pr_number INT,
     model VARCHAR(100) NOT NULL,
-    prompt CLOB NOT NULL,
+    prompt LONGTEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_prompts_repo ON prompts(repo);
@@ -61,11 +61,11 @@ CREATE TABLE responses (
     repo VARCHAR(200) NOT NULL,
     run_id BIGINT,
     pr_number INT,
-    root_cause CLOB,
-    fix_plan CLOB,
-    unified_diff CLOB,
+    root_cause LONGTEXT,
+    fix_plan LONGTEXT,
+    unified_diff LONGTEXT,
     confidence DECIMAL(5,2),
-    raw_response CLOB,
+    raw_response LONGTEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_responses_prompt FOREIGN KEY (prompt_id) REFERENCES prompts(id) ON DELETE CASCADE
 );
@@ -77,7 +77,7 @@ CREATE TABLE summaries (
     range_start DATE NOT NULL,
     range_end DATE NOT NULL,
     granularity VARCHAR(20) NOT NULL,
-    content CLOB NOT NULL,
+    content LONGTEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
