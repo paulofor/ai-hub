@@ -109,6 +109,9 @@ jobs:
             exit 1
           fi
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker login ghcr.io -u '${GHCR_USERNAME}' --password-stdin" <<< "${GHCR_TOKEN}"
+      - name: Ensure public network exists on VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker network inspect public-net >/dev/null 2>&1 || docker network create public-net"
       - name: Publish frontend and backend
         run: |
           REMOTE_IMAGES_ENV="BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-backend:latest FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-frontend:latest"
