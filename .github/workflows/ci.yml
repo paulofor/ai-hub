@@ -80,8 +80,8 @@ jobs:
       DEPLOY_HOST: 191.252.120.96
       DEPLOY_USER: root
       REMOTE_PATH: /root/ai-hub
-      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure SSH
@@ -103,8 +103,11 @@ jobs:
             --exclude 'node_modules/' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
       - name: Authenticate registry on VPS
-        if: env.GHCR_USERNAME != '' && env.GHCR_TOKEN != ''
         run: |
+          if [ -z "${GHCR_TOKEN}" ]; then
+            echo "GHCR_TOKEN is empty. Configure GHCR_TOKEN or provide GHCR_USERNAME/GHCR_TOKEN secrets with access to ghcr.io" >&2
+            exit 1
+          fi
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker login ghcr.io -u '${GHCR_USERNAME}' --password-stdin" <<< "${GHCR_TOKEN}"
       - name: Publish frontend and backend
         run: |
