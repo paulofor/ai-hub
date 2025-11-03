@@ -34,7 +34,10 @@ export default function CodexPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!prompt.trim() || !environment.trim()) {
+    const trimmedPrompt = prompt.trim();
+    const trimmedEnvironment = environment.trim();
+
+    if (!trimmedPrompt || !trimmedEnvironment) {
       setError('Informe o prompt e o ambiente antes de enviar.');
       return;
     }
@@ -43,11 +46,12 @@ export default function CodexPage() {
     setSuccessMessage(null);
     try {
       const response = await client.post<CodexRequest>('/codex/requests', {
-        prompt,
-        environment
+        prompt: trimmedPrompt,
+        environment: trimmedEnvironment
       });
       setRequests((prev) => [response.data, ...prev]);
       setPrompt('');
+      setEnvironment(trimmedEnvironment);
       setSuccessMessage('Solicitação enviada para o Codex.');
     } catch (err) {
       setError((err as Error).message);
