@@ -38,3 +38,10 @@ hub:
 
 server:
   port: 8081
+
+springdoc:
+  swagger-ui:
+    path: /swagger
+    display-request-duration: true
+  api-docs:
+    path: /api-docs
