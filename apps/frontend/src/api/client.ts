@@ -2,12 +2,12 @@ import axios from 'axios';
 
 const normalizeApiBaseUrl = (value?: string) => {
   if (!value) {
-    return '/api';
+    return '/api/api';
   }
 
   const trimmed = value.trim();
   if (!trimmed) {
-    return '/api';
+    return '/api/api';
   }
 
   const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
@@ -16,21 +16,21 @@ const normalizeApiBaseUrl = (value?: string) => {
     try {
       const url = new URL(withoutTrailingSlash);
       if (url.pathname === '' || url.pathname === '/') {
-        url.pathname = '/api';
+        url.pathname = '/api/api';
       }
       return url.toString().replace(/\/+$/, '');
     } catch {
-      return withoutTrailingSlash || '/api';
+      return withoutTrailingSlash || '/api/api';
     }
   }
 
   if (withoutTrailingSlash === '' || withoutTrailingSlash === '/') {
-    return '/api';
+    return '/api/api';
   }
 
   return withoutTrailingSlash.startsWith('/')
     ? withoutTrailingSlash
-    : `/api/${withoutTrailingSlash}`;
+    : `/api/api/${withoutTrailingSlash}`;
 };
 
 const client = axios.create({
