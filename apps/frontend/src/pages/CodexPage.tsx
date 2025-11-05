@@ -11,18 +11,41 @@ interface CodexRequest {
   createdAt: string;
 }
 
+interface EnvironmentOption {
+  id: number;
+  name: string;
+  description: string | null;
+  createdAt: string;
+}
+
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
-  const [environment, setEnvironment] = useState('master');
+  const [environment, setEnvironment] = useState('');
   const [requests, setRequests] = useState<CodexRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentOption[]>([]);
 
   useEffect(() => {
     client
       .get<CodexRequest[]>('/codex/requests')
       .then((response) => setRequests(response.data))
+      .catch((err: Error) => setError(err.message));
+  }, []);
+
+  useEffect(() => {
+    client
+      .get<EnvironmentOption[]>('/environments')
+      .then((response) => {
+        setEnvironmentOptions(response.data);
+        setEnvironment((current) => {
+          if (current && response.data.some((item) => item.name === current)) {
+            return current;
+          }
+          return response.data[0]?.name ?? '';
+        });
+      })
       .catch((err: Error) => setError(err.message));
   }, []);
 
@@ -77,13 +100,24 @@ export default function CodexPage() {
             <label htmlFor="environment" className="text-sm font-medium text-slate-700 dark:text-slate-200">
               Ambiente
             </label>
-            <input
+            <select
               id="environment"
               value={environment}
               onChange={(event) => setEnvironment(event.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-              placeholder="Ex.: produção"
-            />
+              disabled={environmentOptions.length === 0}
+            >
+              {environmentOptions.length === 0 ? (
+                <option value="">Nenhum ambiente cadastrado</option>
+              ) : (
+                environmentOptions.map((option) => (
+                  <option key={option.id} value={option.name}>
+                    {option.name}
+                    {option.description ? ` — ${option.description}` : ''}
+                  </option>
+                ))
+              )}
+            </select>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -102,7 +136,7 @@ export default function CodexPage() {
           <div className="flex items-center gap-4">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || environmentOptions.length === 0}
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading ? 'Enviando...' : 'Enviar para o Codex'}
