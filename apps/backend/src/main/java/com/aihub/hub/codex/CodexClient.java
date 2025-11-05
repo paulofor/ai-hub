@@ -2,6 +2,8 @@ package com.aihub.hub.codex;
 
 import com.aihub.hub.dto.CodexTaskResponse;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -13,6 +15,8 @@ import java.util.Map;
 
 @Component
 public class CodexClient {
+
+    private static final Logger log = LoggerFactory.getLogger(CodexClient.class);
 
     private final RestClient restClient;
     private final String apiKey;
@@ -31,9 +35,7 @@ public class CodexClient {
     }
 
     public CodexTaskResponse submitTask(String prompt, String environment) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", model);
-        body.put("input", List.of(
+        List<Map<String, String>> inputMessages = List.of(
             Map.of(
                 "role", "system",
                 "content", "Você é o assistente Codex. Use o contexto do ambiente informado para responder com um plano de ação objetivo."
@@ -42,11 +44,21 @@ public class CodexClient {
                 "role", "user",
                 "content", buildUserMessage(prompt, environment)
             )
-        ));
-        body.put("metadata", Map.of(
+        );
+
+        Map<String, Object> metadata = Map.of(
             "source", "ai-hub",
             "environment", environment
-        ));
+        );
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", model);
+        body.put("input", inputMessages);
+        body.put("metadata", metadata);
+
+        log.info("Enviando solicitação ao Codex. model={}, environment={}.", model, environment);
+        log.debug("Codex request messages: {}", inputMessages);
+        log.debug("Codex request metadata: {}", metadata);
 
         JsonNode response = restClient.post()
             .uri("/v1/responses")
@@ -67,6 +79,10 @@ public class CodexClient {
 
         String responseText = outputNode.asText();
         String id = response.path("id").asText(null);
+
+        log.info("Resposta recebida do Codex. id={}, model={}.", id, model);
+        log.debug("Codex response payload: {}", response.toString());
+        log.debug("Codex response content: {}", responseText);
 
         return new CodexTaskResponse(id, model, responseText);
     }
