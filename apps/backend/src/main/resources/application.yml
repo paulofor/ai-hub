@@ -39,6 +39,10 @@ hub:
 server:
   port: 8081
 
+logging:
+  level:
+    root: DEBUG
+
 springdoc:
   swagger-ui:
     path: /swagger
