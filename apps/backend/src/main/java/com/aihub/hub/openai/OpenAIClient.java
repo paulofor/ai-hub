@@ -3,6 +3,8 @@ package com.aihub.hub.openai;
 import com.aihub.hub.dto.CiFix;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -14,6 +16,8 @@ import java.util.Map;
 
 @Component
 public class OpenAIClient {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenAIClient.class);
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -65,6 +69,8 @@ public class OpenAIClient {
             body.put("metadata", metadata);
         }
 
+        log.info("Enviando solicitação ao OpenAI. model={}.", model);
+
         JsonNode response = restClient.post()
             .uri("/v1/responses")
             .header("Authorization", "Bearer " + apiKey)
@@ -72,6 +78,13 @@ public class OpenAIClient {
             .body(body)
             .retrieve()
             .body(JsonNode.class);
+
+        if (response == null) {
+            throw new IllegalStateException("OpenAI response vazia");
+        }
+
+        String responseId = response.path("id").asText(null);
+        log.info("Resposta recebida do OpenAI. id={}, model={}.", responseId, model);
 
         JsonNode output = response.at("/output/0/content/0/text");
         if (output == null || output.isMissingNode()) {
