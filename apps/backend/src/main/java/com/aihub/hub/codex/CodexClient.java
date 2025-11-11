@@ -77,16 +77,11 @@ public class CodexClient {
         JsonNode outputNodeRoot = response.path("output");
         log.info("Codex response 'output' node: {}", outputNodeRoot);
 
-        JsonNode firstContentNode = outputNodeRoot.path(0).path("content");
-        log.info("Codex response first 'content' node: {}", firstContentNode);
-
-        JsonNode outputNode = response.at("/output/0/content/0/text");
-        if (outputNode == null || outputNode.isMissingNode()) {
-            log.info("Codex response missing expected text node. responsePath=/output/0/content/0/text, responsePayload={}", response);
+        String responseText = extractResponseText(outputNodeRoot);
+        if (responseText == null) {
+            log.info("Codex response missing expected text node. responsePath=<auto>, responsePayload={}", response);
             throw new IllegalStateException("Resposta do Codex malformada");
         }
-
-        String responseText = outputNode.asText();
         String id = response.path("id").asText(null);
 
         log.info("Resposta recebida do Codex. id={}, model={}.", id, model);
@@ -95,6 +90,53 @@ public class CodexClient {
         log.info("Codex response content: {}", responseText);
 
         return new CodexTaskResponse(id, model, responseText);
+    }
+
+    private String extractResponseText(JsonNode outputNodeRoot) {
+        if (outputNodeRoot == null || !outputNodeRoot.isArray() || outputNodeRoot.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder builder = new StringBuilder();
+
+        for (JsonNode outputItem : outputNodeRoot) {
+            if (outputItem == null || outputItem.isMissingNode()) {
+                continue;
+            }
+
+            JsonNode directTextNode = outputItem.path("text");
+            if (directTextNode != null && directTextNode.isTextual()) {
+                appendWithSeparator(builder, directTextNode.asText());
+            }
+
+            JsonNode contentNode = outputItem.path("content");
+            if (contentNode != null && contentNode.isArray()) {
+                for (JsonNode contentItem : contentNode) {
+                    JsonNode textNode = contentItem.path("text");
+                    if (textNode != null && textNode.isTextual()) {
+                        appendWithSeparator(builder, textNode.asText());
+                    }
+                }
+            }
+        }
+
+        if (builder.length() == 0) {
+            return null;
+        }
+
+        return builder.toString();
+    }
+
+    private void appendWithSeparator(StringBuilder builder, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+
+        if (builder.length() > 0) {
+            builder.append("\n");
+        }
+
+        builder.append(value);
     }
 
     private String buildUserMessage(String prompt, String environment) {
