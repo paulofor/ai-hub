@@ -72,8 +72,17 @@ public class CodexClient {
             throw new IllegalStateException("Resposta do Codex vazia");
         }
 
+        log.info("Codex response raw payload: {}", response);
+
+        JsonNode outputNodeRoot = response.path("output");
+        log.info("Codex response 'output' node: {}", outputNodeRoot);
+
+        JsonNode firstContentNode = outputNodeRoot.path(0).path("content");
+        log.info("Codex response first 'content' node: {}", firstContentNode);
+
         JsonNode outputNode = response.at("/output/0/content/0/text");
         if (outputNode == null || outputNode.isMissingNode()) {
+            log.info("Codex response missing expected text node. responsePath=/output/0/content/0/text, responsePayload={}", response);
             throw new IllegalStateException("Resposta do Codex malformada");
         }
 
