@@ -57,8 +57,8 @@ public class CodexClient {
         body.put("metadata", metadata);
 
         log.info("Enviando solicitação ao Codex. model={}, environment={}.", model, environment);
-        log.debug("Codex request messages: {}", inputMessages);
-        log.debug("Codex request metadata: {}", metadata);
+        log.info("Codex request messages: {}", inputMessages);
+        log.info("Codex request metadata: {}", metadata);
 
         JsonNode response = restClient.post()
             .uri("/v1/responses")
@@ -81,8 +81,9 @@ public class CodexClient {
         String id = response.path("id").asText(null);
 
         log.info("Resposta recebida do Codex. id={}, model={}.", id, model);
-        log.debug("Codex response payload: {}", response.toString());
-        log.debug("Codex response content: {}", responseText);
+        log.info("Resumo da resposta do Codex: {}", summarizeContent(responseText));
+        log.info("Codex response payload: {}", response.toString());
+        log.info("Codex response content: {}", responseText);
 
         return new CodexTaskResponse(id, model, responseText);
     }
@@ -92,5 +93,18 @@ public class CodexClient {
         builder.append("Ambiente: ").append(environment).append("\n\n");
         builder.append("Tarefa:\n").append(prompt.trim());
         return builder.toString();
+    }
+
+    private String summarizeContent(String content) {
+        if (content == null || content.isBlank()) {
+            return "<vazio>";
+        }
+
+        String trimmed = content.strip();
+        if (trimmed.length() <= 300) {
+            return trimmed;
+        }
+
+        return trimmed.substring(0, 300) + "...";
     }
 }
