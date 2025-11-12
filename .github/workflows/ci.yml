@@ -33,6 +33,21 @@ jobs:
       - name: Lint
         run: npm --prefix apps/frontend run lint
 
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/sandbox-orchestrator/package-lock.json
+      - name: Install deps
+        run: npm --prefix apps/sandbox-orchestrator ci
+      - name: Test
+        run: npm --prefix apps/sandbox-orchestrator test
+
   docker:
     runs-on: ubuntu-latest
     permissions:
@@ -68,12 +83,23 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:${{ github.sha }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:buildcache,mode=max
+      - name: Build and push sandbox orchestrator image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/sandbox-orchestrator
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:buildcache,mode=max
 
   deploy:
     if: github.ref == 'refs/heads/main'
     needs:
       - backend
       - frontend
+      - sandbox
       - docker
     runs-on: ubuntu-latest
     env:
@@ -112,7 +138,7 @@ jobs:
       - name: Ensure public network exists on VPS
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker network inspect public-net >/dev/null 2>&1 || docker network create public-net"
-      - name: Publish frontend and backend
+      - name: Publish services
         run: |
-          REMOTE_IMAGES_ENV="BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-backend:latest FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-frontend:latest"
+          REMOTE_IMAGES_ENV="BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-backend:latest FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-frontend:latest SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-sandbox:latest"
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && export ${REMOTE_IMAGES_ENV} && docker compose pull && docker compose up -d"
