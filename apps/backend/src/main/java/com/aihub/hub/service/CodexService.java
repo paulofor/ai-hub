@@ -27,13 +27,16 @@ public class CodexService {
     private final CodexClient codexClient;
     private final CodexRequestRepository codexRequestRepository;
     private final PullRequestService pullRequestService;
+    private final SandboxProvisioningService sandboxProvisioningService;
 
     public CodexService(CodexClient codexClient,
                         CodexRequestRepository codexRequestRepository,
-                        PullRequestService pullRequestService) {
+                        PullRequestService pullRequestService,
+                        SandboxProvisioningService sandboxProvisioningService) {
         this.codexClient = codexClient;
         this.codexRequestRepository = codexRequestRepository;
         this.pullRequestService = pullRequestService;
+        this.sandboxProvisioningService = sandboxProvisioningService;
     }
 
     @Transactional(readOnly = true)
@@ -45,9 +48,10 @@ public class CodexService {
 
     @Transactional
     public CodexRequestView submitRequest(CodexSubmissionRequest request) {
-        CodexTaskResponse response = codexClient.submitTask(request.prompt(), request.environment());
-        CodexRequestRecord record = new CodexRequestRecord(request.environment(), codexClient.getModel(), request.prompt());
-        String finalResponseText = mergeResponseWithActions(request.environment(), response);
+        String sandboxSlug = sandboxProvisioningService.ensureSandbox(request.environment());
+        CodexTaskResponse response = codexClient.submitTask(request.prompt(), sandboxSlug);
+        CodexRequestRecord record = new CodexRequestRecord(sandboxSlug, codexClient.getModel(), request.prompt());
+        String finalResponseText = mergeResponseWithActions(sandboxSlug, response);
         record.setResponseText(finalResponseText);
         record.setExternalId(response.id());
         CodexRequestRecord saved = codexRequestRepository.save(record);

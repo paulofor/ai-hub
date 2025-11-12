@@ -39,4 +39,14 @@ public class AppConfig {
             .baseUrl(apiUrl)
             .build();
     }
+
+    @Bean
+    public RestClient sandboxOrchestratorRestClient(
+        @Value("${hub.sandbox.orchestrator.api-url:http://sandbox-orchestrator}") String apiUrl
+    ) {
+        return RestClient.builder()
+            .requestFactory(new JdkClientHttpRequestFactory())
+            .baseUrl(apiUrl)
+            .build();
+    }
 }
