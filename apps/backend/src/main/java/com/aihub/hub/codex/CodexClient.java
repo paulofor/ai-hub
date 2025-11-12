@@ -43,7 +43,7 @@ public class CodexClient {
     }
 
     public CodexTaskResponse submitTask(String prompt, String environment) {
-        List<Map<String, String>> inputMessages = List.of(
+        List<Map<String, String>> baseMessages = List.of(
             Map.of(
                 "role", "system",
                 "content", "Você é o assistente Codex. Use o contexto do ambiente informado para responder com um plano de ação objetivo. Quando precisar aplicar uma correção de código, gere um diff unificado e chame a ferramenta create_merge_request para abrir um merge request no GitHub do ambiente informado (formato owner/repo)."
@@ -59,13 +59,48 @@ public class CodexClient {
             "environment", environment
         );
 
+        CodexApiCallResponse primaryResponse = callCodex(baseMessages, metadata, environment, 1);
+
+        if (!primaryResponse.toolCalls().isEmpty()) {
+            return new CodexTaskResponse(primaryResponse.id(), model, primaryResponse.content(), primaryResponse.toolCalls());
+        }
+
+        log.warn("Resposta do Codex sem tool calls. Enviando solicitação de reforço para gerar diff.");
+
+        List<Map<String, String>> retryMessages = new ArrayList<>(baseMessages);
+        if (primaryResponse.content() != null && !primaryResponse.content().isBlank()) {
+            retryMessages.add(Map.of(
+                "role", "assistant",
+                "content", primaryResponse.content()
+            ));
+        }
+        retryMessages.add(Map.of(
+            "role", "user",
+            "content", buildDiffReminder(environment)
+        ));
+
+        CodexApiCallResponse retryResponse = callCodex(retryMessages, metadata, environment, 2);
+
+        String combinedContent = combineContents(primaryResponse.content(), retryResponse.content());
+        List<CodexToolCall> finalToolCalls = !retryResponse.toolCalls().isEmpty()
+            ? retryResponse.toolCalls()
+            : primaryResponse.toolCalls();
+        String finalId = retryResponse.id() != null ? retryResponse.id() : primaryResponse.id();
+
+        return new CodexTaskResponse(finalId, model, combinedContent, finalToolCalls);
+    }
+
+    private CodexApiCallResponse callCodex(List<Map<String, String>> inputMessages,
+                                           Map<String, Object> metadata,
+                                           String environment,
+                                           int attempt) {
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
         body.put("input", inputMessages);
         body.put("metadata", metadata);
         body.put("tools", buildToolsDefinition());
 
-        log.info("Enviando solicitação ao Codex. model={}, environment={}.", model, environment);
+        log.info("Enviando solicitação ao Codex (tentativa {}). model={}, environment={}.", attempt, model, environment);
         log.info("Codex request messages: {}", inputMessages);
         log.info("Codex request metadata: {}", metadata);
 
@@ -94,7 +129,7 @@ public class CodexClient {
         }
         String id = response.path("id").asText(null);
 
-        log.info("Resposta recebida do Codex. id={}, model={}.", id, model);
+        log.info("Resposta recebida do Codex. id={}, model={}, tentativa={}.", id, model, attempt);
         log.info("Resumo da resposta do Codex: {}", summarizeContent(responseText));
         log.info("Codex response payload: {}", response.toString());
         log.info("Codex response content: {}", responseText);
@@ -102,7 +137,32 @@ public class CodexClient {
             log.info("Codex tool calls detected: {}", toolCalls);
         }
 
-        return new CodexTaskResponse(id, model, responseText, toolCalls);
+        return new CodexApiCallResponse(id, responseText, toolCalls);
+    }
+
+    private String combineContents(String primary, String retry) {
+        if (primary == null || primary.isBlank()) {
+            return retry;
+        }
+        if (retry == null || retry.isBlank()) {
+            return primary;
+        }
+        if (primary.strip().equals(retry.strip())) {
+            return primary;
+        }
+        return primary.stripTrailing() + "\n\n" + retry.strip();
+    }
+
+    private String buildDiffReminder(String environment) {
+        StringBuilder reminder = new StringBuilder();
+        reminder.append("Sua resposta anterior não gerou nenhum diff ou chamada de ferramenta. ");
+        reminder.append("Revise a tarefa solicitada e produza um diff unificado contendo somente as alterações necessárias. ");
+        reminder.append("Em seguida, chame a ferramenta create_merge_request com os campos base_branch (use 'main' se não souber), title e diff. ");
+        reminder.append("Lembre-se de que o diff deve ser aplicável ao repositório ").append(environment).append(".");
+        return reminder.toString();
+    }
+
+    private record CodexApiCallResponse(String id, String content, List<CodexToolCall> toolCalls) {
     }
 
     private String extractResponseText(JsonNode outputNodeRoot) {
