@@ -22,6 +22,15 @@
       "environment": {
         "VITE_API_BASE_URL": "http://backend:8081/api"
       }
+    },
+    "sandbox-orchestrator": {
+      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-sandbox:latest",
+      "ports": { "8080": "HTTP" },
+      "environment": {
+        "PORT": "8080",
+        "SANDBOX_SLUG_PREFIX": "",
+        "SANDBOX_SLUG_SUFFIX": "-sandbox"
+      }
     }
   },
   "publicEndpoint": {
