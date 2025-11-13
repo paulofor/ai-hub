@@ -300,6 +300,7 @@ collect_env_values() {
 
   prompt_with_default FRONTEND_HTTP_PORT "Porta externa para o frontend" "80"
   prompt_with_default BACKEND_HTTP_PORT "Porta externa para o backend" "8081"
+  prompt_with_default SANDBOX_ORCHESTRATOR_HTTP_PORT "Porta externa para o sandbox" "8083"
 
   local default_public_url="http://localhost:${BACKEND_HTTP_PORT}"
   prompt_with_default HUB_PUBLIC_URL "URL pública da API (ex: https://app.seudominio.com)" "${default_public_url}"
@@ -385,6 +386,10 @@ create_env_file() {
     printf 'VITE_API_BASE_URL=%s\n' "${VITE_API_BASE_URL}"
     printf 'FRONTEND_HTTP_PORT=%s\n' "${FRONTEND_HTTP_PORT}"
     printf 'BACKEND_HTTP_PORT=%s\n' "${BACKEND_HTTP_PORT}"
+    printf 'SANDBOX_ORCHESTRATOR_HTTP_PORT=%s\n' "${SANDBOX_ORCHESTRATOR_HTTP_PORT}"
+    printf 'BACKEND_IMAGE=%s\n' "${BACKEND_IMAGE:-ghcr.io/paulodb/ai-hub-backend:latest}"
+    printf 'FRONTEND_IMAGE=%s\n' "${FRONTEND_IMAGE:-ghcr.io/paulodb/ai-hub-frontend:latest}"
+    printf 'SANDBOX_ORCHESTRATOR_IMAGE=%s\n' "${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulodb/ai-hub-sandbox:latest}"
   } > "${env_file}"
 
   chmod 600 "${env_file}"
@@ -405,6 +410,7 @@ Configuração concluída! Principais informações:
 - Arquivo de variáveis: ${REPO_DIR}/.env
 - Frontend publicado na porta: ${FRONTEND_HTTP_PORT}
 - Backend publicado na porta: ${BACKEND_HTTP_PORT}
+- Sandbox publicado na porta: ${SANDBOX_ORCHESTRATOR_HTTP_PORT}
 - Banco de dados externo: jdbc:mysql://d555d.vps-kinghost.net:3306/aihubdb
 - Chave privada do deploy: ${DEPLOY_KEY_PATH}
 - authorized_keys atualizado em: ${HOME}/.ssh/authorized_keys
