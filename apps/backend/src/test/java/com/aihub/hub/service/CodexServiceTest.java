@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 class CodexServiceTest {
 
     @Test
-    void submitRequestEnsuresSandboxAndUsesProvisionedSlug() {
+    void submitRequestEnsuresSandboxButUsesOriginalSlugForCodex() {
         CodexClient codexClient = mock(CodexClient.class);
         CodexRequestRepository requestRepository = mock(CodexRequestRepository.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);
@@ -33,20 +33,20 @@ class CodexServiceTest {
         CodexTaskResponse codexResponse = new CodexTaskResponse("123", "model", "conteudo", List.of());
 
         when(sandboxProvisioningService.ensureSandbox("owner/repo")).thenReturn(provisionedSlug);
-        when(codexClient.submitTask("ajuste", provisionedSlug)).thenReturn(codexResponse);
+        when(codexClient.submitTask("ajuste", "owner/repo")).thenReturn(codexResponse);
         when(codexClient.getModel()).thenReturn("model");
         when(requestRepository.save(any(CodexRequestRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CodexRequestView view = codexService.submitRequest(submissionRequest);
 
         verify(sandboxProvisioningService).ensureSandbox("owner/repo");
-        verify(codexClient).submitTask("ajuste", provisionedSlug);
+        verify(codexClient).submitTask("ajuste", "owner/repo");
 
         ArgumentCaptor<CodexRequestRecord> recordCaptor = ArgumentCaptor.forClass(CodexRequestRecord.class);
         verify(requestRepository).save(recordCaptor.capture());
 
         CodexRequestRecord savedRecord = recordCaptor.getValue();
-        assertThat(savedRecord.getEnvironment()).isEqualTo(provisionedSlug);
-        assertThat(view.environment()).isEqualTo(provisionedSlug);
+        assertThat(savedRecord.getEnvironment()).isEqualTo("owner/repo");
+        assertThat(view.environment()).isEqualTo("owner/repo");
     }
 }
