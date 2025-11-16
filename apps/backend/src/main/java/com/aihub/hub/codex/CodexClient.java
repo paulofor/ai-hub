@@ -123,9 +123,13 @@ public class CodexClient {
 
         List<CodexToolCall> toolCalls = extractToolCalls(outputNodeRoot);
         String responseText = extractResponseText(outputNodeRoot);
-        if (responseText == null) {
-            log.info("Codex response missing expected text node. responsePath=<auto>, responsePayload={}", response);
+        if (responseText == null && toolCalls.isEmpty()) {
+            log.info("Codex response missing expected text node and tool calls. responsePath=<auto>, responsePayload={}", response);
             throw new IllegalStateException("Resposta do Codex malformada");
+        }
+        if (responseText == null) {
+            responseText = "";
+            log.info("Codex response without text content but with {} tool call(s); continuing.", toolCalls.size());
         }
         String id = response.path("id").asText(null);
 
