@@ -54,9 +54,9 @@ public class CodexService {
             log.info("Sandbox '{}' provisionado a partir do ambiente '{}'.", sandboxSlug, requestedEnvironment);
         }
 
-        CodexTaskResponse response = codexClient.submitTask(request.prompt(), sandboxSlug);
+        CodexTaskResponse response = codexClient.submitTask(request.prompt(), requestedEnvironment);
         CodexRequestRecord record = new CodexRequestRecord(requestedEnvironment, codexClient.getModel(), request.prompt());
-        String finalResponseText = mergeResponseWithActions(sandboxSlug, response);
+        String finalResponseText = mergeResponseWithActions(requestedEnvironment, response);
         record.setResponseText(finalResponseText);
         record.setExternalId(response.id());
         CodexRequestRecord saved = codexRequestRepository.save(record);
