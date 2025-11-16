@@ -42,7 +42,7 @@ public class CodexClient {
         return model;
     }
 
-    public CodexTaskResponse submitTask(String prompt, String sandboxSlug) {
+    public CodexTaskResponse submitTask(String prompt, String environment) {
         List<Map<String, String>> baseMessages = List.of(
             Map.of(
                 "role", "system",
@@ -50,16 +50,16 @@ public class CodexClient {
             ),
             Map.of(
                 "role", "user",
-                "content", buildUserMessage(prompt, sandboxSlug)
+                "content", buildUserMessage(prompt, environment)
             )
         );
 
         Map<String, Object> metadata = Map.of(
             "source", "ai-hub",
-            "environment", sandboxSlug
+            "environment", environment
         );
 
-        CodexApiCallResponse primaryResponse = callCodex(baseMessages, metadata, sandboxSlug, 1);
+        CodexApiCallResponse primaryResponse = callCodex(baseMessages, metadata, environment, 1);
 
         if (!primaryResponse.toolCalls().isEmpty()) {
             return new CodexTaskResponse(primaryResponse.id(), model, primaryResponse.content(), primaryResponse.toolCalls());
@@ -76,10 +76,10 @@ public class CodexClient {
         }
         retryMessages.add(Map.of(
             "role", "user",
-            "content", buildDiffReminder(sandboxSlug)
+            "content", buildDiffReminder(environment)
         ));
 
-        CodexApiCallResponse retryResponse = callCodex(retryMessages, metadata, sandboxSlug, 2);
+        CodexApiCallResponse retryResponse = callCodex(retryMessages, metadata, environment, 2);
 
         String combinedContent = combineContents(primaryResponse.content(), retryResponse.content());
         List<CodexToolCall> finalToolCalls = !retryResponse.toolCalls().isEmpty()
@@ -92,7 +92,7 @@ public class CodexClient {
 
     private CodexApiCallResponse callCodex(List<Map<String, String>> inputMessages,
                                            Map<String, Object> metadata,
-                                           String sandboxSlug,
+                                           String environment,
                                            int attempt) {
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
@@ -100,7 +100,7 @@ public class CodexClient {
         body.put("metadata", metadata);
         body.put("tools", buildToolsDefinition());
 
-        log.info("Enviando solicitação ao Codex (tentativa {}). model={}, environment={}.", attempt, model, sandboxSlug);
+        log.info("Enviando solicitação ao Codex (tentativa {}). model={}, environment={}.", attempt, model, environment);
         log.info("Codex request messages: {}", inputMessages);
         log.info("Codex request metadata: {}", metadata);
 
@@ -153,12 +153,12 @@ public class CodexClient {
         return primary.stripTrailing() + "\n\n" + retry.strip();
     }
 
-    private String buildDiffReminder(String sandboxSlug) {
+    private String buildDiffReminder(String environment) {
         StringBuilder reminder = new StringBuilder();
         reminder.append("Sua resposta anterior não gerou nenhum diff ou chamada de ferramenta. ");
         reminder.append("Revise a tarefa solicitada e produza um diff unificado contendo somente as alterações necessárias. ");
         reminder.append("Em seguida, chame a ferramenta create_merge_request com os campos base_branch (use 'main' se não souber), title e diff. ");
-        reminder.append("Lembre-se de que o diff deve ser aplicável ao repositório ").append(sandboxSlug).append(".");
+        reminder.append("Lembre-se de que o diff deve ser aplicável ao repositório ").append(environment).append(".");
         return reminder.toString();
     }
 
@@ -288,9 +288,9 @@ public class CodexClient {
         builder.append(value);
     }
 
-    private String buildUserMessage(String prompt, String sandboxSlug) {
+    private String buildUserMessage(String prompt, String environment) {
         StringBuilder builder = new StringBuilder();
-        builder.append("Ambiente: ").append(sandboxSlug).append("\n\n");
+        builder.append("Ambiente: ").append(environment).append("\n\n");
         builder.append("Tarefa:\n").append(prompt.trim());
         return builder.toString();
     }
