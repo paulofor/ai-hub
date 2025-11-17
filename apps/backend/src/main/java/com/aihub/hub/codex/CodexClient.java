@@ -50,7 +50,7 @@ public class CodexClient {
         List<Map<String, String>> baseMessages = List.of(
             Map.of(
                 "role", "system",
-                "content", "Você é o assistente Codex. Use o contexto do ambiente informado para responder com um plano de ação objetivo. Quando precisar aplicar uma correção de código, gere um diff unificado e chame a ferramenta create_merge_request para abrir um merge request no GitHub do ambiente informado (formato owner/repo)."
+                "content", "Você é o assistente Codex. Use o contexto do ambiente informado para responder com um plano de ação objetivo. Antes de propor qualquer mudança, procure e leia arquivos AGENTS.md e README.md no repositório e siga todas as instruções encontradas. Quando precisar aplicar uma correção de código, gere um diff unificado e chame a ferramenta create_merge_request para abrir um merge request no GitHub do ambiente informado (formato owner/repo)."
             ),
             Map.of(
                 "role", "user",
@@ -326,6 +326,8 @@ public class CodexClient {
         if (repositoryContext != null && !repositoryContext.isBlank()) {
             builder.append("\n\nContexto do repositório (somente leitura):\n")
                 .append(repositoryContext.trim());
+        } else {
+            builder.append("\n\nContexto do repositório não carregado; explore o workspace local procurando primeiro por AGENTS.md e README.md para entender instruções e estrutura antes de sugerir alterações.");
         }
         return builder.toString();
     }
