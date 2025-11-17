@@ -61,6 +61,14 @@ public class GithubAppAuth {
     }
 
     public String createJwt() {
+        if (!isPrivateKeyConfigured()) {
+            log.error("GitHub App private key is empty. Configure GITHUB_PRIVATE_KEY_PEM or hub.github.private-key.");
+            throw new IllegalStateException("GitHub App private key is empty");
+        }
+
+        log.info("Generating GitHub App JWT. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
+            maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength());
+
         try {
             Instant now = clock.instant();
             String headerJson = "{\"typ\":\"JWT\",\"alg\":\"RS256\"}";
@@ -73,6 +81,8 @@ public class GithubAppAuth {
             byte[] signature = sign(signingInput.getBytes(StandardCharsets.UTF_8));
             return signingInput + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
         } catch (Exception e) {
+            log.error("Unable to generate GitHub App JWT. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
+                maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength(), e);
             throw new IllegalStateException("Unable to generate GitHub App JWT", e);
         }
     }
@@ -85,18 +95,26 @@ public class GithubAppAuth {
         if (installationId <= 0) {
             throw new IllegalStateException("GitHub installation id is required");
         }
-        String jwt = createJwt();
-        JsonNode response = githubRestClient.post()
-            .uri("/app/installations/{id}/access_tokens", installationId)
-            .header("Authorization", "Bearer " + jwt)
-            .header("Accept", "application/vnd.github+json")
-            .retrieve()
-            .body(JsonNode.class);
-        String tokenValue = response.get("token").asText();
-        Instant expiresAt = Instant.parse(response.get("expires_at").asText());
-        CachedToken newToken = new CachedToken(tokenValue, expiresAt);
-        cachedToken.set(newToken);
-        return tokenValue;
+        log.info("Requesting GitHub installation token. appId={}, installationId={}.", maskedAppId(), describeInstallationId());
+
+        try {
+            String jwt = createJwt();
+            JsonNode response = githubRestClient.post()
+                .uri("/app/installations/{id}/access_tokens", installationId)
+                .header("Authorization", "Bearer " + jwt)
+                .header("Accept", "application/vnd.github+json")
+                .retrieve()
+                .body(JsonNode.class);
+            String tokenValue = response.get("token").asText();
+            Instant expiresAt = Instant.parse(response.get("expires_at").asText());
+            CachedToken newToken = new CachedToken(tokenValue, expiresAt);
+            cachedToken.set(newToken);
+            return tokenValue;
+        } catch (Exception ex) {
+            log.error("Failed to obtain GitHub installation token. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
+                maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength(), ex);
+            throw ex;
+        }
     }
 
     public boolean verifySignature(String payload, String secret, String signatureHeader) {
@@ -155,6 +173,29 @@ public class GithubAppAuth {
             result |= a[i] ^ b[i];
         }
         return result == 0;
+    }
+
+    private boolean isPrivateKeyConfigured() {
+        return privateKeyPem != null && !privateKeyPem.trim().isEmpty();
+    }
+
+    private int privateKeyLength() {
+        return privateKeyPem == null ? 0 : privateKeyPem.length();
+    }
+
+    private String describeInstallationId() {
+        return installationId > 0 ? String.valueOf(installationId) : "(missing)";
+    }
+
+    private String maskedAppId() {
+        if (appId == null || appId.isBlank()) {
+            return "(missing)";
+        }
+        String trimmed = appId.trim();
+        if (trimmed.length() <= 4) {
+            return "****" + trimmed;
+        }
+        return "****" + trimmed.substring(trimmed.length() - 4);
     }
 
     private record CachedToken(String token, Instant expiresAt) {
