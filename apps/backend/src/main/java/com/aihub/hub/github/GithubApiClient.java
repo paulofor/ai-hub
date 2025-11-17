@@ -165,6 +165,20 @@ public class GithubApiClient {
             .body(JsonNode.class);
     }
 
+    public JsonNode getTree(String owner, String repo, String sha, boolean recursive) {
+        return restClient.get()
+            .uri(uriBuilder -> {
+                var builder = uriBuilder.path("/repos/{owner}/{repo}/git/trees/{sha}");
+                if (recursive) {
+                    builder = builder.queryParam("recursive", "1");
+                }
+                return builder.build(owner, repo, sha);
+            })
+            .headers(headers -> headers.setAll(authHeaders()))
+            .retrieve()
+            .body(JsonNode.class);
+    }
+
     public JsonNode createBranch(String owner, String repo, String branch, String sha) {
         Map<String, Object> body = Map.of(
             "ref", "refs/heads/" + branch,
