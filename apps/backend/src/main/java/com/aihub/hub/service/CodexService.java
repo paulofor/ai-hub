@@ -28,15 +28,18 @@ public class CodexService {
     private final CodexRequestRepository codexRequestRepository;
     private final PullRequestService pullRequestService;
     private final SandboxProvisioningService sandboxProvisioningService;
+    private final RepositoryContextBuilder repositoryContextBuilder;
 
     public CodexService(CodexClient codexClient,
                         CodexRequestRepository codexRequestRepository,
                         PullRequestService pullRequestService,
-                        SandboxProvisioningService sandboxProvisioningService) {
+                        SandboxProvisioningService sandboxProvisioningService,
+                        RepositoryContextBuilder repositoryContextBuilder) {
         this.codexClient = codexClient;
         this.codexRequestRepository = codexRequestRepository;
         this.pullRequestService = pullRequestService;
         this.sandboxProvisioningService = sandboxProvisioningService;
+        this.repositoryContextBuilder = repositoryContextBuilder;
     }
 
     @Transactional(readOnly = true)
@@ -54,7 +57,8 @@ public class CodexService {
             log.info("Sandbox '{}' provisionado a partir do ambiente '{}'.", sandboxSlug, requestedEnvironment);
         }
 
-        CodexTaskResponse response = codexClient.submitTask(request.prompt(), requestedEnvironment);
+        String repositoryContext = repositoryContextBuilder.build(requestedEnvironment);
+        CodexTaskResponse response = codexClient.submitTask(request.prompt(), requestedEnvironment, repositoryContext);
         CodexRequestRecord record = new CodexRequestRecord(requestedEnvironment, codexClient.getModel(), request.prompt());
         String finalResponseText = mergeResponseWithActions(requestedEnvironment, response);
         record.setResponseText(finalResponseText);

@@ -43,6 +43,10 @@ public class CodexClient {
     }
 
     public CodexTaskResponse submitTask(String prompt, String environment) {
+        return submitTask(prompt, environment, null);
+    }
+
+    public CodexTaskResponse submitTask(String prompt, String environment, String repositoryContext) {
         List<Map<String, String>> baseMessages = List.of(
             Map.of(
                 "role", "system",
@@ -50,7 +54,7 @@ public class CodexClient {
             ),
             Map.of(
                 "role", "user",
-                "content", buildUserMessage(prompt, environment)
+                "content", buildUserMessage(prompt, environment, repositoryContext)
             )
         );
 
@@ -314,10 +318,15 @@ public class CodexClient {
         builder.append(value);
     }
 
-    private String buildUserMessage(String prompt, String environment) {
+    private String buildUserMessage(String prompt, String environment, String repositoryContext) {
         StringBuilder builder = new StringBuilder();
         builder.append("Ambiente: ").append(environment).append("\n\n");
         builder.append("Tarefa:\n").append(prompt.trim());
+
+        if (repositoryContext != null && !repositoryContext.isBlank()) {
+            builder.append("\n\nContexto do repositório (somente leitura):\n")
+                .append(repositoryContext.trim());
+        }
         return builder.toString();
     }
 
