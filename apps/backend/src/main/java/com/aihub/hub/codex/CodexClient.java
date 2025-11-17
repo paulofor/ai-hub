@@ -217,16 +217,23 @@ public class CodexClient {
             }
 
             String type = outputItem.path("type").asText(null);
-            if (!"tool_call".equals(type)) {
+            if (!"tool_call".equals(type) && !"function_call".equals(type)) {
                 continue;
             }
 
-            String name = firstNonBlank(outputItem.path("name").asText(null), outputItem.path("tool_name").asText(null));
+            JsonNode functionNode = outputItem.path("function");
+            String name = firstNonBlank(
+                outputItem.path("name").asText(null),
+                outputItem.path("tool_name").asText(null),
+                functionNode != null && !functionNode.isMissingNode() && !functionNode.isNull()
+                    ? functionNode.path("name").asText(null)
+                    : null
+            );
             if (name == null || name.isBlank()) {
                 continue;
             }
 
-            JsonNode argumentsNode = extractArgumentsNode(outputItem);
+            JsonNode argumentsNode = extractArgumentsNode(outputItem, functionNode);
             if (argumentsNode == null || argumentsNode.isMissingNode() || argumentsNode instanceof NullNode) {
                 log.warn("Codex tool call '{}' ignorado por falta de argumentos", name);
                 continue;
@@ -238,7 +245,22 @@ public class CodexClient {
         return List.copyOf(toolCalls);
     }
 
-    private JsonNode extractArgumentsNode(JsonNode outputItem) {
+    private JsonNode extractArgumentsNode(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            JsonNode argumentsNode = extractArgumentsNodeFromSingleNode(node);
+            if (argumentsNode != null) {
+                return argumentsNode;
+            }
+        }
+
+        return null;
+    }
+
+    private JsonNode extractArgumentsNodeFromSingleNode(JsonNode outputItem) {
+        if (outputItem == null || outputItem.isMissingNode() || outputItem.isNull()) {
+            return null;
+        }
+
         JsonNode argumentsNode = outputItem.path("arguments");
         if (argumentsNode != null && !argumentsNode.isMissingNode() && !argumentsNode.isNull()) {
             if (argumentsNode.isTextual()) {
