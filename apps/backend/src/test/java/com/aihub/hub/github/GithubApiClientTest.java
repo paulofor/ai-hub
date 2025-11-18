@@ -33,7 +33,7 @@ class GithubApiClientTest {
     void uploadsFileContentToRepository() throws Exception {
         server.enqueue(new MockResponse().setBody("{\"content\":{\"sha\":\"abc\"}}").addHeader("Content-Type", "application/json"));
         RestClient restClient = RestClient.builder().baseUrl(server.url("/").toString()).build();
-        GithubAppAuth auth = new GithubAppAuth(restClient, Clock.systemUTC(), "1", GithubAppAuthTest.TEST_KEY, "1") {
+        GithubAppAuth auth = new GithubAppAuth(restClient, Clock.systemUTC(), "1", GithubAppAuthTest.TEST_KEY, "", "1") {
             @Override
             public String getInstallationToken() {
                 return "token";

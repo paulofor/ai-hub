@@ -44,8 +44,9 @@ Se a sua instalação também precisa interagir com repositórios privados, marq
 
 Na seção **Private keys**, gere uma nova chave e baixe o arquivo `.pem`. Durante a execução do `infra/setup_vps.sh` você pode:
 
-1. Informar o caminho local do arquivo (o script fará a leitura e armazenará o conteúdo no `.env` com quebras de linha escapadas), ou
-2. Colar manualmente o conteúdo com `\n` para cada nova linha, seguindo as instruções do prompt.
+1. Informar o caminho local do arquivo (o script fará a leitura e armazenará o conteúdo no `.env` com quebras de linha escapadas),
+2. Colar manualmente o conteúdo com `\n` para cada nova linha, seguindo as instruções do prompt, ou
+3. Manter o arquivo `.pem` em disco e apontar para ele via `GITHUB_PRIVATE_KEY_FILE` (ou `hub.github.private-key-file` nas configurações do Spring). Se essa variável estiver presente, o backend lerá diretamente o arquivo e não exigirá que a chave esteja inline no `.env`.
 
 ## Installation ID
 

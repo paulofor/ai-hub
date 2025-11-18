@@ -18,7 +18,7 @@ class GithubAppAuthTest {
     @Test
     void verifiesSignatureInConstantTime() throws Exception {
         RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
-        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "1") {
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "", "1") {
             @Override
             public String getInstallationToken() {
                 return "test";
@@ -35,7 +35,7 @@ class GithubAppAuthTest {
     @Test
     void failsFastWhenInstallationIdIsNotNumeric() {
         RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
-        assertThrows(IllegalStateException.class, () -> new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "abc"));
+        assertThrows(IllegalStateException.class, () -> new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "", "abc"));
     }
 
     private String bytesToHex(byte[] bytes) {
