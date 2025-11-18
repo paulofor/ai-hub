@@ -23,6 +23,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Component
@@ -247,15 +249,17 @@ public class GithubAppAuth {
             log.info("GitHub App private key file path is not configured.");
             return "";
         }
+        PathResolution resolution = resolvePrivateKeyPath(privateKeyPath);
         try {
-            Path path = Path.of(normalizePath(privateKeyPath));
-            log.info("Attempting to read GitHub App private key file at {}", path);
+            Path path = resolution.path();
+            log.info("Attempting to read GitHub App private key file at {} (candidates={})", path, resolution.candidates());
             String key = Files.readString(path, StandardCharsets.UTF_8);
             log.info("Successfully read GitHub App private key file at {}", path);
             return key;
         } catch (IOException e) {
             log.info("Failed to read GitHub App private key file at {}: {}", privateKeyPath, e.getMessage());
-            throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyPath, e);
+            throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyPath
+                + " (tried: " + String.join(", ", resolution.candidatesAsString()) + ")", e);
         }
     }
 
@@ -268,6 +272,40 @@ public class GithubAppAuth {
             return "";
         }
         return path.trim().replace("\\", File.separator);
+    }
+
+    private PathResolution resolvePrivateKeyPath(String rawPath) {
+        String normalized = normalizePath(rawPath);
+        Path provided = Path.of(normalized);
+
+        List<Path> candidates = new ArrayList<>();
+        Path absoluteProvided = provided.isAbsolute() ? provided : provided.toAbsolutePath();
+        candidates.add(absoluteProvided);
+
+        if (!provided.isAbsolute()) {
+            Path workingDirCandidate = Path.of("").toAbsolutePath().resolve(provided).normalize();
+            if (!candidates.contains(workingDirCandidate)) {
+                candidates.add(workingDirCandidate);
+            }
+
+            Path springConfigDir = Path.of("/app/config").resolve(provided).normalize();
+            if (!candidates.contains(springConfigDir)) {
+                candidates.add(springConfigDir);
+            }
+
+            Path workspaceRoot = Path.of("/workspace/ai-hub").resolve(provided).normalize();
+            if (!candidates.contains(workspaceRoot)) {
+                candidates.add(workspaceRoot);
+            }
+        }
+
+        for (Path candidate : candidates) {
+            if (Files.exists(candidate)) {
+                return new PathResolution(candidate, candidates);
+            }
+        }
+
+        return new PathResolution(candidates.get(0), candidates);
     }
 
     private String normalizePem(String pem) {
@@ -316,5 +354,11 @@ public class GithubAppAuth {
     }
 
     private record CachedToken(String token, Instant expiresAt) {
+    }
+
+    private record PathResolution(Path path, List<Path> candidates) {
+        List<String> candidatesAsString() {
+            return candidates.stream().map(Path::toString).toList();
+        }
     }
 }
