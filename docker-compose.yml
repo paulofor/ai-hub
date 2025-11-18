@@ -9,6 +9,8 @@ services:
       - .env
     depends_on:
       - sandbox-orchestrator
+    volumes:
+      - ./infra:/infra
     ports:
       - "${BACKEND_HTTP_PORT:-8081}:8081"
     networks:
