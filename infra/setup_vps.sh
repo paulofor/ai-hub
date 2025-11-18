@@ -336,8 +336,8 @@ EOF
   DB_PASS="A9m#Q2v@T7x%L4n*Z6p+H3c&B8d-K1r5J"
 
   echo
-  echo "Para o GITHUB_PRIVATE_KEY_PEM você pode informar um caminho para o arquivo .pem."
-  echo "Se preferir, cole o valor já com quebras de linha escapadas (\\n)."
+  echo "Informe o caminho do arquivo .pem da GitHub App (recomendado)."
+  echo "Se preferir manter o valor inline, cole com quebras de linha escapadas (\\n)."
   echo "Se acabou de registrar a app e viu a mensagem 'Registration successful! You must generate a private key...',"
   echo "clique em 'Generate a private key' na aba General para baixar o arquivo antes de prosseguir."
   local key_path=""
@@ -345,21 +345,17 @@ EOF
   local key_value=""
   if [ -n "${key_path}" ]; then
     if [ -f "${key_path}" ]; then
-      key_value="$(python3 - "$key_path" <<'PY'
-import sys
-from pathlib import Path
-text = Path(sys.argv[1]).read_text().strip()
-print(text.replace('\n', '\\n'))
-PY
-)"
+      GITHUB_PRIVATE_KEY_FILE="${key_path}"
     else
       echo "[AVISO] Arquivo não encontrado. A variável ficará vazia."
     fi
   fi
-  if [ -z "${key_value}" ]; then
+  if [ -z "${GITHUB_PRIVATE_KEY_FILE}" ]; then
     read -r -p "GITHUB_PRIVATE_KEY_PEM (use \\n para quebras de linha, Enter para deixar vazio): " key_value
+    GITHUB_PRIVATE_KEY_PEM="${key_value}"
+  else
+    GITHUB_PRIVATE_KEY_PEM=""
   fi
-  GITHUB_PRIVATE_KEY_PEM="${key_value}"
 }
 
 create_env_file() {
@@ -375,6 +371,7 @@ create_env_file() {
     printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}"
     printf 'OPENAI_MODEL=%s\n' "${OPENAI_MODEL}"
     printf 'GITHUB_APP_ID=%s\n' "${GITHUB_APP_ID}"
+    printf 'GITHUB_PRIVATE_KEY_FILE=%s\n' "${GITHUB_PRIVATE_KEY_FILE}"
     printf 'GITHUB_PRIVATE_KEY_PEM="%s"\n' "${GITHUB_PRIVATE_KEY_PEM}"
     printf 'GITHUB_INSTALLATION_ID=%s\n' "${GITHUB_INSTALLATION_ID}"
     printf 'GITHUB_WEBHOOK_SECRET=%s\n' "${GITHUB_WEBHOOK_SECRET}"

@@ -11,7 +11,8 @@
         "DB_PASS": "<secret>",
         "OPENAI_API_KEY": "<secret>",
         "GITHUB_APP_ID": "<id>",
-        "GITHUB_PRIVATE_KEY_PEM": "<pem>",
+        "GITHUB_PRIVATE_KEY_FILE": "/path/to/github-app-private-key.pem",
+        "GITHUB_PRIVATE_KEY_PEM": "",
         "GITHUB_WEBHOOK_SECRET": "<secret>",
         "HUB_PUBLIC_URL": "https://<lightsail-domain>"
       }

@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Signature;
@@ -29,7 +31,10 @@ public class GithubAppAuth {
     private final Clock clock;
     private final String appId;
     private final String privateKeyPem;
+    private final String privateKeyFilePath;
     private final long installationId;
+
+    private final AtomicReference<String> resolvedPrivateKeyPem = new AtomicReference<>();
 
     private final AtomicReference<CachedToken> cachedToken = new AtomicReference<>();
 
@@ -37,11 +42,13 @@ public class GithubAppAuth {
                          Clock clock,
                          @Value("${hub.github.app-id}") String appId,
                          @Value("${GITHUB_PRIVATE_KEY_PEM:}") String privateKeyPem,
+                         @Value("${GITHUB_PRIVATE_KEY_FILE:}") String privateKeyFilePath,
                          @Value("${hub.github.installation-id:}") String installationId) {
         this.githubRestClient = githubRestClient;
         this.clock = clock;
         this.appId = appId;
         this.privateKeyPem = privateKeyPem;
+        this.privateKeyFilePath = privateKeyFilePath;
         this.installationId = parseInstallationId(installationId);
     }
 
@@ -61,13 +68,14 @@ public class GithubAppAuth {
     }
 
     public String createJwt() {
-        if (!isPrivateKeyConfigured()) {
-            log.error("GitHub App private key is empty. Configure GITHUB_PRIVATE_KEY_PEM or hub.github.private-key.");
+        String resolvedPem = resolvePrivateKeyPem();
+        if (resolvedPem == null || resolvedPem.isBlank()) {
+            log.error("GitHub App private key is empty. Configure GITHUB_PRIVATE_KEY_PEM, GITHUB_PRIVATE_KEY_FILE ou hub.github.private-key.");
             throw new IllegalStateException("GitHub App private key is empty");
         }
 
         log.info("Generating GitHub App JWT. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
-            maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength());
+            maskedAppId(), describeInstallationId(), hasConfiguredKeySource(), privateKeyLength(resolvedPem));
 
         try {
             Instant now = clock.instant();
@@ -78,11 +86,11 @@ public class GithubAppAuth {
             String payload = String.format("{\"iat\":%d,\"exp\":%d,\"iss\":\"%s\"}", issuedAt, expiresAt, appId);
             String payloadB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
             String signingInput = header + "." + payloadB64;
-            byte[] signature = sign(signingInput.getBytes(StandardCharsets.UTF_8));
+            byte[] signature = sign(signingInput.getBytes(StandardCharsets.UTF_8), resolvedPem);
             return signingInput + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
         } catch (Exception e) {
             log.error("Unable to generate GitHub App JWT. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
-                maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength(), e);
+                maskedAppId(), describeInstallationId(), hasConfiguredKeySource(), privateKeyLength(resolvedPem), e);
             throw new IllegalStateException("Unable to generate GitHub App JWT", e);
         }
     }
@@ -131,15 +139,15 @@ public class GithubAppAuth {
         }
     }
 
-    private byte[] sign(byte[] input) throws Exception {
+    private byte[] sign(byte[] input, String resolvedPem) throws Exception {
         Signature signature = Signature.getInstance("SHA256withRSA");
-        signature.initSign(loadPrivateKey());
+        signature.initSign(loadPrivateKey(resolvedPem));
         signature.update(input);
         return signature.sign();
     }
 
-    private PrivateKey loadPrivateKey() throws Exception {
-        String sanitized = privateKeyPem
+    private PrivateKey loadPrivateKey(String resolvedPem) throws Exception {
+        String sanitized = resolvedPem
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
             .replaceAll("\\s", "");
@@ -175,12 +183,55 @@ public class GithubAppAuth {
         return result == 0;
     }
 
-    private boolean isPrivateKeyConfigured() {
-        return privateKeyPem != null && !privateKeyPem.trim().isEmpty();
+    private boolean hasConfiguredKeySource() {
+        return (privateKeyPem != null && !privateKeyPem.trim().isEmpty())
+            || (privateKeyFilePath != null && !privateKeyFilePath.trim().isEmpty());
     }
 
-    private int privateKeyLength() {
-        return privateKeyPem == null ? 0 : privateKeyPem.length();
+    private String resolvePrivateKeyPem() {
+        String cached = resolvedPrivateKeyPem.get();
+        if (cached != null) {
+            return cached;
+        }
+
+        String fromValue = normalize(privateKeyPem);
+        if (fromValue != null) {
+            resolvedPrivateKeyPem.compareAndSet(null, fromValue);
+            return resolvedPrivateKeyPem.get();
+        }
+
+        String fromFile = loadKeyFromFile();
+        if (fromFile != null) {
+            resolvedPrivateKeyPem.compareAndSet(null, fromFile);
+            return resolvedPrivateKeyPem.get();
+        }
+
+        return null;
+    }
+
+    private String loadKeyFromFile() {
+        if (privateKeyFilePath == null || privateKeyFilePath.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            String fileContent = Files.readString(Path.of(privateKeyFilePath)).trim();
+            return fileContent.isBlank() ? null : fileContent;
+        } catch (Exception e) {
+            log.error("Failed to read GitHub App private key file at {}.", privateKeyFilePath, e);
+            throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyFilePath, e);
+        }
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private int privateKeyLength(String pem) {
+        return pem == null ? 0 : pem.length();
     }
 
     private String describeInstallationId() {
