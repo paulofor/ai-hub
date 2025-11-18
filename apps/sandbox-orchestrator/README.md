@@ -8,6 +8,11 @@ Serviço responsável por receber solicitações do backend do AI Hub e retornar
 - `npm run dev`: inicia o servidor com `node --watch` (hot reload simples).
 - `npm test`: executa a suíte de testes baseada em `node:test`.
 
+### Endpoints
+
+- `POST /api/v1/sandboxes/ensure`: garante que um slug base possua o sufixo/prefixo configurado e retorna a versão armazenada em cache.
+- `POST /api/v1/sandboxes/ensure-branch`: semelhante ao endpoint anterior, mas gera um slug único por branch (`{prefix}{slug}-{branch}{suffix}`), preservando o valor em cache para chamadas subsequentes com a mesma combinação de slug e branch.
+
 ## Variáveis de ambiente
 
 | Variável | Descrição | Padrão |

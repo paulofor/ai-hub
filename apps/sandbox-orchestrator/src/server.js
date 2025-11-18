@@ -35,6 +35,24 @@ export function createApp(options = {}) {
     res.json({ slug: cache.get(slug) });
   });
 
+  app.post('/api/v1/sandboxes/ensure-branch', (req, res) => {
+    const slug = typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+    const branch = typeof req.body?.branch === 'string' ? req.body.branch.trim() : '';
+
+    if (!slug || !branch) {
+      return res.status(400).json({ error: 'slug and branch are required' });
+    }
+
+    const cacheKey = `${slug}#${branch}`;
+
+    if (!cache.has(cacheKey)) {
+      const ensuredSlug = `${slugPrefix}${slug}-${branch}${slugSuffix}`;
+      cache.set(cacheKey, ensuredSlug);
+    }
+
+    res.json({ slug: cache.get(cacheKey) });
+  });
+
   app.use((err, _req, res, _next) => {
     console.error('Unexpected error handling request', err);
     res.status(500).json({ error: 'internal_error' });
