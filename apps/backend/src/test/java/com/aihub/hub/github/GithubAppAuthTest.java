@@ -108,6 +108,20 @@ class GithubAppAuthTest {
         assertTrue(jwt.split("\\.").length == 3);
     }
 
+    @Test
+    void loadsPrivateKeyFromClasspathWhenFileIsMissing() {
+        RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", "invalid-inline", "infra/git/test-private-key.pem", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "test";
+            }
+        };
+
+        String jwt = auth.createJwt();
+        assertTrue(jwt.split("\\.").length == 3);
+    }
+
     private String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {

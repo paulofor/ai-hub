@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.InputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -248,11 +249,30 @@ public class GithubAppAuth {
             return "";
         }
         try {
-            Path path = Path.of(normalizePath(privateKeyPath));
-            log.info("Attempting to read GitHub App private key file at {}", path);
-            String key = Files.readString(path, StandardCharsets.UTF_8);
-            log.info("Successfully read GitHub App private key file at {}", path);
-            return key;
+            String normalizedPath = normalizePath(privateKeyPath);
+            Path rawPath = Path.of(normalizedPath);
+            Path resolvedPath = rawPath.isAbsolute()
+                ? rawPath
+                : Path.of("").toAbsolutePath().resolve(rawPath).normalize();
+
+            log.info("Attempting to read GitHub App private key file at {} (resolved to {}).", privateKeyPath, resolvedPath);
+
+            if (Files.exists(resolvedPath)) {
+                String key = Files.readString(resolvedPath, StandardCharsets.UTF_8);
+                log.info("Successfully read GitHub App private key file at {}", resolvedPath);
+                return key;
+            }
+
+            String resourcePath = normalizedPath.replace(File.separatorChar, '/');
+            log.info("GitHub App private key not found at filesystem path {}. Trying classpath resource {}.", resolvedPath, resourcePath);
+
+            String classpathKey = readPrivateKeyFromClasspath(resourcePath);
+            if (classpathKey != null) {
+                log.info("Successfully read GitHub App private key from classpath resource {}", resourcePath);
+                return classpathKey;
+            }
+
+            throw new IOException("File not found at " + resolvedPath + " or classpath resource " + resourcePath);
         } catch (IOException e) {
             log.info("Failed to read GitHub App private key file at {}: {}", privateKeyPath, e.getMessage());
             throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyPath, e);
@@ -268,6 +288,15 @@ public class GithubAppAuth {
             return "";
         }
         return path.trim().replace("\\", File.separator);
+    }
+
+    private String readPrivateKeyFromClasspath(String resourcePath) throws IOException {
+        try (InputStream stream = GithubAppAuth.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (stream == null) {
+                return null;
+            }
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     private String normalizePem(String pem) {
