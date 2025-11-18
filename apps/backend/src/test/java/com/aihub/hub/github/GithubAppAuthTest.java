@@ -89,6 +89,25 @@ class GithubAppAuthTest {
         assertTrue(jwt.split("\\.").length == 3);
     }
 
+    @Test
+    void acceptsWindowsStylePrivateKeyPath(@TempDir Path tempDir) throws Exception {
+        Path keyFile = tempDir.resolve("app-key.pem");
+        Files.writeString(keyFile, TEST_RSA_KEY, StandardCharsets.UTF_8);
+
+        String windowsPath = keyFile.toString().replace("/", "\\\\");
+
+        RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", "invalid-inline", windowsPath, "1") {
+            @Override
+            public String getInstallationToken() {
+                return "test";
+            }
+        };
+
+        String jwt = auth.createJwt();
+        assertTrue(jwt.split("\\.").length == 3);
+    }
+
     private String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {

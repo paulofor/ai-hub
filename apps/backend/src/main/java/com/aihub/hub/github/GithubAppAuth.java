@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -247,7 +248,7 @@ public class GithubAppAuth {
             return "";
         }
         try {
-            Path path = Path.of(privateKeyPath.trim());
+            Path path = Path.of(normalizePath(privateKeyPath));
             log.info("Attempting to read GitHub App private key file at {}", path);
             String key = Files.readString(path, StandardCharsets.UTF_8);
             log.info("Successfully read GitHub App private key file at {}", path);
@@ -260,6 +261,13 @@ public class GithubAppAuth {
 
     private boolean isPrivateKeyFileConfigured() {
         return privateKeyPath != null && !privateKeyPath.trim().isEmpty();
+    }
+
+    private String normalizePath(String path) {
+        if (path == null) {
+            return "";
+        }
+        return path.trim().replace("\\", File.separator);
     }
 
     private String normalizePem(String pem) {
