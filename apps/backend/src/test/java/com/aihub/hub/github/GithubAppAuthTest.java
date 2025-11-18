@@ -13,7 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GithubAppAuthTest {
 
-    static final String TEST_KEY = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCunDlQt+gUacfZ\n1U0x0jmgrxabfNyZIldzxosQzX43+6mx0zmaOHE2GFr1gU9T9lZG3kB+sp/7+9l2\nY6PYlo1XqsG7TzF2DH/yQz/gTps1WJ8u7Z0QDAy7+JkifhNoT1XoH4BNDpxlbTqo\nUgyVdBKP7jK6BRMeKI2jHeSzP/fnQn3mTjtt2Jxu9dW9rZJzTy3JQSlz64p7J3wN\nGdzoMjPcD9jNSUs5dJkSMsq9zKF77TI2s9zgXgDX/GV7VaZ7muwuMAb/LkePE83z\nA0O4GT0jJiCAfiOE3Zj6+ugpkGSKbLsC8qLqMj2gOYgDn8TsjuH1wJPNVrgzlsUo\n9gxY2NdJAgMBAAECggEAEsK+5HIqlyWH5k0KCkUt9grmLVqGTkV4NpM2U/3NWBSk\nXShHKd13CUXo6NMnHD6KvgVXCNveh6T37Xy7Kaq9CQ3aszVtbdt8SP9QVLQ4Vw9N\nLcdUyqUvbpCXuBAfFl9k1FPj0Q7VqMRJGkIdAS7F3go04UPPInNT7ByPrQsBWSq3\nPKECWylzN7+uxV0c7wPu6m7wOkQAzFTsxnxkZvl6HGMFaWyPzKpSYnNsPuHPNtmB\n8n/B8HHi97tspPE1oBT8DnQfkbdZuG3h6DuX02eYwrh30T4Hs87sSh+03XHmqiNv\n5iJompi6ElRGnDopxrbfHept2VJz8P7uwFE7j4C5YQKBgQDWI9IrlI8y/TJZTPU1\nJb97Q4GvsYGjAqPpTg8XFu25YTS4s9H+yX4dtpp+v6MmHfzwJLOnVjopxTy8Gr7o\nF6kRCOQ7IqpwrztxHi39YwVX2SXErs0PYz86XjUHQpPXnMvkcd52EymuRhvdCmZr\nFbbS8xT23wwU2GlwFhudOM3kwQKBgQDJAKl00++rKnC2ho45pMBUqb4ME2wWUXoa\nPcHBbK9wAgv1ElUFVq/DT5w0wZAch8rfQJh+PT0SkJUt1XILo/oM7fDjFeMc27qU\nQMSq7x0yslMCnhuXqVzJYGhJb7Q3N7qKsrY37F2YTvK3tCS8KDOQhFejv6Z3b0w3\nQy3IqTGaZQKBgCNtwv46hOs+SgVbL/8aeGw98kGgNQtgtpPp7h99HaXDp1S7E3Hy\nypFxIYhGkp+nPpI7rL+CAdcp2hpLixEu8beXw4ANXxwfbT6es10nWuxBx21afoYH\nSeh5ByQPSXqB7w1jk9r41F/rTEt5IHGS+sbki6nALMnmNTa5OrH5o0ZBAoGBAIy+\nPxc+3ANH6HaQLWgovjku9vhtIe7si07LCKEF+qxhLLp5zWmqhgfapz8xne6eCMMg\n5zBhyUzV6IvmuUpiVBo7d6jAv/ysOiVzfdgEyaA9gGZPznXVKqV7X5xgESi8bXuh\n6V0A1hd+oSjQikLTrJMynzHSvgKizUruHB65+vZBAoGAWjW/p3aevV6nqlHqnV9I\nlNEDRpwqlNEvu3n/I5FB64HY3/d4BC3UjHd7ffTh8n/VnFxrQXLixNsPsOkYLkCO\nslg0KtwEETJ/5EFqbDDYcvRzfg0jEs9fwLP1VE9AQHVd2CWrWDQUlZqxA/dRkI/0\no0vEvgUSnQxWrnSE9H0VbMM=\n-----END PRIVATE KEY-----";
+    static final String TEST_KEY = "-----BEGIN PRIVATE KEY-----\nMIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAKEJHWdHR+rUeQpar\nHTN8AZnIEdjQbE6wFF1TKiseFiC81PU9adKPX9L8bedTw+NtGFxrDwJBcPwGpW81P\ndjKysi2Iip/wWBSAKFHsqt2W1i5732FEwhHh6XCBx9HFKQpU/ymfz0i44SwRC2d5R\nAkNK2ALmx2nNm5DN2Ufwdu1KZAgMBAAECgYBB5/8Ws7+lRkw7hpyqOVaQ6Ef3r5HF\nPSxUqlMzfVLLttxrZO8dBm9g1+4XndQro209rE43S+IGLRBUVDI9BWM24Bp5ahqXx\nXN8lXGsbqgsBbZvEfwNPKgkynptivJW+fV5ATo6kzgpQ+ShoxffFcAPJ51bEMrnTp\nDFv4ZSwrwM4QJBAMyX5opsxQbXhje4dH2XGp35Rf3rsWPeSVHoclfiqD4KJXaLpvV\nUZ+QQgBZy1a973q2Fr0SC1tp2pl/5kzrkLu0CQQDJf3CooP1Xr439IPz7vXCMhQ2B\n0P6HXhgYD/4Vuex7TJZUZZLbeWH3z3SCh/CozF500uZnthmkf4egA13JEBDdAkAL\nWQWFegD3ny6nmoiDisUELBZQvijppCOm8mCdNUolnsRzLc3F37efc7bXB+mIQTOZp\nkeRYjxug5Q40Iv1AUEFAkA7EYzpIiiiZ+hr6BvBgItZ5jdLcwTqkf7mLuoBXHuiuZ\nToMM6YYEED8GDrUwaNtTuLa7f3dz6VJn2PvuzjYD5RAkBcY1mD2ERvDx/Vj6MeK56\nlZajZECGGO8cdpuJmAI2EmJOR3kYZXbp2Y99wnRWKrdzY9XOsQ2sv4J5jvUGmBREt\n-----END PRIVATE KEY-----";
+
+    static final String TEST_RSA_KEY = "-----BEGIN RSA PRIVATE KEY-----\nMIICWwIBAAKBgQChCR1nR0fq1HkKWqx0zfAGZyBHY0GxOsBRdUyorHhYgvNT1PWnS\nj1/S/G3nU8PjbRhcaw8CQXD8BqVvNT3YysrItiIqf8FgUgChR7KrdltYue99hRMIR\n4elwgcfRxSkKVP8pn89IuOEsEQtneUQJDStgC5sdpzZuQzdlH8HbtSmQIDAQABAoG\nAQef/FrO/pUZMO4acqjlWkOhH96+RxT0sVKpTM31Sy7bca2TvHQZvYNfuF53UK6Nt\nPaxON0viBi0QVFQyPQVjNuAaeWoal8VzfJVxrG6oLAW2bxH8DTyoJMp6bYryVvn1e\nQE6OpM4KUPkoaMX3xXADyedWxDK506Qxb+GUsK8DOECQQDMl+aKbMUG14Y3uHR9lx\nqd+UX967Fj3klR6HJX4qg+CiV2i6b1VGfkEIAWctWve96tha9EgtbadqZf+ZM65C7\ntAkEAyX9wqKD9V6+N/SD8+71wjIUNgdD+h14YGA/+Fbnse0yWVGWS23lh9890gofw\nqMxedNLmZ7YZpH+HoANdyRAQ3QJAC1kFhXoA958up5qIg4rFBCwWUL4o6aQjpvJgn\nTVKJZ7Ecy3Nxd+3n3O21wfpiEEzmaZHkWI8boOUONCL9QFBBQJAOxGM6SIoomfoa+\ngbwYCLWeY3S3ME6pH+5i7qAVx7ormU6DDOmGBBA/Bg61MGjbU7i2u393c+lSZ9j77\ns42A+UQJAXGNZg9hEbw8f1Y+jHiuepWWo2RAhhjvHHabiZgCNhJiTkd5GGV26dmPf\ncJ0Viq3c2PVzrENrL+CeY71BpgURLQ==\n-----END RSA PRIVATE KEY-----";
 
     @Test
     void verifiesSignatureInConstantTime() throws Exception {
@@ -36,6 +38,20 @@ class GithubAppAuthTest {
     void failsFastWhenInstallationIdIsNotNumeric() {
         RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
         assertThrows(IllegalStateException.class, () -> new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_KEY, "", "abc"));
+    }
+
+    @Test
+    void loadsPrivateKeyWithRsaHeader() {
+        RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_RSA_KEY, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "test";
+            }
+        };
+
+        String jwt = auth.createJwt();
+        assertTrue(jwt.split("\\.").length == 3);
     }
 
     private String bytesToHex(byte[] bytes) {

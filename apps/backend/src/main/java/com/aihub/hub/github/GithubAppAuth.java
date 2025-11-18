@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Clock;
 import java.time.Instant;
@@ -143,13 +144,43 @@ public class GithubAppAuth {
     }
 
     private PrivateKey loadPrivateKey(String pem) throws Exception {
+        boolean isPkcs1 = pem.contains("-----BEGIN RSA PRIVATE KEY");
         String sanitized = pem
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
+            .replace("-----BEGIN RSA PRIVATE KEY-----", "")
+            .replace("-----END RSA PRIVATE KEY-----", "")
             .replaceAll("\\s", "");
         byte[] decoded = Base64.getDecoder().decode(sanitized);
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
-        return KeyFactory.getInstance("RSA").generatePrivate(spec);
+        try {
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
+            return KeyFactory.getInstance("RSA").generatePrivate(spec);
+        } catch (InvalidKeySpecException ex) {
+            if (!isPkcs1) {
+                throw ex;
+            }
+            byte[] pkcs8Bytes = convertPkcs1ToPkcs8(decoded);
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(pkcs8Bytes);
+            return KeyFactory.getInstance("RSA").generatePrivate(spec);
+        }
+    }
+
+    private byte[] convertPkcs1ToPkcs8(byte[] pkcs1Bytes) {
+        int pkcs1Length = pkcs1Bytes.length;
+        int totalLength = pkcs1Length + 22;
+        byte[] pkcs8Header = new byte[] {
+            0x30, (byte) 0x82, (byte) (totalLength >> 8), (byte) totalLength,
+            0x02, 0x01, 0x00,
+            0x30, 0x0d,
+            0x06, 0x09, 0x2a, (byte) 0x86, 0x48, (byte) 0x86, (byte) 0xf7, 0x0d, 0x01, 0x01, 0x01,
+            0x05, 0x00,
+            0x04, (byte) 0x82, (byte) (pkcs1Length >> 8), (byte) pkcs1Length
+        };
+
+        byte[] pkcs8Bytes = new byte[pkcs8Header.length + pkcs1Length];
+        System.arraycopy(pkcs8Header, 0, pkcs8Bytes, 0, pkcs8Header.length);
+        System.arraycopy(pkcs1Bytes, 0, pkcs8Bytes, pkcs8Header.length, pkcs1Length);
+        return pkcs8Bytes;
     }
 
     private byte[] hmacSha256(String secret, String payload) throws Exception {
