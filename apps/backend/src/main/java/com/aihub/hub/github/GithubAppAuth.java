@@ -9,7 +9,10 @@ import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Signature;
@@ -29,19 +32,23 @@ public class GithubAppAuth {
     private final Clock clock;
     private final String appId;
     private final String privateKeyPem;
+    private final String privateKeyPath;
     private final long installationId;
 
+    private final AtomicReference<String> cachedPrivateKeyPem = new AtomicReference<>();
     private final AtomicReference<CachedToken> cachedToken = new AtomicReference<>();
 
     public GithubAppAuth(RestClient githubRestClient,
                          Clock clock,
                          @Value("${hub.github.app-id}") String appId,
-                         @Value("${GITHUB_PRIVATE_KEY_PEM:}") String privateKeyPem,
+                         @Value("${hub.github.private-key:${GITHUB_PRIVATE_KEY_PEM:}}") String privateKeyPem,
+                         @Value("${hub.github.private-key-file:${GITHUB_PRIVATE_KEY_FILE:}}") String privateKeyPath,
                          @Value("${hub.github.installation-id:}") String installationId) {
         this.githubRestClient = githubRestClient;
         this.clock = clock;
         this.appId = appId;
         this.privateKeyPem = privateKeyPem;
+        this.privateKeyPath = privateKeyPath;
         this.installationId = parseInstallationId(installationId);
     }
 
@@ -61,13 +68,10 @@ public class GithubAppAuth {
     }
 
     public String createJwt() {
-        if (!isPrivateKeyConfigured()) {
-            log.error("GitHub App private key is empty. Configure GITHUB_PRIVATE_KEY_PEM or hub.github.private-key.");
-            throw new IllegalStateException("GitHub App private key is empty");
-        }
+        String pem = requirePrivateKeyPem();
 
         log.info("Generating GitHub App JWT. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
-            maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength());
+            maskedAppId(), describeInstallationId(), true, privateKeyLength(pem));
 
         try {
             Instant now = clock.instant();
@@ -78,11 +82,11 @@ public class GithubAppAuth {
             String payload = String.format("{\"iat\":%d,\"exp\":%d,\"iss\":\"%s\"}", issuedAt, expiresAt, appId);
             String payloadB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
             String signingInput = header + "." + payloadB64;
-            byte[] signature = sign(signingInput.getBytes(StandardCharsets.UTF_8));
+            byte[] signature = sign(signingInput.getBytes(StandardCharsets.UTF_8), pem);
             return signingInput + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
         } catch (Exception e) {
             log.error("Unable to generate GitHub App JWT. appId={}, installationId={}, privateKeyConfigured={}, privateKeyLength={} chars",
-                maskedAppId(), describeInstallationId(), isPrivateKeyConfigured(), privateKeyLength(), e);
+                maskedAppId(), describeInstallationId(), true, privateKeyLength(pem), e);
             throw new IllegalStateException("Unable to generate GitHub App JWT", e);
         }
     }
@@ -131,15 +135,15 @@ public class GithubAppAuth {
         }
     }
 
-    private byte[] sign(byte[] input) throws Exception {
+    private byte[] sign(byte[] input, String pem) throws Exception {
         Signature signature = Signature.getInstance("SHA256withRSA");
-        signature.initSign(loadPrivateKey());
+        signature.initSign(loadPrivateKey(pem));
         signature.update(input);
         return signature.sign();
     }
 
-    private PrivateKey loadPrivateKey() throws Exception {
-        String sanitized = privateKeyPem
+    private PrivateKey loadPrivateKey(String pem) throws Exception {
+        String sanitized = pem
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
             .replaceAll("\\s", "");
@@ -175,12 +179,52 @@ public class GithubAppAuth {
         return result == 0;
     }
 
+    private String requirePrivateKeyPem() {
+        String pem = getPrivateKeyPem();
+        if (pem == null || pem.trim().isEmpty()) {
+            log.error("GitHub App private key is empty. Configure hub.github.private-key, GITHUB_PRIVATE_KEY_PEM, hub.github.private-key-file or GITHUB_PRIVATE_KEY_FILE.");
+            throw new IllegalStateException("GitHub App private key is empty");
+        }
+        return pem;
+    }
+
+    private String getPrivateKeyPem() {
+        String cached = cachedPrivateKeyPem.get();
+        if (cached != null) {
+            return cached;
+        }
+
+        String pem = privateKeyPem == null ? "" : privateKeyPem;
+        if (pem.trim().isEmpty()) {
+            pem = readPrivateKeyFromFile();
+        }
+
+        cachedPrivateKeyPem.compareAndSet(null, pem);
+        return cachedPrivateKeyPem.get();
+    }
+
+    private String readPrivateKeyFromFile() {
+        if (privateKeyPath == null || privateKeyPath.trim().isEmpty()) {
+            return "";
+        }
+        try {
+            return Files.readString(Path.of(privateKeyPath.trim()), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyPath, e);
+        }
+    }
+
     private boolean isPrivateKeyConfigured() {
-        return privateKeyPem != null && !privateKeyPem.trim().isEmpty();
+        String pem = getPrivateKeyPem();
+        return pem != null && !pem.trim().isEmpty();
     }
 
     private int privateKeyLength() {
-        return privateKeyPem == null ? 0 : privateKeyPem.length();
+        return privateKeyLength(getPrivateKeyPem());
+    }
+
+    private int privateKeyLength(String pem) {
+        return pem == null ? 0 : pem.length();
     }
 
     private String describeInstallationId() {
