@@ -1,11 +1,14 @@
 package com.aihub.hub.github;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -44,6 +47,38 @@ class GithubAppAuthTest {
     void loadsPrivateKeyWithRsaHeader() {
         RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
         GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", TEST_RSA_KEY, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "test";
+            }
+        };
+
+        String jwt = auth.createJwt();
+        assertTrue(jwt.split("\\.").length == 3);
+    }
+
+    @Test
+    void loadsInlineKeyWithEscapedNewlines() {
+        RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
+        String escapedPem = TEST_KEY.replace("\n", "\\n");
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", escapedPem, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "test";
+            }
+        };
+
+        String jwt = auth.createJwt();
+        assertTrue(jwt.split("\\.").length == 3);
+    }
+
+    @Test
+    void prefersPrivateKeyFileWhenConfigured(@TempDir Path tempDir) throws Exception {
+        Path keyFile = tempDir.resolve("app-key.pem");
+        Files.writeString(keyFile, TEST_RSA_KEY, StandardCharsets.UTF_8);
+
+        RestClient client = RestClient.builder().baseUrl("https://api.github.com").build();
+        GithubAppAuth auth = new GithubAppAuth(client, Clock.systemUTC(), "123", "invalid-inline", keyFile.toString(), "1") {
             @Override
             public String getInstallationToken() {
                 return "test";

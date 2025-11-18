@@ -225,17 +225,24 @@ public class GithubAppAuth {
             return cached;
         }
 
-        String pem = privateKeyPem == null ? "" : privateKeyPem;
-        if (pem.trim().isEmpty()) {
+        String pem = "";
+
+        if (isPrivateKeyFileConfigured()) {
             pem = readPrivateKeyFromFile();
         }
 
-        cachedPrivateKeyPem.compareAndSet(null, pem);
+        if (pem.trim().isEmpty()) {
+            pem = normalizePem(privateKeyPem);
+            log.info("Using inline GitHub App private key");
+        }
+
+        String normalized = normalizePem(pem);
+        cachedPrivateKeyPem.compareAndSet(null, normalized);
         return cachedPrivateKeyPem.get();
     }
 
     private String readPrivateKeyFromFile() {
-        if (privateKeyPath == null || privateKeyPath.trim().isEmpty()) {
+        if (!isPrivateKeyFileConfigured()) {
             log.info("GitHub App private key file path is not configured.");
             return "";
         }
@@ -249,6 +256,27 @@ public class GithubAppAuth {
             log.info("Failed to read GitHub App private key file at {}: {}", privateKeyPath, e.getMessage());
             throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyPath, e);
         }
+    }
+
+    private boolean isPrivateKeyFileConfigured() {
+        return privateKeyPath != null && !privateKeyPath.trim().isEmpty();
+    }
+
+    private String normalizePem(String pem) {
+        if (pem == null) {
+            return "";
+        }
+        String normalized = pem.trim();
+        if ((normalized.startsWith("\"") && normalized.endsWith("\"")) || (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        if (normalized.contains("\\n")) {
+            normalized = normalized.replace("\\r\\n", "\n").replace("\\n", "\n");
+        }
+        if (normalized.contains("\\r")) {
+            normalized = normalized.replace("\\r", "\r");
+        }
+        return normalized;
     }
 
     private boolean isPrivateKeyConfigured() {
