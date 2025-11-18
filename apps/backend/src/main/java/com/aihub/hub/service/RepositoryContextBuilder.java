@@ -29,7 +29,9 @@ public class RepositoryContextBuilder {
             return null;
         }
 
+        String stage = "metadados do repositório";
         try {
+            log.info("Iniciando montagem do contexto do repositório {} na etapa: {}", environment, stage);
             JsonNode repository = githubApiClient.getRepository(coordinates.owner(), coordinates.repo());
             String defaultBranch = repository.path("default_branch").asText("main");
             String description = repository.path("description").asText("");
@@ -41,18 +43,21 @@ public class RepositoryContextBuilder {
                 builder.append("\nDescrição: ").append(description.trim());
             }
 
+            stage = "árvore de arquivos";
             appendTreeSummary(builder, coordinates, defaultBranch);
+            stage = "README";
             appendReadmeExcerpt(builder, coordinates, defaultBranch);
 
             return builder.toString();
         } catch (Exception ex) {
-            log.warn("Não foi possível montar contexto do repositório {}: {}", environment, ex.getMessage());
+            log.info("Não foi possível montar contexto do repositório {} na etapa {}: {}", environment, stage, ex.getMessage());
             return null;
         }
     }
 
     private void appendTreeSummary(StringBuilder builder, RepoCoordinates coordinates, String branch) {
         try {
+            log.info("Buscando árvore do repositório {}/{} na branch {}", coordinates.owner(), coordinates.repo(), branch);
             JsonNode branchData = githubApiClient.getBranch(coordinates.owner(), coordinates.repo(), branch);
             String baseSha = branchData.path("object").path("sha").asText(null);
             if (baseSha == null || baseSha.isBlank()) {
@@ -76,12 +81,13 @@ public class RepositoryContextBuilder {
                 builder.append(treeSummary);
             }
         } catch (Exception ex) {
-            log.warn("Falha ao obter árvore do repositório {}: {}", coordinates, ex.getMessage());
+            log.info("Falha ao obter árvore do repositório {}: {}", coordinates, ex.getMessage());
         }
     }
 
     private void appendReadmeExcerpt(StringBuilder builder, RepoCoordinates coordinates, String branch) {
         try {
+            log.info("Buscando README do repositório {}/{} na branch {}", coordinates.owner(), coordinates.repo(), branch);
             JsonNode readme = githubApiClient.getContent(coordinates.owner(), coordinates.repo(), "README.md", branch);
             String encoded = readme.path("content").asText(null);
             if (encoded == null || encoded.isBlank()) {
@@ -95,7 +101,7 @@ public class RepositoryContextBuilder {
             String excerpt = trimmed.length() > 600 ? trimmed.substring(0, 600) + "..." : trimmed;
             builder.append("\n\nTrecho do README:\n").append(excerpt);
         } catch (Exception ex) {
-            log.info("README não disponível para {}/{}: {}", coordinates.owner(), coordinates.repo(), ex.getMessage());
+            log.info("Falha ao obter README para {}/{}: {}", coordinates.owner(), coordinates.repo(), ex.getMessage());
         }
     }
 

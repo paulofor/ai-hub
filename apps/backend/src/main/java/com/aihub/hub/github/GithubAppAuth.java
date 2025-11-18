@@ -213,7 +213,7 @@ public class GithubAppAuth {
     private String requirePrivateKeyPem() {
         String pem = getPrivateKeyPem();
         if (pem == null || pem.trim().isEmpty()) {
-            log.error("GitHub App private key is empty. Configure hub.github.private-key, GITHUB_PRIVATE_KEY_PEM, hub.github.private-key-file or GITHUB_PRIVATE_KEY_FILE.");
+            log.info("GitHub App private key is empty. Configure hub.github.private-key, GITHUB_PRIVATE_KEY_PEM, hub.github.private-key-file or GITHUB_PRIVATE_KEY_FILE.");
             throw new IllegalStateException("GitHub App private key is empty");
         }
         return pem;
@@ -236,11 +236,17 @@ public class GithubAppAuth {
 
     private String readPrivateKeyFromFile() {
         if (privateKeyPath == null || privateKeyPath.trim().isEmpty()) {
+            log.info("GitHub App private key file path is not configured.");
             return "";
         }
         try {
-            return Files.readString(Path.of(privateKeyPath.trim()), StandardCharsets.UTF_8);
+            Path path = Path.of(privateKeyPath.trim());
+            log.info("Attempting to read GitHub App private key file at {}", path);
+            String key = Files.readString(path, StandardCharsets.UTF_8);
+            log.info("Successfully read GitHub App private key file at {}", path);
+            return key;
         } catch (IOException e) {
+            log.info("Failed to read GitHub App private key file at {}: {}", privateKeyPath, e.getMessage());
             throw new IllegalStateException("Failed to read GitHub App private key file at " + privateKeyPath, e);
         }
     }
