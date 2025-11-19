@@ -123,19 +123,9 @@ public class RepositoryContextBuilder {
             return;
         }
 
-        builder.append("\n\nConteúdo dos arquivos AGENTS.md:\n");
+        builder.append("\n\nArquivos AGENTS.md encontrados (conteúdo ocultado):\n");
         for (String agentPath : agentFiles) {
-            try {
-                JsonNode contentNode = githubApiClient.getContent(coordinates.owner(), coordinates.repo(), agentPath, branch);
-                String encoded = contentNode.path("content").asText(null);
-                if (encoded == null || encoded.isBlank()) {
-                    continue;
-                }
-                String content = new String(Base64.getDecoder().decode(encoded.replaceAll("\\n", "")), StandardCharsets.UTF_8);
-                builder.append("\n--- ").append(agentPath).append(" ---\n").append(content.strip());
-            } catch (Exception ex) {
-                log.info("Falha ao obter AGENTS.md em {}: {}", agentPath, ex.getMessage());
-            }
+            builder.append("- ").append(agentPath).append("\n");
         }
     }
 
