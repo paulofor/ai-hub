@@ -141,6 +141,7 @@ public class RepositoryContextBuilder {
         List<String> availablePaths = treePaths != null ? treePaths : List.of();
         List<String> normalized = requestedFiles.stream()
             .filter(path -> path != null && !path.isBlank())
+            .filter(this::isRepositoryPath)
             .distinct()
             .collect(Collectors.toList());
 
@@ -163,6 +164,16 @@ public class RepositoryContextBuilder {
 
             builder.append("\n--- ").append(path).append(" ---\n").append(content);
         }
+    }
+
+    private boolean isRepositoryPath(String path) {
+        String trimmed = path != null ? path.trim() : null;
+        if (trimmed == null || trimmed.isBlank()) {
+            return false;
+        }
+
+        String lower = trimmed.toLowerCase();
+        return !(lower.startsWith("http://") || lower.startsWith("https://") || trimmed.startsWith("//"));
     }
 
     private String fetchFileContent(RepoCoordinates coordinates, String branch, String path) {
