@@ -29,17 +29,20 @@ public class CodexService {
     private final PullRequestService pullRequestService;
     private final SandboxProvisioningService sandboxProvisioningService;
     private final RepositoryContextBuilder repositoryContextBuilder;
+    private final FileReferenceExtractor fileReferenceExtractor;
 
     public CodexService(CodexClient codexClient,
                         CodexRequestRepository codexRequestRepository,
                         PullRequestService pullRequestService,
                         SandboxProvisioningService sandboxProvisioningService,
-                        RepositoryContextBuilder repositoryContextBuilder) {
+                        RepositoryContextBuilder repositoryContextBuilder,
+                        FileReferenceExtractor fileReferenceExtractor) {
         this.codexClient = codexClient;
         this.codexRequestRepository = codexRequestRepository;
         this.pullRequestService = pullRequestService;
         this.sandboxProvisioningService = sandboxProvisioningService;
         this.repositoryContextBuilder = repositoryContextBuilder;
+        this.fileReferenceExtractor = fileReferenceExtractor;
     }
 
     @Transactional(readOnly = true)
@@ -57,14 +60,47 @@ public class CodexService {
             log.info("Sandbox '{}' provisionado a partir do ambiente '{}'.", sandboxSlug, requestedEnvironment);
         }
 
-        String repositoryContext = repositoryContextBuilder.build(requestedEnvironment);
+        List<String> referencedFiles = fileReferenceExtractor.extract(request.prompt());
+        String repositoryContext = repositoryContextBuilder.build(requestedEnvironment, referencedFiles);
         CodexTaskResponse response = codexClient.submitTask(request.prompt(), requestedEnvironment, repositoryContext);
+        CodexTaskResponse finalResponse = maybeRetryWithAdditionalFiles(request, requestedEnvironment, referencedFiles, response);
         CodexRequestRecord record = new CodexRequestRecord(requestedEnvironment, codexClient.getModel(), request.prompt());
-        String finalResponseText = mergeResponseWithActions(requestedEnvironment, response);
+        String finalResponseText = mergeResponseWithActions(requestedEnvironment, finalResponse);
         record.setResponseText(finalResponseText);
-        record.setExternalId(response.id());
+        record.setExternalId(finalResponse.id());
         CodexRequestRecord saved = codexRequestRepository.save(record);
         return CodexRequestView.from(saved);
+    }
+
+    private CodexTaskResponse maybeRetryWithAdditionalFiles(CodexSubmissionRequest request,
+                                                           String environment,
+                                                           List<String> initialFiles,
+                                                           CodexTaskResponse response) {
+        if (response == null || response.toolCalls() != null && !response.toolCalls().isEmpty()) {
+            return response;
+        }
+
+        List<String> additionalFiles = fileReferenceExtractor.extract(response != null ? response.content() : null);
+        if (additionalFiles.isEmpty()) {
+            return response;
+        }
+
+        List<String> merged = new ArrayList<>(initialFiles != null ? initialFiles : List.of());
+        boolean hasNewFile = false;
+        for (String file : additionalFiles) {
+            if (!merged.contains(file)) {
+                merged.add(file);
+                hasNewFile = true;
+            }
+        }
+
+        if (!hasNewFile) {
+            return response;
+        }
+
+        log.info("Resposta do Codex solicitou acesso a {} arquivo(s) adicional(is). Reenviando pedido com o conteúdo solicitado.", additionalFiles.size());
+        String updatedContext = repositoryContextBuilder.build(environment, merged);
+        return codexClient.submitTask(request.prompt(), environment, updatedContext);
     }
 
     private String mergeResponseWithActions(String environment, CodexTaskResponse response) {
