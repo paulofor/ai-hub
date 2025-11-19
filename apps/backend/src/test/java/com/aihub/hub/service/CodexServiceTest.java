@@ -27,15 +27,17 @@ class CodexServiceTest {
         PullRequestService pullRequestService = mock(PullRequestService.class);
         SandboxProvisioningService sandboxProvisioningService = mock(SandboxProvisioningService.class);
         RepositoryContextBuilder repositoryContextBuilder = mock(RepositoryContextBuilder.class);
+        FileReferenceExtractor fileReferenceExtractor = mock(FileReferenceExtractor.class);
 
-        CodexService codexService = new CodexService(codexClient, requestRepository, pullRequestService, sandboxProvisioningService, repositoryContextBuilder);
+        CodexService codexService = new CodexService(codexClient, requestRepository, pullRequestService, sandboxProvisioningService, repositoryContextBuilder, fileReferenceExtractor);
 
         CodexSubmissionRequest submissionRequest = new CodexSubmissionRequest("ajuste", "owner/repo");
         String provisionedSlug = "sandbox/owner/repo";
         CodexTaskResponse codexResponse = new CodexTaskResponse("123", "model", "conteudo", List.of());
 
         when(sandboxProvisioningService.ensureSandbox("owner/repo")).thenReturn(provisionedSlug);
-        when(repositoryContextBuilder.build("owner/repo")).thenReturn("ctx");
+        when(fileReferenceExtractor.extract("ajuste")).thenReturn(List.of("backend/file.java"));
+        when(repositoryContextBuilder.build("owner/repo", List.of("backend/file.java"))).thenReturn("ctx");
         when(codexClient.submitTask("ajuste", "owner/repo", "ctx")).thenReturn(codexResponse);
         when(codexClient.getModel()).thenReturn("model");
         when(requestRepository.save(any(CodexRequestRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));

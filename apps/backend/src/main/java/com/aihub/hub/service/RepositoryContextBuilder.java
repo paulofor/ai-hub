@@ -24,6 +24,10 @@ public class RepositoryContextBuilder {
     }
 
     public String build(String environment) {
+        return build(environment, List.of());
+    }
+
+    public String build(String environment, List<String> requestedFiles) {
         RepoCoordinates coordinates = RepoCoordinates.from(environment);
         if (coordinates == null) {
             return null;
@@ -49,6 +53,8 @@ public class RepositoryContextBuilder {
             appendReadmeContent(builder, coordinates, defaultBranch);
             stage = "AGENTS";
             appendAgentsContent(builder, coordinates, defaultBranch, treePaths);
+            stage = "arquivos solicitados";
+            appendRequestedFiles(builder, coordinates, defaultBranch, treePaths, requestedFiles);
 
             return builder.toString();
         } catch (Exception ex) {
@@ -130,6 +136,59 @@ public class RepositoryContextBuilder {
             } catch (Exception ex) {
                 log.info("Falha ao obter AGENTS.md em {}: {}", agentPath, ex.getMessage());
             }
+        }
+    }
+
+    private void appendRequestedFiles(StringBuilder builder,
+                                      RepoCoordinates coordinates,
+                                      String branch,
+                                      List<String> treePaths,
+                                      List<String> requestedFiles) {
+        if (requestedFiles == null || requestedFiles.isEmpty()) {
+            return;
+        }
+
+        List<String> availablePaths = treePaths != null ? treePaths : List.of();
+        List<String> normalized = requestedFiles.stream()
+            .filter(path -> path != null && !path.isBlank())
+            .distinct()
+            .collect(Collectors.toList());
+
+        if (normalized.isEmpty()) {
+            return;
+        }
+
+        builder.append("\n\nConteúdo de arquivos solicitados:\n");
+        for (String path : normalized) {
+            if (!availablePaths.isEmpty() && availablePaths.stream().noneMatch(path::equals)) {
+                builder.append("\n--- ").append(path).append(" ---\nArquivo não encontrado na árvore do repositório.");
+                continue;
+            }
+
+            String content = fetchFileContent(coordinates, branch, path);
+            if (content == null || content.isBlank()) {
+                builder.append("\n--- ").append(path).append(" ---\nFalha ao carregar conteúdo.");
+                continue;
+            }
+            builder.append("\n--- ").append(path).append(" ---\n").append(content);
+        }
+    }
+
+    private String fetchFileContent(RepoCoordinates coordinates, String branch, String path) {
+        try {
+            JsonNode contentNode = githubApiClient.getContent(coordinates.owner(), coordinates.repo(), path, branch);
+            String encoded = contentNode.path("content").asText(null);
+            if (encoded == null || encoded.isBlank()) {
+                return null;
+            }
+            String decoded = new String(Base64.getDecoder().decode(encoded.replaceAll("\\n", "")), StandardCharsets.UTF_8).strip();
+            if (decoded.length() > 6000) {
+                return decoded.substring(0, 6000) + "\n... (conteúdo truncado)";
+            }
+            return decoded;
+        } catch (Exception ex) {
+            log.info("Falha ao obter conteúdo de {}: {}", path, ex.getMessage());
+            return null;
         }
     }
 
