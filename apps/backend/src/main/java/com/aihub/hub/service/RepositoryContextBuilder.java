@@ -160,16 +160,17 @@ public class RepositoryContextBuilder {
 
         builder.append("\n\nConteúdo de arquivos solicitados:\n");
         for (String path : normalized) {
-            if (!availablePaths.isEmpty() && availablePaths.stream().noneMatch(path::equals)) {
-                builder.append("\n--- ").append(path).append(" ---\nArquivo não encontrado na árvore do repositório.");
+            String content = fetchFileContent(coordinates, branch, path);
+
+            if (content == null || content.isBlank()) {
+                if (!availablePaths.isEmpty() && availablePaths.stream().noneMatch(path::equals)) {
+                    builder.append("\n--- ").append(path).append(" ---\nArquivo não encontrado na árvore do repositório.");
+                } else {
+                    builder.append("\n--- ").append(path).append(" ---\nFalha ao carregar conteúdo.");
+                }
                 continue;
             }
 
-            String content = fetchFileContent(coordinates, branch, path);
-            if (content == null || content.isBlank()) {
-                builder.append("\n--- ").append(path).append(" ---\nFalha ao carregar conteúdo.");
-                continue;
-            }
             builder.append("\n--- ").append(path).append(" ---\n").append(content);
         }
     }
