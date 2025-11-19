@@ -79,8 +79,7 @@ public class RepositoryContextBuilder {
                 .collect(Collectors.toList());
 
             if (!paths.isEmpty()) {
-                builder.append("\nArquivos (" + paths.size() + "):\n");
-                builder.append(String.join("\n", paths));
+                builder.append("\nArquivos: ").append(paths.size());
             }
         } catch (Exception ex) {
             log.info("Falha ao obter árvore do repositório {}: {}", coordinates, ex.getMessage());
