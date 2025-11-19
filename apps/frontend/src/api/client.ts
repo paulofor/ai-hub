@@ -1,13 +1,15 @@
 import axios from 'axios';
 
+const DEFAULT_API_BASE = '/api/api';
+
 const normalizeApiBaseUrl = (value?: string) => {
   if (!value) {
-    return '/api';
+    return DEFAULT_API_BASE;
   }
 
   const trimmed = value.trim();
   if (!trimmed) {
-    return '/api';
+    return DEFAULT_API_BASE;
   }
 
   const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
@@ -16,21 +18,21 @@ const normalizeApiBaseUrl = (value?: string) => {
     try {
       const url = new URL(withoutTrailingSlash);
       if (url.pathname === '' || url.pathname === '/') {
-        url.pathname = '/api';
+        url.pathname = DEFAULT_API_BASE;
       }
       return url.toString().replace(/\/+$/, '');
     } catch {
-      return withoutTrailingSlash || '/api';
+      return withoutTrailingSlash || DEFAULT_API_BASE;
     }
   }
 
   if (withoutTrailingSlash === '' || withoutTrailingSlash === '/') {
-    return '/api';
+    return DEFAULT_API_BASE;
   }
 
   return withoutTrailingSlash.startsWith('/')
     ? withoutTrailingSlash
-    : `/api/${withoutTrailingSlash}`;
+    : `${DEFAULT_API_BASE}/${withoutTrailingSlash}`;
 };
 
 const client = axios.create({

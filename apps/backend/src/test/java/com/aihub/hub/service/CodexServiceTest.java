@@ -27,8 +27,9 @@ class CodexServiceTest {
         PullRequestService pullRequestService = mock(PullRequestService.class);
         SandboxProvisioningService sandboxProvisioningService = mock(SandboxProvisioningService.class);
         RepositoryContextBuilder repositoryContextBuilder = mock(RepositoryContextBuilder.class);
+        RepositoryFileService repositoryFileService = mock(RepositoryFileService.class);
 
-        CodexService codexService = new CodexService(codexClient, requestRepository, pullRequestService, sandboxProvisioningService, repositoryContextBuilder);
+        CodexService codexService = new CodexService(codexClient, requestRepository, pullRequestService, sandboxProvisioningService, repositoryContextBuilder, repositoryFileService);
 
         CodexSubmissionRequest submissionRequest = new CodexSubmissionRequest("ajuste", "owner/repo");
         String provisionedSlug = "sandbox/owner/repo";

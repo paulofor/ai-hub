@@ -6,6 +6,7 @@ import com.aihub.hub.dto.CodexRequestView;
 import com.aihub.hub.dto.CodexSubmissionRequest;
 import com.aihub.hub.dto.CodexTaskResponse;
 import com.aihub.hub.dto.CodexToolCall;
+import com.aihub.hub.dto.RepositoryFileView;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
@@ -29,17 +30,25 @@ public class CodexService {
     private final PullRequestService pullRequestService;
     private final SandboxProvisioningService sandboxProvisioningService;
     private final RepositoryContextBuilder repositoryContextBuilder;
+    private final RepositoryFileService repositoryFileService;
+
+    private static final int MAX_FILE_REQUEST_CYCLES = 3;
+    private static final int MAX_FILE_CONTENT_CHARS = 20000;
+    private static final int MAX_APPENDED_CONTEXT_CHARS = 60000;
+    private static final String FILE_TOOL_NAME = "request_repository_file";
 
     public CodexService(CodexClient codexClient,
                         CodexRequestRepository codexRequestRepository,
                         PullRequestService pullRequestService,
                         SandboxProvisioningService sandboxProvisioningService,
-                        RepositoryContextBuilder repositoryContextBuilder) {
+                        RepositoryContextBuilder repositoryContextBuilder,
+                        RepositoryFileService repositoryFileService) {
         this.codexClient = codexClient;
         this.codexRequestRepository = codexRequestRepository;
         this.pullRequestService = pullRequestService;
         this.sandboxProvisioningService = sandboxProvisioningService;
         this.repositoryContextBuilder = repositoryContextBuilder;
+        this.repositoryFileService = repositoryFileService;
     }
 
     @Transactional(readOnly = true)
@@ -58,18 +67,168 @@ public class CodexService {
         }
 
         String repositoryContext = repositoryContextBuilder.build(requestedEnvironment);
+        List<String> automationSummaries = new ArrayList<>();
         CodexTaskResponse response = codexClient.submitTask(request.prompt(), requestedEnvironment, repositoryContext);
+        CodexTaskResponse finalResponse = resolveFileRequests(
+            requestedEnvironment,
+            request.prompt(),
+            repositoryContext,
+            response,
+            automationSummaries
+        );
         CodexRequestRecord record = new CodexRequestRecord(requestedEnvironment, codexClient.getModel(), request.prompt());
-        String finalResponseText = mergeResponseWithActions(requestedEnvironment, response);
+        String finalResponseText = mergeResponseWithActions(requestedEnvironment, finalResponse, automationSummaries);
         record.setResponseText(finalResponseText);
-        record.setExternalId(response.id());
+        record.setExternalId(finalResponse != null ? finalResponse.id() : null);
         CodexRequestRecord saved = codexRequestRepository.save(record);
         return CodexRequestView.from(saved);
     }
 
-    private String mergeResponseWithActions(String environment, CodexTaskResponse response) {
-        List<String> actionSummaries = executeToolCalls(environment, response.toolCalls());
-        String baseContent = response.content();
+    private CodexTaskResponse resolveFileRequests(String environment,
+                                                  String basePrompt,
+                                                  String repositoryContext,
+                                                  CodexTaskResponse initialResponse,
+                                                  List<String> automationSummaries) {
+        if (initialResponse == null) {
+            return null;
+        }
+
+        CodexTaskResponse currentResponse = initialResponse;
+        String sanitizedPrompt = basePrompt == null ? "" : basePrompt;
+        StringBuilder appendedContext = new StringBuilder();
+
+        for (int attempt = 0; attempt < MAX_FILE_REQUEST_CYCLES; attempt++) {
+            List<RepositoryFileRequest> fileRequests = extractFileRequests(currentResponse.toolCalls());
+            if (fileRequests.isEmpty()) {
+                return currentResponse;
+            }
+
+            List<RepositoryFileView> fetchedFiles = fetchRequestedFiles(environment, fileRequests, automationSummaries);
+            if (fetchedFiles.isEmpty()) {
+                log.warn("Codex solicitou {} arquivo(s), mas nenhum pôde ser carregado automaticamente.", fileRequests.size());
+                return currentResponse;
+            }
+
+            int previousLength = appendedContext.length();
+            appendFilesToContext(appendedContext, fetchedFiles);
+            if (appendedContext.length() == previousLength) {
+                log.warn("Não foi possível anexar conteúdo dos arquivos solicitados ao prompt; mantendo resposta atual.");
+                return currentResponse;
+            }
+            String augmentedPrompt = buildAugmentedPrompt(sanitizedPrompt, appendedContext.toString());
+            log.info("Reenviando tarefa ao Codex com {} arquivo(s) adicionados automaticamente (tentativa {}).", fetchedFiles.size(), attempt + 2);
+            currentResponse = codexClient.submitTask(augmentedPrompt, environment, repositoryContext);
+        }
+
+        log.warn("Limite de iterações ({}) para carregamento automático de arquivos atingido.", MAX_FILE_REQUEST_CYCLES);
+        return currentResponse;
+    }
+
+    private List<RepositoryFileRequest> extractFileRequests(List<CodexToolCall> toolCalls) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return List.of();
+        }
+
+        List<RepositoryFileRequest> requests = new ArrayList<>();
+        for (CodexToolCall call : toolCalls) {
+            if (call == null || call.name() == null || !FILE_TOOL_NAME.equals(call.name())) {
+                continue;
+            }
+
+            String path = readStringArgument(call.arguments(), "path", "file", "filepath");
+            if (path == null || path.isBlank()) {
+                log.warn("Tool call request_repository_file ignorado por caminho ausente.");
+                continue;
+            }
+            String ref = readStringArgument(call.arguments(), "ref", "branch", "sha");
+            requests.add(new RepositoryFileRequest(path.trim(), ref));
+        }
+        return requests;
+    }
+
+    private List<RepositoryFileView> fetchRequestedFiles(String environment,
+                                                         List<RepositoryFileRequest> requests,
+                                                         List<String> automationSummaries) {
+        List<RepositoryFileView> files = new ArrayList<>();
+        for (RepositoryFileRequest request : requests) {
+            try {
+                RepositoryFileView file = repositoryFileService.fetchFile(environment, request.path(), request.ref());
+                files.add(file);
+                automationSummaries.add(buildFileSuccessSummary(file));
+            } catch (Exception ex) {
+                log.warn("Falha ao buscar arquivo {} solicitado automaticamente pelo Codex", request.path(), ex);
+                automationSummaries.add("Falha ao carregar o arquivo " + request.path() + ": " + ex.getMessage());
+            }
+        }
+        return files;
+    }
+
+    private String buildFileSuccessSummary(RepositoryFileView file) {
+        StringBuilder builder = new StringBuilder("Arquivo ").append(file.path());
+        if (file.ref() != null && !file.ref().isBlank()) {
+            builder.append(" (@").append(file.ref()).append(")");
+        }
+        builder.append(" compartilhado automaticamente com o Codex.");
+        return builder.toString();
+    }
+
+    private void appendFilesToContext(StringBuilder builder, List<RepositoryFileView> files) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+        for (RepositoryFileView file : files) {
+            if (builder.length() >= MAX_APPENDED_CONTEXT_CHARS) {
+                log.warn("Limite de contexto adicional atingido; arquivos extras serão ignorados.");
+                return;
+            }
+            builder.append("Arquivo solicitado automaticamente: ").append(file.path());
+            if (file.ref() != null && !file.ref().isBlank()) {
+                builder.append(" (ref ").append(file.ref()).append(")");
+            }
+            builder.append("\n");
+            String content = file.content();
+            if (content == null || content.isBlank()) {
+                builder.append("[Conteúdo indisponível ou arquivo binário]");
+            } else {
+                builder.append("```\n");
+                builder.append(truncateContent(content));
+                builder.append("\n```");
+            }
+            builder.append("\n\n");
+            if (builder.length() >= MAX_APPENDED_CONTEXT_CHARS) {
+                log.warn("Limite de contexto adicional atingido após anexar arquivo; os demais serão ignorados.");
+                return;
+            }
+        }
+    }
+
+    private String truncateContent(String content) {
+        if (content == null) {
+            return "";
+        }
+        if (content.length() <= MAX_FILE_CONTENT_CHARS) {
+            return content;
+        }
+        return content.substring(0, MAX_FILE_CONTENT_CHARS) + "\n...\n[conteúdo truncado automaticamente]";
+    }
+
+    private String buildAugmentedPrompt(String basePrompt, String appendix) {
+        if (appendix == null || appendix.isBlank()) {
+            return basePrompt;
+        }
+        String normalizedBase = basePrompt == null ? "" : basePrompt.stripTrailing();
+        return normalizedBase + "\n\n" + appendix.stripLeading();
+    }
+
+    private String mergeResponseWithActions(String environment,
+                                            CodexTaskResponse response,
+                                            List<String> automationSummaries) {
+        List<String> actionSummaries = new ArrayList<>();
+        if (automationSummaries != null && !automationSummaries.isEmpty()) {
+            actionSummaries.addAll(automationSummaries);
+        }
+        actionSummaries.addAll(executeToolCalls(environment, response == null ? null : response.toolCalls()));
+        String baseContent = response == null ? null : response.content();
         if (actionSummaries.isEmpty()) {
             return baseContent;
         }
@@ -110,6 +269,9 @@ public class CodexService {
                 case "make_pr":
                     summaries.add(handleCreateMergeRequest(environment, call.arguments()));
                     break;
+                case FILE_TOOL_NAME:
+                    log.info("Tool call request_repository_file ignorado após automação.");
+                    break;
                 default:
                     log.warn("Tool call do Codex não suportado: {}", toolName);
             }
@@ -119,7 +281,7 @@ public class CodexService {
     }
 
     private String handleCreateMergeRequest(String environment, JsonNode arguments) {
-        RepoCoordinates coordinates = parseEnvironment(environment);
+        RepoCoordinates coordinates = RepoCoordinates.from(environment);
         if (coordinates == null) {
             log.warn("Não foi possível determinar owner/repo a partir do ambiente: {}", environment);
             return "Falha ao abrir merge request: ambiente inválido.";
@@ -170,18 +332,6 @@ public class CodexService {
         }
     }
 
-    private RepoCoordinates parseEnvironment(String environment) {
-        if (environment == null || environment.isBlank()) {
-            return null;
-        }
-        String trimmed = environment.trim();
-        String[] parts = trimmed.split("/");
-        if (parts.length < 2) {
-            return null;
-        }
-        return new RepoCoordinates(parts[0], parts[1]);
-    }
-
     private String readStringArgument(JsonNode node, String... fieldNames) {
         if (node == null || fieldNames == null) {
             return null;
@@ -201,6 +351,6 @@ public class CodexService {
         return null;
     }
 
-    private record RepoCoordinates(String owner, String repo) {
+    private record RepositoryFileRequest(String path, String ref) {
     }
 }

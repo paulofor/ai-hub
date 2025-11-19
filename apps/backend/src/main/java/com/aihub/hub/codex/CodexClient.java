@@ -50,7 +50,7 @@ public class CodexClient {
         List<Map<String, String>> baseMessages = List.of(
             Map.of(
                 "role", "system",
-                "content", "Você é o assistente Codex. Use o contexto do ambiente informado para responder com um plano de ação objetivo. Antes de propor qualquer mudança, procure e leia arquivos AGENTS.md e README.md no repositório e siga todas as instruções encontradas. Quando precisar aplicar uma correção de código, gere um diff unificado e chame a ferramenta create_merge_request para abrir um merge request no GitHub do ambiente informado (formato owner/repo)."
+                "content", "Você é o assistente Codex. Use o contexto do ambiente informado para responder com um plano de ação objetivo. Antes de propor qualquer mudança, procure e leia arquivos AGENTS.md e README.md no repositório e siga todas as instruções encontradas. Quando precisar ler o conteúdo de um arquivo, chame a ferramenta request_repository_file informando o caminho relativo e, se necessário, a branch ou commit. Quando precisar aplicar uma correção de código, gere um diff unificado e chame a ferramenta create_merge_request para abrir um merge request no GitHub do ambiente informado (formato owner/repo)."
             ),
             Map.of(
                 "role", "user",
@@ -333,7 +333,7 @@ public class CodexClient {
     }
 
     private List<Map<String, Object>> buildToolsDefinition() {
-        Map<String, Object> properties = Map.of(
+        Map<String, Object> mergeRequestProperties = Map.of(
             "base_branch", Map.of(
                 "type", "string",
                 "description", "Branch base para abrir o merge request"
@@ -348,18 +348,40 @@ public class CodexClient {
             )
         );
 
-        Map<String, Object> parameters = new HashMap<>();
-        parameters.put("type", "object");
-        parameters.put("properties", properties);
-        parameters.put("required", List.of("base_branch", "title", "diff"));
+        Map<String, Object> mergeRequestParameters = new HashMap<>();
+        mergeRequestParameters.put("type", "object");
+        mergeRequestParameters.put("properties", mergeRequestProperties);
+        mergeRequestParameters.put("required", List.of("base_branch", "title", "diff"));
 
-        Map<String, Object> tool = new HashMap<>();
-        tool.put("type", "function");
-        tool.put("name", "create_merge_request");
-        tool.put("description", "Abre um merge request no GitHub aplicando o diff informado no repositório do ambiente.");
-        tool.put("parameters", parameters);
+        Map<String, Object> mergeRequestTool = new HashMap<>();
+        mergeRequestTool.put("type", "function");
+        mergeRequestTool.put("name", "create_merge_request");
+        mergeRequestTool.put("description", "Abre um merge request no GitHub aplicando o diff informado no repositório do ambiente.");
+        mergeRequestTool.put("parameters", mergeRequestParameters);
 
-        return List.of(tool);
+        Map<String, Object> fileRequestProperties = new HashMap<>();
+        fileRequestProperties.put("path", Map.of(
+            "type", "string",
+            "description", "Caminho relativo para o arquivo dentro do repositório",
+            "minLength", 1
+        ));
+        fileRequestProperties.put("ref", Map.of(
+            "type", "string",
+            "description", "Branch, tag ou SHA a ser usada (opcional)"
+        ));
+
+        Map<String, Object> fileRequestParameters = new HashMap<>();
+        fileRequestParameters.put("type", "object");
+        fileRequestParameters.put("properties", fileRequestProperties);
+        fileRequestParameters.put("required", List.of("path"));
+
+        Map<String, Object> fileRequestTool = new HashMap<>();
+        fileRequestTool.put("type", "function");
+        fileRequestTool.put("name", "request_repository_file");
+        fileRequestTool.put("description", "Obtém o conteúdo atual de um arquivo do repositório do ambiente informado.");
+        fileRequestTool.put("parameters", fileRequestParameters);
+
+        return List.of(mergeRequestTool, fileRequestTool);
     }
 
     private String firstNonBlank(String... values) {
