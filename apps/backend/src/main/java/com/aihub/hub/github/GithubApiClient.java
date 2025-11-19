@@ -3,12 +3,15 @@ package com.aihub.hub.github;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriBuilder;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Arrays;
 
 @Component
 public class GithubApiClient {
@@ -70,7 +73,7 @@ public class GithubApiClient {
             body.put("sha", sha);
         }
         return restClient.put()
-            .uri("/repos/{owner}/{repo}/contents/{path}", owner, repo, path)
+            .uri(uriBuilder -> buildContentsUri(uriBuilder, owner, repo, path, null))
             .headers(headers -> headers.setAll(authHeaders()))
             .body(body)
             .retrieve()
@@ -79,7 +82,7 @@ public class GithubApiClient {
 
     public JsonNode getContent(String owner, String repo, String path, String ref) {
         return restClient.get()
-            .uri(uriBuilder -> uriBuilder.path("/repos/{owner}/{repo}/contents/{path}").queryParam("ref", ref).build(owner, repo, path))
+            .uri(uriBuilder -> buildContentsUri(uriBuilder, owner, repo, path, ref))
             .headers(headers -> headers.setAll(authHeaders()))
             .retrieve()
             .body(JsonNode.class);
@@ -244,5 +247,26 @@ public class GithubApiClient {
             .body(body)
             .retrieve()
             .toBodilessEntity();
+    }
+
+    private URI buildContentsUri(UriBuilder uriBuilder, String owner, String repo, String path, String ref) {
+        UriBuilder builder = uriBuilder.path("/repos/{owner}/{repo}/contents");
+        String[] segments = splitPathSegments(path);
+        if (segments.length > 0) {
+            builder = builder.pathSegment(segments);
+        }
+        if (ref != null && !ref.isBlank()) {
+            builder = builder.queryParam("ref", ref);
+        }
+        return builder.build(owner, repo);
+    }
+
+    private String[] splitPathSegments(String path) {
+        if (path == null || path.isBlank()) {
+            return new String[0];
+        }
+        return Arrays.stream(path.split("/"))
+            .filter(segment -> segment != null && !segment.isBlank())
+            .toArray(String[]::new);
     }
 }
