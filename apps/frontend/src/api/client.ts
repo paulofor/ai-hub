@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const DEFAULT_API_BASE = '/api/api';
+const DEFAULT_API_BASE = '/api';
 
 const normalizeApiBaseUrl = (value?: string) => {
   if (!value) {
