@@ -1,6 +1,6 @@
 # Sandbox Orchestrator
 
-Serviço responsável por receber solicitações do backend do AI Hub e retornar o slug de uma sandbox associada ao repositório original. A versão inicial mantém o slug em memória e aplica prefixo/sufixo configuráveis para diferenciar ambientes temporários.
+Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox temporário (clone do repositório) e orquestrar o loop de tool-calling com o modelo `gpt-5-codex` via Responses API.
 
 ## Scripts disponíveis
 
@@ -10,9 +10,8 @@ Serviço responsável por receber solicitações do backend do AI Hub e retornar
 
 ### Endpoints
 
-- `POST /api/v1/sandboxes/ensure`: garante que um slug base possua o sufixo/prefixo configurado e retorna a versão armazenada em cache junto com credenciais de acesso ao sandbox.
-- `POST /api/v1/sandboxes/ensure-branch`: semelhante ao endpoint anterior, mas gera um slug único por branch (`{prefix}{slug}-{branch}{suffix}`), preservando o valor em cache para chamadas subsequentes com a mesma combinação de slug e branch e retornando os endpoints/credenciais provisionados.
-- `POST /api/v1/jobs`: registra uma nova execução solicitada pelo backend (`jobId`, `repoUrl`, `branch` e `task` são obrigatórios), provisiona ou reutiliza uma conexão de sandbox e devolve um payload contendo status e metadados da execução. Chamadas com o mesmo `jobId` são idempotentes e retornam o job já armazenado.
+- `POST /jobs`: cria um job informando `jobId`, `repoUrl`, `branch`, `task` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório num diretório temporário, expõe as tools `run_shell`, `read_file` e `write_file` ao modelo e inicia o loop de tool-calling.
+- `GET /jobs/{id}`: retorna o status atualizado do job, incluindo resumo, arquivos alterados e patch gerado quando disponíveis.
 
 ### Formato de resposta
 
@@ -29,7 +28,7 @@ Os handlers respondem com o payload mínimo que o `SandboxProvisioningService` e
 }
 ```
 
-O `expiresAt` é um timestamp em epoch milliseconds calculado a partir do `SANDBOX_TTL_SECONDS`. Campos como `cpuLimit`, `memoryLimit` e `image` são utilizados internamente pelo provedor para criar a sandbox, mas não precisam ser consumidos diretamente pelo serviço chamador.
+Jobs ficam armazenados em memória e carregam metadados como diretório temporário, status, arquivos alterados e patch (`git diff`) final.
 
 ## Variáveis de ambiente
 

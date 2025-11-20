@@ -3,6 +3,7 @@ package com.aihub.hub.web;
 import com.aihub.hub.domain.Project;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.domain.RunRecord;
+import com.aihub.hub.dto.CiFixJobView;
 import com.aihub.hub.dto.AnalyzeLogsRequest;
 import com.aihub.hub.dto.CommentRequest;
 import com.aihub.hub.dto.CreateFixPrRequest;
@@ -99,15 +100,15 @@ public class ProjectController {
     }
 
     @PostMapping("/{owner}/{repo}/runs/{runId}/logs/analyze")
-    public ResponseEntity<ResponseRecord> analyze(@RequestHeader(value = "X-Role", defaultValue = "viewer") String role,
-                                                  @RequestHeader(value = "X-User", defaultValue = "unknown") String actor,
-                                                  @PathVariable String owner,
-                                                  @PathVariable String repo,
-                                                  @PathVariable long runId,
-                                                  @Valid @RequestBody AnalyzeLogsRequest request) {
+    public ResponseEntity<CiFixJobView> analyze(@RequestHeader(value = "X-Role", defaultValue = "viewer") String role,
+                                                @RequestHeader(value = "X-User", defaultValue = "unknown") String actor,
+                                                @PathVariable String owner,
+                                                @PathVariable String repo,
+                                                @PathVariable long runId,
+                                                @Valid @RequestBody AnalyzeLogsRequest request) {
         assertOwner(role);
-        ResponseRecord response = ciAnalysisService.analyze(actor, owner, repo, runId, request.getPrNumber());
-        return ResponseEntity.ok(response);
+        CiFixJobView job = ciAnalysisService.analyze(actor, owner, repo, runId, request.getPrNumber());
+        return ResponseEntity.ok(job);
     }
 
     @PostMapping("/{owner}/{repo}/pr/{number}/comment")

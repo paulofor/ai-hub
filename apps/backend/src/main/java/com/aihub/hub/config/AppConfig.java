@@ -25,14 +25,6 @@ public class AppConfig {
     }
 
     @Bean
-    public RestClient openAiRestClient(@Value("${hub.openai.api-url:https://api.openai.com}") String apiUrl) {
-        return RestClient.builder()
-            .requestFactory(new JdkClientHttpRequestFactory())
-            .baseUrl(apiUrl)
-            .build();
-    }
-
-    @Bean
     public RestClient codexRestClient(@Value("${hub.codex.api-url:https://api.openai.com}") String apiUrl) {
         return RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())

@@ -101,4 +101,20 @@ public class SandboxProvisioningService {
             return null;
         }
     }
+
+    public JsonNode fetchJob(String jobId) {
+        if (jobId == null || jobId.isBlank()) {
+            throw new IllegalArgumentException("JobId must not be blank");
+        }
+        try {
+            log.info("Consultando status do job {} no sandbox orchestrator.", jobId);
+            return restClient.get()
+                .uri(jobSubmissionPath + "/" + jobId)
+                .retrieve()
+                .body(JsonNode.class);
+        } catch (Exception ex) {
+            log.error("Falha ao consultar job {} no sandbox orchestrator", jobId, ex);
+            return null;
+        }
+    }
 }
