@@ -76,7 +76,7 @@ public class UnifiedDiffApplier {
         List<String> result = new ArrayList<>();
         int originalIndex = 0;
         for (Hunk hunk : diff.hunks) {
-            int target = Math.max(hunk.originalStart - 1, 0);
+            int target = computeHunkStart(originalLines, hunk, originalIndex);
             while (originalIndex < target && originalIndex < originalLines.size()) {
                 result.add(originalLines.get(originalIndex++));
             }
@@ -109,6 +109,67 @@ public class UnifiedDiffApplier {
             result.add(originalLines.get(originalIndex++));
         }
         return String.join("\n", result).replaceAll("\n$", "") + "\n";
+    }
+
+    private int computeHunkStart(List<String> originalLines, Hunk hunk, int processedIndex) {
+        int expectedIndex = Math.max(hunk.originalStart - 1, 0);
+        List<String> contextLines = extractContextLines(hunk);
+        if (contextLines.isEmpty() || originalLines.isEmpty()) {
+            return Math.max(expectedIndex, processedIndex);
+        }
+
+        int matchIndex = findContextPosition(originalLines, contextLines, expectedIndex);
+        return Math.max(matchIndex, processedIndex);
+    }
+
+    private List<String> extractContextLines(Hunk hunk) {
+        List<String> context = new ArrayList<>();
+        for (String line : hunk.lines) {
+            if (line.isEmpty()) {
+                continue;
+            }
+            char symbol = line.charAt(0);
+            if (symbol == ' ' || symbol == '-') {
+                context.add(line.substring(1));
+            }
+        }
+        return context;
+    }
+
+    private int findContextPosition(List<String> originalLines, List<String> contextLines, int expectedIndex) {
+        int contextSize = contextLines.size();
+        if (contextSize == 0) {
+            return expectedIndex;
+        }
+
+        int lastPossibleStart = originalLines.size() - contextSize;
+        for (int start = 0; start <= lastPossibleStart; start++) {
+            boolean matches = true;
+            for (int i = 0; i < contextSize; i++) {
+                if (!originalLines.get(start + i).equals(contextLines.get(i))) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return start;
+            }
+        }
+
+        String anchor = contextLines.get(0);
+        int bestIndex = expectedIndex;
+        int smallestDistance = Integer.MAX_VALUE;
+        for (int i = 0; i < originalLines.size(); i++) {
+            if (originalLines.get(i).equals(anchor)) {
+                int distance = Math.abs(i - expectedIndex);
+                if (distance < smallestDistance) {
+                    smallestDistance = distance;
+                    bestIndex = i;
+                }
+            }
+        }
+
+        return bestIndex;
     }
 
     public static class AppliedDiff {
