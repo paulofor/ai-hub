@@ -1,21 +1,16 @@
 package com.aihub.hub.service;
 
-import com.aihub.hub.domain.PromptRecord;
-import com.aihub.hub.domain.ResponseRecord;
-import com.aihub.hub.dto.CiFix;
+import com.aihub.hub.domain.Project;
+import com.aihub.hub.dto.CiFixJobView;
+import com.aihub.hub.dto.CreateCiFixJobRequest;
 import com.aihub.hub.github.GithubApiClient;
-import com.aihub.hub.openai.OpenAIClient;
-import com.aihub.hub.repository.PromptRepository;
-import com.aihub.hub.repository.ResponseRepository;
+import com.aihub.hub.repository.ProjectRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -23,50 +18,34 @@ import java.util.zip.ZipInputStream;
 public class CiAnalysisService {
 
     private final GithubApiClient githubApiClient;
-    private final OpenAIClient openAIClient;
-    private final PromptRepository promptRepository;
-    private final ResponseRepository responseRepository;
-    private final AuditService auditService;
+    private final ProjectRepository projectRepository;
+    private final CiFixJobService ciFixJobService;
     private final int maxChars;
 
     public CiAnalysisService(GithubApiClient githubApiClient,
-                              OpenAIClient openAIClient,
-                              PromptRepository promptRepository,
-                              ResponseRepository responseRepository,
-                              AuditService auditService,
+                              ProjectRepository projectRepository,
+                              CiFixJobService ciFixJobService,
                               @Value("${hub.logs.max-chars:20000}") int maxChars) {
         this.githubApiClient = githubApiClient;
-        this.openAIClient = openAIClient;
-        this.promptRepository = promptRepository;
-        this.responseRepository = responseRepository;
-        this.auditService = auditService;
+        this.projectRepository = projectRepository;
+        this.ciFixJobService = ciFixJobService;
         this.maxChars = maxChars;
     }
 
-    public ResponseRecord analyze(String actor, String owner, String repo, long runId, Integer prNumber) {
+    public CiFixJobView analyze(String actor, String owner, String repo, long runId, Integer prNumber) {
         byte[] zip = githubApiClient.downloadRunLogs(owner, repo, runId);
         String logs = sanitizeLogs(extractLogs(zip));
         if (logs.length() > maxChars) {
             logs = logs.substring(0, maxChars) + "\n...[truncado]";
         }
-        String promptText = buildPrompt(repo, runId, prNumber, logs);
-        PromptRecord prompt = promptRepository.save(new PromptRecord(owner + "/" + repo, runId, prNumber, openAIClient.getModel(), promptText));
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("repo", owner + "/" + repo);
-        metadata.put("run_id", runId);
-        if (prNumber != null) {
-            metadata.put("pr_number", prNumber);
-        }
-        CiFix fix = openAIClient.analyzeLogs(promptText, metadata);
-        ResponseRecord response = new ResponseRecord(prompt, owner + "/" + repo, runId, prNumber);
-        response.setRootCause(fix.getRootCause());
-        response.setFixPlan(fix.getFixPlan());
-        response.setUnifiedDiff(fix.getUnifiedDiff());
-        response.setConfidence(BigDecimal.valueOf(fix.getConfidence()));
-        response.setRawResponse(null);
-        responseRepository.save(response);
-        auditService.record(actor, "analyze_run", owner + "/" + repo, metadata);
-        return response;
+        Project project = projectRepository.findByRepo(owner + "/" + repo)
+            .orElseThrow(() -> new IllegalArgumentException("Projeto não encontrado"));
+
+        CreateCiFixJobRequest request = new CreateCiFixJobRequest();
+        request.setProjectId(project.getId());
+        request.setBranch("main");
+        request.setTaskDescription(buildPrompt(repo, runId, prNumber, logs));
+        return ciFixJobService.createJob(actor, request);
     }
 
     private String buildPrompt(String repo, long runId, Integer prNumber, String logs) {
