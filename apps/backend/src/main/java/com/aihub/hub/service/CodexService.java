@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.UUID;
 
 @Service
 public class CodexService {
@@ -58,6 +59,12 @@ public class CodexService {
         String sandboxSlug = sandboxProvisioningService.ensureSandbox(requestedEnvironment);
         if (!Objects.equals(sandboxSlug, requestedEnvironment)) {
             log.info("Sandbox '{}' provisionado a partir do ambiente '{}'.", sandboxSlug, requestedEnvironment);
+        }
+
+        String jobId = "codex-" + UUID.randomUUID();
+        SandboxJobRequest sandboxJobRequest = buildSandboxJobRequest(jobId, requestedEnvironment, request.prompt(), sandboxSlug);
+        if (sandboxJobRequest != null) {
+            sandboxProvisioningService.submitJob(sandboxJobRequest);
         }
 
         List<String> referencedFiles = fileReferenceExtractor.extract(request.prompt());
@@ -152,6 +159,20 @@ public class CodexService {
         }
 
         return summaries;
+    }
+
+    private SandboxJobRequest buildSandboxJobRequest(String jobId,
+                                                     String environment,
+                                                     String prompt,
+                                                     String sandboxSlug) {
+        RepoCoordinates coordinates = parseEnvironment(environment);
+        if (coordinates == null) {
+            log.warn("Não foi possível construir job do sandbox para o ambiente '{}'", environment);
+            return null;
+        }
+
+        String repoUrl = "https://github.com/" + coordinates.owner() + "/" + coordinates.repo() + ".git";
+        return new SandboxJobRequest(jobId, repoUrl, "main", prompt, sandboxSlug, null, null);
     }
 
     private String handleCreateMergeRequest(String environment, JsonNode arguments) {

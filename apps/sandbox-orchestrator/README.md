@@ -12,6 +12,7 @@ Serviço responsável por receber solicitações do backend do AI Hub e retornar
 
 - `POST /api/v1/sandboxes/ensure`: garante que um slug base possua o sufixo/prefixo configurado e retorna a versão armazenada em cache junto com credenciais de acesso ao sandbox.
 - `POST /api/v1/sandboxes/ensure-branch`: semelhante ao endpoint anterior, mas gera um slug único por branch (`{prefix}{slug}-{branch}{suffix}`), preservando o valor em cache para chamadas subsequentes com a mesma combinação de slug e branch e retornando os endpoints/credenciais provisionados.
+- `POST /api/v1/jobs`: registra uma nova execução solicitada pelo backend (`jobId`, `repoUrl`, `branch` e `task` são obrigatórios), provisiona ou reutiliza uma conexão de sandbox e devolve um payload contendo status e metadados da execução. Chamadas com o mesmo `jobId` são idempotentes e retornam o job já armazenado.
 
 ### Formato de resposta
 

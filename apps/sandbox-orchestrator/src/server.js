@@ -9,6 +9,7 @@ export function createApp(options = {}) {
     slugSuffix = process.env.SANDBOX_SLUG_SUFFIX ?? '-sandbox',
     cache = new Map(),
     sandboxProvider,
+    jobRegistry = new Map(),
   } = options;
 
   const provider =
@@ -56,6 +57,43 @@ export function createApp(options = {}) {
     const sandbox = provider.ensure({ slug: branchSlug, cacheKey });
 
     res.json(sandbox);
+  });
+
+  app.post('/api/v1/jobs', (req, res) => {
+    const jobId = typeof req.body?.jobId === 'string' ? req.body.jobId.trim() : '';
+    const repoUrl = typeof req.body?.repoUrl === 'string' ? req.body.repoUrl.trim() : '';
+    const branch = typeof req.body?.branch === 'string' ? req.body.branch.trim() : '';
+    const task = typeof req.body?.task === 'string' ? req.body.task.trim() : '';
+    const language = typeof req.body?.language === 'string' ? req.body.language.trim() : undefined;
+    const testCommand = typeof req.body?.testCommand === 'string' ? req.body.testCommand.trim() : undefined;
+    const slug = typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+
+    if (!jobId || !repoUrl || !branch || !task) {          
+      return res.status(400).json({ error: 'jobId, repoUrl, branch and task are required' });
+    }
+
+    const existing = jobRegistry.get(jobId);
+    if (existing) {
+      return res.json(existing);
+    }
+
+    const sandbox = provider.ensure({ slug: slug || repoUrl });
+    const now = new Date().toISOString();
+    const job = {
+      jobId,
+      repoUrl,
+      branch,
+      task,
+      language,
+      testCommand,
+      status: 'QUEUED',
+      createdAt: now,
+      sandbox,
+    };
+
+    jobRegistry.set(jobId, job);
+
+    res.status(201).json(job);
   });
 
   app.use((err, _req, res, _next) => {
