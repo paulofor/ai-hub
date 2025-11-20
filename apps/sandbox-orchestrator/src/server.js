@@ -1,12 +1,23 @@
 import express from 'express';
 import morgan from 'morgan';
 
+import { SandboxProvider } from './sandboxProvider.js';
+
 export function createApp(options = {}) {
   const {
     slugPrefix = process.env.SANDBOX_SLUG_PREFIX ?? '',
-    slugSuffix = process.env.SANDBOX_SLUG_SUFFIX ?? '',
+    slugSuffix = process.env.SANDBOX_SLUG_SUFFIX ?? '-sandbox',
     cache = new Map(),
+    sandboxProvider,
   } = options;
+
+  const provider =
+    sandboxProvider ??
+    new SandboxProvider({
+      slugPrefix,
+      slugSuffix,
+      cache,
+    });
 
   const app = express();
 
@@ -27,12 +38,9 @@ export function createApp(options = {}) {
       return res.status(400).json({ error: 'slug is required' });
     }
 
-    if (!cache.has(slug)) {
-      const ensuredSlug = `${slugPrefix}${slug}${slugSuffix}`;
-      cache.set(slug, ensuredSlug);
-    }
+    const sandbox = provider.ensure({ slug });
 
-    res.json({ slug: cache.get(slug) });
+    res.json(sandbox);
   });
 
   app.post('/api/v1/sandboxes/ensure-branch', (req, res) => {
@@ -44,13 +52,10 @@ export function createApp(options = {}) {
     }
 
     const cacheKey = `${slug}#${branch}`;
+    const branchSlug = `${slug}-${branch}`;
+    const sandbox = provider.ensure({ slug: branchSlug, cacheKey });
 
-    if (!cache.has(cacheKey)) {
-      const ensuredSlug = `${slugPrefix}${slug}-${branch}${slugSuffix}`;
-      cache.set(cacheKey, ensuredSlug);
-    }
-
-    res.json({ slug: cache.get(cacheKey) });
+    res.json(sandbox);
   });
 
   app.use((err, _req, res, _next) => {
