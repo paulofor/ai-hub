@@ -21,8 +21,8 @@ public class SandboxProvisioningService {
     private final String jobSubmissionPath;
 
     public SandboxProvisioningService(RestClient sandboxOrchestratorRestClient,
-                                      @Value("${hub.sandbox.orchestrator.ensure-path:/api/v1/sandboxes/ensure}") String ensureSandboxPath,
-                                      @Value("${hub.sandbox.orchestrator.jobs-path:/api/v1/jobs}") String jobSubmissionPath) {
+                                      @Value("${hub.sandbox.orchestrator.ensure-path:}") String ensureSandboxPath,
+                                      @Value("${hub.sandbox.orchestrator.jobs-path:/jobs}") String jobSubmissionPath) {
         this.restClient = sandboxOrchestratorRestClient;
         this.ensureSandboxPath = ensureSandboxPath;
         this.jobSubmissionPath = jobSubmissionPath;
@@ -31,6 +31,11 @@ public class SandboxProvisioningService {
     public String ensureSandbox(String environmentSlug) {
         if (environmentSlug == null || environmentSlug.isBlank()) {
             throw new IllegalArgumentException("Environment slug must not be blank");
+        }
+
+        if (ensureSandboxPath == null || ensureSandboxPath.isBlank()) {
+            log.info("Path de ensure do sandbox não configurado. Usando slug original '{}'.", environmentSlug);
+            return environmentSlug;
         }
 
         try {

@@ -34,7 +34,7 @@ public class AppConfig {
 
     @Bean
     public RestClient sandboxOrchestratorRestClient(
-        @Value("${hub.sandbox.orchestrator.api-url:http://www.sandboxcodex.shop}") String apiUrl
+        @Value("${hub.sandbox.orchestrator.api-url:http://sandbox-orchestrator:8080}") String apiUrl
     ) {
         return RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())
