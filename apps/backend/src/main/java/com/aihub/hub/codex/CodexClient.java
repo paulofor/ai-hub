@@ -13,6 +13,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,10 +34,11 @@ public class CodexClient {
     public CodexClient(RestClient codexRestClient,
                        ObjectMapper objectMapper,
                        @Value("${OPENAI_API_KEY:}") String apiKey,
+                       @Value("${OPENAI_API_KEY_FILE:}") String apiKeyFilePath,
                        @Value("${hub.codex.model:gpt-5-codex}") String model) {
         this.restClient = codexRestClient;
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
+        this.apiKey = resolveApiKey(apiKey, apiKeyFilePath);
         this.model = model;
     }
 
@@ -146,6 +150,39 @@ public class CodexClient {
         }
 
         return new CodexApiCallResponse(id, responseText, toolCalls);
+    }
+
+    private String resolveApiKey(String envApiKey, String apiKeyFilePath) {
+        if (envApiKey != null && !envApiKey.isBlank()) {
+            return envApiKey.trim();
+        }
+
+        List<String> candidatePaths = new ArrayList<>();
+        if (apiKeyFilePath != null && !apiKeyFilePath.isBlank()) {
+            candidatePaths.add(apiKeyFilePath);
+        }
+        candidatePaths.add("/run/secrets/openai-token/openai_api_key");
+        candidatePaths.add("infra/openai-token/openai_api_key");
+
+        for (String pathString : candidatePaths) {
+            Path path = Paths.get(pathString);
+            if (!Files.exists(path)) {
+                continue;
+            }
+            try {
+                String key = Files.readString(path).trim();
+                if (!key.isBlank()) {
+                    log.info("Carregando OPENAI_API_KEY do arquivo {}", pathString);
+                    return key;
+                }
+                log.warn("Arquivo de OPENAI_API_KEY encontrado em {} porém vazio", pathString);
+            } catch (IOException e) {
+                log.warn("Falha ao ler arquivo de OPENAI_API_KEY {}: {}", pathString, e.getMessage());
+            }
+        }
+
+        log.warn("OPENAI_API_KEY não configurado e nenhum arquivo com chave encontrado.");
+        return "";
     }
 
     private String combineContents(String primary, String retry) {
