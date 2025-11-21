@@ -162,6 +162,7 @@ public class CodexClient {
             candidatePaths.add(apiKeyFilePath);
         }
         candidatePaths.add("/run/secrets/openai-token/openai_api_key");
+        candidatePaths.add(Paths.get(System.getProperty("user.home"), "infra", "openai-token", "openai_api_key").toString());
         candidatePaths.add("infra/openai-token/openai_api_key");
 
         for (String pathString : candidatePaths) {
