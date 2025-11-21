@@ -32,6 +32,7 @@ infra/
 ### Armazenamento do token da OpenAI na VPS
 
 - Para guardar o token da OpenAI em um arquivo físico na VPS, crie (ou edite) o arquivo `infra/openai-token/openai_api_key` com o valor do token. Esse diretório é montado como volume somente leitura em `backend` e `sandbox-orchestrator` e, se o arquivo existir, o conteúdo é exportado como `OPENAI_API_KEY` antes de iniciar os serviços.
+- Caso prefira armazenar o arquivo fora do repositório (por exemplo, em `/root/infra/openai-token`), defina `OPENAI_TOKEN_HOST_DIR` no `.env` apontando para o diretório que contém o `openai_api_key` antes de executar `docker-compose up`.
 - Caso o arquivo não esteja presente, o comportamento permanece igual ao anterior: as variáveis de ambiente definidas em `.env` continuam sendo usadas.
 
 ## Testes
