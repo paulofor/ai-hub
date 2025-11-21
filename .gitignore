@@ -2,6 +2,7 @@
 apps/backend/target/
 apps/frontend/node_modules/
 apps/sandbox-orchestrator/node_modules/
+apps/sandbox-orchestrator/dist/
 apps/frontend/dist/
 apps/frontend/tsconfig.tsbuildinfo
 **/.DS_Store
