@@ -6,6 +6,8 @@ services:
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
         export OPENAI_API_KEY=$(cat /run/secrets/openai-token/openai_api_key);
+      else
+        echo 'OpenAI token file not found at /run/secrets/openai-token/openai_api_key. Check OPENAI_TOKEN_HOST_DIR mapping.';
       fi;
       exec java -jar /app/app.jar"
     env_file:
@@ -52,6 +54,8 @@ services:
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
         export OPENAI_API_KEY=$(cat /run/secrets/openai-token/openai_api_key);
+      else
+        echo 'OpenAI token file not found at /run/secrets/openai-token/openai_api_key. Check OPENAI_TOKEN_HOST_DIR mapping.';
       fi;
       exec node dist/src/index.js"
     networks:
