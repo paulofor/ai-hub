@@ -15,7 +15,7 @@ services:
       - sandbox-orchestrator
     volumes:
       - ./infra:/infra
-      - ./infra/openai-token:/run/secrets/openai-token:ro
+      - ${OPENAI_TOKEN_HOST_DIR:-./infra/openai-token}:/run/secrets/openai-token:ro
     ports:
       - "${BACKEND_HTTP_PORT:-8081}:8081"
     networks:
@@ -46,7 +46,7 @@ services:
       - apps/sandbox-orchestrator/.env.example
       - .env
     volumes:
-      - ./infra/openai-token:/run/secrets/openai-token:ro
+      - ${OPENAI_TOKEN_HOST_DIR:-./infra/openai-token}:/run/secrets/openai-token:ro
     ports:
       - "${SANDBOX_ORCHESTRATOR_HTTP_PORT:-8083}:8080"
     command: >
