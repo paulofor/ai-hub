@@ -29,6 +29,11 @@ infra/
 2. Garanta que você tenha um MySQL acessível (pode reutilizar o mesmo da produção ou apontar para outro ambiente) e então execute `docker-compose up --build` para subir backend, frontend e sandbox-orchestrator.
 3. A UI estará disponível em `http://localhost:8082`, a API em `http://localhost:8081` e o sandbox-orchestrator em `http://localhost:8083`.
 
+### Armazenamento do token da OpenAI na VPS
+
+- Para guardar o token da OpenAI em um arquivo físico na VPS, crie (ou edite) o arquivo `infra/openai-token/openai_api_key` com o valor do token. Esse diretório é montado como volume somente leitura em `backend` e `sandbox-orchestrator` e, se o arquivo existir, o conteúdo é exportado como `OPENAI_API_KEY` antes de iniciar os serviços.
+- Caso o arquivo não esteja presente, o comportamento permanece igual ao anterior: as variáveis de ambiente definidas em `.env` continuam sendo usadas.
+
 ## Testes
 
 - Backend: `mvn -f apps/backend test`
