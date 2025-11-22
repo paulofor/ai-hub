@@ -35,13 +35,14 @@ export function createApp(options: AppOptions = {}) {
   app.post('/jobs', async (req: Request, res: Response) => {
     const jobId = validateString(req.body?.jobId);
     const repoUrl = validateString(req.body?.repoUrl);
+    const repoSlug = validateString(req.body?.repoSlug);
     const branch = validateString(req.body?.branch);
-    const task = validateString(req.body?.task);
+    const taskDescription = validateString(req.body?.taskDescription ?? req.body?.task);
     const commitHash = validateString(req.body?.commit);
     const testCommand = validateString(req.body?.testCommand);
 
-    if (!jobId || !repoUrl || !branch || !task) {
-      return res.status(400).json({ error: 'jobId, repoUrl, branch e task são obrigatórios' });
+    if (!jobId || (!repoUrl && !repoSlug) || !branch || !taskDescription) {
+      return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
     }
 
     const existing = jobRegistry.get(jobId);
@@ -52,12 +53,14 @@ export function createApp(options: AppOptions = {}) {
     const now = new Date().toISOString();
     const job: SandboxJob = {
       jobId,
-      repoUrl,
+      repoSlug: repoSlug,
+      repoUrl: repoUrl ?? `https://github.com/${repoSlug}.git`,
       branch,
-      task,
+      taskDescription,
       commitHash,
       testCommand,
-      status: 'QUEUED',
+      status: 'PENDING',
+      logs: [],
       createdAt: now,
       updatedAt: now,
     };

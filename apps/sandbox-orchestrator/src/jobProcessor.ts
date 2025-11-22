@@ -20,9 +20,11 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly openai?: OpenAI;
   private readonly model: string;
 
-  constructor(apiKey?: string, model = 'gpt-5-codex') {
+  constructor(apiKey?: string, model = 'gpt-5-codex', openaiClient?: OpenAI) {
     this.model = model;
-    if (apiKey) {
+    if (openaiClient) {
+      this.openai = openaiClient;
+    } else if (apiKey) {
       this.openai = new OpenAI({ apiKey });
     }
   }
@@ -31,22 +33,25 @@ export class SandboxJobProcessor implements JobProcessor {
     job.status = 'RUNNING';
     job.updatedAt = new Date().toISOString();
     const workspace = await this.prepareWorkspace(job);
+    const repoPath = path.join(workspace, 'repo');
     job.sandboxPath = workspace;
+    job.logs.push(`workspace: ${workspace}`);
 
     try {
-      await this.cloneRepository(job, workspace);
+      await this.cloneRepository(job, repoPath);
       if (!this.openai) {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
       }
 
-      const summary = await this.runCodexLoop(job, workspace);
+      const summary = await this.runCodexLoop(job, repoPath);
       job.summary = summary;
-      job.changedFiles = await this.collectChangedFiles(workspace);
-      job.patch = await this.generatePatch(workspace);
+      job.changedFiles = await this.collectChangedFiles(repoPath);
+      job.patch = await this.generatePatch(repoPath);
       job.status = 'COMPLETED';
     } catch (error) {
       job.status = 'FAILED';
       job.error = error instanceof Error ? error.message : String(error);
+      job.logs.push(job.error);
     } finally {
       job.updatedAt = new Date().toISOString();
       await this.cleanup(workspace);
@@ -66,10 +71,11 @@ export class SandboxJobProcessor implements JobProcessor {
     }
   }
 
-  private async cloneRepository(job: SandboxJob, workspace: string): Promise<void> {
-    const repoPath = path.join(workspace, 'repo');
+  private async cloneRepository(job: SandboxJob, repoPath: string): Promise<void> {
+    job.logs.push(`cloning ${job.repoUrl} (branch ${job.branch})`);
     await exec(`git clone --branch ${job.branch} --depth 1 ${job.repoUrl} ${repoPath}`);
     if (job.commitHash) {
+      job.logs.push(`checking out commit ${job.commitHash}`);
       await exec(`git checkout ${job.commitHash}`, { cwd: repoPath });
     }
   }
@@ -126,45 +132,42 @@ export class SandboxJobProcessor implements JobProcessor {
     ];
   }
 
-  private async runCodexLoop(job: SandboxJob, workspace: string): Promise<string> {
-    const repoPath = path.join(workspace, 'repo');
+  private async runCodexLoop(job: SandboxJob, repoPath: string): Promise<string> {
     const tools = this.buildTools(repoPath);
-    let previousResponseId: string | undefined;
-    let summary = '';
+    let response = await this.openai!.responses.create({
+      model: this.model,
+      input: [
+        {
+          role: 'system',
+          content: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${job.testCommand ?? 'n/d'}. Sempre trabalhe somente dentro do diretório do repositório.`,
+        },
+        { role: 'user', content: job.taskDescription },
+      ],
+      tools,
+    } as any);
+
+    let summary = this.extractText(response.output) ?? '';
 
     while (true) {
-      const response = await this.openai!.responses.create({
-        model: this.model,
-        input: [
-          {
-            role: 'system',
-            content: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${job.testCommand ?? 'n/d'}. Sempre trabalhe somente dentro do diretório do repositório.`,
-          },
-          { role: 'user', content: job.task },
-        ],
-        tools,
-        previous_response_id: previousResponseId,
-      } as any);
-
       const toolCalls = this.extractToolCalls(response.output);
-      summary = this.extractText(response.output) ?? summary;
-
       if (toolCalls.length === 0) {
         return summary;
       }
 
       const toolOutputs = [] as { tool_call_id: string; output: string }[];
       for (const call of toolCalls) {
-        const result = await this.dispatchTool(call, repoPath);
+        const result = await this.dispatchTool(call, repoPath, job);
         toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify(result) });
       }
 
-      previousResponseId = response.id;
-      await this.openai!.responses.create({
+      response = await this.openai!.responses.create({
         model: this.model,
-        previous_response_id: previousResponseId,
+        previous_response_id: response.id,
         tool_outputs: toolOutputs,
       } as any);
+
+      const updatedSummary = this.extractText(response.output);
+      summary = updatedSummary ?? summary;
     }
   }
 
@@ -239,14 +242,14 @@ export class SandboxJobProcessor implements JobProcessor {
     return undefined;
   }
 
-  private async dispatchTool(call: ToolCall, repoPath: string): Promise<unknown> {
+  private async dispatchTool(call: ToolCall, repoPath: string, job: SandboxJob): Promise<unknown> {
     switch (call.name) {
       case 'run_shell':
-        return this.handleRunShell(call.arguments, repoPath);
+        return this.handleRunShell(call.arguments, repoPath, job);
       case 'read_file':
         return this.handleReadFile(call.arguments, repoPath);
       case 'write_file':
-        return this.handleWriteFile(call.arguments, repoPath);
+        return this.handleWriteFile(call.arguments, repoPath, job);
       default:
         return { error: `Ferramenta desconhecida: ${call.name}` };
     }
@@ -263,7 +266,7 @@ export class SandboxJobProcessor implements JobProcessor {
     return absolute;
   }
 
-  private async handleRunShell(args: Record<string, unknown>, repoPath: string) {
+  private async handleRunShell(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
     const command = Array.isArray(args.command) ? (args.command as string[]) : undefined;
     if (!command || command.length === 0) {
       throw new Error('command é obrigatório para run_shell');
@@ -271,6 +274,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
     const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
     const joined = command.map((part) => part.trim()).join(' ');
+    job.logs.push(`run_shell: ${joined} (cwd=${cwd})`);
     const { stdout, stderr } = await exec(joined, { cwd });
     return { stdout, stderr };
   }
@@ -281,15 +285,19 @@ export class SandboxJobProcessor implements JobProcessor {
     return { content };
   }
 
-  private async handleWriteFile(args: Record<string, unknown>, repoPath: string) {
+  private async handleWriteFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
     const filePath = this.resolvePath(repoPath, typeof args.path === 'string' ? args.path : undefined);
     const content = typeof args.content === 'string' ? args.content : '';
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf8');
+    job.logs.push(`write_file: ${filePath}`);
     return { status: 'ok' };
   }
 
   private async collectChangedFiles(repoPath: string): Promise<string[]> {
+    if (!(await this.isGitRepository(repoPath))) {
+      return [];
+    }
     const { stdout } = await exec('git status --porcelain', { cwd: repoPath });
     return stdout
       .split('\n')
@@ -299,7 +307,19 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async generatePatch(repoPath: string): Promise<string> {
+    if (!(await this.isGitRepository(repoPath))) {
+      return '';
+    }
     const { stdout } = await exec('git diff', { cwd: repoPath });
     return stdout;
+  }
+
+  private async isGitRepository(repoPath: string): Promise<boolean> {
+    try {
+      await fs.stat(path.join(repoPath, '.git'));
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

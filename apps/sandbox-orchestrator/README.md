@@ -10,25 +10,10 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 
 ### Endpoints
 
-- `POST /jobs`: cria um job informando `jobId`, `repoUrl`, `branch`, `task` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório num diretório temporário, expõe as tools `run_shell`, `read_file` e `write_file` ao modelo e inicia o loop de tool-calling.
-- `GET /jobs/{id}`: retorna o status atualizado do job, incluindo resumo, arquivos alterados e patch gerado quando disponíveis.
+- `POST /jobs`: cria um job informando `jobId`, `repoUrl` ou `repoSlug`, `branch`, `taskDescription` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório em um diretório temporário, expõe as tools `run_shell`, `read_file` e `write_file` ao modelo e inicia o loop de tool-calling.
+- `GET /jobs/{id}`: retorna o status atualizado do job (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`), além de `logs`, resumo, arquivos alterados e patch gerado (`git diff`).
 
-### Formato de resposta
-
-Os handlers respondem com o payload mínimo que o `SandboxProvisioningService` espera consumir:
-
-```json
-{
-  "slug": "owner/repo-branch-sandbox",
-  "host": "sandbox.local",
-  "port": 9000,
-  "token": "abcdef123...",
-  "expiresAt": 1700000000000,
-  "ttlSeconds": 3600
-}
-```
-
-Jobs ficam armazenados em memória e carregam metadados como diretório temporário, status, arquivos alterados e patch (`git diff`) final.
+Jobs ficam armazenados em memória enquanto executam e são atualizados de forma assíncrona pelo `SandboxJobProcessor`.
 
 ## Variáveis de ambiente
 

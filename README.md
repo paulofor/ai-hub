@@ -6,7 +6,7 @@ AI Hub é um monorepo full-stack que centraliza a criação e governança de sis
 
 - **UI-first**: nenhuma ação destrutiva é executada sem confirmação explícita na UI.
 - **Integrações GitHub**: criação de repositórios, disparo de workflows, análise de logs, comentários e PRs de correção.
-- **OpenAI Responses API**: geração estruturada de relatórios `CiFix` a partir de falhas em pipelines.
+- **OpenAI Responses API**: integração mediada pelo sandbox-orchestrator para gerar correções e relatórios `CiFix` a partir de falhas em pipelines.
 - **Persistência**: MySQL 5.7 (produção) com Flyway para auditoria, blueprints, projetos, prompts e respostas.
 
 ## Estrutura de pastas
@@ -31,7 +31,7 @@ infra/
 
 ### Armazenamento do token da OpenAI na VPS
 
-- Para guardar o token da OpenAI em um arquivo físico na VPS, use o caminho `/root/infra/openai-token/openai_api_key` (já esperado pelos contêineres por padrão). Esse diretório é montado como volume somente leitura em `backend` e `sandbox-orchestrator` e, se o arquivo existir, o conteúdo é exportado como `OPENAI_API_KEY` antes de iniciar os serviços.
+- Para guardar o token da OpenAI em um arquivo físico na VPS, use o caminho `/root/infra/openai-token/openai_api_key` (já esperado pelos contêineres por padrão). Esse diretório é montado como volume somente leitura no `sandbox-orchestrator` e, se o arquivo existir, o conteúdo é exportado como `OPENAI_API_KEY` antes de iniciar o serviço.
 - Caso prefira armazenar o arquivo em outro diretório, defina `OPENAI_TOKEN_HOST_DIR` no `.env` apontando para a pasta que contém o `openai_api_key` antes de executar `docker-compose up`.
 - Caso o arquivo não esteja presente, o comportamento permanece igual ao anterior: as variáveis de ambiente definidas em `.env` continuam sendo usadas.
 
