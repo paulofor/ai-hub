@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
@@ -52,11 +53,16 @@ public class SandboxOrchestratorClient {
 
     public SandboxOrchestratorJobResponse getJob(String jobId) {
         log.info("Consultando job {} no sandbox-orchestrator", jobId);
-        JsonNode response = restClient.get()
-            .uri(jobsPath + "/" + jobId)
-            .retrieve()
-            .body(JsonNode.class);
-        return SandboxOrchestratorJobResponse.from(response);
+        try {
+            JsonNode response = restClient.get()
+                .uri(jobsPath + "/" + jobId)
+                .retrieve()
+                .body(JsonNode.class);
+            return SandboxOrchestratorJobResponse.from(response);
+        } catch (HttpClientErrorException.NotFound ex) {
+            log.warn("Job {} não encontrado no sandbox-orchestrator", jobId);
+            return null;
+        }
     }
 
     public record SandboxOrchestratorJobResponse(
