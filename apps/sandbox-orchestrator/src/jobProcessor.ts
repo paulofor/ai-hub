@@ -87,50 +87,44 @@ export class SandboxJobProcessor implements JobProcessor {
     return [
       {
         type: 'function',
-        function: {
-          name: 'run_shell',
-          description: 'Executa um comando de shell dentro do sandbox clonado',
-          parameters: {
-            type: 'object',
-            properties: {
-              command: { type: 'array', items: { type: 'string' } },
-              cwd: { type: 'string', description: 'Diretório relativo ao repo' },
-            },
-            required: ['command'],
+        name: 'run_shell',
+        description: 'Executa um comando de shell dentro do sandbox clonado',
+        parameters: {
+          type: 'object',
+          properties: {
+            command: { type: 'array', items: { type: 'string' } },
+            cwd: { type: 'string', description: 'Diretório relativo ao repo' },
           },
-          strict: true,
+          required: ['command'],
         },
+        strict: true,
       },
       {
         type: 'function',
-        function: {
-          name: 'read_file',
-          description: 'Lê um arquivo do repositório clonado',
-          parameters: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-            },
-            required: ['path'],
+        name: 'read_file',
+        description: 'Lê um arquivo do repositório clonado',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
           },
-          strict: true,
+          required: ['path'],
         },
+        strict: true,
       },
       {
         type: 'function',
-        function: {
-          name: 'write_file',
-          description: 'Escreve um arquivo dentro do repositório clonado',
-          parameters: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
-            },
-            required: ['path', 'content'],
+        name: 'write_file',
+        description: 'Escreve um arquivo dentro do repositório clonado',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            content: { type: 'string' },
           },
-          strict: true,
+          required: ['path', 'content'],
         },
+        strict: true,
       },
     ];
   }

@@ -134,6 +134,13 @@ test('processes tool calls inside a sandbox', async () => {
 
   await processor.process(job);
 
+  const firstCall = fakeOpenAI.calls[0];
+  assert.ok(firstCall.tools, 'tools ausente na chamada inicial');
+  assert.deepEqual(
+    firstCall.tools.map((tool: any) => tool.name).filter(Boolean),
+    ['run_shell', 'read_file', 'write_file']
+  );
+
   assert.equal(job.status, 'COMPLETED', job.error);
   assert.equal(job.summary, 'summary ready');
   assert.ok(job.patch && job.patch.includes('updated content'));
