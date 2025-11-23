@@ -47,8 +47,13 @@ export function createApp(options: AppOptions = {}) {
 
     const existing = jobRegistry.get(jobId);
     if (existing) {
+      console.log(`Sandbox orchestrator: received duplicate job ${jobId}, returning cached status ${existing.status}`);
       return res.json(existing);
     }
+
+    console.log(
+      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch} com tarefa ${taskDescription}`,
+    );
 
     const now = new Date().toISOString();
     const job: SandboxJob = {

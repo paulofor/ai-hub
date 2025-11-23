@@ -35,25 +35,29 @@ export class SandboxJobProcessor implements JobProcessor {
     const workspace = await this.prepareWorkspace(job);
     const repoPath = path.join(workspace, 'repo');
     job.sandboxPath = workspace;
-    job.logs.push(`workspace: ${workspace}`);
+    this.log(job, `workspace criado em ${workspace}`);
 
     try {
+      this.log(job, `clonando repositório ${job.repoUrl} (branch ${job.branch})`);
       await this.cloneRepository(job, repoPath);
       if (!this.openai) {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
       }
 
+      this.log(job, 'iniciando interação com o modelo do sandbox');
       const summary = await this.runCodexLoop(job, repoPath);
       job.summary = summary;
       job.changedFiles = await this.collectChangedFiles(repoPath);
       job.patch = await this.generatePatch(repoPath);
+      this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
     } catch (error) {
       job.status = 'FAILED';
       job.error = error instanceof Error ? error.message : String(error);
-      job.logs.push(job.error);
+      this.log(job, `falha ao processar job: ${job.error}`);
     } finally {
       job.updatedAt = new Date().toISOString();
+      this.log(job, `limpando workspace ${workspace}`);
       await this.cleanup(workspace);
     }
   }
@@ -72,10 +76,9 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async cloneRepository(job: SandboxJob, repoPath: string): Promise<void> {
-    job.logs.push(`cloning ${job.repoUrl} (branch ${job.branch})`);
     await exec(`git clone --branch ${job.branch} --depth 1 ${job.repoUrl} ${repoPath}`);
     if (job.commitHash) {
-      job.logs.push(`checking out commit ${job.commitHash}`);
+      this.log(job, `checando commit ${job.commitHash}`);
       await exec(`git checkout ${job.commitHash}`, { cwd: repoPath });
     }
   }
@@ -147,15 +150,18 @@ export class SandboxJobProcessor implements JobProcessor {
     } as any);
 
     let summary = this.extractText(response.output) ?? '';
+    this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
       const toolCalls = this.extractToolCalls(response.output);
       if (toolCalls.length === 0) {
+        this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
       }
 
       const toolOutputs = [] as { tool_call_id: string; output: string }[];
       for (const call of toolCalls) {
+        this.log(job, `executando tool ${call.name}`);
         const result = await this.dispatchTool(call, repoPath, job);
         toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify(result) });
       }
@@ -274,7 +280,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
     const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
     const joined = command.map((part) => part.trim()).join(' ');
-    job.logs.push(`run_shell: ${joined} (cwd=${cwd})`);
+    this.log(job, `run_shell: ${joined} (cwd=${cwd})`);
     const { stdout, stderr } = await exec(joined, { cwd });
     return { stdout, stderr };
   }
@@ -290,7 +296,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const content = typeof args.content === 'string' ? args.content : '';
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf8');
-    job.logs.push(`write_file: ${filePath}`);
+    this.log(job, `write_file: ${filePath}`);
     return { status: 'ok' };
   }
 
@@ -321,5 +327,11 @@ export class SandboxJobProcessor implements JobProcessor {
     } catch {
       return false;
     }
+  }
+
+  private log(job: SandboxJob, message: string) {
+    const entry = `[${new Date().toISOString()}] ${message}`;
+    job.logs.push(entry);
+    console.log(`Sandbox job ${job.jobId}: ${message}`);
   }
 }
