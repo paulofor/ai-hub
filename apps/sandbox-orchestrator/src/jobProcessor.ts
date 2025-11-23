@@ -95,7 +95,7 @@ export class SandboxJobProcessor implements JobProcessor {
             command: { type: 'array', items: { type: 'string' } },
             cwd: { type: 'string', description: 'Diretório relativo ao repo' },
           },
-          required: ['command'],
+          required: ['command', 'cwd'],
           additionalProperties: false,
         },
         strict: true,
