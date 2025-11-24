@@ -97,33 +97,33 @@ test('processes tool calls inside a sandbox', async () => {
 
   const fakeOpenAI = {
     calls: [] as any[],
-    chat: {
-      completions: {
-        create: async (payload: any) => {
-          fakeOpenAI.calls.push(payload);
-          if (fakeOpenAI.calls.length === 1) {
-            return {
-              choices: [
-                {
-                  message: {
-                    role: 'assistant',
-                    tool_calls: [
-                      {
-                        id: 'call-1',
-                        type: 'function',
-                        function: {
-                          name: 'write_file',
-                          arguments: JSON.stringify({ path: 'README.md', content: 'updated content' }),
-                        },
-                      },
-                    ],
-                  },
-                },
-              ],
-            };
-          }
-          return { choices: [{ message: { role: 'assistant', content: 'summary ready' } }] };
-        },
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-1',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'updated content' }),
+              },
+              { type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'summary ready', annotations: [] }],
+            },
+          ],
+        };
       },
     },
   } as any;
@@ -145,7 +145,7 @@ test('processes tool calls inside a sandbox', async () => {
   const firstCall = fakeOpenAI.calls[0];
   assert.ok(firstCall.tools, 'tools ausente na chamada inicial');
   assert.deepEqual(
-    firstCall.tools.map((tool: any) => tool.function?.name).filter(Boolean),
+    firstCall.tools.map((tool: any) => tool.name ?? tool.function?.name).filter(Boolean),
     ['run_shell', 'read_file', 'write_file']
   );
 
@@ -154,8 +154,8 @@ test('processes tool calls inside a sandbox', async () => {
   assert.ok(job.patch && job.patch.includes('updated content'));
   assert.ok(job.logs.some((entry) => entry.includes('write_file')));
 
-  const toolMessage = fakeOpenAI.calls[1].messages.find((msg: any) => msg.role === 'tool');
-  const parsedTool = JSON.parse(toolMessage.content);
+  const toolMessage = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
+  const parsedTool = JSON.parse(toolMessage.output);
   assert.equal(parsedTool.path, 'README.md');
   assert.equal(parsedTool.content, 'updated content');
 
@@ -174,33 +174,33 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
 
   const fakeOpenAI = {
     calls: [] as any[],
-    chat: {
-      completions: {
-        create: async (payload: any) => {
-          fakeOpenAI.calls.push(payload);
-          if (fakeOpenAI.calls.length === 1) {
-            return {
-              choices: [
-                {
-                  message: {
-                    role: 'assistant',
-                    tool_calls: [
-                      {
-                        id: 'call-read-1',
-                        type: 'function',
-                        function: {
-                          name: 'read_file',
-                          arguments: JSON.stringify({ path: 'README.md' }),
-                        },
-                      },
-                    ],
-                  },
-                },
-              ],
-            };
-          }
-          return { choices: [{ message: { role: 'assistant', content: 'done' } }] };
-        },
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-read-1',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              { type: 'message', id: 'msg-read', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-read-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
       },
     },
   } as any;
@@ -220,9 +220,9 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
   await processor.process(job);
 
   const secondCall = fakeOpenAI.calls[1];
-  const toolMessage = secondCall.messages.find((msg: any) => msg.role === 'tool');
+  const toolMessage = secondCall.input.find((msg: any) => msg.type === 'function_call_output');
   assert.ok(toolMessage, 'mensagem da ferramenta ausente');
-  const parsedOutput = JSON.parse(toolMessage.content);
+  const parsedOutput = JSON.parse(toolMessage.output);
   assert.equal(parsedOutput.path, 'README.md');
   assert.equal(parsedOutput.content, 'initial');
 
@@ -241,35 +241,41 @@ test('returns tool errors to the model instead of failing the job', async () => 
 
   const fakeOpenAI = {
     calls: [] as any[],
-    chat: {
-      completions: {
-        create: async (payload: any) => {
-          fakeOpenAI.calls.push(payload);
-          if (fakeOpenAI.calls.length === 1) {
-            return {
-              choices: [
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-error-1',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'package.json' }),
+              },
+              { type: 'message', id: 'msg-err', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        const toolMessage = payload.input.find((msg: any) => msg.type === 'function_call_output');
+        const parsed = toolMessage ? JSON.parse(toolMessage.output) : {};
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-err-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [
                 {
-                  message: {
-                    role: 'assistant',
-                    tool_calls: [
-                      {
-                        id: 'call-error-1',
-                        type: 'function',
-                        function: {
-                          name: 'read_file',
-                          arguments: JSON.stringify({ path: 'package.json' }),
-                        },
-                      },
-                    ],
-                  },
+                  type: 'output_text',
+                  text: parsed.error ? 'handled missing file' : 'no error',
+                  annotations: [],
                 },
               ],
-            };
-          }
-          const toolMessage = payload.messages.find((msg: any) => msg.role === 'tool');
-          const parsed = toolMessage ? JSON.parse(toolMessage.content) : {};
-          return { choices: [{ message: { role: 'assistant', content: parsed.error ? 'handled missing file' : 'no error' } }] };
-        },
+            },
+          ],
+        };
       },
     },
   } as any;
@@ -289,9 +295,9 @@ test('returns tool errors to the model instead of failing the job', async () => 
   await processor.process(job);
 
   const secondCall = fakeOpenAI.calls[1];
-  const toolMessage = secondCall.messages.find((msg: any) => msg.role === 'tool');
+  const toolMessage = secondCall.input.find((msg: any) => msg.type === 'function_call_output');
   assert.ok(toolMessage, 'mensagem de ferramenta ausente');
-  const parsedOutput = JSON.parse(toolMessage.content);
+  const parsedOutput = JSON.parse(toolMessage.output);
   assert.ok(parsedOutput.error, 'tool error deve ser retornado ao modelo');
   assert.equal(job.status, 'COMPLETED');
   assert.equal(job.summary, 'handled missing file');
