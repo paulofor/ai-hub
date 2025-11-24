@@ -149,7 +149,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const messages: ResponseItem[] = [
       {
         type: 'message',
-        id: 'msg-system',
+        id: this.sanitizeId('msg_system'),
         role: 'system',
         content: [
           {
@@ -160,7 +160,12 @@ export class SandboxJobProcessor implements JobProcessor {
           },
         ],
       },
-      { type: 'message', id: 'msg-user', role: 'user', content: [{ type: 'input_text', text: job.taskDescription }] },
+      {
+        type: 'message',
+        id: this.sanitizeId('msg_user'),
+        role: 'user',
+        content: [{ type: 'input_text', text: job.taskDescription }],
+      },
     ];
 
     let summary = '';
@@ -176,7 +181,7 @@ export class SandboxJobProcessor implements JobProcessor {
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
-          return { ...item, id: item.id ?? item.call_id ?? `tool-${index}` };
+          return { ...item, id: this.sanitizeId(item.id ?? item.call_id ?? `tool_${index}`) };
         }
         return item as ResponseItem;
       });
@@ -207,8 +212,8 @@ export class SandboxJobProcessor implements JobProcessor {
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
           toolMessages.push({
-            id: `${call.call_id}-output`,
-            call_id: call.call_id,
+            id: this.sanitizeId(`${call.call_id}_output`),
+            call_id: this.sanitizeId(call.call_id ?? `call_${call.id ?? 'unknown'}`),
             output: JSON.stringify(result),
             type: 'function_call_output',
           });
@@ -216,8 +221,8 @@ export class SandboxJobProcessor implements JobProcessor {
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
           toolMessages.push({
-            id: `${call.call_id}-output`,
-            call_id: call.call_id,
+            id: this.sanitizeId(`${call.call_id}_output`),
+            call_id: this.sanitizeId(call.call_id ?? `call_${call.id ?? 'unknown'}`),
             output: JSON.stringify({ error: message }),
             type: 'function_call_output',
           });
@@ -372,5 +377,13 @@ export class SandboxJobProcessor implements JobProcessor {
     } catch (err) {
       throw new Error(`cwd não encontrado: ${cwd}`);
     }
+  }
+
+  private sanitizeId(id: string | undefined): string {
+    if (!id) {
+      return 'msg_default';
+    }
+    const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return sanitized.length > 0 ? sanitized : 'msg_default';
   }
 }
