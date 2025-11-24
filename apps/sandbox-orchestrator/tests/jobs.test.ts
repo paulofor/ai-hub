@@ -199,6 +199,7 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
 
   const secondCall = fakeOpenAI.calls[1];
   assert.ok(secondCall.tool_outputs, 'tool_outputs ausente no retorno do read_file');
+  assert.equal(secondCall.input, '', 'chamada subsequente deve incluir input vazio');
   const parsedOutput = JSON.parse(secondCall.tool_outputs[0].output);
   assert.equal(parsedOutput.path, 'README.md');
   assert.equal(parsedOutput.content, 'initial');

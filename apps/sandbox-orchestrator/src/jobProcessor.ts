@@ -178,6 +178,10 @@ export class SandboxJobProcessor implements JobProcessor {
       response = await this.openai!.responses.create({
         model: this.model,
         previous_response_id: response.id,
+        // Some OpenAI responses APIs require an explicit `input` field even when only
+        // returning tool outputs. Passing an empty string prevents "Missing required
+        // parameter: 'input'" errors while keeping the conversation state unchanged.
+        input: '',
         tool_outputs: toolOutputs,
       } as any);
 
