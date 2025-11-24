@@ -52,7 +52,7 @@ export function createApp(options: AppOptions = {}) {
     }
 
     console.log(
-      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch} com tarefa ${taskDescription}`,
+      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch}`,
     );
 
     const now = new Date().toISOString();
