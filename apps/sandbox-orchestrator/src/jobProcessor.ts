@@ -165,8 +165,14 @@ export class SandboxJobProcessor implements JobProcessor {
       const toolOutputs = [] as { tool_call_id: string; output: string }[];
       for (const call of toolCalls) {
         this.log(job, `executando tool ${call.name}`);
-        const result = await this.dispatchTool(call, repoPath, job);
-        toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify(result) });
+        try {
+          const result = await this.dispatchTool(call, repoPath, job);
+          toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify(result) });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.log(job, `erro ao executar tool ${call.name}: ${message}`);
+          toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify({ error: message }) });
+        }
       }
 
       response = await this.openai!.responses.create({

@@ -205,3 +205,63 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
+
+test('returns tool errors to the model instead of failing the job', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-error-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            id: 'resp-error-1',
+            output: [
+              {
+                type: 'function_call',
+                function: {
+                  name: 'read_file',
+                  arguments: JSON.stringify({ path: 'package.json' }),
+                },
+              },
+            ],
+          };
+        }
+        const toolOutput = payload.tool_outputs?.[0]?.output;
+        const parsed = toolOutput ? JSON.parse(toolOutput) : {};
+        return { id: 'resp-error-2', output: [{ text: parsed.error ? 'handled missing file' : 'no error' }] };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-error',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'read a missing file',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const secondCall = fakeOpenAI.calls[1];
+  assert.ok(secondCall.tool_outputs, 'tool_outputs ausente no retorno do erro');
+  const parsedOutput = JSON.parse(secondCall.tool_outputs[0].output);
+  assert.ok(parsedOutput.error, 'tool error deve ser retornado ao modelo');
+  assert.equal(job.status, 'COMPLETED');
+  assert.equal(job.summary, 'handled missing file');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
