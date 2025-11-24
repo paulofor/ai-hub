@@ -269,6 +269,15 @@ export class SandboxJobProcessor implements JobProcessor {
     return absolute;
   }
 
+  private normalizeRepoPath(
+    repoPath: string,
+    requested: string | undefined,
+  ): { absolute: string; relative: string } {
+    const absolute = this.resolvePath(repoPath, requested);
+    const relative = path.relative(repoPath, absolute) || path.basename(absolute);
+    return { absolute, relative };
+  }
+
   private async handleRunShell(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
     const command = Array.isArray(args.command) ? (args.command as string[]) : undefined;
     if (!command || command.length === 0) {
@@ -283,9 +292,12 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
-    const filePath = this.resolvePath(repoPath, typeof args.path === 'string' ? args.path : undefined);
-    const content = await fs.readFile(filePath, 'utf8');
-    return { content };
+    const { absolute, relative } = this.normalizeRepoPath(
+      repoPath,
+      typeof args.path === 'string' ? args.path : undefined,
+    );
+    const content = await fs.readFile(absolute, 'utf8');
+    return { path: relative, content };
   }
 
   private async handleWriteFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {

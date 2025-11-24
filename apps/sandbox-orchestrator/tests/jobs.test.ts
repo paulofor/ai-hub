@@ -148,3 +148,60 @@ test('processes tool calls inside a sandbox', async () => {
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
+
+test('normalizes read_file path to repo-relative when sending tool outputs', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-read-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            id: 'resp-read-1',
+            output: [
+              {
+                type: 'function_call',
+                function: {
+                  name: 'read_file',
+                  arguments: JSON.stringify({ path: 'README.md' }),
+                },
+              },
+            ],
+          };
+        }
+        return { id: 'resp-read-2', output: [{ text: 'done' }] };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-read-path',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'read a file',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const secondCall = fakeOpenAI.calls[1];
+  assert.ok(secondCall.tool_outputs, 'tool_outputs ausente no retorno do read_file');
+  const parsedOutput = JSON.parse(secondCall.tool_outputs[0].output);
+  assert.equal(parsedOutput.path, 'README.md');
+  assert.equal(parsedOutput.content, 'initial');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
