@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import OpenAI from 'openai';
-import { randomUUID } from 'node:crypto';
+import { ChatCompletionContentPart, ChatCompletionMessageParam } from 'openai/resources/index.mjs';
 
 import { buildAuthRepoUrl, redactUrlCredentials } from './git.js';
 import { JobProcessor, SandboxJob } from './types.js';
@@ -92,105 +92,128 @@ export class SandboxJobProcessor implements JobProcessor {
   private buildTools(repoPath: string) {
     return [
       {
-        type: 'function',
-        name: 'run_shell',
-        description: 'Executa um comando de shell dentro do sandbox clonado',
-        parameters: {
-          type: 'object',
-          properties: {
-            command: { type: 'array', items: { type: 'string' } },
-            cwd: { type: 'string', description: 'Diretório relativo ao repo' },
+        type: 'function' as const,
+        function: {
+          name: 'run_shell',
+          description: 'Executa um comando de shell dentro do sandbox clonado',
+          parameters: {
+            type: 'object',
+            properties: {
+              command: { type: 'array', items: { type: 'string' } },
+              cwd: { type: 'string', description: 'Diretório relativo ao repo' },
+            },
+            required: ['command', 'cwd'],
+            additionalProperties: false,
           },
-          required: ['command', 'cwd'],
-          additionalProperties: false,
+          strict: true,
         },
-        strict: true,
       },
       {
-        type: 'function',
-        name: 'read_file',
-        description: 'Lê um arquivo do repositório clonado',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string' },
+        type: 'function' as const,
+        function: {
+          name: 'read_file',
+          description: 'Lê um arquivo do repositório clonado',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+            },
+            required: ['path'],
+            additionalProperties: false,
           },
-          required: ['path'],
-          additionalProperties: false,
+          strict: true,
         },
-        strict: true,
       },
       {
-        type: 'function',
-        name: 'write_file',
-        description: 'Escreve um arquivo dentro do repositório clonado',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string' },
-            content: { type: 'string' },
+        type: 'function' as const,
+        function: {
+          name: 'write_file',
+          description: 'Escreve um arquivo dentro do repositório clonado',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              content: { type: 'string' },
+            },
+            required: ['path', 'content'],
+            additionalProperties: false,
           },
-          required: ['path', 'content'],
-          additionalProperties: false,
+          strict: true,
         },
-        strict: true,
       },
     ];
   }
 
   private async runCodexLoop(job: SandboxJob, repoPath: string): Promise<string> {
     const tools = this.buildTools(repoPath);
-    let response = await this.openai!.responses.create({
-      model: this.model,
-      input: [
-        {
-          role: 'system',
-          content: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${job.testCommand ?? 'n/d'}. Sempre trabalhe somente dentro do diretório do repositório.`,
-        },
-        { role: 'user', content: job.taskDescription },
-      ],
-      tools,
-    } as any);
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
+          job.testCommand ?? 'n/d'
+        }. Sempre trabalhe somente dentro do diretório do repositório.`,
+      },
+      { role: 'user', content: job.taskDescription },
+    ];
 
-    let summary = this.extractText(response.output) ?? '';
+    let summary = '';
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
-      const toolCalls = this.extractToolCalls(response.output);
-      if (toolCalls.length === 0) {
+      const completion = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages,
+        tools,
+      });
+
+      const choice = completion.choices?.[0];
+      const message = choice?.message;
+      if (!message) {
+        throw new Error('Resposta vazia do modelo');
+      }
+
+      const text = this.extractText(message.content);
+      if (!message.tool_calls || message.tool_calls.length === 0) {
+        summary = text ?? summary;
+        messages.push({ role: 'assistant', content: message.content ?? text ?? '' });
         this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
       }
 
-      const toolOutputs = [] as { tool_call_id: string; output: string }[];
-      for (const call of toolCalls) {
-        this.log(job, `executando tool ${call.name}`);
+      messages.push({
+        role: 'assistant',
+        content: message.content ?? text ?? '',
+        tool_calls: message.tool_calls,
+      });
+
+      const toolMessages: ChatCompletionMessageParam[] = [];
+      for (const call of message.tool_calls) {
+        const parsedArgs = this.parseArguments(call.function?.arguments);
+        const toolCall: ToolCall = {
+          id: call.id,
+          name: call.function?.name ?? '',
+          arguments: parsedArgs ?? {},
+        };
+        this.log(job, `executando tool ${toolCall.name}`);
         try {
-          const result = await this.dispatchTool(call, repoPath, job);
-          toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify(result) });
+          const result = await this.dispatchTool(toolCall, repoPath, job);
+          toolMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          this.log(job, `erro ao executar tool ${call.name}: ${message}`);
-          toolOutputs.push({ tool_call_id: call.id, output: JSON.stringify({ error: message }) });
+          this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
+          toolMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ error: message }) });
         }
       }
 
-      response = await this.openai!.responses.create({
-        model: this.model,
-        previous_response_id: response.id,
-        // Some OpenAI responses APIs require an explicit `input` field even when only
-        // returning tool outputs. Passing an empty string prevents "Missing required
-        // parameter: 'input'" errors while keeping the conversation state unchanged.
-        input: '',
-        tool_outputs: toolOutputs,
-      } as any);
-
-      const updatedSummary = this.extractText(response.output);
-      summary = updatedSummary ?? summary;
+      messages.push(...toolMessages);
     }
   }
 
-  private extractText(output: unknown): string | undefined {
+  private extractText(output: string | ChatCompletionContentPart[] | null | undefined): string | undefined {
+    if (typeof output === 'string') {
+      const trimmed = output.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
     if (!Array.isArray(output)) {
       return undefined;
     }
@@ -199,7 +222,7 @@ export class SandboxJobProcessor implements JobProcessor {
       if (typeof item !== 'object' || item === null) {
         continue;
       }
-      const asAny = item as Record<string, unknown>;
+      const asAny = item as unknown as Record<string, unknown>;
       if (typeof asAny.text === 'string') {
         texts.push(asAny.text);
       }
@@ -217,31 +240,6 @@ export class SandboxJobProcessor implements JobProcessor {
       return undefined;
     }
     return texts.join('\n').trim();
-  }
-
-  private extractToolCalls(output: unknown): ToolCall[] {
-    if (!Array.isArray(output)) {
-      return [];
-    }
-    const calls: ToolCall[] = [];
-    for (const item of output) {
-      const objectItem = item as Record<string, unknown>;
-      if (objectItem.type !== 'function_call' && objectItem.type !== 'tool_call') {
-        continue;
-      }
-      const functionNode = objectItem.function as Record<string, unknown> | undefined;
-      const name = (objectItem.name as string) || (functionNode?.name as string);
-      const args = this.parseArguments(objectItem.arguments ?? functionNode?.arguments);
-      if (!name || !args) {
-        continue;
-      }
-      calls.push({
-        id: (objectItem.id as string) ?? randomUUID(),
-        name,
-        arguments: args,
-      });
-    }
-    return calls;
   }
 
   private parseArguments(raw: unknown): Record<string, unknown> | undefined {
@@ -301,6 +299,7 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
     const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
+    await this.assertDirectoryExists(cwd);
     const joined = command.map((part) => part.trim()).join(' ');
     this.log(job, `run_shell: ${joined} (cwd=${cwd})`);
     const { stdout, stderr } = await exec(joined, { cwd });
@@ -317,12 +316,15 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async handleWriteFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
-    const filePath = this.resolvePath(repoPath, typeof args.path === 'string' ? args.path : undefined);
+    const { absolute, relative } = this.normalizeRepoPath(
+      repoPath,
+      typeof args.path === 'string' ? args.path : undefined,
+    );
     const content = typeof args.content === 'string' ? args.content : '';
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content, 'utf8');
-    this.log(job, `write_file: ${filePath}`);
-    return { status: 'ok' };
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, content, 'utf8');
+    this.log(job, `write_file: ${absolute}`);
+    return { status: 'ok', path: relative, content };
   }
 
   private async collectChangedFiles(repoPath: string): Promise<string[]> {
@@ -358,5 +360,16 @@ export class SandboxJobProcessor implements JobProcessor {
     const entry = `[${new Date().toISOString()}] ${message}`;
     job.logs.push(entry);
     console.log(`Sandbox job ${job.jobId}: ${message}`);
+  }
+
+  private async assertDirectoryExists(cwd: string): Promise<void> {
+    try {
+      const stats = await fs.stat(cwd);
+      if (!stats.isDirectory()) {
+        throw new Error(`cwd não é um diretório: ${cwd}`);
+      }
+    } catch (err) {
+      throw new Error(`cwd não encontrado: ${cwd}`);
+    }
   }
 }
