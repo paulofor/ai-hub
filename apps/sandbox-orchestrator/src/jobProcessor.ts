@@ -4,7 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import OpenAI from 'openai';
-import { ChatCompletionContentPart, ChatCompletionMessageParam } from 'openai/resources/index.mjs';
+import {
+  ResponseFunctionToolCallItem,
+  ResponseFunctionToolCallOutputItem,
+  ResponseItem,
+  ResponseOutputMessage,
+  ResponseOutputText,
+} from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, redactUrlCredentials } from './git.js';
 import { JobProcessor, SandboxJob } from './types.js';
@@ -93,115 +99,128 @@ export class SandboxJobProcessor implements JobProcessor {
     return [
       {
         type: 'function' as const,
-        function: {
-          name: 'run_shell',
-          description: 'Executa um comando de shell dentro do sandbox clonado',
-          parameters: {
-            type: 'object',
-            properties: {
-              command: { type: 'array', items: { type: 'string' } },
-              cwd: { type: 'string', description: 'Diretório relativo ao repo' },
-            },
-            required: ['command', 'cwd'],
-            additionalProperties: false,
+        name: 'run_shell',
+        parameters: {
+          type: 'object',
+          properties: {
+            command: { type: 'array', items: { type: 'string' } },
+            cwd: { type: 'string', description: 'Diretório relativo ao repo' },
           },
-          strict: true,
+          required: ['command', 'cwd'],
+          additionalProperties: false,
         },
+        strict: true,
+        description: 'Executa um comando de shell dentro do sandbox clonado',
       },
       {
         type: 'function' as const,
-        function: {
-          name: 'read_file',
-          description: 'Lê um arquivo do repositório clonado',
-          parameters: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-            },
-            required: ['path'],
-            additionalProperties: false,
+        name: 'read_file',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
           },
-          strict: true,
+          required: ['path'],
+          additionalProperties: false,
         },
+        strict: true,
+        description: 'Lê um arquivo do repositório clonado',
       },
       {
         type: 'function' as const,
-        function: {
-          name: 'write_file',
-          description: 'Escreve um arquivo dentro do repositório clonado',
-          parameters: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
-            },
-            required: ['path', 'content'],
-            additionalProperties: false,
+        name: 'write_file',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            content: { type: 'string' },
           },
-          strict: true,
+          required: ['path', 'content'],
+          additionalProperties: false,
         },
+        strict: true,
+        description: 'Escreve um arquivo dentro do repositório clonado',
       },
     ];
   }
 
   private async runCodexLoop(job: SandboxJob, repoPath: string): Promise<string> {
     const tools = this.buildTools(repoPath);
-    const messages: ChatCompletionMessageParam[] = [
+    const messages: ResponseItem[] = [
       {
+        type: 'message',
+        id: 'msg-system',
         role: 'system',
-        content: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
-          job.testCommand ?? 'n/d'
-        }. Sempre trabalhe somente dentro do diretório do repositório.`,
+        content: [
+          {
+            type: 'input_text',
+            text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
+              job.testCommand ?? 'n/d'
+            }. Sempre trabalhe somente dentro do diretório do repositório.`,
+          },
+        ],
       },
-      { role: 'user', content: job.taskDescription },
+      { type: 'message', id: 'msg-user', role: 'user', content: [{ type: 'input_text', text: job.taskDescription }] },
     ];
 
     let summary = '';
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
-      const completion = await this.openai!.chat.completions.create({
+      const response = await this.openai!.responses.create({
         model: this.model,
-        messages,
+        input: messages,
         tools,
       });
 
-      const choice = completion.choices?.[0];
-      const message = choice?.message;
-      if (!message) {
-        throw new Error('Resposta vazia do modelo');
-      }
+      const output = response.output ?? [];
+      const normalizedOutput: ResponseItem[] = output.map((item, index) => {
+        if (item.type === 'function_call') {
+          return { ...item, id: item.id ?? item.call_id ?? `tool-${index}` };
+        }
+        return item as ResponseItem;
+      });
+      const assistantMessage = normalizedOutput.find((item) => item.type === 'message') as ResponseOutputMessage | undefined;
+      const toolCalls = normalizedOutput.filter((item) => item.type === 'function_call') as ResponseFunctionToolCallItem[];
 
-      const text = this.extractText(message.content);
-      if (!message.tool_calls || message.tool_calls.length === 0) {
+      const text = this.extractOutputText(assistantMessage?.content);
+      if (toolCalls.length === 0) {
         summary = text ?? summary;
-        messages.push({ role: 'assistant', content: message.content ?? text ?? '' });
+        if (assistantMessage) {
+          messages.push(assistantMessage);
+        }
         this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
       }
 
-      messages.push({
-        role: 'assistant',
-        content: message.content ?? text ?? '',
-        tool_calls: message.tool_calls,
-      });
+      messages.push(...normalizedOutput);
 
-      const toolMessages: ChatCompletionMessageParam[] = [];
-      for (const call of message.tool_calls) {
-        const parsedArgs = this.parseArguments(call.function?.arguments);
+      const toolMessages: ResponseFunctionToolCallOutputItem[] = [];
+      for (const call of toolCalls) {
+        const parsedArgs = this.parseArguments(call.arguments);
         const toolCall: ToolCall = {
-          id: call.id,
-          name: call.function?.name ?? '',
+          id: call.id ?? call.call_id,
+          name: call.name ?? '',
           arguments: parsedArgs ?? {},
         };
         this.log(job, `executando tool ${toolCall.name}`);
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
-          toolMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+          toolMessages.push({
+            id: `${call.call_id}-output`,
+            call_id: call.call_id,
+            output: JSON.stringify(result),
+            type: 'function_call_output',
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
-          toolMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ error: message }) });
+          toolMessages.push({
+            id: `${call.call_id}-output`,
+            call_id: call.call_id,
+            output: JSON.stringify({ error: message }),
+            type: 'function_call_output',
+          });
         }
       }
 
@@ -209,33 +228,15 @@ export class SandboxJobProcessor implements JobProcessor {
     }
   }
 
-  private extractText(output: string | ChatCompletionContentPart[] | null | undefined): string | undefined {
-    if (typeof output === 'string') {
-      const trimmed = output.trim();
-      return trimmed.length > 0 ? trimmed : undefined;
-    }
-    if (!Array.isArray(output)) {
+  private extractOutputText(content: ResponseOutputMessage['content'] | undefined): string | undefined {
+    if (!Array.isArray(content)) {
       return undefined;
     }
-    const texts: string[] = [];
-    for (const item of output) {
-      if (typeof item !== 'object' || item === null) {
-        continue;
-      }
-      const asAny = item as unknown as Record<string, unknown>;
-      if (typeof asAny.text === 'string') {
-        texts.push(asAny.text);
-      }
-      const content = asAny.content;
-      if (Array.isArray(content)) {
-        for (const contentItem of content) {
-          const text = (contentItem as Record<string, unknown>).text;
-          if (typeof text === 'string') {
-            texts.push(text);
-          }
-        }
-      }
-    }
+    const texts = content
+      .filter((item) => item.type === 'output_text')
+      .map((item) => (item as ResponseOutputText).text.trim())
+      .filter((text) => text.length > 0);
+
     if (texts.length === 0) {
       return undefined;
     }
