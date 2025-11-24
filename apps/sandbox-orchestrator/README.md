@@ -28,6 +28,8 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_MEMORY_LIMIT` | Limite de memória aplicado à sandbox provisionada | `512m` |
 | `SANDBOX_HOST` | Host exposto para alcançar o sandbox | `127.0.0.1` |
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
+| `GITHUB_CLONE_TOKEN` | Token utilizado para clonar repositórios privados do GitHub | *(vazio)* |
+| `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 
 ## Docker
 

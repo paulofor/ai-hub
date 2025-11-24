@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import OpenAI from 'openai';
 import { randomUUID } from 'node:crypto';
 
+import { buildAuthRepoUrl, redactUrlCredentials } from './git.js';
 import { JobProcessor, SandboxJob } from './types.js';
 
 const exec = promisify(execCallback);
@@ -38,8 +39,13 @@ export class SandboxJobProcessor implements JobProcessor {
     this.log(job, `workspace criado em ${workspace}`);
 
     try {
-      this.log(job, `clonando repositório ${job.repoUrl} (branch ${job.branch})`);
-      await this.cloneRepository(job, repoPath);
+      const cloneUrl = buildAuthRepoUrl(
+        job.repoUrl,
+        process.env.GITHUB_CLONE_TOKEN ?? process.env.GITHUB_TOKEN,
+        process.env.GITHUB_CLONE_USERNAME,
+      );
+      this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
+      await this.cloneRepository(job, repoPath, cloneUrl);
       if (!this.openai) {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
       }
@@ -75,8 +81,8 @@ export class SandboxJobProcessor implements JobProcessor {
     }
   }
 
-  private async cloneRepository(job: SandboxJob, repoPath: string): Promise<void> {
-    await exec(`git clone --branch ${job.branch} --depth 1 ${job.repoUrl} ${repoPath}`);
+  private async cloneRepository(job: SandboxJob, repoPath: string, cloneUrl: string): Promise<void> {
+    await exec(`git clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`);
     if (job.commitHash) {
       this.log(job, `checando commit ${job.commitHash}`);
       await exec(`git checkout ${job.commitHash}`, { cwd: repoPath });
