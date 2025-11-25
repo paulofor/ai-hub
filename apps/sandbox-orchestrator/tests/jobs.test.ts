@@ -311,3 +311,84 @@ test('returns tool errors to the model instead of failing the job', async () => 
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
+
+test('propagates tool errors for both normalized and raw call ids', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-dir-error-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-dir-error',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: '.' }),
+              },
+              { type: 'message', id: 'msg-dir', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        const outputs = payload.input.filter((msg: any) => msg.type === 'function_call_output');
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-dir-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [
+                {
+                  type: 'output_text',
+                  text: outputs.length > 0 ? 'errors returned' : 'missing outputs',
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-dir-error',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'try to read directory',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const secondCall = fakeOpenAI.calls[1];
+  const outputs = secondCall.input.filter((msg: any) => msg.type === 'function_call_output');
+  const callIds = outputs.map((msg: any) => msg.call_id);
+
+  assert.equal(outputs.length, 2, 'ambos call_ids devem receber output');
+  assert.ok(callIds.some((id: string) => id === 'call-dir-error'));
+  assert.ok(callIds.some((id: string) => id.startsWith('fc_')));
+  outputs.forEach((msg: any) => {
+    const parsed = JSON.parse(msg.output);
+    assert.ok(parsed.error, 'erro da ferramenta deve ser propagado');
+  });
+  assert.equal(job.status, 'COMPLETED');
+  assert.equal(job.summary, 'errors returned');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
