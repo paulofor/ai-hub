@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +19,7 @@ import java.util.UUID;
 public class CodexRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
+    private static final Duration SANDBOX_REFRESH_WINDOW = Duration.ofHours(1);
 
     private final CodexRequestRepository codexRequestRepository;
     private final String defaultModel;
@@ -49,13 +52,28 @@ public class CodexRequestService {
     }
 
     public List<CodexRequest> list() {
+        Instant refreshThreshold = Instant.now().minus(SANDBOX_REFRESH_WINDOW);
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
         requests.stream()
             .filter(request -> request.getExternalId() != null)
             .filter(request -> request.getResponseText() == null)
-            .peek(request -> log.info("Atualizando CodexRequest {} a partir do sandbox", request.getId()))
-            .forEach(this::refreshFromSandbox);
+            .forEach(request -> refreshIfWithinWindow(request, refreshThreshold));
         return requests;
+    }
+
+    private void refreshIfWithinWindow(CodexRequest request, Instant refreshThreshold) {
+        Instant createdAt = request.getCreatedAt();
+        if (createdAt != null && createdAt.isBefore(refreshThreshold)) {
+            log.info(
+                "Ignorando refresh do CodexRequest {} porque ultrapassou a janela de {} horas",
+                request.getId(),
+                SANDBOX_REFRESH_WINDOW.toHours()
+            );
+            return;
+        }
+
+        log.info("Atualizando CodexRequest {} a partir do sandbox", request.getId());
+        refreshFromSandbox(request);
     }
 
     private String resolveModel(String candidate) {
