@@ -101,6 +101,7 @@ public class CiFixJobService {
         Optional.ofNullable(payload.status()).ifPresent(record::setStatus);
         Optional.ofNullable(payload.summary()).ifPresent(record::setSummary);
         Optional.ofNullable(payload.patch()).ifPresent(record::setPatch);
+        Optional.ofNullable(payload.pullRequestUrl()).ifPresent(record::setPullRequestUrl);
         if (payload.changedFiles() != null && !payload.changedFiles().isEmpty()) {
             String joined = String.join("\n", payload.changedFiles());
             record.setChangedFiles(joined);

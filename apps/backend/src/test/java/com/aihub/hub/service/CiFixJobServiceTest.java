@@ -42,6 +42,7 @@ class CiFixJobServiceTest {
                 "investigating",
                 List.of("README.md"),
                 "diff --git",
+                "https://github.com/owner/repo/pull/99",
                 null
             ));
 
@@ -63,6 +64,7 @@ class CiFixJobServiceTest {
         assertThat(view.status()).isEqualTo("RUNNING");
         assertThat(view.summary()).isEqualTo("investigating");
         assertThat(view.changedFiles()).containsExactly("README.md");
+        assertThat(view.pullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/99");
         assertThat(persisted.getCommitHash()).isEqualTo("abc123");
         assertThat(persisted.getCreatedAt()).isBeforeOrEqualTo(Instant.now());
     }
@@ -83,6 +85,7 @@ class CiFixJobServiceTest {
                 "done",
                 List.of("src/Main.java"),
                 "diff --git",
+                "https://github.com/owner/repo/pull/101",
                 null
             ));
 
@@ -92,5 +95,6 @@ class CiFixJobServiceTest {
         assertThat(view.status()).isEqualTo("COMPLETED");
         assertThat(view.changedFiles()).containsExactly("src/Main.java");
         assertThat(record.getChangedFiles()).isEqualTo("src/Main.java");
+        assertThat(record.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/101");
     }
 }

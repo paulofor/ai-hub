@@ -19,6 +19,7 @@ public record CiFixJobView(
     String summary,
     List<String> changedFiles,
     String patch,
+    String pullRequestUrl,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -44,6 +45,7 @@ public record CiFixJobView(
             record.getSummary(),
             files,
             record.getPatch(),
+            record.getPullRequestUrl(),
             record.getCreatedAt(),
             record.getUpdatedAt()
         );

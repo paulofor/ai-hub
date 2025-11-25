@@ -26,14 +26,23 @@ interface ToolCall {
 export class SandboxJobProcessor implements JobProcessor {
   private readonly openai?: OpenAI;
   private readonly model: string;
+  private readonly fetchImpl?: (input: string | URL, init?: any) => Promise<any>;
+  private readonly githubApiBase: string;
 
-  constructor(apiKey?: string, model = 'gpt-5-codex', openaiClient?: OpenAI) {
+  constructor(
+    apiKey?: string,
+    model = 'gpt-5-codex',
+    openaiClient?: OpenAI,
+    fetchImpl: (input: string | URL, init?: any) => Promise<any> = globalThis.fetch,
+  ) {
     this.model = model;
     if (openaiClient) {
       this.openai = openaiClient;
     } else if (apiKey) {
       this.openai = new OpenAI({ apiKey });
     }
+    this.fetchImpl = fetchImpl;
+    this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
   }
 
   async process(job: SandboxJob): Promise<void> {
@@ -61,6 +70,7 @@ export class SandboxJobProcessor implements JobProcessor {
       job.summary = summary;
       job.changedFiles = await this.collectChangedFiles(repoPath);
       job.patch = await this.generatePatch(repoPath);
+      await this.maybeCreatePullRequest(job, repoPath);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
     } catch (error) {
@@ -370,6 +380,105 @@ export class SandboxJobProcessor implements JobProcessor {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private resolveRepoSlug(job: SandboxJob): string | undefined {
+    if (job.repoSlug) {
+      return job.repoSlug;
+    }
+
+    try {
+      const parsed = new URL(job.repoUrl);
+      if (parsed.hostname.toLowerCase() !== 'github.com') {
+        return undefined;
+      }
+      const parts = parsed.pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0]}/${parts[1]}`;
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+
+  private async maybeCreatePullRequest(job: SandboxJob, repoPath: string): Promise<void> {
+    const token =
+      process.env.GITHUB_PR_TOKEN ?? process.env.GITHUB_CLONE_TOKEN ?? process.env.GITHUB_TOKEN ?? undefined;
+    if (!token) {
+      this.log(job, 'GITHUB_PR_TOKEN/GITHUB_CLONE_TOKEN não configurado; ignorando criação de PR');
+      return;
+    }
+
+    const repoSlug = this.resolveRepoSlug(job);
+    if (!repoSlug) {
+      this.log(job, 'repoSlug ausente e repoUrl não é github.com; não é possível criar PR');
+      return;
+    }
+
+    if (!this.fetchImpl) {
+      this.log(job, 'fetch API indisponível; não é possível criar PR');
+      return;
+    }
+
+    if (!(await this.isGitRepository(repoPath))) {
+      this.log(job, 'repositório git ausente, não é possível criar PR');
+      return;
+    }
+
+    const { stdout: status } = await exec('git status --porcelain', { cwd: repoPath });
+    if (!status.trim()) {
+      this.log(job, 'nenhuma alteração detectada; PR não será criado');
+      return;
+    }
+
+    const branchName = `ai-hub/cifix-${job.jobId}`;
+    try {
+      await exec('git config user.email "ai-hub-bot@example.com"', { cwd: repoPath });
+      await exec('git config user.name "AI Hub Bot"', { cwd: repoPath });
+      await exec(`git checkout -B ${branchName}`, { cwd: repoPath });
+      await exec('git add -A', { cwd: repoPath });
+      await exec('git commit -m "AI Hub automated fix"', { cwd: repoPath });
+
+      const authenticatedRemote = buildAuthRepoUrl(
+        job.repoUrl,
+        token,
+        process.env.GITHUB_CLONE_USERNAME ?? 'x-access-token',
+      );
+      await exec(`git remote set-url origin ${authenticatedRemote}`, { cwd: repoPath });
+      await exec(`git push origin ${branchName}`, { cwd: repoPath });
+
+      const prTitle = job.summary ? `AI Hub: ${job.summary}` : 'AI Hub automated fix';
+      const prBody = 'Correção automática gerada pelo sandbox do AI Hub.';
+      const response = await this.fetchImpl(`${this.githubApiBase}/repos/${repoSlug}/pulls`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github+json',
+        },
+        body: JSON.stringify({
+          title: prTitle,
+          head: branchName,
+          base: job.branch,
+          body: prBody,
+        }),
+      });
+
+      if (!response.ok) {
+        const message = (await response.text()) || 'erro desconhecido da API do GitHub';
+        throw new Error(`Falha ao criar PR: ${response.status} ${message}`);
+      }
+
+      const pr = await response.json();
+      if (pr?.html_url) {
+        job.pullRequestUrl = pr.html_url;
+        this.log(job, `pull request criado em ${job.pullRequestUrl}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.log(job, `falha ao criar pull request: ${message}`);
     }
   }
 
