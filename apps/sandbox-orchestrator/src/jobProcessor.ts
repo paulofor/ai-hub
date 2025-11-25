@@ -173,6 +173,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     while (true) {
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
+      const rawCallIdMap = new Map<string, string>();
       const response = await this.openai!.responses.create({
         model: this.model,
         input: messages,
@@ -184,8 +185,9 @@ export class SandboxJobProcessor implements JobProcessor {
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
           const { rawCallId, normalizedCallId } = this.buildFunctionCallId(item, index);
+          rawCallIdMap.set(normalizedCallId, rawCallId);
           const messageId = this.sanitizeId(item.id ?? normalizedCallId);
-          return { ...item, id: messageId, call_id: normalizedCallId, raw_call_id: rawCallId } as ResponseItem;
+          return { ...item, id: messageId, call_id: normalizedCallId } as ResponseItem;
         }
         return item as ResponseItem;
       });
@@ -209,8 +211,9 @@ export class SandboxJobProcessor implements JobProcessor {
       const toolMessages: ResponseFunctionToolCallOutputItem[] = [];
       for (const [index, call] of toolCalls.entries()) {
         const parsedArgs = this.parseArguments(call.arguments);
-        const rawCallId = (call as any).raw_call_id ?? call.call_id ?? call.id ?? `call_${index}`;
-        const callId = this.normalizeFunctionCallId(call.call_id ?? call.id, `call_${index}`);
+        const normalizedId = call.call_id ?? call.id;
+        const rawCallId = (normalizedId && rawCallIdMap.get(normalizedId)) ?? this.extractCallId(call, index);
+        const callId = this.normalizeFunctionCallId(normalizedId, `call_${index}`);
         const outputId = this.normalizeFunctionCallOutputId(callId, `call_${index}`);
         const toolCall: ToolCall = {
           id: callId,
