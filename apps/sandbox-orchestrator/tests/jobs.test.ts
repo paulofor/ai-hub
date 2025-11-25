@@ -154,7 +154,14 @@ test('processes tool calls inside a sandbox', async () => {
   assert.ok(job.patch && job.patch.includes('updated content'));
   assert.ok(job.logs.some((entry) => entry.includes('write_file')));
 
-  const toolMessage = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
+  const secondCall = fakeOpenAI.calls[1];
+  const functionCall = secondCall.input.find((msg: any) => msg.type === 'function_call');
+  assert.ok(functionCall?.id.startsWith('fc_'), 'function_call id sem prefixo fc_');
+  assert.ok(functionCall?.call_id.startsWith('fc_'), 'function_call call_id sem prefixo fc_');
+
+  const toolMessage = secondCall.input.find((msg: any) => msg.type === 'function_call_output');
+  assert.ok(toolMessage?.id.startsWith('fco_'), 'function_call_output id sem prefixo fco_');
+  assert.ok(toolMessage?.call_id.startsWith('fc_'), 'function_call_output call_id sem prefixo fc_');
   const parsedTool = JSON.parse(toolMessage.output);
   assert.equal(parsedTool.path, 'README.md');
   assert.equal(parsedTool.content, 'updated content');
