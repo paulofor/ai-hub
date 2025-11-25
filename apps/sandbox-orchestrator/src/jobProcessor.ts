@@ -251,6 +251,16 @@ export class SandboxJobProcessor implements JobProcessor {
             output: JSON.stringify({ error: message }),
             type: 'function_call_output',
           });
+          if (rawCallId !== callId) {
+            const rawOutputId = this.normalizeFunctionCallOutputId(rawCallId, `raw_${index}`);
+            this.log(job, `enviando tool error adicional para call_id original ${rawCallId}`);
+            toolMessages.push({
+              id: rawOutputId,
+              call_id: rawCallId,
+              output: JSON.stringify({ error: message }),
+              type: 'function_call_output',
+            });
+          }
         }
       }
 
