@@ -156,12 +156,12 @@ test('processes tool calls inside a sandbox', async () => {
 
   const secondCall = fakeOpenAI.calls[1];
   const functionCall = secondCall.input.find((msg: any) => msg.type === 'function_call');
-  assert.ok(functionCall?.id.startsWith('fc_'), 'function_call id sem prefixo fc_');
-  assert.ok(functionCall?.call_id.startsWith('fc_'), 'function_call call_id sem prefixo fc_');
+  assert.equal(functionCall?.id, 'call-1');
+  assert.equal(functionCall?.call_id, 'call-1');
 
   const toolMessage = secondCall.input.find((msg: any) => msg.type === 'function_call_output');
   assert.ok(toolMessage?.id.startsWith('fco_'), 'function_call_output id sem prefixo fco_');
-  assert.ok(toolMessage?.call_id.startsWith('fc_'), 'function_call_output call_id sem prefixo fc_');
+  assert.equal(toolMessage?.call_id, 'call-1');
   const parsedTool = JSON.parse(toolMessage.output);
   assert.equal(parsedTool.path, 'README.md');
   assert.equal(parsedTool.content, 'updated content');
@@ -312,7 +312,7 @@ test('returns tool errors to the model instead of failing the job', async () => 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
 
-test('propagates tool errors for both normalized and raw call ids', async () => {
+test('propagates tool errors for a single call id', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-dir-error-'));
   execSync('git init', { cwd: tempRepo });
   execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
@@ -378,15 +378,11 @@ test('propagates tool errors for both normalized and raw call ids', async () => 
 
   const secondCall = fakeOpenAI.calls[1];
   const outputs = secondCall.input.filter((msg: any) => msg.type === 'function_call_output');
-  const callIds = outputs.map((msg: any) => msg.call_id);
 
-  assert.equal(outputs.length, 2, 'ambos call_ids devem receber output');
-  assert.ok(callIds.some((id: string) => id === 'call-dir-error'));
-  assert.ok(callIds.some((id: string) => id.startsWith('fc_')));
-  outputs.forEach((msg: any) => {
-    const parsed = JSON.parse(msg.output);
-    assert.ok(parsed.error, 'erro da ferramenta deve ser propagado');
-  });
+  assert.equal(outputs.length, 1, 'apenas um call_id deve receber output');
+  const parsed = JSON.parse(outputs[0].output);
+  assert.equal(outputs[0].call_id, 'call-dir-error');
+  assert.ok(parsed.error, 'erro da ferramenta deve ser propagado');
   assert.equal(job.status, 'COMPLETED');
   assert.equal(job.summary, 'errors returned');
 
