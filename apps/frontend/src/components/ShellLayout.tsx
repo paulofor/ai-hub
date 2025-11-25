@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import clsx from 'clsx';
 
 const links = [
@@ -13,8 +13,31 @@ const links = [
   { to: '/audit', label: 'Audit Log' }
 ];
 
+const STORAGE_KEY = 'aihub-theme';
+
 export default function ShellLayout({ children }: { children: ReactNode }) {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    const stored = localStorage.getItem(STORAGE_KEY);
+    const prefersDark =
+      stored === 'dark'
+        ? true
+        : stored === 'light'
+          ? false
+          : window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+
+    document.documentElement.classList.toggle('dark', prefersDark);
+    return prefersDark;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark', dark);
+    localStorage.setItem(STORAGE_KEY, dark ? 'dark' : 'light');
+  }, [dark]);
 
   return (
     <div className={clsx('min-h-screen', dark ? 'dark' : '')}>
