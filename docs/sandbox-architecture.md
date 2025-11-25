@@ -32,3 +32,7 @@ O fluxo de automação agora centraliza a execução das correções no `sandbox
 - **Sandbox-orchestrator**
   - `POST /jobs`: inicia um job no sandbox (clona repo, prepara tools e inicia o loop com o modelo).
   - `GET /jobs/{id}`: retorna o status atual, resumo e patch quando disponíveis.
+
+## Ferramentas disponíveis no sandbox
+
+- O contêiner do sandbox agora inclui o utilitário `apply_patch` (wrapper para `patch`/`gpatch`) em `/usr/local/bin`. Ele aceita patches com o marcador `*** Begin Patch` ou diffs tradicionais, permitindo edições segmentadas sem reescrever arquivos completos.
