@@ -19,6 +19,14 @@ class StubProcessor implements JobProcessor {
   }
 }
 
+test('reports python availability on healthcheck', async () => {
+  const app = createApp({ processor: new StubProcessor() });
+  const response = await request(app).get('/health').expect(200);
+
+  assert.equal(response.body.status, 'ok');
+  assert.ok(response.body.python?.python, 'python path ausente no healthcheck');
+});
+
 test('accepts a job request and processes asynchronously', async () => {
   const registry = new Map<string, SandboxJob>();
   const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });

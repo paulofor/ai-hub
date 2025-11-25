@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import morgan from 'morgan';
+import { spawnSync } from 'node:child_process';
 
 import { SandboxJobProcessor } from './jobProcessor.js';
 import { JobProcessor, SandboxJob } from './types.js';
@@ -28,8 +29,28 @@ export function createApp(options: AppOptions = {}) {
   }
   app.use(express.json());
 
+  const healthcheckPythonInfo = () => {
+    const pythonPath = spawnSync('which', ['python3'], { encoding: 'utf-8' });
+    const pipVersion = spawnSync('pip3', ['--version'], { encoding: 'utf-8' });
+
+    const python = pythonPath.status === 0 ? pythonPath.stdout.trim() : undefined;
+    const pip = pipVersion.status === 0 ? pipVersion.stdout.trim() : undefined;
+
+    if (python) {
+      console.log(`Sandbox orchestrator healthcheck: python3 disponível em ${python}`);
+    } else {
+      console.warn('Sandbox orchestrator healthcheck: python3 não encontrado');
+    }
+
+    if (pip) {
+      console.log(`Sandbox orchestrator healthcheck: pip3 detectado (${pip})`);
+    }
+
+    return { python, pip };
+  };
+
   app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', python: healthcheckPythonInfo() });
   });
 
   app.post('/jobs', async (req: Request, res: Response) => {
