@@ -30,6 +30,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
 | `GITHUB_CLONE_TOKEN` | Token utilizado para clonar repositórios privados do GitHub | *(vazio)* |
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
+| `GITHUB_PR_TOKEN` | Token usado para fazer push da branch gerada e abrir um pull request (fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`) | *(vazio)* |
 
 ## Docker
 

@@ -12,6 +12,7 @@ export interface SandboxJob {
   summary?: string;
   changedFiles?: string[];
   patch?: string;
+  pullRequestUrl?: string;
   error?: string;
   sandboxPath?: string;
   logs: string[];
