@@ -55,6 +55,9 @@ public class CiFixJobRecord {
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     private String patch;
 
+    @Column(name = "pull_request_url")
+    private String pullRequestUrl;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -143,6 +146,14 @@ public class CiFixJobRecord {
 
     public void setPatch(String patch) {
         this.patch = patch;
+    }
+
+    public String getPullRequestUrl() {
+        return pullRequestUrl;
+    }
+
+    public void setPullRequestUrl(String pullRequestUrl) {
+        this.pullRequestUrl = pullRequestUrl;
     }
 
     public Instant getCreatedAt() {

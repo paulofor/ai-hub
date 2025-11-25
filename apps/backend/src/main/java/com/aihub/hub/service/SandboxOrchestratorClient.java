@@ -71,6 +71,7 @@ public class SandboxOrchestratorClient {
         String summary,
         List<String> changedFiles,
         String patch,
+        String pullRequestUrl,
         String error
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
@@ -98,6 +99,7 @@ public class SandboxOrchestratorClient {
                 node.path("summary").asText(null),
                 files.isEmpty() ? null : files,
                 node.path("patch").asText(null),
+                node.path("pullRequestUrl").asText(null),
                 node.path("error").asText(null)
             );
         }
