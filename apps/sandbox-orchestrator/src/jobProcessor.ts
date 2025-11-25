@@ -173,7 +173,6 @@ export class SandboxJobProcessor implements JobProcessor {
 
     while (true) {
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
-      const rawCallIdMap = new Map<string, string>();
       const response = await this.openai!.responses.create({
         model: this.model,
         input: messages,
@@ -184,10 +183,9 @@ export class SandboxJobProcessor implements JobProcessor {
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
-          const { rawCallId, normalizedCallId } = this.buildFunctionCallId(item, index);
-          rawCallIdMap.set(normalizedCallId, rawCallId);
-          const messageId = this.sanitizeId(item.id ?? normalizedCallId);
-          return { ...item, id: messageId, call_id: normalizedCallId } as ResponseItem;
+          const callId = this.extractCallId(item, index);
+          const messageId = this.sanitizeId(item.id ?? callId);
+          return { ...item, id: messageId, call_id: callId } as ResponseItem;
         }
         return item as ResponseItem;
       });
@@ -211,9 +209,7 @@ export class SandboxJobProcessor implements JobProcessor {
       const toolMessages: ResponseFunctionToolCallOutputItem[] = [];
       for (const [index, call] of toolCalls.entries()) {
         const parsedArgs = this.parseArguments(call.arguments);
-        const normalizedId = call.call_id ?? call.id;
-        const rawCallId = (normalizedId && rawCallIdMap.get(normalizedId)) ?? this.extractCallId(call, index);
-        const callId = this.normalizeFunctionCallId(normalizedId, `call_${index}`);
+        const callId = call.call_id ?? this.extractCallId(call, index);
         const outputId = this.normalizeFunctionCallOutputId(callId, `call_${index}`);
         const toolCall: ToolCall = {
           id: callId,
@@ -222,7 +218,7 @@ export class SandboxJobProcessor implements JobProcessor {
         };
         this.log(
           job,
-          `executando tool ${toolCall.name} (callId=${callId}, rawCallId=${rawCallId}, args=${JSON.stringify(toolCall.arguments)})`,
+          `executando tool ${toolCall.name} (callId=${callId}, args=${JSON.stringify(toolCall.arguments)})`,
         );
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
@@ -232,16 +228,6 @@ export class SandboxJobProcessor implements JobProcessor {
             output: JSON.stringify(result),
             type: 'function_call_output',
           });
-          if (rawCallId !== callId) {
-            const rawOutputId = this.normalizeFunctionCallOutputId(rawCallId, `raw_${index}`);
-            this.log(job, `enviando tool output adicional para call_id original ${rawCallId}`);
-            toolMessages.push({
-              id: rawOutputId,
-              call_id: rawCallId,
-              output: JSON.stringify(result),
-              type: 'function_call_output',
-            });
-          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
@@ -251,16 +237,6 @@ export class SandboxJobProcessor implements JobProcessor {
             output: JSON.stringify({ error: message }),
             type: 'function_call_output',
           });
-          if (rawCallId !== callId) {
-            const rawOutputId = this.normalizeFunctionCallOutputId(rawCallId, `raw_${index}`);
-            this.log(job, `enviando tool error adicional para call_id original ${rawCallId}`);
-            toolMessages.push({
-              id: rawOutputId,
-              call_id: rawCallId,
-              output: JSON.stringify({ error: message }),
-              type: 'function_call_output',
-            });
-          }
         }
       }
 
@@ -414,15 +390,6 @@ export class SandboxJobProcessor implements JobProcessor {
     }
   }
 
-  private buildFunctionCallId(
-    item: { id?: string; call_id?: string },
-    index: number,
-  ): { rawCallId: string; normalizedCallId: string } {
-    const rawCallId = this.extractCallId(item, index);
-    const normalizedCallId = this.normalizeFunctionCallId(rawCallId, `call_${index}`);
-    return { rawCallId, normalizedCallId };
-  }
-
   private extractCallId(item: { id?: string; call_id?: string }, index: number): string {
     const fallback = `call_${index}`;
     const rawId = item.call_id ?? item.id ?? fallback;
@@ -430,11 +397,6 @@ export class SandboxJobProcessor implements JobProcessor {
       return rawId;
     }
     return fallback;
-  }
-
-  private normalizeFunctionCallId(rawId: string | undefined, fallback: string): string {
-    const sanitized = this.sanitizeId(rawId ?? fallback);
-    return sanitized.startsWith('fc_') ? sanitized : `fc_${sanitized}`;
   }
 
   private normalizeFunctionCallOutputId(rawId: string | undefined, fallback: string): string {
