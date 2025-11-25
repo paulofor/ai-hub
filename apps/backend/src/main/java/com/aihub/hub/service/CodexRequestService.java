@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,13 +51,30 @@ public class CodexRequestService {
     }
 
     public List<CodexRequest> list() {
+        Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
         requests.stream()
             .filter(request -> request.getExternalId() != null)
             .filter(request -> request.getResponseText() == null)
+            .filter(request -> shouldRefresh(request, refreshCutoff))
             .peek(request -> log.info("Atualizando CodexRequest {} a partir do sandbox", request.getId()))
             .forEach(this::refreshFromSandbox);
         return requests;
+    }
+
+    private boolean shouldRefresh(CodexRequest request, Instant refreshCutoff) {
+        if (request.getCreatedAt() == null) {
+            return false;
+        }
+        boolean withinAllowedWindow = request.getCreatedAt().isAfter(refreshCutoff);
+        if (!withinAllowedWindow) {
+            log.info(
+                "Ignorando atualização do CodexRequest {} pois ultrapassou a janela de 1 hora (criado em {})",
+                request.getId(),
+                request.getCreatedAt()
+            );
+        }
+        return withinAllowedWindow;
     }
 
     private String resolveModel(String candidate) {
