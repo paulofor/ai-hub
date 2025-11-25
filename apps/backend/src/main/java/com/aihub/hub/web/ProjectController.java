@@ -130,7 +130,20 @@ public class ProjectController {
                                          @PathVariable String repo,
                                          @Valid @RequestBody CreateFixPrRequest request) {
         assertOwner(role);
-        return ResponseEntity.ok(pullRequestService.createFixPr(actor, owner, repo, request.getBase(), request.getTitle(), request.getDiff()));
+        return ResponseEntity.ok(pullRequestService.createFixPr(
+            actor,
+            owner,
+            repo,
+            request.getBase(),
+            request.getTitle(),
+            request.getDiff(),
+            request.getExplanation()
+        ));
+    }
+
+    @GetMapping("/{owner}/{repo}/pr/{number}/explanation")
+    public ResponseEntity<?> getPrExplanation(@PathVariable String owner, @PathVariable String repo, @PathVariable int number) {
+        return ResponseEntity.ok(pullRequestService.getExplanation(owner, repo, number));
     }
 
     private void assertOwner(String role) {

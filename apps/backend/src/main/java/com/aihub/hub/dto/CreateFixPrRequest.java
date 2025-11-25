@@ -13,6 +13,9 @@ public class CreateFixPrRequest {
     @NotBlank
     private String diff;
 
+    @NotBlank
+    private String explanation;
+
     public String getBase() {
         return base;
     }
@@ -35,5 +38,13 @@ public class CreateFixPrRequest {
 
     public void setDiff(String diff) {
         this.diff = diff;
+    }
+
+    public String getExplanation() {
+        return explanation;
+    }
+
+    public void setExplanation(String explanation) {
+        this.explanation = explanation;
     }
 }

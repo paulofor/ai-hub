@@ -33,6 +33,12 @@ interface ResponseRecord {
   createdAt: string;
 }
 
+interface PullRequestExplanation {
+  prNumber: number;
+  explanation: string;
+  createdAt: string;
+}
+
 const ownerHeaders = { 'X-Role': 'owner', 'X-User': 'ui-owner' };
 
 export default function ProjectDetailPage() {
@@ -49,6 +55,9 @@ export default function ProjectDetailPage() {
   const [analysisPr, setAnalysisPr] = useState<Record<number, string>>({});
   const [fixBase, setFixBase] = useState('main');
   const [fixTitle, setFixTitle] = useState('Correção automática');
+  const [fixExplanation, setFixExplanation] = useState('');
+  const [storedExplanation, setStoredExplanation] = useState<PullRequestExplanation | null>(null);
+  const [explanationPr, setExplanationPr] = useState('');
 
   useEffect(() => {
     client.get(`/projects/${owner}/${repo}/runs`).then((res) => setRuns(res.data));
@@ -91,13 +100,45 @@ export default function ProjectDetailPage() {
       pushToast('Nenhum diff disponível para abrir PR', 'error');
       return;
     }
+    if (!fixExplanation.trim()) {
+      pushToast('Inclua uma explicação em português para o PR', 'error');
+      return;
+    }
     const payload = {
       base: fixBase,
       title: fixTitle,
-      diff: latestResponse.unifiedDiff
+      diff: latestResponse.unifiedDiff,
+      explanation: fixExplanation
     };
-    await client.post(`/projects/${owner}/${repo}/create-fix-pr`, payload, { headers: ownerHeaders });
+    const response = await client.post(`/projects/${owner}/${repo}/create-fix-pr`, payload, { headers: ownerHeaders });
+    const prNumber = response.data?.number;
     pushToast('Pull request de correção criado');
+    if (typeof prNumber === 'number') {
+      setExplanationPr(String(prNumber));
+      await fetchExplanation(prNumber);
+    }
+  };
+
+  const fetchExplanation = async (prNumber: number) => {
+    const explanationResponse = await client.get<PullRequestExplanation>(
+      `/projects/${owner}/${repo}/pr/${prNumber}/explanation`
+    );
+    setStoredExplanation(explanationResponse.data);
+  };
+
+  const lookupExplanation = async () => {
+    const prNumber = Number(explanationPr);
+    if (!prNumber) {
+      pushToast('Informe um número de PR válido', 'error');
+      return;
+    }
+    try {
+      await fetchExplanation(prNumber);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Falha ao buscar explicação do PR';
+      pushToast(message, 'error');
+      setStoredExplanation(null);
+    }
   };
 
   return (
@@ -227,6 +268,16 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
                 <div className="mt-3">
+                  <label className="text-xs font-medium">Explicação em português para o MR</label>
+                  <textarea
+                    value={fixExplanation}
+                    onChange={(event) => setFixExplanation(event.target.value)}
+                    rows={3}
+                    className="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-700"
+                    placeholder="Descreva para o time o que o PR está fazendo"
+                  />
+                </div>
+                <div className="mt-3">
                   <ConfirmButton
                     onConfirm={createFixPr}
                     label="Preparar PR de correção"
@@ -238,6 +289,41 @@ export default function ProjectDetailPage() {
           </div>
         ) : (
           <p className="text-sm text-slate-500">Nenhuma análise realizada ainda.</p>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-4">
+        <h3 className="text-lg font-semibold">Explicação armazenada do PR</h3>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-end">
+          <div>
+            <label className="text-xs font-medium">Número do PR</label>
+            <input
+              value={explanationPr}
+              onChange={(event) => setExplanationPr(event.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-700"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <ConfirmButton
+              onConfirm={lookupExplanation}
+              label="Buscar explicação"
+              confirmLabel="Confirmar consulta"
+              disabled={!explanationPr.trim()}
+            />
+          </div>
+        </div>
+        {storedExplanation ? (
+          <div className="text-sm space-y-1">
+            <p>
+              <span className="font-semibold">PR #{storedExplanation.prNumber}</span> ·{' '}
+              <span className="text-slate-500">
+                registrada em {new Date(storedExplanation.createdAt).toLocaleString()}
+              </span>
+            </p>
+            <p className="text-slate-700 whitespace-pre-wrap dark:text-slate-200">{storedExplanation.explanation}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">Nenhuma explicação carregada.</p>
         )}
       </div>
     </section>
