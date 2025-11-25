@@ -8,16 +8,19 @@ export function useFetch<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setData(null);
     setError(null);
-    fn()
+    Promise.resolve()
+      .then(() => fn())
       .then((result) => {
         if (active) {
           setData(result);
         }
       })
-      .catch((err: Error) => {
+      .catch((error: unknown) => {
         if (active) {
-          setError(err.message);
+          const message = error instanceof Error ? error.message : 'Erro ao carregar dados';
+          setError(message);
         }
       })
       .finally(() => {
