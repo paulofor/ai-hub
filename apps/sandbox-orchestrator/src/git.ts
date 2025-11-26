@@ -1,12 +1,3 @@
-function isGithubHttpsUrl(repoUrl: string): boolean {
-  try {
-    const parsed = new URL(repoUrl);
-    return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'github.com';
-  } catch {
-    return false;
-  }
-}
-
 export function buildAuthRepoUrl(repoUrl: string, token?: string, username = 'x-access-token'): string {
   if (!token || !isGithubHttpsUrl(repoUrl)) {
     return repoUrl;
@@ -35,5 +26,26 @@ export function redactUrlCredentials(repoUrl: string): string {
     return repoUrl;
   } catch {
     return repoUrl;
+  }
+}
+
+function isGithubHttpsUrl(repoUrl: string): boolean {
+  try {
+    const parsed = new URL(repoUrl);
+    return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'github.com';
+  } catch {
+    return false;
+  }
+}
+
+export function extractTokenFromRepoUrl(repoUrl: string): string | undefined {
+  try {
+    const parsed = new URL(repoUrl);
+    if (!parsed.password) {
+      return undefined;
+    }
+    return parsed.password;
+  } catch {
+    return undefined;
   }
 }
