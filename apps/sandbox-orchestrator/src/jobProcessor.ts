@@ -165,7 +165,7 @@ export class SandboxJobProcessor implements JobProcessor {
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. Sempre trabalhe somente dentro do diretório do repositório.`,
+            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento.`,
           },
         ],
       },
