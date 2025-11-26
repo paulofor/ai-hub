@@ -1,4 +1,4 @@
-import { exec as execCallback } from 'node:child_process';
+import { exec as execCallback, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -366,9 +366,85 @@ export class SandboxJobProcessor implements JobProcessor {
     const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
     await this.assertDirectoryExists(cwd);
     const joined = command.map((part) => part.trim()).join(' ');
-    this.log(job, `run_shell: ${joined} (cwd=${cwd})`);
-    const { stdout, stderr } = await exec(joined, { cwd });
-    return { stdout, stderr };
+    const timeoutEnv = Number(process.env.RUN_SHELL_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 300_000;
+    const maxBufferEnv = Number(process.env.RUN_SHELL_MAX_BUFFER_BYTES);
+    const maxBuffer = Number.isFinite(maxBufferEnv) && maxBufferEnv > 0 ? maxBufferEnv : 5 * 1024 * 1024;
+
+    this.log(
+      job,
+      `run_shell: ${joined} (cwd=${cwd}, timeoutMs=${timeoutMs}, maxBufferBytes=${maxBuffer})`,
+    );
+
+    let stdout = '';
+    let stderr = '';
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
+    let timedOut = false;
+
+    const child = spawn(command[0], command.slice(1), { cwd });
+
+    const appendWithLimit = (current: string, chunk: string): { value: string; truncated: boolean } => {
+      if (current.length >= maxBuffer) {
+        return { value: current, truncated: true };
+      }
+      const remaining = maxBuffer - current.length;
+      if (chunk.length <= remaining) {
+        return { value: current + chunk, truncated: false };
+      }
+      return { value: current + chunk.slice(0, remaining), truncated: true };
+    };
+
+    child.stdout.on('data', (data: Buffer) => {
+      const chunk = data.toString();
+      const result = appendWithLimit(stdout, chunk);
+      stdout = result.value;
+      stdoutTruncated = stdoutTruncated || result.truncated;
+      this.log(job, `run_shell stdout: ${this.truncate(chunk, 500)}`);
+    });
+
+    child.stderr.on('data', (data: Buffer) => {
+      const chunk = data.toString();
+      const result = appendWithLimit(stderr, chunk);
+      stderr = result.value;
+      stderrTruncated = stderrTruncated || result.truncated;
+      this.log(job, `run_shell stderr: ${this.truncate(chunk, 500)}`);
+    });
+
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      this.log(job, `run_shell atingiu timeout de ${timeoutMs}ms; finalizando processo`);
+      child.kill('SIGKILL');
+    }, timeoutMs);
+
+    const exitResult = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      child.on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        reject(err);
+      });
+      child.on('close', (code, signal) => {
+        clearTimeout(timeoutHandle);
+        resolve({ code, signal });
+      });
+    });
+
+    if (stdoutTruncated || stderrTruncated) {
+      this.log(job, 'run_shell output truncado para respeitar maxBuffer');
+    }
+    this.log(
+      job,
+      `run_shell finalizado (code=${exitResult.code}, signal=${exitResult.signal}, timedOut=${timedOut})`,
+    );
+
+    return {
+      stdout,
+      stderr,
+      exitCode: exitResult.code,
+      signal: exitResult.signal,
+      timedOut,
+      stdoutTruncated,
+      stderrTruncated,
+    };
   }
 
   private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
