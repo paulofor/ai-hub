@@ -28,9 +28,9 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_MEMORY_LIMIT` | Limite de memória aplicado à sandbox provisionada | `512m` |
 | `SANDBOX_HOST` | Host exposto para alcançar o sandbox | `127.0.0.1` |
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
-| `GITHUB_CLONE_TOKEN` | Token utilizado para clonar repositórios privados do GitHub | *(vazio)* |
+| `GITHUB_CLONE_TOKEN` | Token utilizado para todas as operações no GitHub (clone, push e criação de PR). Se ausente, o serviço tenta `GITHUB_TOKEN`, `GITHUB_PR_TOKEN` ou um token embutido em `repoUrl`. | *(vazio)* |
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
-| `GITHUB_PR_TOKEN` | Token usado para fazer push da branch gerada e abrir um pull request (fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`) | *(vazio)* |
+| `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
 
 ## Docker
 
