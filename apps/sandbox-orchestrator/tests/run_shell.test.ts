@@ -54,3 +54,25 @@ test('recusa grep -R sem argumentos adicionais com orientação de uso do rg', a
 
   await fs.rm(repoPath, { recursive: true, force: true });
 });
+
+test('normaliza cwd com caracteres extras e prossegue usando raiz do repo', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-cwd-trim-'));
+  await fs.writeFile(path.join(repoPath, 'file.txt'), 'conteudo');
+
+  const processor = new SandboxJobProcessor();
+  const job = createJob();
+
+  const result = await (processor as any).handleRunShell(
+    { command: ['ls'], cwd: '.}' },
+    repoPath,
+    job,
+  );
+
+  assert.equal(result.exitCode, 0, 'ls deveria executar com sucesso após normalizar cwd');
+  const normalizationLog = job.logs.find((entry) =>
+    entry.includes('normalizando caminho solicitado de ".}" para "."'),
+  );
+  assert.ok(normalizationLog, 'log de normalização do cwd não encontrado');
+
+  await fs.rm(repoPath, { recursive: true, force: true });
+});

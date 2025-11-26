@@ -337,11 +337,18 @@ export class SandboxJobProcessor implements JobProcessor {
     }
   }
 
-  private resolvePath(repoPath: string, requested: string | undefined): string {
+  private resolvePath(repoPath: string, requested: string | undefined, job?: SandboxJob): string {
     if (!requested) {
       throw new Error('path ausente');
     }
-    const absolute = path.resolve(repoPath, requested);
+    const sanitized = this.sanitizeRequestedPath(requested);
+    if (!sanitized) {
+      throw new Error('path ausente');
+    }
+    if (sanitized !== requested && job) {
+      this.log(job, `normalizando caminho solicitado de "${requested}" para "${sanitized}"`);
+    }
+    const absolute = path.resolve(repoPath, sanitized);
     if (!absolute.startsWith(repoPath)) {
       throw new Error('Acesso a caminho fora do sandbox bloqueado');
     }
@@ -363,7 +370,7 @@ export class SandboxJobProcessor implements JobProcessor {
       throw new Error('command é obrigatório para run_shell');
     }
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
-    const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
+    const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg, job) : repoPath;
     await this.assertDirectoryExists(cwd);
 
     command = command.map((part) => part.trim());
@@ -660,6 +667,17 @@ export class SandboxJobProcessor implements JobProcessor {
     const entry = `[${new Date().toISOString()}] ${message}`;
     job.logs.push(entry);
     console.info(`Sandbox job ${job.jobId}: ${message}`);
+  }
+
+  private sanitizeRequestedPath(requested: string | undefined): string | undefined {
+    if (!requested) {
+      return undefined;
+    }
+    const trimmed = requested.trim();
+    const withoutQuotes = trimmed.replace(/^['"`]+|['"`]+$/g, '');
+    const withoutTrailingBraces = withoutQuotes.replace(/[}\]]+$/g, '');
+    const sanitized = withoutTrailingBraces.trim();
+    return sanitized.length > 0 ? sanitized : undefined;
   }
 
   private async assertDirectoryExists(cwd: string): Promise<void> {
