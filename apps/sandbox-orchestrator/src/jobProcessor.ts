@@ -187,7 +187,10 @@ export class SandboxJobProcessor implements JobProcessor {
         input: messages,
         tools,
       });
-      this.log(job, 'resposta do modelo recebida');
+      this.log(
+        job,
+        `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,
+      );
 
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
@@ -201,7 +204,20 @@ export class SandboxJobProcessor implements JobProcessor {
       const assistantMessage = normalizedOutput.find((item) => item.type === 'message') as ResponseOutputMessage | undefined;
       const toolCalls = normalizedOutput.filter((item) => item.type === 'function_call') as ResponseFunctionToolCallItem[];
 
-      this.log(job, `modelo retornou ${toolCalls.length} chamadas de ferramenta e mensagem=${Boolean(assistantMessage)}`);
+      const toolCallDetails =
+        toolCalls
+          .map((call, idx) => {
+            const callId = call.call_id ?? this.extractCallId(call, idx);
+            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
+          })
+          .join(', ') || 'nenhum';
+      const assistantTextPreview = this.truncate(this.extractOutputText(assistantMessage?.content) ?? '', 240);
+      this.log(
+        job,
+        `modelo retornou ${toolCalls.length} chamadas de ferramenta e mensagem=${Boolean(
+          assistantMessage,
+        )} (toolCalls=[${toolCallDetails}], textPreview="${assistantTextPreview}")`,
+      );
 
       const text = this.extractOutputText(assistantMessage?.content);
       if (toolCalls.length === 0) {
@@ -209,6 +225,7 @@ export class SandboxJobProcessor implements JobProcessor {
         if (assistantMessage) {
           messages.push(assistantMessage);
         }
+        this.log(job, `resumo final do modelo: "${this.truncate(summary, 240)}"`);
         this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
       }
@@ -231,6 +248,7 @@ export class SandboxJobProcessor implements JobProcessor {
         );
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
+          this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
           toolMessages.push({
             id: outputId,
             call_id: callId,
@@ -541,5 +559,25 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '_');
     return sanitized.length > 0 ? sanitized : 'msg_default';
+  }
+
+  private truncate(value: string, maxLength = 200): string {
+    if (!value) {
+      return '';
+    }
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return `${value.slice(0, maxLength)}... [truncated ${value.length - maxLength} chars]`;
+  }
+
+  private logJson(job: SandboxJob, prefix: string, payload: unknown, maxLength = 2000) {
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(payload);
+    } catch (err) {
+      serialized = `erro ao serializar payload: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    this.log(job, `${prefix}: ${this.truncate(serialized, maxLength)}`);
   }
 }
