@@ -59,6 +59,7 @@ export class SandboxJobProcessor implements JobProcessor {
       const cloneUrl = buildAuthRepoUrl(job.repoUrl, cloneToken, process.env.GITHUB_CLONE_USERNAME);
       this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
       await this.cloneRepository(job, repoPath, cloneUrl);
+      const baseCommit = await this.getHeadCommit(repoPath);
       if (!this.openai) {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
       }
@@ -66,9 +67,9 @@ export class SandboxJobProcessor implements JobProcessor {
       this.log(job, 'iniciando interação com o modelo do sandbox');
       const summary = await this.runCodexLoop(job, repoPath);
       job.summary = summary;
-      job.changedFiles = await this.collectChangedFiles(repoPath);
-      job.patch = await this.generatePatch(repoPath);
-      await this.maybeCreatePullRequest(job, repoPath, cloneToken);
+      job.changedFiles = await this.collectChangedFiles(repoPath, baseCommit);
+      job.patch = await this.generatePatch(repoPath, baseCommit);
+      await this.maybeCreatePullRequest(job, repoPath, cloneToken, baseCommit, job.patch);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
     } catch (error) {
@@ -352,23 +353,22 @@ export class SandboxJobProcessor implements JobProcessor {
     return { status: 'ok', path: relative, content };
   }
 
-  private async collectChangedFiles(repoPath: string): Promise<string[]> {
+  private async collectChangedFiles(repoPath: string, baseCommit?: string): Promise<string[]> {
     if (!(await this.isGitRepository(repoPath))) {
       return [];
     }
-    const { stdout } = await exec('git status --porcelain', { cwd: repoPath });
+    const { stdout } = await exec(`git diff --name-only ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
     return stdout
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line)
-      .map((line) => line.replace(/^..\s+/, ''));
+      .filter((line) => line.length > 0);
   }
 
-  private async generatePatch(repoPath: string): Promise<string> {
+  private async generatePatch(repoPath: string, baseCommit?: string): Promise<string> {
     if (!(await this.isGitRepository(repoPath))) {
       return '';
     }
-    const { stdout } = await exec('git diff', { cwd: repoPath });
+    const { stdout } = await exec(`git diff ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
     return stdout;
   }
 
@@ -401,10 +401,24 @@ export class SandboxJobProcessor implements JobProcessor {
     return undefined;
   }
 
+  private async getHeadCommit(repoPath: string): Promise<string | undefined> {
+    if (!(await this.isGitRepository(repoPath))) {
+      return undefined;
+    }
+    try {
+      const { stdout } = await exec('git rev-parse HEAD', { cwd: repoPath });
+      return stdout.trim();
+    } catch {
+      return undefined;
+    }
+  }
+
   private async maybeCreatePullRequest(
     job: SandboxJob,
     repoPath: string,
     cloneToken?: string,
+    baseCommit?: string,
+    diffPatch?: string,
   ): Promise<void> {
     const token =
       process.env.GITHUB_PR_TOKEN ??
@@ -434,8 +448,8 @@ export class SandboxJobProcessor implements JobProcessor {
       return;
     }
 
-    const { stdout: status } = await exec('git status --porcelain', { cwd: repoPath });
-    if (!status.trim()) {
+    const diff = diffPatch ?? (await this.generatePatch(repoPath, baseCommit));
+    if (!diff.trim()) {
       this.log(job, 'nenhuma alteração detectada; PR não será criado');
       return;
     }
