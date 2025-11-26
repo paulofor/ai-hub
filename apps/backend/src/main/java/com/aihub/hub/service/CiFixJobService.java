@@ -64,9 +64,18 @@ public class CiFixJobService {
             request.getTestCommand()
         );
 
-        SandboxOrchestratorClient.SandboxOrchestratorJobResponse orchestratorResponse =
-            sandboxOrchestratorClient.createJob(jobRequest);
-        populateFromOrchestrator(record, orchestratorResponse);
+        try {
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse orchestratorResponse =
+                sandboxOrchestratorClient.createJob(jobRequest);
+            populateFromOrchestrator(record, orchestratorResponse);
+        } catch (RuntimeException ex) {
+            record.setStatus("FAILED");
+            String message = ex.getMessage() != null
+                ? ex.getMessage()
+                : "Falha ao criar job no sandbox-orchestrator";
+            record.setSummary("Falha ao criar job no sandbox-orchestrator: " + message);
+        }
+
         jobRepository.save(record);
 
         auditService.record(actor, "cifix_job_created", project.getRepo(), null);
