@@ -177,6 +177,98 @@ test('processes tool calls inside a sandbox', async () => {
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
 
+test('collects patch and changed files even when the model commits changes', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-job-commit-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        const turn = fakeOpenAI.calls.length;
+        if (turn === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'write-file',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'committed change' }),
+              },
+              { type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        if (turn === 2) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'add',
+                name: 'run_shell',
+                arguments: JSON.stringify({ command: ['git', 'add', 'README.md'], cwd: '.' }),
+              },
+              { type: 'message', id: 'msg-2', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        if (turn === 3) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'commit',
+                name: 'run_shell',
+                arguments: JSON.stringify({ command: ['git', 'commit', '-m', 'model-commit'], cwd: '.' }),
+              },
+              { type: 'message', id: 'msg-3', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-4',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'committed summary', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-commit',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'commit flow',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  assert.equal(job.status, 'COMPLETED', job.error);
+  assert.equal(job.summary, 'committed summary');
+  assert.ok(job.patch && job.patch.includes('committed change'), 'patch vazio após commit do modelo');
+  assert.deepEqual(job.changedFiles, ['README.md']);
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
 test('normalizes read_file path to repo-relative when sending tool outputs', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-read-'));
   execSync('git init', { cwd: tempRepo });
