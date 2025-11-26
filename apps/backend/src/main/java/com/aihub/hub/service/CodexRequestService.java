@@ -2,9 +2,11 @@ package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.PromptRecord;
+import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
+import com.aihub.hub.repository.ResponseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,17 +29,20 @@ public class CodexRequestService {
 
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
+    private final ResponseRepository responseRepository;
     private final String defaultModel;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final String defaultBranch;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
+                               ResponseRepository responseRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch) {
         this.codexRequestRepository = codexRequestRepository;
         this.promptRepository = promptRepository;
+        this.responseRepository = responseRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.defaultModel = defaultModel;
         this.defaultBranch = defaultBranch;
@@ -158,6 +163,8 @@ public class CodexRequestService {
 
         String jobId = UUID.randomUUID().toString();
         log.info("Enviando CodexRequest {} para sandbox com jobId {} e branch padrão {}", request.getId(), jobId, defaultBranch);
+        PromptMetadata metadata = extractMetadata(request.getEnvironment());
+
         SandboxJobRequest jobRequest = new SandboxJobRequest(
             jobId,
             coordinates.owner() + "/" + coordinates.repo(),
@@ -180,6 +187,8 @@ public class CodexRequestService {
 
         codexRequestRepository.save(request);
         log.info("CodexRequest {} atualizado com externalId {}", request.getId(), resolvedExternalId);
+
+        recordResponse(metadata, response);
     }
 
     private void refreshFromSandbox(CodexRequest request) {
@@ -206,6 +215,63 @@ public class CodexRequestService {
             codexRequestRepository.save(request);
             log.info("CodexRequest {} atualizado a partir do sandbox", request.getId());
         }
+
+        recordResponse(extractMetadata(request.getEnvironment()), response);
+    }
+
+    private void recordResponse(PromptMetadata metadata, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (response == null) {
+            return;
+        }
+
+        boolean hasContent = (response.summary() != null && !response.summary().isBlank())
+            || (response.patch() != null && !response.patch().isBlank())
+            || (response.error() != null && !response.error().isBlank());
+        if (!hasContent) {
+            return;
+        }
+
+        PromptRecord prompt = findPromptRecord(metadata).orElse(null);
+        ResponseRecord record = new ResponseRecord(prompt, metadata.repo(), metadata.runId(), metadata.prNumber());
+        Optional.ofNullable(response.summary()).filter(value -> !value.isBlank()).ifPresent(record::setFixPlan);
+        Optional.ofNullable(response.patch()).filter(value -> !value.isBlank()).ifPresent(record::setUnifiedDiff);
+        Optional.ofNullable(response.error()).filter(value -> !value.isBlank()).ifPresent(record::setRootCause);
+        responseRepository.save(record);
+    }
+
+    private Optional<PromptRecord> findPromptRecord(PromptMetadata metadata) {
+        if (metadata == null || metadata.repo() == null) {
+            return Optional.empty();
+        }
+
+        if (metadata.runId() != null && metadata.prNumber() != null) {
+            Optional<PromptRecord> record = promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(
+                metadata.repo(), metadata.runId(), metadata.prNumber()
+            );
+            if (record.isPresent()) {
+                return record;
+            }
+        }
+
+        if (metadata.runId() != null) {
+            Optional<PromptRecord> record = promptRepository.findTopByRepoAndRunIdOrderByCreatedAtDesc(
+                metadata.repo(), metadata.runId()
+            );
+            if (record.isPresent()) {
+                return record;
+            }
+        }
+
+        if (metadata.prNumber() != null) {
+            Optional<PromptRecord> record = promptRepository.findTopByRepoAndPrNumberOrderByCreatedAtDesc(
+                metadata.repo(), metadata.prNumber()
+            );
+            if (record.isPresent()) {
+                return record;
+            }
+        }
+
+        return promptRepository.findTopByRepoOrderByCreatedAtDesc(metadata.repo());
     }
 
     private record PromptMetadata(String repo, String branch, Long runId, Integer prNumber) {}
