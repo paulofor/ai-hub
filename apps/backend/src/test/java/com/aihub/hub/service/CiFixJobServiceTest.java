@@ -97,4 +97,33 @@ class CiFixJobServiceTest {
         assertThat(record.getChangedFiles()).isEqualTo("src/Main.java");
         assertThat(record.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/101");
     }
+
+    @Test
+    void createJobStillPersistsWhenOrchestratorFails() {
+        Project project = new Project();
+        project.setRepo("owner/repo");
+        project.setRepoUrl("https://github.com/owner/repo.git");
+        ReflectionTestUtils.setField(project, "id", 99L);
+        when(projectRepository.findById(99L)).thenReturn(Optional.of(project));
+        when(jobRepository.save(org.mockito.ArgumentMatchers.any(CiFixJobRecord.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(org.mockito.ArgumentMatchers.any()))
+            .thenThrow(new RuntimeException("timeout creating job"));
+
+        CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
+        CreateCiFixJobRequest request = new CreateCiFixJobRequest();
+        request.setProjectId(99L);
+        request.setTaskDescription("run analysis");
+
+        CiFixJobView view = service.createJob("carol", request);
+
+        ArgumentCaptor<CiFixJobRecord> recordCaptor = ArgumentCaptor.forClass(CiFixJobRecord.class);
+        verify(jobRepository, org.mockito.Mockito.atLeastOnce()).save(recordCaptor.capture());
+        CiFixJobRecord finalRecord = recordCaptor.getValue();
+
+        assertThat(finalRecord.getStatus()).isEqualTo("FAILED");
+        assertThat(finalRecord.getSummary()).contains("timeout creating job");
+        assertThat(view.status()).isEqualTo("FAILED");
+        assertThat(view.summary()).contains("timeout creating job");
+    }
 }
