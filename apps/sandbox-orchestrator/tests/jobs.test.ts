@@ -488,3 +488,124 @@ test('pushes changes and opens a pull request when credentials are present', asy
   await fs.rm(bareRepo, { recursive: true, force: true });
   await fs.rm(seedRepo, { recursive: true, force: true });
 });
+
+test('reuses repository credentials from repoUrl when creating a pull request', async () => {
+  const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-url-'));
+  execSync('git init --bare', { cwd: bareRepo });
+
+  const seedRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-url-seed-'));
+  execSync('git init', { cwd: seedRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: seedRepo });
+  execSync('git config user.name "CI Bot"', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "init"', { cwd: seedRepo });
+  execSync('git branch -M main', { cwd: seedRepo });
+  execSync(`git remote add origin ${bareRepo}`, { cwd: seedRepo });
+  execSync('git push origin main', { cwd: seedRepo });
+
+  const repoUrl = bareRepo;
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-pr-url-1',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'updated via url token' }),
+              },
+              { type: 'message', id: 'msg-pr-url', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-pr-url-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'pr ready from url token', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({ html_url: 'https://github.com/example/repo/pull/2' }),
+      text: async () => 'ok',
+    } as any;
+  };
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const originalClone = (processor as any).cloneRepository?.bind(processor);
+  (processor as any).cloneRepository = async (...args: any[]) => {
+    if (originalClone) {
+      await originalClone(...args);
+    }
+    delete process.env.GITHUB_CLONE_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+  };
+  const job: SandboxJob = {
+    jobId: 'job-pr-url',
+    repoSlug: 'example/repo',
+    repoUrl,
+    branch: 'main',
+    taskDescription: 'update readme',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  const originalPrToken = process.env.GITHUB_PR_TOKEN;
+  const originalCloneToken = process.env.GITHUB_CLONE_TOKEN;
+  const originalGithubToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_PR_TOKEN;
+  process.env.GITHUB_CLONE_TOKEN = 'embedded-token';
+  delete process.env.GITHUB_TOKEN;
+
+  await processor.process(job);
+
+  const pushedBranch = execSync(`git ls-remote ${bareRepo} refs/heads/ai-hub/cifix-${job.jobId}`);
+  assert.ok(pushedBranch.toString().includes(`ai-hub/cifix-${job.jobId}`));
+  assert.equal(job.pullRequestUrl, 'https://github.com/example/repo/pull/2');
+  assert.ok(fetchCalls.length > 0, 'fetch não foi chamado para criar PR');
+  assert.ok(
+    fetchCalls[0].init?.headers?.Authorization.includes('embedded-token'),
+    'token do repoUrl deve ser reutilizado ao criar PR',
+  );
+
+  if (originalPrToken === undefined) {
+    delete process.env.GITHUB_PR_TOKEN;
+  } else {
+    process.env.GITHUB_PR_TOKEN = originalPrToken;
+  }
+  if (originalCloneToken === undefined) {
+    delete process.env.GITHUB_CLONE_TOKEN;
+  } else {
+    process.env.GITHUB_CLONE_TOKEN = originalCloneToken;
+  }
+  if (originalGithubToken === undefined) {
+    delete process.env.GITHUB_TOKEN;
+  } else {
+    process.env.GITHUB_TOKEN = originalGithubToken;
+  }
+
+  await fs.rm(bareRepo, { recursive: true, force: true });
+  await fs.rm(seedRepo, { recursive: true, force: true });
+});

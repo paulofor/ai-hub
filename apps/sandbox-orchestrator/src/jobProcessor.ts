@@ -12,7 +12,7 @@ import {
   ResponseOutputText,
 } from 'openai/resources/responses/responses.js';
 
-import { buildAuthRepoUrl, redactUrlCredentials } from './git.js';
+import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
 import { JobProcessor, SandboxJob } from './types.js';
 
 const exec = promisify(execCallback);
@@ -54,11 +54,9 @@ export class SandboxJobProcessor implements JobProcessor {
     this.log(job, `workspace criado em ${workspace}`);
 
     try {
-      const cloneUrl = buildAuthRepoUrl(
-        job.repoUrl,
-        process.env.GITHUB_CLONE_TOKEN ?? process.env.GITHUB_TOKEN,
-        process.env.GITHUB_CLONE_USERNAME,
-      );
+      const cloneToken =
+        process.env.GITHUB_CLONE_TOKEN ?? process.env.GITHUB_TOKEN ?? extractTokenFromRepoUrl(job.repoUrl);
+      const cloneUrl = buildAuthRepoUrl(job.repoUrl, cloneToken, process.env.GITHUB_CLONE_USERNAME);
       this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
       await this.cloneRepository(job, repoPath, cloneUrl);
       if (!this.openai) {
@@ -70,7 +68,7 @@ export class SandboxJobProcessor implements JobProcessor {
       job.summary = summary;
       job.changedFiles = await this.collectChangedFiles(repoPath);
       job.patch = await this.generatePatch(repoPath);
-      await this.maybeCreatePullRequest(job, repoPath);
+      await this.maybeCreatePullRequest(job, repoPath, cloneToken);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
     } catch (error) {
@@ -403,9 +401,18 @@ export class SandboxJobProcessor implements JobProcessor {
     return undefined;
   }
 
-  private async maybeCreatePullRequest(job: SandboxJob, repoPath: string): Promise<void> {
+  private async maybeCreatePullRequest(
+    job: SandboxJob,
+    repoPath: string,
+    cloneToken?: string,
+  ): Promise<void> {
     const token =
-      process.env.GITHUB_PR_TOKEN ?? process.env.GITHUB_CLONE_TOKEN ?? process.env.GITHUB_TOKEN ?? undefined;
+      process.env.GITHUB_PR_TOKEN ??
+      cloneToken ??
+      process.env.GITHUB_CLONE_TOKEN ??
+      process.env.GITHUB_TOKEN ??
+      extractTokenFromRepoUrl(job.repoUrl) ??
+      undefined;
     if (!token) {
       this.log(job, 'GITHUB_PR_TOKEN/GITHUB_CLONE_TOKEN não configurado; ignorando criação de PR');
       return;
