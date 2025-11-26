@@ -54,9 +54,17 @@ export class SandboxJobProcessor implements JobProcessor {
     this.log(job, `workspace criado em ${workspace}`);
 
     try {
-      const cloneToken =
-        process.env.GITHUB_CLONE_TOKEN ?? process.env.GITHUB_TOKEN ?? extractTokenFromRepoUrl(job.repoUrl);
-      const cloneUrl = buildAuthRepoUrl(job.repoUrl, cloneToken, process.env.GITHUB_CLONE_USERNAME);
+      const githubAuth = this.resolveGithubAuth(job);
+      if (githubAuth.token) {
+        this.log(
+          job,
+          `token GitHub obtido de ${githubAuth.source} será usado para clone, push e criação de PR`,
+        );
+      } else {
+        this.log(job, 'nenhum token GitHub configurado; operações autenticadas podem falhar');
+      }
+
+      const cloneUrl = buildAuthRepoUrl(job.repoUrl, githubAuth.token, githubAuth.username);
       this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
       await this.cloneRepository(job, repoPath, cloneUrl);
       const baseCommit = await this.getHeadCommit(repoPath);
@@ -69,7 +77,7 @@ export class SandboxJobProcessor implements JobProcessor {
       job.summary = summary;
       job.changedFiles = await this.collectChangedFiles(repoPath, baseCommit);
       job.patch = await this.generatePatch(repoPath, baseCommit);
-      await this.maybeCreatePullRequest(job, repoPath, cloneToken, baseCommit, job.patch);
+      await this.maybeCreatePullRequest(job, repoPath, githubAuth, baseCommit, job.patch);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
     } catch (error) {
@@ -86,6 +94,19 @@ export class SandboxJobProcessor implements JobProcessor {
   private async prepareWorkspace(job: SandboxJob): Promise<string> {
     const base = await fs.mkdtemp(path.join(os.tmpdir(), `ai-hub-${job.jobId}-`));
     return base;
+  }
+
+  private resolveGithubAuth(job: SandboxJob): { token?: string; username: string; source: string } {
+    const username = process.env.GITHUB_CLONE_USERNAME ?? 'x-access-token';
+    const candidates: Array<{ token?: string; source: string }> = [
+      { token: process.env.GITHUB_CLONE_TOKEN, source: 'GITHUB_CLONE_TOKEN' },
+      { token: process.env.GITHUB_TOKEN, source: 'GITHUB_TOKEN' },
+      { token: process.env.GITHUB_PR_TOKEN, source: 'GITHUB_PR_TOKEN' },
+      { token: extractTokenFromRepoUrl(job.repoUrl), source: 'repoUrl' },
+    ];
+
+    const selected = candidates.find((candidate) => candidate.token);
+    return { token: selected?.token, username, source: selected?.source ?? 'nenhum' };
   }
 
   private async cleanup(workspace: string): Promise<void> {
@@ -434,19 +455,13 @@ export class SandboxJobProcessor implements JobProcessor {
   private async maybeCreatePullRequest(
     job: SandboxJob,
     repoPath: string,
-    cloneToken?: string,
+    githubAuth: { token?: string; username: string; source: string },
     baseCommit?: string,
     diffPatch?: string,
   ): Promise<void> {
-    const token =
-      process.env.GITHUB_PR_TOKEN ??
-      cloneToken ??
-      process.env.GITHUB_CLONE_TOKEN ??
-      process.env.GITHUB_TOKEN ??
-      extractTokenFromRepoUrl(job.repoUrl) ??
-      undefined;
+    const token = githubAuth.token;
     if (!token) {
-      this.log(job, 'GITHUB_PR_TOKEN/GITHUB_CLONE_TOKEN não configurado; ignorando criação de PR');
+      this.log(job, 'nenhum token GitHub disponível; ignorando criação de PR');
       return;
     }
 
@@ -483,10 +498,18 @@ export class SandboxJobProcessor implements JobProcessor {
       const authenticatedRemote = buildAuthRepoUrl(
         job.repoUrl,
         token,
-        process.env.GITHUB_CLONE_USERNAME ?? 'x-access-token',
+        githubAuth.username,
       );
       await exec(`git remote set-url origin ${authenticatedRemote}`, { cwd: repoPath });
-      await exec(`git push origin ${branchName}`, { cwd: repoPath });
+      try {
+        await exec(`git push origin ${branchName}`, { cwd: repoPath });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const hint = this.permissionHintFromMessage(message);
+        throw new Error(
+          `Falha ao fazer push para criar PR: ${message}${hint ? ` (${hint})` : ''}`,
+        );
+      }
 
       const prTitle = job.summary ? `AI Hub: ${job.summary}` : 'AI Hub automated fix';
       const prBody = 'Correção automática gerada pelo sandbox do AI Hub.';
@@ -507,7 +530,15 @@ export class SandboxJobProcessor implements JobProcessor {
 
       if (!response.ok) {
         const message = (await response.text()) || 'erro desconhecido da API do GitHub';
-        throw new Error(`Falha ao criar PR: ${response.status} ${message}`);
+        const permissionHint =
+          response.status === 401 || response.status === 403
+            ? 'token pode estar sem permissão de pull request ou push'
+            : undefined;
+        throw new Error(
+          `Falha ao criar PR: ${response.status} ${message}${
+            permissionHint ? ` (${permissionHint})` : ''
+          }`,
+        );
       }
 
       const pr = await response.json();
@@ -519,6 +550,14 @@ export class SandboxJobProcessor implements JobProcessor {
       const message = err instanceof Error ? err.message : String(err);
       this.log(job, `falha ao criar pull request: ${message}`);
     }
+  }
+
+  private permissionHintFromMessage(message: string): string | undefined {
+    const normalized = message.toLowerCase();
+    if (normalized.includes('permission denied') || normalized.includes('authentication failed')) {
+      return 'verifique se o token tem escopos de push e pull_request';
+    }
+    return undefined;
   }
 
   private log(job: SandboxJob, message: string) {
