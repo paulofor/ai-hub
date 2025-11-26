@@ -358,14 +358,34 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async handleRunShell(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
-    const command = Array.isArray(args.command) ? (args.command as string[]) : undefined;
+    let command = Array.isArray(args.command) ? (args.command as string[]) : undefined;
     if (!command || command.length === 0) {
       throw new Error('command é obrigatório para run_shell');
     }
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
     const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
     await this.assertDirectoryExists(cwd);
-    const joined = command.map((part) => part.trim()).join(' ');
+
+    command = command.map((part) => part.trim());
+    const isRecursiveGrep = command[0] === 'grep' && command[1] === '-R';
+    if (isRecursiveGrep && command.length <= 2) {
+      const message = 'grep -R detectado. Use rg <padrao> <caminho> para buscas recursivas no sandbox.';
+      this.log(job, message);
+      throw new Error(message);
+    }
+
+    if (isRecursiveGrep) {
+      const rgCommand = ['rg', ...command.slice(2)];
+      this.log(
+        job,
+        `comando grep -R detectado; substituindo por rg para busca recursiva: ${command.join(' ')} -> ${rgCommand.join(
+          ' ',
+        )}`,
+      );
+      command = rgCommand;
+    }
+
+    const joined = command.join(' ');
     const timeoutEnv = Number(process.env.RUN_SHELL_TIMEOUT_MS);
     const timeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 300_000;
     const maxBufferEnv = Number(process.env.RUN_SHELL_MAX_BUFFER_BYTES);
