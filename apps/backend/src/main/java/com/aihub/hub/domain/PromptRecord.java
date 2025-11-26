@@ -23,6 +23,9 @@ public class PromptRecord {
     @Column(nullable = false)
     private String repo;
 
+    @Column(nullable = false)
+    private String branch;
+
     @Column(name = "run_id")
     private Long runId;
 
@@ -42,8 +45,9 @@ public class PromptRecord {
     public PromptRecord() {
     }
 
-    public PromptRecord(String repo, Long runId, Integer prNumber, String model, String prompt) {
+    public PromptRecord(String repo, String branch, Long runId, Integer prNumber, String model, String prompt) {
         this.repo = repo;
+        this.branch = branch;
         this.runId = runId;
         this.prNumber = prNumber;
         this.model = model;
@@ -56,6 +60,10 @@ public class PromptRecord {
 
     public String getRepo() {
         return repo;
+    }
+
+    public String getBranch() {
+        return branch;
     }
 
     public Long getRunId() {

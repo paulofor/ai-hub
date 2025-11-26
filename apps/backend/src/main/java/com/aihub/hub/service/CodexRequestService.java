@@ -1,19 +1,24 @@
 package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.repository.CodexRequestRepository;
+import com.aihub.hub.repository.PromptRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class CodexRequestService {
@@ -21,20 +26,24 @@ public class CodexRequestService {
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
 
     private final CodexRequestRepository codexRequestRepository;
+    private final PromptRepository promptRepository;
     private final String defaultModel;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final String defaultBranch;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
+                               PromptRepository promptRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch) {
         this.codexRequestRepository = codexRequestRepository;
+        this.promptRepository = promptRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.defaultModel = defaultModel;
         this.defaultBranch = defaultBranch;
     }
 
+    @Transactional
     public CodexRequest create(CreateCodexRequest request) {
         String model = resolveModel(request.getModel());
         log.info("Criando CodexRequest para ambiente {} com modelo {}", request.getEnvironment(), model);
@@ -43,6 +52,17 @@ public class CodexRequestService {
             model,
             request.getPrompt().trim()
         );
+
+        PromptMetadata metadata = extractMetadata(request.getEnvironment());
+        PromptRecord promptRecord = new PromptRecord(
+            metadata.repo(),
+            metadata.branch(),
+            metadata.runId(),
+            metadata.prNumber(),
+            model,
+            request.getPrompt().trim()
+        );
+        promptRepository.save(promptRecord);
 
         CodexRequest saved = codexRequestRepository.save(codexRequest);
         log.info("CodexRequest {} salvo, enviando para sandbox se aplicável", saved.getId());
@@ -82,6 +102,51 @@ public class CodexRequestService {
             return candidate.trim();
         }
         return defaultModel;
+    }
+
+    private PromptMetadata extractMetadata(String environment) {
+        RepoCoordinates coordinates = RepoCoordinates.from(environment);
+        String repo = coordinates != null
+            ? coordinates.owner() + "/" + coordinates.repo()
+            : Optional.ofNullable(environment).map(String::trim).filter(value -> !value.isBlank()).orElse("unknown");
+
+        String branch = extractBranch(environment);
+        Long runId = extractNumber(environment, "(?i)run[:/#]\\s*(\\d+)");
+        Integer prNumber = Optional.ofNullable(extractNumber(environment, "(?i)pr[:/#]\\s*(\\d+)")).map(Long::intValue).orElse(null);
+
+        return new PromptMetadata(repo, branch, runId, prNumber);
+    }
+
+    private String extractBranch(String environment) {
+        if (!StringUtils.hasText(environment)) {
+            return defaultBranch;
+        }
+        Matcher matcher = Pattern.compile("@([\\w./-]+)").matcher(environment);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+
+        String[] parts = environment.trim().split("/");
+        if (parts.length >= 3 && StringUtils.hasText(parts[2])) {
+            return parts[2].trim();
+        }
+
+        return defaultBranch;
+    }
+
+    private Long extractNumber(String environment, String pattern) {
+        if (!StringUtils.hasText(environment)) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile(pattern).matcher(environment);
+        if (matcher.find()) {
+            try {
+                return Long.parseLong(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void dispatchToSandbox(CodexRequest request) {
@@ -142,6 +207,8 @@ public class CodexRequestService {
             log.info("CodexRequest {} atualizado a partir do sandbox", request.getId());
         }
     }
+
+    private record PromptMetadata(String repo, String branch, Long runId, Integer prNumber) {}
 
     private record RepoCoordinates(String owner, String repo) {
         static RepoCoordinates from(String environment) {
