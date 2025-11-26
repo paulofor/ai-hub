@@ -365,10 +365,26 @@ export class SandboxJobProcessor implements JobProcessor {
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
     const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg) : repoPath;
     await this.assertDirectoryExists(cwd);
-    const joined = command.map((part) => part.trim()).join(' ');
+    const normalizedCommand = this.normalizeShellCommand(command, job);
+    const joined = normalizedCommand.join(' ');
     this.log(job, `run_shell: ${joined} (cwd=${cwd})`);
     const { stdout, stderr } = await exec(joined, { cwd });
     return { stdout, stderr };
+  }
+
+  private normalizeShellCommand(command: string[], job: SandboxJob): string[] {
+    const trimmed = command.map((part) => part.trim()).filter((part) => part.length > 0);
+    if (trimmed.length >= 2 && trimmed[0] === 'grep' && trimmed[1] === '-R') {
+      if (trimmed.length === 2) {
+        const message = 'O uso de "grep -R" é bloqueado; utilize "rg" para buscas recursivas.';
+        this.log(job, message);
+        throw new Error(message);
+      }
+      const replacement = ['rg', ...trimmed.slice(2)];
+      this.log(job, `comando grep -R detectado; substituindo por rg: ${replacement.join(' ')}`);
+      return replacement;
+    }
+    return trimmed;
   }
 
   private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
