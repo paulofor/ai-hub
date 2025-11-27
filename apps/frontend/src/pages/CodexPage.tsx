@@ -8,6 +8,10 @@ interface CodexRequest {
   prompt: string;
   responseText?: string;
   externalId?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost?: number;
   createdAt: string;
 }
 
@@ -17,6 +21,77 @@ interface EnvironmentOption {
   description: string | null;
   createdAt: string;
 }
+
+const parseNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
+const parseCodexRequest = (value: unknown): CodexRequest | null => {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+  const id = parseNumber(item.id) ?? 0;
+  const promptTokens = parseNumber(item.promptTokens);
+  const completionTokens = parseNumber(item.completionTokens);
+  const totalTokens = parseNumber(item.totalTokens);
+  const cost = parseNumber(item.cost);
+
+  return {
+    id,
+    environment: (item.environment as string) ?? '',
+    model: (item.model as string) ?? '',
+    prompt: (item.prompt as string) ?? '',
+    responseText: (item.responseText as string) ?? undefined,
+    externalId: (item.externalId as string) ?? undefined,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cost,
+    createdAt: (item.createdAt as string) ?? ''
+  };
+};
+
+const parseCodexRequests = (payload: unknown): CodexRequest[] => {
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { content?: unknown })?.content)
+      ? (payload as { content: unknown[] }).content
+      : [];
+
+  return items
+    .map((item) => parseCodexRequest(item))
+    .filter((item): item is CodexRequest => item !== null);
+};
+
+const formatTokens = (value?: number) => {
+  if (value === undefined || value === null) {
+    return '—';
+  }
+  return value.toLocaleString('pt-BR');
+};
+
+const formatCost = (value?: number) => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6
+  }).format(value);
+};
 
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
@@ -29,8 +104,8 @@ export default function CodexPage() {
 
   useEffect(() => {
     client
-      .get<CodexRequest[]>('/codex/requests')
-      .then((response) => setRequests(response.data))
+      .get('/codex/requests')
+      .then((response) => setRequests(parseCodexRequests(response.data)))
       .catch((err: Error) => setError(err.message));
   }, []);
 
@@ -68,11 +143,12 @@ export default function CodexPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const response = await client.post<CodexRequest>('/codex/requests', {
+      const response = await client.post('/codex/requests', {
         prompt: trimmedPrompt,
         environment: trimmedEnvironment
       });
-      setRequests((prev) => [response.data, ...prev]);
+      const parsed = parseCodexRequest(response.data);
+      setRequests((prev) => (parsed ? [parsed, ...prev] : prev));
       setPrompt('');
       setEnvironment(trimmedEnvironment);
       setSuccessMessage('Solicitação enviada para o Codex.');
@@ -157,6 +233,8 @@ export default function CodexPage() {
                 <th className="px-4 py-3 text-left font-semibold">Ambiente</th>
                 <th className="px-4 py-3 text-left font-semibold">Modelo</th>
                 <th className="px-4 py-3 text-left font-semibold">Prompt</th>
+                <th className="px-4 py-3 text-left font-semibold">Tokens</th>
+                <th className="px-4 py-3 text-left font-semibold">Custo</th>
                 <th className="px-4 py-3 text-left font-semibold">Resposta</th>
               </tr>
             </thead>
@@ -177,6 +255,18 @@ export default function CodexPage() {
                     </details>
                   </td>
                   <td className="px-4 py-3">
+                    <div className="space-y-1">
+                      <div className="text-slate-600 dark:text-slate-300">
+                        Prompt: {formatTokens(item.promptTokens)}
+                      </div>
+                      <div className="text-slate-600 dark:text-slate-300">
+                        Compleção: {formatTokens(item.completionTokens)}
+                      </div>
+                      <div className="font-medium">Total: {formatTokens(item.totalTokens)}</div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-medium">{formatCost(item.cost)}</td>
+                  <td className="px-4 py-3">
                     {item.responseText ? (
                       <details>
                         <summary className="cursor-pointer text-emerald-600">Ver resposta</summary>
@@ -192,7 +282,7 @@ export default function CodexPage() {
               ))}
               {sortedRequests.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-center text-slate-500" colSpan={5}>
+                  <td className="px-4 py-4 text-center text-slate-500" colSpan={7}>
                     Nenhuma solicitação registrada ainda.
                   </td>
                 </tr>
