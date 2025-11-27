@@ -28,6 +28,9 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly model: string;
   private readonly fetchImpl?: (input: string | URL, init?: any) => Promise<any>;
   private readonly githubApiBase: string;
+  private readonly maxTaskDescriptionChars: number;
+  private readonly toolOutputStringLimit: number;
+  private readonly toolOutputSerializedLimit: number;
 
   constructor(
     apiKey?: string,
@@ -43,6 +46,9 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     this.fetchImpl = fetchImpl;
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
+    this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
+    this.toolOutputStringLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_STRING_LIMIT, 12_000);
+    this.toolOutputSerializedLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_SERIALIZED_LIMIT, 60_000);
   }
 
   async process(job: SandboxJob): Promise<void> {
@@ -175,6 +181,8 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async runCodexLoop(job: SandboxJob, repoPath: string): Promise<string> {
+    job.taskDescription = this.sanitizeTaskDescription(job.taskDescription, job);
+
     const tools = this.buildTools(repoPath);
     const messages: ResponseItem[] = [
       {
@@ -273,7 +281,7 @@ export class SandboxJobProcessor implements JobProcessor {
           toolMessages.push({
             id: outputId,
             call_id: callId,
-            output: JSON.stringify(result),
+            output: this.prepareToolOutput(result, job),
             type: 'function_call_output',
           });
         } catch (err) {
@@ -282,7 +290,7 @@ export class SandboxJobProcessor implements JobProcessor {
           toolMessages.push({
             id: outputId,
             call_id: callId,
-            output: JSON.stringify({ error: message }),
+            output: this.prepareToolOutput({ error: message }, job),
             type: 'function_call_output',
           });
         }
@@ -769,5 +777,87 @@ export class SandboxJobProcessor implements JobProcessor {
       serialized = `erro ao serializar payload: ${err instanceof Error ? err.message : String(err)}`;
     }
     this.log(job, `${prefix}: ${this.truncate(serialized, maxLength)}`);
+  }
+
+  private sanitizeTaskDescription(description: string, job: SandboxJob): string {
+    const { value, truncated, omitted } = this.truncateStringValue(description ?? '', this.maxTaskDescriptionChars);
+    if (truncated) {
+      this.log(
+        job,
+        `taskDescription com ${description.length} caracteres truncado para ${this.maxTaskDescriptionChars} para evitar erro de contexto (omitiu ${omitted} caracteres)`,
+      );
+    }
+    return value;
+  }
+
+  private prepareToolOutput(result: unknown, job: SandboxJob): string {
+    const truncation = { truncated: false };
+    const sanitized = this.truncateStringFields(result, this.toolOutputStringLimit, truncation);
+    let serialized: string;
+
+    try {
+      serialized = JSON.stringify(sanitized);
+    } catch (err) {
+      serialized = JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
+    }
+
+    if (truncation.truncated) {
+      this.log(
+        job,
+        `output de tool truncado para ${this.toolOutputStringLimit} caracteres por campo para evitar ultrapassar a janela de contexto`,
+      );
+    }
+
+    const { value, truncated, omitted } = this.truncateStringValue(serialized, this.toolOutputSerializedLimit);
+    if (truncated) {
+      this.log(
+        job,
+        `output serializado da tool excedeu ${this.toolOutputSerializedLimit} caracteres e foi truncado (omitiu ${omitted} caracteres)`
+      );
+    }
+    return value;
+  }
+
+  private truncateStringFields(value: unknown, maxLength: number, tracker: { truncated: boolean }): unknown {
+    if (typeof value === 'string') {
+      const truncated = this.truncateStringValue(value, maxLength);
+      tracker.truncated = tracker.truncated || truncated.truncated;
+      return truncated.value;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => this.truncateStringFields(item, maxLength, tracker));
+    }
+
+    if (value && typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value)) {
+        result[key] = this.truncateStringFields(val, maxLength, tracker);
+      }
+      return result;
+    }
+
+    return value;
+  }
+
+  private truncateStringValue(value: string, maxLength: number): { value: string; truncated: boolean; omitted: number } {
+    if (!Number.isFinite(maxLength) || maxLength <= 0 || value.length <= maxLength) {
+      return { value, truncated: false, omitted: 0 };
+    }
+
+    const suffixBase = '... [truncated ';
+    const suffixClose = ' chars]';
+    const suffixLength = suffixBase.length + suffixClose.length + String(value.length).length;
+    const available = Math.max(0, maxLength - suffixLength);
+    const omitted = Math.max(0, value.length - available);
+    const suffix = `${suffixBase}${omitted}${suffixClose}`;
+    const truncatedValue = `${value.slice(0, available)}${suffix}`;
+
+    return { value: truncatedValue, truncated: true, omitted };
+  }
+
+  private parsePositiveInteger(raw: string | undefined, defaultValue: number): number {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
   }
 }

@@ -73,6 +73,70 @@ test('rejects invalid payload', async () => {
   await request(app).post('/jobs').send({}).expect(400);
 });
 
+test('limits oversized task descriptions before calling the model', async () => {
+  const originalLimit = process.env.TASK_DESCRIPTION_MAX_CHARS;
+  process.env.TASK_DESCRIPTION_MAX_CHARS = '50';
+
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-long-task-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-truncated',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-long-task',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'x'.repeat(200),
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const firstCall = fakeOpenAI.calls[0];
+  const userMessage = firstCall.input.find((msg: any) => msg.role === 'user');
+  const text = userMessage?.content?.find((item: any) => item.type === 'input_text')?.text ?? '';
+
+  assert.ok(text.length <= 50, 'taskDescription should be truncated before sending to model');
+  assert.ok(text.includes('truncated'), 'truncation hint should be present');
+  assert.ok(job.logs.some((entry) => entry.includes('taskDescription com 200 caracteres')));
+
+  if (originalLimit === undefined) {
+    delete process.env.TASK_DESCRIPTION_MAX_CHARS;
+  } else {
+    process.env.TASK_DESCRIPTION_MAX_CHARS = originalLimit;
+  }
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
 test('returns job status', async () => {
   const registry = new Map<string, SandboxJob>();
   const processor = new StubProcessor();
@@ -173,6 +237,95 @@ test('processes tool calls inside a sandbox', async () => {
   const parsedTool = JSON.parse(toolMessage.output);
   assert.equal(parsedTool.path, 'README.md');
   assert.equal(parsedTool.content, 'updated content');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
+test('truncates tool outputs before sending them back to the model', async () => {
+  const originalStringLimit = process.env.TOOL_OUTPUT_STRING_LIMIT;
+  const originalSerializedLimit = process.env.TOOL_OUTPUT_SERIALIZED_LIMIT;
+  process.env.TOOL_OUTPUT_STRING_LIMIT = '80';
+  process.env.TOOL_OUTPUT_SERIALIZED_LIMIT = '120';
+
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-tool-output-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'y'.repeat(300));
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-read-long',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              { type: 'message', id: 'msg-read-long', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-read-long-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-tool-truncation',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'read long file',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const secondCall = fakeOpenAI.calls[1];
+  const toolMessage = secondCall.input.find((msg: any) => msg.type === 'function_call_output');
+  assert.ok(toolMessage, 'mensagem de tool ausente');
+
+  const output = toolMessage?.output ?? '';
+  assert.ok(output.length <= 120, 'tool output must respect serialized limit');
+
+  const parsed = JSON.parse(output);
+  assert.ok(parsed.content.includes('truncated'), 'conteúdo deve indicar truncamento');
+  assert.ok(parsed.content.length <= 80, 'tool output string deve respeitar limite configurado');
+  assert.ok(job.logs.some((entry) => entry.includes('output de tool truncado')));
+
+  if (originalStringLimit === undefined) {
+    delete process.env.TOOL_OUTPUT_STRING_LIMIT;
+  } else {
+    process.env.TOOL_OUTPUT_STRING_LIMIT = originalStringLimit;
+  }
+
+  if (originalSerializedLimit === undefined) {
+    delete process.env.TOOL_OUTPUT_SERIALIZED_LIMIT;
+  } else {
+    process.env.TOOL_OUTPUT_SERIALIZED_LIMIT = originalSerializedLimit;
+  }
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
