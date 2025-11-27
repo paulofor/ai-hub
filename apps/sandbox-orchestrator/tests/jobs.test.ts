@@ -581,6 +581,99 @@ test('pushes changes and opens a pull request when credentials are present', asy
   await fs.rm(seedRepo, { recursive: true, force: true });
 });
 
+test('limits pull request title and keeps full summary in body', async () => {
+  const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-long-remote-'));
+  execSync('git init --bare', { cwd: bareRepo });
+
+  const seedRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-long-seed-'));
+  execSync('git init', { cwd: seedRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: seedRepo });
+  execSync('git config user.name "CI Bot"', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "init"', { cwd: seedRepo });
+  execSync('git branch -M main', { cwd: seedRepo });
+  execSync(`git remote add origin ${bareRepo}`, { cwd: seedRepo });
+  execSync('git push origin main', { cwd: seedRepo });
+
+  const longSummary = 'a'.repeat(300);
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-pr-long-1',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'updated for pr' }),
+              },
+              { type: 'message', id: 'msg-pr-long', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-pr-long-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: longSummary, annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({ html_url: 'https://github.com/example/repo/pull/3' }),
+      text: async () => 'ok',
+    } as any;
+  };
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const job: SandboxJob = {
+    jobId: 'job-pr-long',
+    repoSlug: 'example/repo',
+    repoUrl: bareRepo,
+    branch: 'main',
+    taskDescription: 'update readme',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  const originalToken = process.env.GITHUB_PR_TOKEN;
+  process.env.GITHUB_PR_TOKEN = 'fake-token';
+
+  await processor.process(job);
+
+  const payload = JSON.parse(fetchCalls[0].init.body);
+  assert.ok(payload.title.length <= 256, 'título do PR deve respeitar o limite do GitHub');
+  assert.equal(payload.title, `AI Hub: ${longSummary.slice(0, 247)}…`);
+  assert.ok(
+    payload.body.includes(longSummary),
+    'corpo do PR deve conter o resumo completo, sem truncar',
+  );
+  assert.ok(payload.body.includes('Descrição da tarefa'), 'corpo do PR deve incluir a tarefa');
+
+  process.env.GITHUB_PR_TOKEN = originalToken;
+  await fs.rm(bareRepo, { recursive: true, force: true });
+  await fs.rm(seedRepo, { recursive: true, force: true });
+});
+
 test('reuses repository credentials from repoUrl when creating a pull request', async () => {
   const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-url-'));
   execSync('git init --bare', { cwd: bareRepo });
