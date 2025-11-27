@@ -33,6 +33,11 @@ hub:
   codex:
     api-url: ${CODEX_API_URL:https://api.openai.com}
     model: ${CODEX_MODEL:gpt-5-codex}
+    pricing:
+      models:
+        gpt-5-codex:
+          prompt: 0.00125 # US$ 1.25 per 1M input tokens
+          completion: 0.01 # US$ 10.00 per 1M output tokens
   logs:
     max-chars: 20000
 
