@@ -614,8 +614,8 @@ export class SandboxJobProcessor implements JobProcessor {
         );
       }
 
-      const prTitle = job.summary ? `AI Hub: ${job.summary}` : 'AI Hub automated fix';
-      const prBody = 'Correção automática gerada pelo sandbox do AI Hub.';
+      const prTitle = this.buildPrTitle(job.summary);
+      const prBody = this.buildPrBody(job.summary, job.taskDescription);
       const response = await this.fetchImpl(`${this.githubApiBase}/repos/${repoSlug}/pulls`, {
         method: 'POST',
         headers: {
@@ -712,6 +712,43 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '_');
     return sanitized.length > 0 ? sanitized : 'msg_default';
+  }
+
+  private buildPrTitle(summary?: string): string {
+    const defaultTitle = 'AI Hub automated fix';
+    const prefix = 'AI Hub: ';
+    const maxLength = 256;
+
+    if (!summary || summary.trim().length === 0) {
+      return defaultTitle;
+    }
+
+    const availableForSummary = Math.max(1, maxLength - prefix.length);
+    const truncatedSummary = this.truncateWithEllipsis(summary.trim(), availableForSummary);
+    return `${prefix}${truncatedSummary}`;
+  }
+
+  private buildPrBody(summary: string | undefined, taskDescription: string): string {
+    const sections = [
+      'Correção automática gerada pelo sandbox do AI Hub.',
+      taskDescription ? `\n**Descrição da tarefa:**\n${taskDescription}` : undefined,
+      summary ? `\n**Resumo das alterações:**\n${summary}` : undefined,
+    ].filter(Boolean);
+
+    return sections.join('\n');
+  }
+
+  private truncateWithEllipsis(value: string, maxLength: number): string {
+    if (!value || maxLength <= 0) {
+      return '';
+    }
+    if (value.length <= maxLength) {
+      return value;
+    }
+    if (maxLength === 1) {
+      return value.slice(0, maxLength);
+    }
+    return `${value.slice(0, maxLength - 1)}…`;
   }
 
   private truncate(value: string, maxLength = 200): string {
