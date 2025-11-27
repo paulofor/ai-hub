@@ -106,25 +106,75 @@ public class SandboxOrchestratorClient {
                 node.path("patch").asText(null),
                 node.path("pullRequestUrl").asText(null),
                 node.path("error").asText(null),
-                readInt(node, "promptTokens"),
-                readInt(node, "completionTokens"),
-                readInt(node, "totalTokens"),
-                readDecimal(node, "cost")
+                resolvePromptTokens(node),
+                resolveCompletionTokens(node),
+                resolveTotalTokens(node),
+                resolveCost(node)
             );
         }
 
-        private static Integer readInt(JsonNode node, String field) {
-            JsonNode target = node.path(field);
-            if (target.isNumber()) {
-                return target.intValue();
+        private static Integer resolvePromptTokens(JsonNode node) {
+            Integer topLevel = readInt(node, "promptTokens", "prompt_tokens");
+            if (topLevel != null) {
+                return topLevel;
+            }
+            return readInt(node.path("usage"), "promptTokens", "prompt_tokens", "input_tokens");
+        }
+
+        private static Integer resolveCompletionTokens(JsonNode node) {
+            Integer topLevel = readInt(node, "completionTokens", "completion_tokens");
+            if (topLevel != null) {
+                return topLevel;
+            }
+            return readInt(node.path("usage"), "completionTokens", "completion_tokens", "output_tokens");
+        }
+
+        private static Integer resolveTotalTokens(JsonNode node) {
+            Integer topLevel = readInt(node, "totalTokens", "total_tokens");
+            if (topLevel != null) {
+                return topLevel;
+            }
+            return readInt(node.path("usage"), "totalTokens", "total_tokens");
+        }
+
+        private static BigDecimal resolveCost(JsonNode node) {
+            BigDecimal topLevel = readDecimal(node, "cost", "total_cost");
+            if (topLevel != null) {
+                return topLevel;
+            }
+            return readDecimal(node.path("usage"), "cost", "total_cost");
+        }
+
+        private static Integer readInt(JsonNode node, String... fields) {
+            for (String field : fields) {
+                JsonNode target = node.path(field);
+                if (target.isNumber()) {
+                    return target.intValue();
+                }
+                if (target.isTextual()) {
+                    try {
+                        return Integer.parseInt(target.asText().trim());
+                    } catch (NumberFormatException ignored) {
+                        // noop
+                    }
+                }
             }
             return null;
         }
 
-        private static BigDecimal readDecimal(JsonNode node, String field) {
-            JsonNode target = node.path(field);
-            if (target.isNumber()) {
-                return target.decimalValue();
+        private static BigDecimal readDecimal(JsonNode node, String... fields) {
+            for (String field : fields) {
+                JsonNode target = node.path(field);
+                if (target.isNumber()) {
+                    return target.decimalValue();
+                }
+                if (target.isTextual()) {
+                    try {
+                        return new BigDecimal(target.asText().trim());
+                    } catch (NumberFormatException ignored) {
+                        // noop
+                    }
+                }
             }
             return null;
         }

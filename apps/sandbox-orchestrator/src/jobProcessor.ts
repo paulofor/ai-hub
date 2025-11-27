@@ -221,6 +221,8 @@ export class SandboxJobProcessor implements JobProcessor {
         `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,
       );
 
+      this.addUsageMetrics(job, (response as any).usage);
+
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
@@ -313,6 +315,53 @@ export class SandboxJobProcessor implements JobProcessor {
       return undefined;
     }
     return texts.join('\n').trim();
+  }
+
+  private addUsageMetrics(job: SandboxJob, usage: unknown): void {
+    if (!usage || typeof usage !== 'object') {
+      return;
+    }
+
+    const source = usage as Record<string, unknown>;
+    const promptTokens = this.readNumberField(source, ['prompt_tokens', 'input_tokens', 'promptTokens']);
+    const completionTokens = this.readNumberField(source, [
+      'completion_tokens',
+      'output_tokens',
+      'completionTokens',
+    ]);
+    const totalTokens =
+      this.readNumberField(source, ['total_tokens', 'totalTokens']) ??
+      (promptTokens !== undefined && completionTokens !== undefined ? promptTokens + completionTokens : undefined);
+    const cost = this.readNumberField(source, ['total_cost', 'cost']);
+
+    if (promptTokens !== undefined) {
+      job.promptTokens = (job.promptTokens ?? 0) + promptTokens;
+    }
+    if (completionTokens !== undefined) {
+      job.completionTokens = (job.completionTokens ?? 0) + completionTokens;
+    }
+    if (totalTokens !== undefined) {
+      job.totalTokens = (job.totalTokens ?? 0) + totalTokens;
+    }
+    if (cost !== undefined) {
+      job.cost = (job.cost ?? 0) + cost;
+    }
+  }
+
+  private readNumberField(source: Record<string, unknown>, candidates: string[]): number | undefined {
+    for (const key of candidates) {
+      const value = source[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+    return undefined;
   }
 
   private parseArguments(raw: unknown): Record<string, unknown> | undefined {

@@ -15,6 +15,10 @@ export interface SandboxJob {
   pullRequestUrl?: string;
   error?: string;
   sandboxPath?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost?: number;
   logs: string[];
   createdAt: string;
   updatedAt: string;
