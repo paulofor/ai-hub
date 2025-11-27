@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,7 +44,11 @@ class CiFixJobServiceTest {
                 List.of("README.md"),
                 "diff --git",
                 "https://github.com/owner/repo/pull/99",
-                null
+                null,
+                null,
+                null,
+                null,
+                BigDecimal.ZERO
             ));
 
         CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
@@ -86,7 +91,11 @@ class CiFixJobServiceTest {
                 List.of("src/Main.java"),
                 "diff --git",
                 "https://github.com/owner/repo/pull/101",
-                null
+                null,
+                null,
+                null,
+                null,
+                BigDecimal.ZERO
             ));
 
         CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
