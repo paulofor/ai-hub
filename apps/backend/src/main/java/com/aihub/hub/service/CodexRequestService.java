@@ -14,9 +14,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -33,17 +35,20 @@ public class CodexRequestService {
     private final String defaultModel;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final String defaultBranch;
+    private final TokenCostCalculator tokenCostCalculator;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
                                ResponseRepository responseRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
+                               TokenCostCalculator tokenCostCalculator,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch) {
         this.codexRequestRepository = codexRequestRepository;
         this.promptRepository = promptRepository;
         this.responseRepository = responseRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
+        this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
         this.defaultBranch = defaultBranch;
     }
@@ -57,6 +62,11 @@ public class CodexRequestService {
             model,
             request.getPrompt().trim()
         );
+
+        codexRequest.setPromptTokens(request.getPromptTokens());
+        codexRequest.setCompletionTokens(request.getCompletionTokens());
+        codexRequest.setTotalTokens(request.getTotalTokens());
+        codexRequest.setCost(request.getCost());
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
         PromptRecord promptRecord = new PromptRecord(
@@ -184,6 +194,7 @@ public class CodexRequestService {
         Optional.ofNullable(response)
             .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse::summary)
             .ifPresent(request::setResponseText);
+        applyUsageMetadata(request, response);
 
         codexRequestRepository.save(request);
         log.info("CodexRequest {} atualizado com externalId {}", request.getId(), resolvedExternalId);
@@ -211,7 +222,9 @@ public class CodexRequestService {
             updated = true;
         }
 
-        if (updated) {
+        boolean usageUpdated = applyUsageMetadata(request, response);
+
+        if (updated || usageUpdated) {
             codexRequestRepository.save(request);
             log.info("CodexRequest {} atualizado a partir do sandbox", request.getId());
         }
@@ -272,6 +285,48 @@ public class CodexRequestService {
         }
 
         return promptRepository.findTopByRepoOrderByCreatedAtDesc(metadata.repo());
+    }
+
+    private boolean applyUsageMetadata(
+        CodexRequest request,
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response
+    ) {
+        if (response == null) {
+            return false;
+        }
+
+        boolean updated = false;
+        Integer promptTokens = response.promptTokens();
+        Integer completionTokens = response.completionTokens();
+        Integer totalTokens = response.totalTokens();
+
+        if (totalTokens == null && promptTokens != null && completionTokens != null) {
+            totalTokens = promptTokens + completionTokens;
+        }
+
+        if (!Objects.equals(request.getPromptTokens(), promptTokens)) {
+            request.setPromptTokens(promptTokens);
+            updated = true;
+        }
+        if (!Objects.equals(request.getCompletionTokens(), completionTokens)) {
+            request.setCompletionTokens(completionTokens);
+            updated = true;
+        }
+        if (!Objects.equals(request.getTotalTokens(), totalTokens)) {
+            request.setTotalTokens(totalTokens);
+            updated = true;
+        }
+
+        BigDecimal resolvedCost = response.cost();
+        if (resolvedCost == null) {
+            resolvedCost = tokenCostCalculator.calculate(request.getModel(), promptTokens, completionTokens, totalTokens);
+        }
+        if (resolvedCost != null && (request.getCost() == null || resolvedCost.compareTo(request.getCost()) != 0)) {
+            request.setCost(resolvedCost);
+            updated = true;
+        }
+
+        return updated;
     }
 
     private record PromptMetadata(String repo, String branch, Long runId, Integer prNumber) {}
