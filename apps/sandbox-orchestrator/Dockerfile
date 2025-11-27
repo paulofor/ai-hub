@@ -8,7 +8,7 @@ RUN npm run build
 
 FROM node:20-alpine AS production
 WORKDIR /app
-RUN apk add --no-cache git python3 py3-pip patch openjdk21-jdk maven \
+RUN apk add --no-cache git python3 py3-pip patch openjdk21-jdk maven ripgrep \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
 set -euo pipefail
