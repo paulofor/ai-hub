@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,7 +73,11 @@ public class SandboxOrchestratorClient {
         List<String> changedFiles,
         String patch,
         String pullRequestUrl,
-        String error
+        String error,
+        Integer promptTokens,
+        Integer completionTokens,
+        Integer totalTokens,
+        BigDecimal cost
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
@@ -100,8 +105,28 @@ public class SandboxOrchestratorClient {
                 files.isEmpty() ? null : files,
                 node.path("patch").asText(null),
                 node.path("pullRequestUrl").asText(null),
-                node.path("error").asText(null)
+                node.path("error").asText(null),
+                readInt(node, "promptTokens"),
+                readInt(node, "completionTokens"),
+                readInt(node, "totalTokens"),
+                readDecimal(node, "cost")
             );
+        }
+
+        private static Integer readInt(JsonNode node, String field) {
+            JsonNode target = node.path(field);
+            if (target.isNumber()) {
+                return target.intValue();
+            }
+            return null;
+        }
+
+        private static BigDecimal readDecimal(JsonNode node, String field) {
+            JsonNode target = node.path(field);
+            if (target.isNumber()) {
+                return target.decimalValue();
+            }
+            return null;
         }
     }
 }
