@@ -47,6 +47,7 @@ services:
       - .env
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
+      - ${SANDBOX_WORKDIR:-/root/ai-hub/src}:${SANDBOX_WORKDIR:-/root/ai-hub/src}
     ports:
       - "${SANDBOX_ORCHESTRATOR_HTTP_PORT:-8083}:8080"
     command: >
