@@ -218,7 +218,7 @@ test('processes tool calls inside a sandbox', async () => {
   assert.ok(firstCall.tools, 'tools ausente na chamada inicial');
   assert.deepEqual(
     firstCall.tools.map((tool: any) => tool.name ?? tool.function?.name).filter(Boolean),
-    ['run_shell', 'read_file', 'write_file']
+    ['run_shell', 'read_file', 'write_file', 'http_get']
   );
 
   assert.equal(job.status, 'COMPLETED', job.error);
@@ -561,6 +561,170 @@ test('returns tool errors to the model instead of failing the job', async () => 
   assert.ok(parsedOutput.error, 'tool error deve ser retornado ao modelo');
   assert.equal(job.status, 'COMPLETED');
   assert.equal(job.summary, 'handled missing file');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
+test('http_get fetches public content while sanitizing headers and truncating body', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-http-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'http-call',
+                name: 'http_get',
+                arguments: JSON.stringify({ url: 'https://example.com/docs', headers: { Authorization: 'x', Accept: 'text/plain' } }),
+              },
+              { type: 'message', id: 'msg-http-1', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-http-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'http ok', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    fetchCalls.push({ input, init });
+    return {
+      status: 200,
+      statusText: 'OK',
+      headers: new Map([['content-type', 'text/plain']]),
+      text: async () => 'conteúdo público'.repeat(5),
+    } as any;
+  };
+
+  const originalLimit = process.env.HTTP_TOOL_MAX_RESPONSE_CHARS;
+  process.env.HTTP_TOOL_MAX_RESPONSE_CHARS = '20';
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const job: SandboxJob = {
+    jobId: 'job-http',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'fetch docs',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const callOutput = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
+  const parsed = JSON.parse(callOutput.output);
+  assert.equal(parsed.status, 200);
+  assert.equal(parsed.headers['content-type'], 'text/plain');
+  assert.ok(parsed.truncated, 'body deve estar truncado');
+  assert.ok(parsed.body.includes('truncated'), 'resposta deve indicar truncamento do corpo');
+  assert.equal(job.summary, 'http ok');
+  assert.ok(fetchCalls[0].init?.headers);
+  assert.ok(!('authorization' in fetchCalls[0].init.headers));
+
+  if (originalLimit === undefined) {
+    delete process.env.HTTP_TOOL_MAX_RESPONSE_CHARS;
+  } else {
+    process.env.HTTP_TOOL_MAX_RESPONSE_CHARS = originalLimit;
+  }
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
+test('http_get blocks private addresses and returns an error to the model', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-http-block-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'http-block',
+                name: 'http_get',
+                arguments: JSON.stringify({ url: 'http://127.0.0.1:8080' }),
+              },
+              { type: 'message', id: 'msg-http-block-1', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        const toolMessage = payload.input.find((msg: any) => msg.type === 'function_call_output');
+        const parsed = toolMessage ? JSON.parse(toolMessage.output) : {};
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-http-block-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [
+                {
+                  type: 'output_text',
+                  text: parsed.error ? 'http error propagated' : 'no error',
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-http-block',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'fetch forbidden',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  const toolMessage = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
+  const parsed = JSON.parse(toolMessage.output);
+  assert.ok(parsed.error?.includes('bloqueado') || parsed.error?.includes('permitidas'));
+  assert.equal(job.summary, 'http error propagated');
+  assert.equal(job.status, 'COMPLETED');
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
