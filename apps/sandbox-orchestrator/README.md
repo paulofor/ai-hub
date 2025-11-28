@@ -23,7 +23,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_SLUG_PREFIX` | Prefixo aplicado antes do slug original | *(vazio)* |
 | `SANDBOX_SLUG_SUFFIX` | Sufixo aplicado após o slug original | `-sandbox` |
 | `SANDBOX_IMAGE` | Imagem base utilizada para provisionar o contêiner/VM efêmero | `ghcr.io/ai-hub/sandbox:latest` |
-| `SANDBOX_TTL_SECONDS` | Tempo de vida do sandbox antes de ser reciclado | `3600` |
+| `SANDBOX_TTL_SECONDS` | Tempo de vida do sandbox antes de ser reciclado | `86400` |
 | `SANDBOX_CPU_LIMIT` | Limite de CPU aplicado à sandbox provisionada | `1` |
 | `SANDBOX_MEMORY_LIMIT` | Limite de memória aplicado à sandbox provisionada | `512m` |
 | `SANDBOX_HOST` | Host exposto para alcançar o sandbox | `127.0.0.1` |
