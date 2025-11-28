@@ -10,7 +10,7 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 
 ### Endpoints
 
-- `POST /jobs`: cria um job informando `jobId`, `repoUrl` ou `repoSlug`, `branch`, `taskDescription` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório em um diretório temporário, expõe as tools `run_shell`, `read_file` e `write_file` ao modelo e inicia o loop de tool-calling.
+- `POST /jobs`: cria um job informando `jobId`, `repoUrl` ou `repoSlug`, `branch`, `taskDescription` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório em um diretório temporário, expõe as tools `run_shell`, `read_file`, `write_file` e `http_get` ao modelo e inicia o loop de tool-calling. A tool `http_get` permite consultas HTTP públicas, bloqueando hosts locais/privados e truncando respostas grandes.
 - `GET /jobs/{id}`: retorna o status atualizado do job (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`), além de `logs`, resumo, arquivos alterados e patch gerado (`git diff`).
 
 Jobs ficam armazenados em memória enquanto executam e são atualizados de forma assíncrona pelo `SandboxJobProcessor`.
@@ -29,6 +29,8 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_HOST` | Host exposto para alcançar o sandbox | `127.0.0.1` |
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
 | `RUN_SHELL_TIMEOUT_MS` | Tempo máximo (ms) para cada chamada `run_shell` antes de encerrar o processo | `600000` |
+| `HTTP_TOOL_TIMEOUT_MS` | Timeout (ms) para chamadas `http_get` | `15000` |
+| `HTTP_TOOL_MAX_RESPONSE_CHARS` | Máximo de caracteres retornados pelo corpo de `http_get` antes de truncar | `20000` |
 | `GITHUB_CLONE_TOKEN` | Token utilizado para todas as operações no GitHub (clone, push e criação de PR). Se ausente, o serviço tenta `GITHUB_TOKEN`, `GITHUB_PR_TOKEN` ou um token embutido em `repoUrl`. | *(vazio)* |
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |

@@ -1,5 +1,6 @@
 import { exec as execCallback, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -31,6 +32,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly maxTaskDescriptionChars: number;
   private readonly toolOutputStringLimit: number;
   private readonly toolOutputSerializedLimit: number;
+  private readonly httpToolTimeoutMs: number;
+  private readonly httpToolMaxResponseChars: number;
 
   constructor(
     apiKey?: string,
@@ -49,6 +52,8 @@ export class SandboxJobProcessor implements JobProcessor {
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
     this.toolOutputStringLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_STRING_LIMIT, 12_000);
     this.toolOutputSerializedLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_SERIALIZED_LIMIT, 60_000);
+    this.httpToolTimeoutMs = this.parsePositiveInteger(process.env.HTTP_TOOL_TIMEOUT_MS, 15_000);
+    this.httpToolMaxResponseChars = this.parsePositiveInteger(process.env.HTTP_TOOL_MAX_RESPONSE_CHARS, 20_000);
   }
 
   async process(job: SandboxJob): Promise<void> {
@@ -176,6 +181,25 @@ export class SandboxJobProcessor implements JobProcessor {
         },
         strict: true,
         description: 'Escreve um arquivo dentro do repositório clonado',
+      },
+      {
+        type: 'function' as const,
+        name: 'http_get',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL http(s) pública para consulta' },
+            headers: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+              description: 'Cabeçalhos opcionais; Authorization é ignorado',
+            },
+          },
+          required: ['url'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Busca um recurso público via HTTP GET (bloqueia hosts internos e localhost)',
       },
     ];
   }
@@ -389,9 +413,135 @@ export class SandboxJobProcessor implements JobProcessor {
         return this.handleReadFile(call.arguments, repoPath);
       case 'write_file':
         return this.handleWriteFile(call.arguments, repoPath, job);
+      case 'http_get':
+        return this.handleHttpGet(call.arguments, job);
       default:
         return { error: `Ferramenta desconhecida: ${call.name}` };
     }
+  }
+
+  private sanitizeHeaders(raw: unknown): Record<string, string> | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return undefined;
+    }
+
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value !== 'string') {
+        continue;
+      }
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey === 'authorization') {
+        continue;
+      }
+      headers[normalizedKey] = value;
+    }
+
+    return Object.keys(headers).length > 0 ? headers : undefined;
+  }
+
+  private validateExternalUrl(rawUrl: string): URL {
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      throw new Error('URL inválida');
+    }
+
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      throw new Error('Apenas URLs http(s) são permitidas');
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '::1') {
+      throw new Error('Acesso a hosts locais não é permitido');
+    }
+
+    const ipVersion = net.isIP(hostname);
+    if (ipVersion === 4 || ipVersion === 6) {
+      if (this.isPrivateIp(hostname, ipVersion)) {
+        throw new Error('Acesso a endereços privados foi bloqueado');
+      }
+    }
+
+    return parsed;
+  }
+
+  private isPrivateIp(host: string, version: 4 | 6): boolean {
+    if (version === 6) {
+      return host === '::1' || host.startsWith('fd') || host.startsWith('fc');
+    }
+
+    const octets = host.split('.').map(Number);
+    if (octets.length !== 4 || octets.some((octet) => Number.isNaN(octet))) {
+      return true;
+    }
+
+    const [a, b] = octets;
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+
+  private async handleHttpGet(args: Record<string, unknown>, job: SandboxJob) {
+    if (!this.fetchImpl) {
+      throw new Error('fetch indisponível para http_get');
+    }
+
+    const urlArg = typeof args.url === 'string' ? args.url : undefined;
+    if (!urlArg) {
+      throw new Error('url é obrigatório para http_get');
+    }
+
+    const url = this.validateExternalUrl(urlArg);
+    const headers = this.sanitizeHeaders(args.headers);
+
+    this.log(job, `http_get: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs})`);
+
+    const controller = AbortSignal.timeout(this.httpToolTimeoutMs);
+    let response: any;
+    try {
+      response = await this.fetchImpl(url.toString(), { method: 'GET', headers, signal: controller });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`falha ao buscar URL: ${message}`);
+    }
+
+    const headersObject: Record<string, string> = {};
+    try {
+      for (const [key, value] of response.headers?.entries?.() ?? []) {
+        headersObject[key] = value;
+      }
+    } catch {
+      // noop - headers optional
+    }
+
+    let body = '';
+    let truncated = false;
+    try {
+      const text = await response.text();
+      const truncation = this.truncateStringValue(text, this.httpToolMaxResponseChars);
+      body = truncation.value;
+      truncated = truncation.truncated;
+      if (truncation.truncated) {
+        this.log(job, `http_get: corpo truncado (omitiu ${truncation.omitted} caracteres)`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`falha ao ler corpo da resposta: ${message}`);
+    }
+
+    return {
+      url: url.toString(),
+      status: typeof response.status === 'number' ? response.status : undefined,
+      statusText: response.statusText,
+      headers: headersObject,
+      body,
+      truncated,
+    };
   }
 
   private resolvePath(repoPath: string, requested: string | undefined, job?: SandboxJob): string {
