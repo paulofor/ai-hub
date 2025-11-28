@@ -28,7 +28,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_MEMORY_LIMIT` | Limite de memória aplicado à sandbox provisionada | `512m` |
 | `SANDBOX_HOST` | Host exposto para alcançar o sandbox | `127.0.0.1` |
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
-| `RUN_SHELL_TIMEOUT_MS` | Tempo máximo (ms) para cada chamada `run_shell` antes de encerrar o processo | `600000` |
+| `RUN_SHELL_TIMEOUT_MS` | Tempo máximo (ms) para cada chamada `run_shell` antes de encerrar o processo | `300000` |
 | `HTTP_TOOL_TIMEOUT_MS` | Timeout (ms) para chamadas `http_get` | `15000` |
 | `HTTP_TOOL_MAX_RESPONSE_CHARS` | Máximo de caracteres retornados pelo corpo de `http_get` antes de truncar | `20000` |
 | `GITHUB_CLONE_TOKEN` | Token utilizado para todas as operações no GitHub (clone, push e criação de PR). Se ausente, o serviço tenta `GITHUB_TOKEN`, `GITHUB_PR_TOKEN` ou um token embutido em `repoUrl`. | *(vazio)* |

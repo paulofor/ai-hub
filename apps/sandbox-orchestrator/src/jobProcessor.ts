@@ -601,7 +601,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     const joined = command.join(' ');
     const timeoutEnv = Number(process.env.RUN_SHELL_TIMEOUT_MS);
-    const timeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 600_000;
+    const timeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 300_000;
     const maxBufferEnv = Number(process.env.RUN_SHELL_MAX_BUFFER_BYTES);
     const maxBuffer = Number.isFinite(maxBufferEnv) && maxBufferEnv > 0 ? maxBufferEnv : 5 * 1024 * 1024;
 
