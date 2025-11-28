@@ -103,8 +103,10 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async prepareWorkspace(job: SandboxJob): Promise<string> {
-    const base = await fs.mkdtemp(path.join(os.tmpdir(), `ai-hub-${job.jobId}-`));
-    return base;
+    const baseDir = path.resolve(process.env.SANDBOX_WORKDIR ?? os.tmpdir());
+    await fs.mkdir(baseDir, { recursive: true });
+    const workspace = await fs.mkdtemp(path.join(baseDir, `ai-hub-${job.jobId}-`));
+    return workspace;
   }
 
   private resolveGithubAuth(job: SandboxJob): { token?: string; username: string; source: string } {

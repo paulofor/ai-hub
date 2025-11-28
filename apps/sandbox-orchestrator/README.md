@@ -26,6 +26,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_TTL_SECONDS` | Tempo de vida do sandbox antes de ser reciclado | `86400` |
 | `SANDBOX_CPU_LIMIT` | Limite de CPU aplicado à sandbox provisionada | `1` |
 | `SANDBOX_MEMORY_LIMIT` | Limite de memória aplicado à sandbox provisionada | `512m` |
+| `SANDBOX_WORKDIR` | Diretório base no host onde os workspaces e clones são criados | diretório temporário do sistema |
 | `SANDBOX_HOST` | Host exposto para alcançar o sandbox | `127.0.0.1` |
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
 | `RUN_SHELL_TIMEOUT_MS` | Tempo máximo (ms) para cada chamada `run_shell` antes de encerrar o processo | `300000` |
