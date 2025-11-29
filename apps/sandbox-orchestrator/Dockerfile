@@ -40,6 +40,7 @@ fi
 "$PATCH_BIN" -p0 -u -N --no-backup-if-mismatch <"${TMPFILE}.patch"
 EOF
 RUN chmod +x /usr/local/bin/apply_patch
+RUN npm install -g typescript
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
