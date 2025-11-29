@@ -603,7 +603,13 @@ export class SandboxJobProcessor implements JobProcessor {
 
     const joined = command.join(' ');
     const timeoutEnv = Number(process.env.RUN_SHELL_TIMEOUT_MS);
-    const timeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 300_000;
+    const defaultTimeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 300_000;
+    const isMavenCommand = path.basename(command[0]) === 'mvn';
+    const mavenTimeoutMs = 15 * 60 * 1000;
+    const timeoutMs = isMavenCommand ? Math.max(defaultTimeoutMs, mavenTimeoutMs) : defaultTimeoutMs;
+    if (isMavenCommand && timeoutMs > defaultTimeoutMs) {
+      this.log(job, 'mvn detectado; aumentando timeout para 15 minutos');
+    }
     const maxBufferEnv = Number(process.env.RUN_SHELL_MAX_BUFFER_BYTES);
     const maxBuffer = Number.isFinite(maxBufferEnv) && maxBufferEnv > 0 ? maxBufferEnv : 5 * 1024 * 1024;
 
