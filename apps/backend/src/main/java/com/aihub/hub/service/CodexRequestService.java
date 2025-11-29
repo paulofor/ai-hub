@@ -88,28 +88,56 @@ public class CodexRequestService {
     public List<CodexRequest> list() {
         Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
-        requests.stream()
-            .filter(request -> request.getExternalId() != null)
-            .filter(request -> request.getResponseText() == null)
-            .filter(request -> shouldRefresh(request, refreshCutoff))
-            .peek(request -> log.info("Atualizando CodexRequest {} a partir do sandbox", request.getId()))
-            .forEach(this::refreshFromSandbox);
+
+        for (CodexRequest request : requests) {
+            if (request.getExternalId() == null) {
+                continue;
+            }
+
+            RefreshDecision decision = evaluateRefresh(request, refreshCutoff);
+            if (!decision.shouldRefresh()) {
+                continue;
+            }
+
+            log.info(
+                "Atualizando CodexRequest {} a partir do sandbox ({})",
+                request.getId(),
+                decision.reason()
+            );
+            refreshFromSandbox(request);
+        }
+
         return requests;
     }
 
-    private boolean shouldRefresh(CodexRequest request, Instant refreshCutoff) {
+    private RefreshDecision evaluateRefresh(CodexRequest request, Instant refreshCutoff) {
+        boolean hasResponse = StringUtils.hasText(request.getResponseText());
+        boolean hasUsageMetadata = request.getPromptTokens() != null
+            && request.getCompletionTokens() != null
+            && request.getTotalTokens() != null
+            && request.getCost() != null;
+
+        if (hasResponse && hasUsageMetadata) {
+            return RefreshDecision.skip();
+        }
+
         if (request.getCreatedAt() == null) {
-            return false;
+            return new RefreshDecision(true, "sem data de criação, dados incompletos");
         }
-        boolean withinAllowedWindow = request.getCreatedAt().isAfter(refreshCutoff);
-        if (!withinAllowedWindow) {
-            log.info(
-                "Ignorando atualização do CodexRequest {} pois ultrapassou a janela de 1 hora (criado em {})",
-                request.getId(),
-                request.getCreatedAt()
-            );
+
+        if (request.getCreatedAt().isAfter(refreshCutoff)) {
+            return new RefreshDecision(true, "dentro da janela de atualização automática");
         }
-        return withinAllowedWindow;
+
+        if (!hasResponse && !hasUsageMetadata) {
+            return new RefreshDecision(true, "dados ausentes após janela de atualização");
+        }
+
+        if (!hasResponse) {
+            return new RefreshDecision(true, "resposta ausente após janela de atualização");
+        }
+
+        return new RefreshDecision(true, "metadados de uso ausentes após janela de atualização");
     }
 
     private String resolveModel(String candidate) {
@@ -206,7 +234,41 @@ public class CodexRequestService {
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
             sandboxOrchestratorClient.getJob(request.getExternalId());
         if (response == null) {
-            log.info("Nenhuma resposta encontrada no sandbox para CodexRequest {} com externalId {}", request.getId(), request.getExternalId());
+            log.info(
+                "Nenhuma resposta encontrada no sandbox para CodexRequest {} com externalId {}",
+                request.getId(),
+                request.getExternalId()
+            );
+
+            boolean updated = false;
+            if (!StringUtils.hasText(request.getResponseText())) {
+                request.setResponseText(String.format(
+                    "Sandbox não encontrou o job %s; os dados podem ter expirado.",
+                    request.getExternalId()
+                ));
+                updated = true;
+            }
+            if (request.getPromptTokens() == null) {
+                request.setPromptTokens(0);
+                updated = true;
+            }
+            if (request.getCompletionTokens() == null) {
+                request.setCompletionTokens(0);
+                updated = true;
+            }
+            if (request.getTotalTokens() == null) {
+                request.setTotalTokens(0);
+                updated = true;
+            }
+            if (request.getCost() == null) {
+                request.setCost(BigDecimal.ZERO);
+                updated = true;
+            }
+
+            if (updated) {
+                codexRequestRepository.save(request);
+            }
+
             return;
         }
 
@@ -341,6 +403,12 @@ public class CodexRequestService {
                 return null;
             }
             return new RepoCoordinates(parts[0], parts[1]);
+        }
+    }
+
+    private record RefreshDecision(boolean shouldRefresh, String reason) {
+        private static RefreshDecision skip() {
+            return new RefreshDecision(false, "dados completos");
         }
     }
 }
