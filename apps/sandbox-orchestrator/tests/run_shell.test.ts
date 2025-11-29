@@ -76,3 +76,35 @@ test('normaliza cwd com caracteres extras e prossegue usando raiz do repo', asyn
 
   await fs.rm(repoPath, { recursive: true, force: true });
 });
+
+test('usa timeout estendido para comandos mvn', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-mvn-timeout-'));
+  const mvnPath = path.join(repoPath, 'mvn');
+  await fs.writeFile(mvnPath, '#!/bin/sh\necho mvn-ok');
+  await fs.chmod(mvnPath, 0o755);
+
+  const originalTimeout = process.env.RUN_SHELL_TIMEOUT_MS;
+  process.env.RUN_SHELL_TIMEOUT_MS = '1000';
+
+  const processor = new SandboxJobProcessor();
+  const job = createJob();
+
+  try {
+    const result = await (processor as any).handleRunShell({ command: ['./mvn'], cwd: '.' }, repoPath, job);
+
+    assert.equal(result.exitCode, 0, 'mvn stub deveria executar com sucesso');
+    const runLog = job.logs.find((entry) => entry.includes('run_shell: ./mvn'));
+    assert.ok(runLog?.includes('timeoutMs=900000'), 'timeout deveria ser ajustado para 15 minutos');
+    const increaseLog = job.logs.find((entry) =>
+      entry.includes('mvn detectado; aumentando timeout para 15 minutos'),
+    );
+    assert.ok(increaseLog, 'log de aumento de timeout para mvn não encontrado');
+  } finally {
+    if (originalTimeout === undefined) {
+      delete process.env.RUN_SHELL_TIMEOUT_MS;
+    } else {
+      process.env.RUN_SHELL_TIMEOUT_MS = originalTimeout;
+    }
+    await fs.rm(repoPath, { recursive: true, force: true });
+  }
+});
