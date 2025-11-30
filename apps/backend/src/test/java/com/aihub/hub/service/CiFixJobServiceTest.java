@@ -48,6 +48,7 @@ class CiFixJobServiceTest {
                 null,
                 null,
                 null,
+                null,
                 BigDecimal.ZERO
             ));
 
@@ -91,6 +92,7 @@ class CiFixJobServiceTest {
                 List.of("src/Main.java"),
                 "diff --git",
                 "https://github.com/owner/repo/pull/101",
+                null,
                 null,
                 null,
                 null,
