@@ -77,6 +77,7 @@ public class SandboxOrchestratorClient {
         String pullRequestUrl,
         String error,
         Integer promptTokens,
+        Integer cachedPromptTokens,
         Integer completionTokens,
         Integer totalTokens,
         BigDecimal cost
@@ -109,6 +110,7 @@ public class SandboxOrchestratorClient {
                 node.path("pullRequestUrl").asText(null),
                 node.path("error").asText(null),
                 resolvePromptTokens(node),
+                resolveCachedPromptTokens(node),
                 resolveCompletionTokens(node),
                 resolveTotalTokens(node),
                 resolveCost(node)
@@ -121,6 +123,15 @@ public class SandboxOrchestratorClient {
                 return topLevel;
             }
             return readInt(node.path("usage"), "promptTokens", "prompt_tokens", "input_tokens");
+        }
+
+
+        private static Integer resolveCachedPromptTokens(JsonNode node) {
+            Integer topLevel = readInt(node, "cachedPromptTokens", "cached_prompt_tokens", "cachedInputTokens", "cached_input_tokens");
+            if (topLevel != null) {
+                return topLevel;
+            }
+            return readInt(node.path("usage"), "cachedPromptTokens", "cached_prompt_tokens", "cachedInputTokens", "cached_input_tokens");
         }
 
         private static Integer resolveCompletionTokens(JsonNode node) {

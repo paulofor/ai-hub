@@ -1,6 +1,6 @@
 package com.aihub.hub.service;
 
-import com.aihub.hub.config.CodexPricingProperties;
+import com.aihub.hub.domain.CodexModelPricing;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -10,40 +10,67 @@ import java.util.Optional;
 @Component
 public class TokenCostCalculator {
 
-    private static final BigDecimal THOUSAND = BigDecimal.valueOf(1000);
-    private final CodexPricingProperties pricingProperties;
+    private static final BigDecimal MILLION = BigDecimal.valueOf(1_000_000L);
 
-    public TokenCostCalculator(CodexPricingProperties pricingProperties) {
-        this.pricingProperties = pricingProperties;
+    private final CodexModelPricingService pricingService;
+
+    public TokenCostCalculator(CodexModelPricingService pricingService) {
+        this.pricingService = pricingService;
     }
 
-    public BigDecimal calculate(String model, Integer promptTokens, Integer completionTokens, Integer totalTokens) {
-        CodexPricingProperties.ModelPricing pricing = pricingProperties.getPricingFor(model);
-        if (pricing == null) {
+    public TokenCostBreakdown calculate(
+        String model,
+        Integer inputTokens,
+        Integer cachedInputTokens,
+        Integer outputTokens,
+        Integer totalTokens
+    ) {
+        Optional<CodexModelPricing> pricingOptional = pricingService.findByModelName(model);
+        if (pricingOptional.isEmpty()) {
             return null;
         }
 
-        int promptCount = Optional.ofNullable(promptTokens).orElse(0);
-        int completionCount = Optional.ofNullable(completionTokens).orElse(0);
+        CodexModelPricing pricing = pricingOptional.get();
 
-        if (promptTokens == null && completionTokens == null && totalTokens != null) {
-            completionCount = totalTokens;
-        } else if (totalTokens != null && completionTokens == null) {
-            completionCount = Math.max(totalTokens - promptCount, 0);
+        int inputCount = Optional.ofNullable(inputTokens).orElse(0);
+        int cachedInputCount = Optional.ofNullable(cachedInputTokens).orElse(0);
+        int outputCount = Optional.ofNullable(outputTokens).orElse(0);
+
+        Integer resolvedTotal = totalTokens;
+        if (resolvedTotal == null) {
+            resolvedTotal = inputCount + cachedInputCount + outputCount;
+        } else {
+            int known = inputCount + cachedInputCount + outputCount;
+            if (known == 0) {
+                outputCount = resolvedTotal;
+            } else if (known < resolvedTotal && outputCount == 0) {
+                outputCount = Math.max(resolvedTotal - (inputCount + cachedInputCount), 0);
+            }
         }
 
-        BigDecimal promptCost = costForTokens(pricing.getPrompt(), promptCount);
-        BigDecimal completionCost = costForTokens(pricing.getCompletion(), completionCount);
+        BigDecimal inputCost = costForTokens(pricing.getInputPricePerMillion(), inputCount);
+        BigDecimal cachedInputCost = costForTokens(pricing.getCachedInputPricePerMillion(), cachedInputCount);
+        BigDecimal outputCost = costForTokens(pricing.getOutputPricePerMillion(), outputCount);
+        BigDecimal totalCost = inputCost.add(cachedInputCost).add(outputCost);
 
-        return promptCost.add(completionCost);
+        return new TokenCostBreakdown(
+            inputCount,
+            cachedInputCount,
+            outputCount,
+            resolvedTotal,
+            inputCost,
+            cachedInputCost,
+            outputCost,
+            totalCost
+        );
     }
 
-    private BigDecimal costForTokens(BigDecimal costPerThousandTokens, int tokens) {
-        if (costPerThousandTokens == null || tokens <= 0) {
-            return BigDecimal.ZERO;
+    private BigDecimal costForTokens(BigDecimal pricePerMillion, int tokens) {
+        if (pricePerMillion == null || tokens <= 0) {
+            return BigDecimal.ZERO.setScale(6, RoundingMode.HALF_UP);
         }
-        return costPerThousandTokens
+        return pricePerMillion
             .multiply(BigDecimal.valueOf(tokens))
-            .divide(THOUSAND, 6, RoundingMode.HALF_UP);
+            .divide(MILLION, 6, RoundingMode.HALF_UP);
     }
 }

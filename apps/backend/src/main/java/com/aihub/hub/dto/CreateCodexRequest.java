@@ -19,9 +19,17 @@ public class CreateCodexRequest {
 
     private Integer promptTokens;
 
+    private Integer cachedPromptTokens;
+
     private Integer completionTokens;
 
     private Integer totalTokens;
+
+    private BigDecimal promptCost;
+
+    private BigDecimal cachedPromptCost;
+
+    private BigDecimal completionCost;
 
     private BigDecimal cost;
 
@@ -68,6 +76,14 @@ public class CreateCodexRequest {
         this.promptTokens = promptTokens;
     }
 
+    public Integer getCachedPromptTokens() {
+        return cachedPromptTokens;
+    }
+
+    public void setCachedPromptTokens(Integer cachedPromptTokens) {
+        this.cachedPromptTokens = cachedPromptTokens;
+    }
+
     public Integer getCompletionTokens() {
         return completionTokens;
     }
@@ -82,6 +98,30 @@ public class CreateCodexRequest {
 
     public void setTotalTokens(Integer totalTokens) {
         this.totalTokens = totalTokens;
+    }
+
+    public BigDecimal getPromptCost() {
+        return promptCost;
+    }
+
+    public void setPromptCost(BigDecimal promptCost) {
+        this.promptCost = promptCost;
+    }
+
+    public BigDecimal getCachedPromptCost() {
+        return cachedPromptCost;
+    }
+
+    public void setCachedPromptCost(BigDecimal cachedPromptCost) {
+        this.cachedPromptCost = cachedPromptCost;
+    }
+
+    public BigDecimal getCompletionCost() {
+        return completionCost;
+    }
+
+    public void setCompletionCost(BigDecimal completionCost) {
+        this.completionCost = completionCost;
     }
 
     public BigDecimal getCost() {

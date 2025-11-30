@@ -47,11 +47,23 @@ public class CodexRequest {
     @Column(name = "prompt_tokens")
     private Integer promptTokens;
 
+    @Column(name = "cached_prompt_tokens")
+    private Integer cachedPromptTokens;
+
     @Column(name = "completion_tokens")
     private Integer completionTokens;
 
     @Column(name = "total_tokens")
     private Integer totalTokens;
+
+    @Column(name = "prompt_cost", precision = 19, scale = 6)
+    private BigDecimal promptCost;
+
+    @Column(name = "cached_prompt_cost", precision = 19, scale = 6)
+    private BigDecimal cachedPromptCost;
+
+    @Column(name = "completion_cost", precision = 19, scale = 6)
+    private BigDecimal completionCost;
 
     @Column(name = "cost", precision = 19, scale = 6)
     private BigDecimal cost;
@@ -129,6 +141,14 @@ public class CodexRequest {
         this.promptTokens = promptTokens;
     }
 
+    public Integer getCachedPromptTokens() {
+        return cachedPromptTokens;
+    }
+
+    public void setCachedPromptTokens(Integer cachedPromptTokens) {
+        this.cachedPromptTokens = cachedPromptTokens;
+    }
+
     public Integer getCompletionTokens() {
         return completionTokens;
     }
@@ -143,6 +163,30 @@ public class CodexRequest {
 
     public void setTotalTokens(Integer totalTokens) {
         this.totalTokens = totalTokens;
+    }
+
+    public BigDecimal getPromptCost() {
+        return promptCost;
+    }
+
+    public void setPromptCost(BigDecimal promptCost) {
+        this.promptCost = promptCost;
+    }
+
+    public BigDecimal getCachedPromptCost() {
+        return cachedPromptCost;
+    }
+
+    public void setCachedPromptCost(BigDecimal cachedPromptCost) {
+        this.cachedPromptCost = cachedPromptCost;
+    }
+
+    public BigDecimal getCompletionCost() {
+        return completionCost;
+    }
+
+    public void setCompletionCost(BigDecimal completionCost) {
+        this.completionCost = completionCost;
     }
 
     public BigDecimal getCost() {
