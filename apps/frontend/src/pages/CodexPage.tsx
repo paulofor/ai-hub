@@ -1,10 +1,13 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
 
+type CodexProfile = 'STANDARD' | 'ECONOMY';
+
 interface CodexRequest {
   id: number;
   environment: string;
   model: string;
+  profile: CodexProfile;
   prompt: string;
   responseText?: string;
   externalId?: string;
@@ -35,6 +38,16 @@ const parseNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const parseProfile = (value: unknown): CodexProfile => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toUpperCase();
+    if (normalized === 'ECONOMY') {
+      return 'ECONOMY';
+    }
+  }
+  return 'STANDARD';
+};
+
 const parseCodexRequest = (value: unknown): CodexRequest | null => {
   if (typeof value !== 'object' || value === null) {
     return null;
@@ -46,11 +59,13 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const completionTokens = parseNumber(item.completionTokens);
   const totalTokens = parseNumber(item.totalTokens);
   const cost = parseNumber(item.cost);
+  const profile = parseProfile(item.profile ?? item.integrationProfile);
 
   return {
     id,
     environment: (item.environment as string) ?? '',
     model: (item.model as string) ?? '',
+    profile,
     prompt: (item.prompt as string) ?? '',
     responseText: (item.responseText as string) ?? undefined,
     externalId: (item.externalId as string) ?? undefined,
@@ -93,9 +108,20 @@ const formatCost = (value?: number) => {
   }).format(value);
 };
 
+const formatProfile = (profile: CodexProfile) => {
+  switch (profile) {
+    case 'ECONOMY':
+      return 'Econômico';
+    case 'STANDARD':
+    default:
+      return 'Padrão';
+  }
+};
+
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
+  const [profile, setProfile] = useState<CodexProfile>('STANDARD');
   const [requests, setRequests] = useState<CodexRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +171,8 @@ export default function CodexPage() {
     try {
       const response = await client.post('/codex/requests', {
         prompt: trimmedPrompt,
-        environment: trimmedEnvironment
+        environment: trimmedEnvironment,
+        profile
       });
       const parsed = parseCodexRequest(response.data);
       setRequests((prev) => (parsed ? [parsed, ...prev] : prev));
@@ -165,7 +192,7 @@ export default function CodexPage() {
         <div>
           <h2 className="text-2xl font-semibold">Codex</h2>
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            Envie tarefas para o Codex informando o ambiente desejado.
+            Envie tarefas para o Codex informando o ambiente desejado e o perfil de uso.
           </p>
         </div>
       </div>
@@ -194,6 +221,44 @@ export default function CodexPage() {
                 ))
               )}
             </select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Perfil de integração</span>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
+                  value="STANDARD"
+                  checked={profile === 'STANDARD'}
+                  onChange={() => setProfile('STANDARD')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Padrão
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Máxima autonomia do modelo
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
+                  value="ECONOMY"
+                  checked={profile === 'ECONOMY'}
+                  onChange={() => setProfile('ECONOMY')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Econômico
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Reduz limites de tokens e privilegia execuções enxutas
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -231,6 +296,7 @@ export default function CodexPage() {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Criado em</th>
                 <th className="px-4 py-3 text-left font-semibold">Ambiente</th>
+                <th className="px-4 py-3 text-left font-semibold">Perfil</th>
                 <th className="px-4 py-3 text-left font-semibold">Modelo</th>
                 <th className="px-4 py-3 text-left font-semibold">Prompt</th>
                 <th className="px-4 py-3 text-left font-semibold">Tokens</th>
@@ -245,6 +311,11 @@ export default function CodexPage() {
                     {new Date(item.createdAt).toLocaleString()}
                   </td>
                   <td className="px-4 py-3 font-medium">{item.environment}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      {formatProfile(item.profile)}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">{item.model}</td>
                   <td className="px-4 py-3">
                     <details>
@@ -282,7 +353,7 @@ export default function CodexPage() {
               ))}
               {sortedRequests.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-center text-slate-500" colSpan={7}>
+                  <td className="px-4 py-4 text-center text-slate-500" colSpan={8}>
                     Nenhuma solicitação registrada ainda.
                   </td>
                 </tr>

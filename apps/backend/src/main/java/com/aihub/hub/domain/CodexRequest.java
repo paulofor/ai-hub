@@ -2,6 +2,8 @@ package com.aihub.hub.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -26,6 +28,10 @@ public class CodexRequest {
 
     @Column(nullable = false)
     private String model;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "profile", nullable = false)
+    private CodexIntegrationProfile profile = CodexIntegrationProfile.STANDARD;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(columnDefinition = "LONGTEXT", nullable = false)
@@ -56,9 +62,10 @@ public class CodexRequest {
     public CodexRequest() {
     }
 
-    public CodexRequest(String environment, String model, String prompt) {
+    public CodexRequest(String environment, String model, CodexIntegrationProfile profile, String prompt) {
         this.environment = environment;
         this.model = model;
+        this.profile = profile;
         this.prompt = prompt;
     }
 
@@ -80,6 +87,14 @@ public class CodexRequest {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public CodexIntegrationProfile getProfile() {
+        return profile;
+    }
+
+    public void setProfile(CodexIntegrationProfile profile) {
+        this.profile = profile != null ? profile : CodexIntegrationProfile.STANDARD;
     }
 
     public String getPrompt() {

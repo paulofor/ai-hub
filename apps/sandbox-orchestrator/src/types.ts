@@ -1,4 +1,5 @@
 export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type SandboxProfile = 'STANDARD' | 'ECONOMY';
 
 export interface SandboxJob {
   jobId: string;
@@ -8,6 +9,8 @@ export interface SandboxJob {
   taskDescription: string;
   testCommand?: string;
   commitHash?: string;
+  profile?: SandboxProfile;
+  model?: string;
   status: JobStatus;
   summary?: string;
   changedFiles?: string[];
