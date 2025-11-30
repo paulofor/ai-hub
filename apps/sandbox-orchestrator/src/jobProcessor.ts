@@ -104,9 +104,29 @@ export class SandboxJobProcessor implements JobProcessor {
 
   private async prepareWorkspace(job: SandboxJob): Promise<string> {
     const baseDir = path.resolve(process.env.SANDBOX_WORKDIR ?? os.tmpdir());
-    await fs.mkdir(baseDir, { recursive: true });
-    const workspace = await fs.mkdtemp(path.join(baseDir, `ai-hub-${job.jobId}-`));
-    return workspace;
+    const sandboxEnv = process.env.SANDBOX_WORKDIR ?? '<não definido>';
+    this.log(job, `preparando workspace (SANDBOX_WORKDIR=${sandboxEnv}) em ${baseDir}`);
+    try {
+      await fs.mkdir(baseDir, { recursive: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.log(job, `falha ao criar diretório base ${baseDir}: ${message}`);
+      throw new Error(`não foi possível preparar diretório base ${baseDir}: ${message}`);
+    }
+
+    try {
+      const workspace = await fs.mkdtemp(path.join(baseDir, `ai-hub-${job.jobId}-`));
+      this.log(job, `workspace temporário usando ${baseDir} criado com prefixo ai-hub-${job.jobId}-`);
+      return workspace;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const baseDirStatus = await this.describePathStatus(baseDir);
+      this.log(
+        job,
+        `falha ao criar workspace temporário em ${baseDir}: ${message} (status do diretório base: ${baseDirStatus})`,
+      );
+      throw new Error(`não foi possível criar workspace temporário em ${baseDir}: ${message}`);
+    }
   }
 
   private resolveGithubAuth(job: SandboxJob): { token?: string; username: string; source: string } {
@@ -882,6 +902,19 @@ export class SandboxJobProcessor implements JobProcessor {
     const entry = `[${new Date().toISOString()}] ${message}`;
     job.logs.push(entry);
     console.info(`Sandbox job ${job.jobId}: ${message}`);
+  }
+
+  private async describePathStatus(target: string): Promise<string> {
+    try {
+      const stats = await fs.stat(target);
+      if (stats.isDirectory()) {
+        return 'diretório acessível';
+      }
+      return `existe mas não é diretório (mode=${stats.mode})`;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `inacessível: ${message}`;
+    }
   }
 
   private sanitizeRequestedPath(requested: string | undefined): string | undefined {
