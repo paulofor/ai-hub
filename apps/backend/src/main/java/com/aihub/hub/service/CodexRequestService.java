@@ -71,8 +71,12 @@ public class CodexRequestService {
 
         codexRequest.setProfile(profile);
         codexRequest.setPromptTokens(request.getPromptTokens());
+        codexRequest.setCachedPromptTokens(request.getCachedPromptTokens());
         codexRequest.setCompletionTokens(request.getCompletionTokens());
         codexRequest.setTotalTokens(request.getTotalTokens());
+        codexRequest.setPromptCost(request.getPromptCost());
+        codexRequest.setCachedPromptCost(request.getCachedPromptCost());
+        codexRequest.setCompletionCost(request.getCompletionCost());
         codexRequest.setCost(request.getCost());
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
@@ -120,8 +124,12 @@ public class CodexRequestService {
     private RefreshDecision evaluateRefresh(CodexRequest request, Instant refreshCutoff) {
         boolean hasResponse = StringUtils.hasText(request.getResponseText());
         boolean hasUsageMetadata = request.getPromptTokens() != null
+            && request.getCachedPromptTokens() != null
             && request.getCompletionTokens() != null
             && request.getTotalTokens() != null
+            && request.getPromptCost() != null
+            && request.getCachedPromptCost() != null
+            && request.getCompletionCost() != null
             && request.getCost() != null;
 
         if (hasResponse && hasUsageMetadata) {
@@ -268,12 +276,28 @@ public class CodexRequestService {
                 request.setPromptTokens(0);
                 updated = true;
             }
+            if (request.getCachedPromptTokens() == null) {
+                request.setCachedPromptTokens(0);
+                updated = true;
+            }
             if (request.getCompletionTokens() == null) {
                 request.setCompletionTokens(0);
                 updated = true;
             }
             if (request.getTotalTokens() == null) {
                 request.setTotalTokens(0);
+                updated = true;
+            }
+            if (request.getPromptCost() == null) {
+                request.setPromptCost(BigDecimal.ZERO);
+                updated = true;
+            }
+            if (request.getCachedPromptCost() == null) {
+                request.setCachedPromptCost(BigDecimal.ZERO);
+                updated = true;
+            }
+            if (request.getCompletionCost() == null) {
+                request.setCompletionCost(BigDecimal.ZERO);
                 updated = true;
             }
             if (request.getCost() == null) {
@@ -375,15 +399,59 @@ public class CodexRequestService {
 
         boolean updated = false;
         Integer promptTokens = response.promptTokens();
+        Integer cachedPromptTokens = response.cachedPromptTokens();
         Integer completionTokens = response.completionTokens();
         Integer totalTokens = response.totalTokens();
 
-        if (totalTokens == null && promptTokens != null && completionTokens != null) {
-            totalTokens = promptTokens + completionTokens;
+        if (totalTokens == null) {
+            int sum = 0;
+            boolean hasAny = false;
+            if (promptTokens != null) {
+                sum += promptTokens;
+                hasAny = true;
+            }
+            if (cachedPromptTokens != null) {
+                sum += cachedPromptTokens;
+                hasAny = true;
+            }
+            if (completionTokens != null) {
+                sum += completionTokens;
+                hasAny = true;
+            }
+            if (hasAny) {
+                totalTokens = sum;
+            }
+        }
+
+        TokenCostBreakdown breakdown = tokenCostCalculator.calculate(
+            request.getModel(),
+            promptTokens,
+            cachedPromptTokens,
+            completionTokens,
+            totalTokens
+        );
+
+        if (breakdown != null) {
+            if (promptTokens == null) {
+                promptTokens = breakdown.inputTokens();
+            }
+            if (cachedPromptTokens == null) {
+                cachedPromptTokens = breakdown.cachedInputTokens();
+            }
+            if (completionTokens == null) {
+                completionTokens = breakdown.outputTokens();
+            }
+            if (totalTokens == null) {
+                totalTokens = breakdown.totalTokens();
+            }
         }
 
         if (!Objects.equals(request.getPromptTokens(), promptTokens)) {
             request.setPromptTokens(promptTokens);
+            updated = true;
+        }
+        if (!Objects.equals(request.getCachedPromptTokens(), cachedPromptTokens)) {
+            request.setCachedPromptTokens(cachedPromptTokens);
             updated = true;
         }
         if (!Objects.equals(request.getCompletionTokens(), completionTokens)) {
@@ -395,9 +463,34 @@ public class CodexRequestService {
             updated = true;
         }
 
+        if (breakdown != null) {
+            BigDecimal promptCost = breakdown.inputCost();
+            BigDecimal cachedPromptCost = breakdown.cachedInputCost();
+            BigDecimal completionCost = breakdown.outputCost();
+            Integer breakdownTotalTokens = breakdown.totalTokens();
+
+            if (promptCost != null && (request.getPromptCost() == null || promptCost.compareTo(request.getPromptCost()) != 0)) {
+                request.setPromptCost(promptCost);
+                updated = true;
+            }
+            if (cachedPromptCost != null && (request.getCachedPromptCost() == null || cachedPromptCost.compareTo(request.getCachedPromptCost()) != 0)) {
+                request.setCachedPromptCost(cachedPromptCost);
+                updated = true;
+            }
+            if (completionCost != null && (request.getCompletionCost() == null || completionCost.compareTo(request.getCompletionCost()) != 0)) {
+                request.setCompletionCost(completionCost);
+                updated = true;
+            }
+            if (breakdownTotalTokens != null && !Objects.equals(request.getTotalTokens(), breakdownTotalTokens)) {
+                request.setTotalTokens(breakdownTotalTokens);
+                totalTokens = breakdownTotalTokens;
+                updated = true;
+            }
+        }
+
         BigDecimal resolvedCost = response.cost();
-        if (resolvedCost == null) {
-            resolvedCost = tokenCostCalculator.calculate(request.getModel(), promptTokens, completionTokens, totalTokens);
+        if (resolvedCost == null && breakdown != null) {
+            resolvedCost = breakdown.totalCost();
         }
         if (resolvedCost != null && (request.getCost() == null || resolvedCost.compareTo(request.getCost()) != 0)) {
             request.setCost(resolvedCost);

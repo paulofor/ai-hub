@@ -29,23 +29,32 @@ public class CodexPricingProperties {
     }
 
     public static class ModelPricing {
-        private BigDecimal prompt;
-        private BigDecimal completion;
+        private BigDecimal input;
+        private BigDecimal cachedInput;
+        private BigDecimal output;
 
-        public BigDecimal getPrompt() {
-            return prompt;
+        public BigDecimal getInput() {
+            return input;
         }
 
-        public void setPrompt(BigDecimal prompt) {
-            this.prompt = prompt;
+        public void setInput(BigDecimal input) {
+            this.input = input;
         }
 
-        public BigDecimal getCompletion() {
-            return completion;
+        public BigDecimal getCachedInput() {
+            return cachedInput;
         }
 
-        public void setCompletion(BigDecimal completion) {
-            this.completion = completion;
+        public void setCachedInput(BigDecimal cachedInput) {
+            this.cachedInput = cachedInput;
+        }
+
+        public BigDecimal getOutput() {
+            return output;
+        }
+
+        public void setOutput(BigDecimal output) {
+            this.output = output;
         }
     }
 }

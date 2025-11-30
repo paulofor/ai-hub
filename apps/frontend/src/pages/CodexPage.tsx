@@ -12,8 +12,12 @@ interface CodexRequest {
   responseText?: string;
   externalId?: string;
   promptTokens?: number;
+  cachedPromptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
+  promptCost?: number;
+  cachedPromptCost?: number;
+  completionCost?: number;
   cost?: number;
   createdAt: string;
 }
@@ -23,6 +27,15 @@ interface EnvironmentOption {
   name: string;
   description: string | null;
   createdAt: string;
+}
+
+interface CodexModelOption {
+  id: number;
+  modelName: string;
+  displayName?: string | null;
+  inputPricePerMillion: number;
+  cachedInputPricePerMillion: number;
+  outputPricePerMillion: number;
 }
 
 const parseNumber = (value: unknown): number | undefined => {
@@ -56,8 +69,12 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const item = value as Record<string, unknown>;
   const id = parseNumber(item.id) ?? 0;
   const promptTokens = parseNumber(item.promptTokens);
+  const cachedPromptTokens = parseNumber(item.cachedPromptTokens);
   const completionTokens = parseNumber(item.completionTokens);
   const totalTokens = parseNumber(item.totalTokens);
+  const promptCost = parseNumber(item.promptCost);
+  const cachedPromptCost = parseNumber(item.cachedPromptCost);
+  const completionCost = parseNumber(item.completionCost);
   const cost = parseNumber(item.cost);
   const profile = parseProfile(item.profile ?? item.integrationProfile);
 
@@ -70,8 +87,12 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
     responseText: (item.responseText as string) ?? undefined,
     externalId: (item.externalId as string) ?? undefined,
     promptTokens,
+    cachedPromptTokens,
     completionTokens,
     totalTokens,
+    promptCost,
+    cachedPromptCost,
+    completionCost,
     cost,
     createdAt: (item.createdAt as string) ?? ''
   };
@@ -96,15 +117,27 @@ const formatTokens = (value?: number) => {
   return value.toLocaleString('pt-BR');
 };
 
-const formatCost = (value?: number) => {
+const formatCost = (value?: number, fractionDigits = 6) => {
   if (value === undefined || value === null || Number.isNaN(value)) {
     return '—';
   }
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 6,
-    maximumFractionDigits: 6
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits
+  }).format(value);
+};
+
+const formatPricePerMillion = (value?: number) => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4
   }).format(value);
 };
 
@@ -122,11 +155,13 @@ export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
   const [profile, setProfile] = useState<CodexProfile>('STANDARD');
+  const [model, setModel] = useState('');
   const [requests, setRequests] = useState<CodexRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentOption[]>([]);
+  const [modelOptions, setModelOptions] = useState<CodexModelOption[]>([]);
 
   useEffect(() => {
     client
@@ -150,21 +185,47 @@ export default function CodexPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
+  useEffect(() => {
+    client
+      .get<CodexModelOption[]>('/codex/models')
+      .then((response) => {
+        setModelOptions(response.data);
+        setModel((current) => {
+          if (current && response.data.some((item) => item.modelName === current)) {
+            return current;
+          }
+          return response.data[0]?.modelName ?? '';
+        });
+      })
+      .catch((err: Error) => setError(err.message));
+  }, []);
+
   const sortedRequests = useMemo(() => {
     return [...requests].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [requests]);
 
+  const selectedModel = useMemo(() => {
+    return modelOptions.find((option) => option.modelName === model) ?? null;
+  }, [modelOptions, model]);
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmedPrompt = prompt.trim();
     const trimmedEnvironment = environment.trim();
+    const trimmedModel = model.trim();
 
     if (!trimmedPrompt || !trimmedEnvironment) {
       setError('Informe o prompt e o ambiente antes de enviar.');
       return;
     }
+
+    if (!trimmedModel) {
+      setError('Selecione um modelo para enviar a solicitação.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
@@ -172,12 +233,14 @@ export default function CodexPage() {
       const response = await client.post('/codex/requests', {
         prompt: trimmedPrompt,
         environment: trimmedEnvironment,
-        profile
+        profile,
+        model: trimmedModel
       });
       const parsed = parseCodexRequest(response.data);
       setRequests((prev) => (parsed ? [parsed, ...prev] : prev));
       setPrompt('');
       setEnvironment(trimmedEnvironment);
+      setModel(trimmedModel);
       setSuccessMessage('Solicitação enviada para o Codex.');
     } catch (err) {
       setError((err as Error).message);
@@ -192,7 +255,7 @@ export default function CodexPage() {
         <div>
           <h2 className="text-2xl font-semibold">Codex</h2>
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            Envie tarefas para o Codex informando o ambiente desejado e o perfil de uso.
+            Envie tarefas para o Codex informando o ambiente, o modelo e o perfil de uso desejados.
           </p>
         </div>
       </div>
@@ -221,6 +284,41 @@ export default function CodexPage() {
                 ))
               )}
             </select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="model" className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Modelo
+            </label>
+            <select
+              id="model"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+              disabled={modelOptions.length === 0}
+            >
+              {modelOptions.length === 0 ? (
+                <option value="">Nenhum modelo cadastrado</option>
+              ) : (
+                modelOptions.map((option) => (
+                  <option key={option.id} value={option.modelName}>
+                    {(option.displayName ?? option.modelName) + ` — ${option.modelName}`}
+                  </option>
+                ))
+              )}
+            </select>
+            {selectedModel && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-200">
+                <p className="font-semibold">
+                  Valores por 1M tokens para {selectedModel.displayName ?? selectedModel.modelName}:
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <span>Input: {formatPricePerMillion(selectedModel.inputPricePerMillion)}</span>
+                  <span>Input cacheado: {formatPricePerMillion(selectedModel.cachedInputPricePerMillion)}</span>
+                  <span>Output: {formatPricePerMillion(selectedModel.outputPricePerMillion)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -277,7 +375,7 @@ export default function CodexPage() {
           <div className="flex items-center gap-4">
             <button
               type="submit"
-              disabled={loading || environmentOptions.length === 0}
+              disabled={loading || environmentOptions.length === 0 || modelOptions.length === 0}
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading ? 'Enviando...' : 'Enviar para o Codex'}
@@ -298,9 +396,9 @@ export default function CodexPage() {
                 <th className="px-4 py-3 text-left font-semibold">Ambiente</th>
                 <th className="px-4 py-3 text-left font-semibold">Perfil</th>
                 <th className="px-4 py-3 text-left font-semibold">Modelo</th>
-                <th className="px-4 py-3 text-left font-semibold">Prompt</th>
                 <th className="px-4 py-3 text-left font-semibold">Tokens</th>
-                <th className="px-4 py-3 text-left font-semibold">Custo</th>
+                <th className="px-4 py-3 text-left font-semibold">Custos</th>
+                <th className="px-4 py-3 text-left font-semibold">Prompt</th>
                 <th className="px-4 py-3 text-left font-semibold">Resposta</th>
               </tr>
             </thead>
@@ -316,45 +414,75 @@ export default function CodexPage() {
                       {formatProfile(item.profile)}
                     </span>
                   </td>
-                  <td className="px-4 py-3">{item.model}</td>
+                  <td className="px-4 py-3 font-mono text-xs uppercase text-slate-700 dark:text-slate-300">
+                    {item.model || '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span>Input</span>
+                        <span>{formatTokens(item.promptTokens)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Input cacheado</span>
+                        <span>{formatTokens(item.cachedPromptTokens)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Output</span>
+                        <span>{formatTokens(item.completionTokens)}</span>
+                      </div>
+                      <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100">
+                        <span>Total</span>
+                        <span>{formatTokens(item.totalTokens)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span>Input</span>
+                        <span>{formatCost(item.promptCost, 4)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Input cacheado</span>
+                        <span>{formatCost(item.cachedPromptCost, 4)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Output</span>
+                        <span>{formatCost(item.completionCost, 4)}</span>
+                      </div>
+                      <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100">
+                        <span>Total</span>
+                        <span>{formatCost(item.cost)}</span>
+                      </div>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <details>
                       <summary className="cursor-pointer text-emerald-600">Ver prompt</summary>
-                      <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
+                      <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
                         {item.prompt}
                       </pre>
                     </details>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <div className="text-slate-600 dark:text-slate-300">
-                        Prompt: {formatTokens(item.promptTokens)}
-                      </div>
-                      <div className="text-slate-600 dark:text-slate-300">
-                        Compleção: {formatTokens(item.completionTokens)}
-                      </div>
-                      <div className="font-medium">Total: {formatTokens(item.totalTokens)}</div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-medium">{formatCost(item.cost)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
                     {item.responseText ? (
                       <details>
                         <summary className="cursor-pointer text-emerald-600">Ver resposta</summary>
-                        <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
+                        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
                           {item.responseText}
                         </pre>
                       </details>
                     ) : (
-                      <span className="text-slate-400">Aguardando retorno</span>
+                      <span>—</span>
                     )}
                   </td>
                 </tr>
               ))}
               {sortedRequests.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-center text-slate-500" colSpan={8}>
-                    Nenhuma solicitação registrada ainda.
+                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={8}>
+                    Nenhuma solicitação enviada até o momento.
                   </td>
                 </tr>
               )}

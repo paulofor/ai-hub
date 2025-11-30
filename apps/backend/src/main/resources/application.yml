@@ -37,11 +37,13 @@ hub:
     pricing:
       models:
         gpt-5-codex:
-          prompt: 0.00125 # US$ 1.25 per 1M input tokens
-          completion: 0.01 # US$ 10.00 per 1M output tokens
+          input: 1.25 # US$ 1.25 por 1M de tokens de entrada
+          cached-input: 0.50 # US$ 0.50 por 1M de tokens de entrada cacheados
+          output: 10.0 # US$ 10.00 por 1M de tokens de saída
         gpt-4.1-mini:
-          prompt: 0.00015 # US$ 0.15 per 1M input tokens
-          completion: 0.0006 # US$ 0.60 per 1M output tokens
+          input: 0.15 # US$ 0.15 por 1M de tokens de entrada
+          cached-input: 0.06 # US$ 0.06 por 1M de tokens de entrada cacheados
+          output: 0.60 # US$ 0.60 por 1M de tokens de saída
   logs:
     max-chars: 20000
 
