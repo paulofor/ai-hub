@@ -1,6 +1,7 @@
 package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
@@ -32,10 +33,11 @@ public class CodexRequestService {
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
     private final ResponseRepository responseRepository;
-    private final String defaultModel;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
-    private final String defaultBranch;
     private final TokenCostCalculator tokenCostCalculator;
+    private final String defaultModel;
+    private final String economyModel;
+    private final String defaultBranch;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -43,6 +45,7 @@ public class CodexRequestService {
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                TokenCostCalculator tokenCostCalculator,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
+                               @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch) {
         this.codexRequestRepository = codexRequestRepository;
         this.promptRepository = promptRepository;
@@ -50,19 +53,23 @@ public class CodexRequestService {
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
+        this.economyModel = economyModel;
         this.defaultBranch = defaultBranch;
     }
 
     @Transactional
     public CodexRequest create(CreateCodexRequest request) {
-        String model = resolveModel(request.getModel());
-        log.info("Criando CodexRequest para ambiente {} com modelo {}", request.getEnvironment(), model);
+        CodexIntegrationProfile profile = resolveProfile(request.getProfile());
+        String model = resolveModel(profile, request.getModel());
+        log.info("Criando CodexRequest para ambiente {} com modelo {} (perfil {})", request.getEnvironment(), model, profile);
         CodexRequest codexRequest = new CodexRequest(
             request.getEnvironment().trim(),
             model,
+            profile,
             request.getPrompt().trim()
         );
 
+        codexRequest.setProfile(profile);
         codexRequest.setPromptTokens(request.getPromptTokens());
         codexRequest.setCompletionTokens(request.getCompletionTokens());
         codexRequest.setTotalTokens(request.getTotalTokens());
@@ -140,9 +147,16 @@ public class CodexRequestService {
         return new RefreshDecision(true, "metadados de uso ausentes após janela de atualização");
     }
 
-    private String resolveModel(String candidate) {
+    private CodexIntegrationProfile resolveProfile(CodexIntegrationProfile candidate) {
+        return candidate != null ? candidate : CodexIntegrationProfile.STANDARD;
+    }
+
+    private String resolveModel(CodexIntegrationProfile profile, String candidate) {
         if (StringUtils.hasText(candidate)) {
             return candidate.trim();
+        }
+        if (profile == CodexIntegrationProfile.ECONOMY && StringUtils.hasText(economyModel)) {
+            return economyModel.trim();
         }
         return defaultModel;
     }
@@ -210,7 +224,9 @@ public class CodexRequestService {
             defaultBranch,
             request.getPrompt(),
             null,
-            null
+            null,
+            Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
+            request.getModel()
         );
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.createJob(jobRequest);

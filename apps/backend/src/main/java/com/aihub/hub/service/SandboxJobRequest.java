@@ -7,6 +7,8 @@ public record SandboxJobRequest(
     String branch,
     String taskDescription,
     String commitHash,
-    String testCommand
+    String testCommand,
+    String profile,
+    String model
 ) {
 }

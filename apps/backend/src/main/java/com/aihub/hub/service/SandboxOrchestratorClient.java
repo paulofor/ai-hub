@@ -40,6 +40,8 @@ public class SandboxOrchestratorClient {
         body.put("taskDescription", request.taskDescription());
         Optional.ofNullable(request.commitHash()).ifPresent(value -> body.put("commit", value));
         Optional.ofNullable(request.testCommand()).ifPresent(value -> body.put("testCommand", value));
+        Optional.ofNullable(request.profile()).ifPresent(value -> body.put("profile", value));
+        Optional.ofNullable(request.model()).ifPresent(value -> body.put("model", value));
 
         log.info("Enviando job {} para sandbox-orchestrator no path {}", request.jobId(), jobsPath);
         JsonNode response = restClient.post()

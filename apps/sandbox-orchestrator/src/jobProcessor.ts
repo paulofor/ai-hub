@@ -14,7 +14,7 @@ import {
 } from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
-import { JobProcessor, SandboxJob } from './types.js';
+import { JobProcessor, SandboxJob, SandboxProfile } from './types.js';
 
 const exec = promisify(execCallback);
 
@@ -34,6 +34,11 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly toolOutputSerializedLimit: number;
   private readonly httpToolTimeoutMs: number;
   private readonly httpToolMaxResponseChars: number;
+  private readonly economyModel?: string;
+  private readonly economyMaxTaskDescriptionChars: number;
+  private readonly economyToolOutputStringLimit: number;
+  private readonly economyToolOutputSerializedLimit: number;
+  private readonly economyHttpToolMaxResponseChars: number;
 
   constructor(
     apiKey?: string,
@@ -54,15 +59,62 @@ export class SandboxJobProcessor implements JobProcessor {
     this.toolOutputSerializedLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_SERIALIZED_LIMIT, 60_000);
     this.httpToolTimeoutMs = this.parsePositiveInteger(process.env.HTTP_TOOL_TIMEOUT_MS, 15_000);
     this.httpToolMaxResponseChars = this.parsePositiveInteger(process.env.HTTP_TOOL_MAX_RESPONSE_CHARS, 20_000);
+    const configuredEconomyModel = process.env.CIFIX_MODEL_ECONOMY ?? process.env.CIFIX_ECONOMY_MODEL;
+    if (configuredEconomyModel && configuredEconomyModel.trim()) {
+      this.economyModel = configuredEconomyModel.trim();
+    } else if (this.model === 'gpt-5-codex') {
+      this.economyModel = 'gpt-4.1-mini';
+    } else {
+      this.economyModel = this.model;
+    }
+
+    const economyTaskLimitRaw = this.parsePositiveInteger(
+      process.env.ECONOMY_TASK_DESCRIPTION_MAX_CHARS,
+      Math.min(this.maxTaskDescriptionChars, 6_000),
+    );
+    this.economyMaxTaskDescriptionChars = Math.min(economyTaskLimitRaw, this.maxTaskDescriptionChars);
+
+    const economyToolOutputLimitRaw = this.parsePositiveInteger(
+      process.env.ECONOMY_TOOL_OUTPUT_STRING_LIMIT,
+      Math.min(this.toolOutputStringLimit, 6_000),
+    );
+    this.economyToolOutputStringLimit = Math.min(economyToolOutputLimitRaw, this.toolOutputStringLimit);
+
+    const economyToolOutputSerializedLimitRaw = this.parsePositiveInteger(
+      process.env.ECONOMY_TOOL_OUTPUT_SERIALIZED_LIMIT,
+      Math.min(this.toolOutputSerializedLimit, 15_000),
+    );
+    this.economyToolOutputSerializedLimit = Math.min(
+      economyToolOutputSerializedLimitRaw,
+      this.toolOutputSerializedLimit,
+    );
+
+    const economyHttpMaxCharsRaw = this.parsePositiveInteger(
+      process.env.ECONOMY_HTTP_TOOL_MAX_RESPONSE_CHARS,
+      Math.min(this.httpToolMaxResponseChars, 8_000),
+    );
+    this.economyHttpToolMaxResponseChars = Math.min(economyHttpMaxCharsRaw, this.httpToolMaxResponseChars);
   }
 
   async process(job: SandboxJob): Promise<void> {
     job.status = 'RUNNING';
     job.updatedAt = new Date().toISOString();
+
+    job.profile = (job.profile ?? 'STANDARD') as SandboxProfile;
+    const resolvedModel = this.resolveModel(job);
+    job.model = resolvedModel;
+
     const workspace = await this.prepareWorkspace(job);
     const repoPath = path.join(workspace, 'repo');
     job.sandboxPath = workspace;
     this.log(job, `workspace criado em ${workspace}`);
+    this.log(job, `perfil ${job.profile} selecionado; modelo ${resolvedModel}`);
+    if (this.isEconomy(job)) {
+      this.log(
+        job,
+        `modo econômico: limite prompt=${this.economyMaxTaskDescriptionChars}, toolOutput=${this.economyToolOutputStringLimit}, http_get=${this.economyHttpToolMaxResponseChars}`,
+      );
+    }
 
     try {
       const githubAuth = this.resolveGithubAuth(job);
@@ -83,8 +135,8 @@ export class SandboxJobProcessor implements JobProcessor {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
       }
 
-      this.log(job, 'iniciando interação com o modelo do sandbox');
-      const summary = await this.runCodexLoop(job, repoPath);
+      this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
+      const summary = await this.runCodexLoop(job, repoPath, resolvedModel);
       job.summary = summary;
       job.changedFiles = await this.collectChangedFiles(repoPath, baseCommit);
       job.patch = await this.generatePatch(repoPath, baseCommit);
@@ -226,10 +278,14 @@ export class SandboxJobProcessor implements JobProcessor {
     ];
   }
 
-  private async runCodexLoop(job: SandboxJob, repoPath: string): Promise<string> {
+  private async runCodexLoop(job: SandboxJob, repoPath: string, model: string): Promise<string> {
     job.taskDescription = this.sanitizeTaskDescription(job.taskDescription, job);
 
     const tools = this.buildTools(repoPath);
+    const profileInstruction = this.isEconomy(job)
+      ? `
+Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, escreva respostas objetivas e evite reexecuções desnecessárias.`
+      : '';
     const messages: ResponseItem[] = [
       {
         type: 'message',
@@ -240,7 +296,7 @@ export class SandboxJobProcessor implements JobProcessor {
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento.`,
+            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento.${profileInstruction}`,
           },
         ],
       },
@@ -258,7 +314,7 @@ export class SandboxJobProcessor implements JobProcessor {
     while (true) {
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
       const response = await this.openai!.responses.create({
-        model: this.model,
+        model,
         input: messages,
         tools,
       });
@@ -520,8 +576,9 @@ export class SandboxJobProcessor implements JobProcessor {
 
     const url = this.validateExternalUrl(urlArg);
     const headers = this.sanitizeHeaders(args.headers);
+    const maxResponseChars = this.resolveHttpToolMaxResponseChars(job);
 
-    this.log(job, `http_get: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs})`);
+    this.log(job, `http_get: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs}, maxResponseChars=${maxResponseChars})`);
 
     const controller = AbortSignal.timeout(this.httpToolTimeoutMs);
     let response: any;
@@ -545,7 +602,7 @@ export class SandboxJobProcessor implements JobProcessor {
     let truncated = false;
     try {
       const text = await response.text();
-      const truncation = this.truncateStringValue(text, this.httpToolMaxResponseChars);
+      const truncation = this.truncateStringValue(text, maxResponseChars);
       body = truncation.value;
       truncated = truncation.truncated;
       if (truncation.truncated) {
@@ -1031,8 +1088,10 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private prepareToolOutput(result: unknown, job: SandboxJob): string {
+    const stringLimit = this.resolveToolOutputStringLimit(job);
+    const serializedLimit = this.resolveToolOutputSerializedLimit(job);
     const truncation = { truncated: false };
-    const sanitized = this.truncateStringFields(result, this.toolOutputStringLimit, truncation);
+    const sanitized = this.truncateStringFields(result, stringLimit, truncation);
     let serialized: string;
 
     try {
@@ -1044,18 +1103,49 @@ export class SandboxJobProcessor implements JobProcessor {
     if (truncation.truncated) {
       this.log(
         job,
-        `output de tool truncado para ${this.toolOutputStringLimit} caracteres por campo para evitar ultrapassar a janela de contexto`,
+        `output de tool truncado para ${stringLimit} caracteres por campo para evitar ultrapassar a janela de contexto`,
       );
     }
 
-    const { value, truncated, omitted } = this.truncateStringValue(serialized, this.toolOutputSerializedLimit);
+    const { value, truncated, omitted } = this.truncateStringValue(serialized, serializedLimit);
     if (truncated) {
       this.log(
         job,
-        `output serializado da tool excedeu ${this.toolOutputSerializedLimit} caracteres e foi truncado (omitiu ${omitted} caracteres)`
+        `output serializado da tool excedeu ${serializedLimit} caracteres e foi truncado (omitiu ${omitted} caracteres)`
       );
     }
     return value;
+  }
+
+  private resolveModel(job: SandboxJob): string {
+    const candidate = typeof job.model === 'string' ? job.model.trim() : '';
+    if (candidate) {
+      return candidate;
+    }
+    if (this.isEconomy(job) && this.economyModel) {
+      return this.economyModel;
+    }
+    return this.model;
+  }
+
+  private isEconomy(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'ECONOMY';
+  }
+
+  private resolveTaskDescriptionLimit(job: SandboxJob): number {
+    return this.isEconomy(job) ? this.economyMaxTaskDescriptionChars : this.maxTaskDescriptionChars;
+  }
+
+  private resolveToolOutputStringLimit(job: SandboxJob): number {
+    return this.isEconomy(job) ? this.economyToolOutputStringLimit : this.toolOutputStringLimit;
+  }
+
+  private resolveToolOutputSerializedLimit(job: SandboxJob): number {
+    return this.isEconomy(job) ? this.economyToolOutputSerializedLimit : this.toolOutputSerializedLimit;
+  }
+
+  private resolveHttpToolMaxResponseChars(job: SandboxJob): number {
+    return this.isEconomy(job) ? this.economyHttpToolMaxResponseChars : this.httpToolMaxResponseChars;
   }
 
   private truncateStringFields(value: unknown, maxLength: number, tracker: { truncated: boolean }): unknown {

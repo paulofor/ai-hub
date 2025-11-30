@@ -1,5 +1,6 @@
 package com.aihub.hub.dto;
 
+import com.aihub.hub.domain.CodexIntegrationProfile;
 import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
@@ -13,6 +14,8 @@ public class CreateCodexRequest {
     private String prompt;
 
     private String model;
+
+    private CodexIntegrationProfile profile;
 
     private Integer promptTokens;
 
@@ -47,6 +50,14 @@ public class CreateCodexRequest {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public CodexIntegrationProfile getProfile() {
+        return profile;
+    }
+
+    public void setProfile(CodexIntegrationProfile profile) {
+        this.profile = profile;
     }
 
     public Integer getPromptTokens() {

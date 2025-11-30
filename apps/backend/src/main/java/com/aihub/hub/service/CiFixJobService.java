@@ -61,7 +61,9 @@ public class CiFixJobService {
             branch,
             request.getTaskDescription(),
             request.getCommitHash(),
-            request.getTestCommand()
+            request.getTestCommand(),
+            null,
+            null
         );
 
         try {

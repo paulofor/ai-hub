@@ -3,7 +3,7 @@ import morgan from 'morgan';
 import { spawnSync } from 'node:child_process';
 
 import { SandboxJobProcessor } from './jobProcessor.js';
-import { JobProcessor, SandboxJob } from './types.js';
+import { JobProcessor, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
   jobRegistry?: Map<string, SandboxJob>;
@@ -22,6 +22,14 @@ export function createApp(options: AppOptions = {}) {
   const jobRegistry = options.jobRegistry ?? new Map<string, SandboxJob>();
   const processor =
     options.processor ?? new SandboxJobProcessor(process.env.OPENAI_API_KEY, process.env.CIFIX_MODEL);
+
+  const normalizeProfile = (value?: string): SandboxProfile => {
+    if (!value) {
+      return 'STANDARD';
+    }
+    const normalized = value.trim().toUpperCase();
+    return normalized === 'ECONOMY' ? 'ECONOMY' : 'STANDARD';
+  };
 
   const app = express();
   if (process.env.NODE_ENV !== 'test') {
@@ -61,6 +69,8 @@ export function createApp(options: AppOptions = {}) {
     const taskDescription = validateString(req.body?.taskDescription ?? req.body?.task);
     const commitHash = validateString(req.body?.commit);
     const testCommand = validateString(req.body?.testCommand);
+    const model = validateString(req.body?.model);
+    const profile = normalizeProfile(validateString(req.body?.profile));
 
     if (!jobId || (!repoUrl && !repoSlug) || !branch || !taskDescription) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
@@ -72,8 +82,9 @@ export function createApp(options: AppOptions = {}) {
       return res.json(existing);
     }
 
+    const modelLabel = model ? `, modelo ${model}` : '';
     console.log(
-      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch}`,
+      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch} (perfil ${profile}${modelLabel})`,
     );
 
     const now = new Date().toISOString();
@@ -85,6 +96,8 @@ export function createApp(options: AppOptions = {}) {
       taskDescription,
       commitHash,
       testCommand,
+      profile,
+      model: model ?? undefined,
       status: 'PENDING',
       logs: [],
       createdAt: now,
