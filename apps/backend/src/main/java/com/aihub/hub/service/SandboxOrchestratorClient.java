@@ -107,7 +107,7 @@ public class SandboxOrchestratorClient {
                 node.path("summary").asText(null),
                 files.isEmpty() ? null : files,
                 node.path("patch").asText(null),
-                node.path("pullRequestUrl").asText(null),
+                resolvePullRequestUrl(node),
                 node.path("error").asText(null),
                 resolvePromptTokens(node),
                 resolveCachedPromptTokens(node),
@@ -158,6 +158,10 @@ public class SandboxOrchestratorClient {
             return readDecimal(node.path("usage"), "cost", "total_cost");
         }
 
+        private static String resolvePullRequestUrl(JsonNode node) {
+            return readText(node, "pullRequestUrl", "pull_request_url");
+        }
+
         private static Integer readInt(JsonNode node, String... fields) {
             for (String field : fields) {
                 JsonNode target = node.path(field);
@@ -186,6 +190,19 @@ public class SandboxOrchestratorClient {
                         return new BigDecimal(target.asText().trim());
                     } catch (NumberFormatException ignored) {
                         // noop
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static String readText(JsonNode node, String... fields) {
+            for (String field : fields) {
+                JsonNode target = node.path(field);
+                if (target.isTextual()) {
+                    String text = target.asText().trim();
+                    if (!text.isBlank()) {
+                        return text;
                     }
                 }
             }

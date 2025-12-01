@@ -6,6 +6,8 @@ import com.aihub.hub.dto.CiFixJobView;
 import com.aihub.hub.dto.CreateCiFixJobRequest;
 import com.aihub.hub.repository.CiFixJobRepository;
 import com.aihub.hub.repository.ProjectRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -107,6 +109,34 @@ class CiFixJobServiceTest {
         assertThat(view.changedFiles()).containsExactly("src/Main.java");
         assertThat(record.getChangedFiles()).isEqualTo("src/Main.java");
         assertThat(record.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/101");
+    }
+
+    @Test
+    void refreshJobAcceptsSnakeCasePullRequestUrl() throws Exception {
+        CiFixJobRecord record = new CiFixJobRecord();
+        record.setJobId("job-refresh-snake");
+        record.setStatus("PENDING");
+        record.setUpdatedAt(Instant.now());
+
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("jobId", "job-refresh-snake");
+        payload.put("status", "COMPLETED");
+        payload.put("summary", "done");
+        payload.put("patch", "diff --git");
+        payload.putArray("changedFiles").add("src/Main.java");
+        payload.put("pull_request_url", "https://github.com/owner/repo/pull/202");
+
+        when(jobRepository.findByJobId("job-refresh-snake")).thenReturn(Optional.of(record));
+        when(jobRepository.save(record)).thenReturn(record);
+        when(sandboxOrchestratorClient.getJob("job-refresh-snake"))
+            .thenReturn(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(payload));
+
+        CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
+        CiFixJobView view = service.refreshFromOrchestrator("job-refresh-snake");
+
+        assertThat(view.pullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/202");
+        assertThat(record.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/202");
     }
 
     @Test
