@@ -103,7 +103,7 @@ public class CodexRequestService {
         return saved;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<CodexRequest> list() {
         Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
