@@ -12,10 +12,35 @@ import { JobProcessor, SandboxJob } from '../src/types.js';
 
 class StubProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
+    job.timeoutCount = job.timeoutCount ?? 0;
+    job.startedAt = job.startedAt ?? new Date().toISOString();
     job.status = 'COMPLETED';
     job.summary = 'ok';
     job.changedFiles = ['README.md'];
-    job.updatedAt = new Date().toISOString();
+    job.finishedAt = new Date().toISOString();
+    job.durationMs = 0;
+    job.updatedAt = job.finishedAt;
+  }
+}
+
+class SleepingProcessor implements JobProcessor {
+  async process(job: SandboxJob): Promise<void> {
+    job.timeoutCount = job.timeoutCount ?? 0;
+    job.startedAt = job.startedAt ?? new Date().toISOString();
+    job.status = 'RUNNING';
+    job.updatedAt = job.startedAt;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (job.cancelRequested) {
+      job.status = 'CANCELLED';
+      job.finishedAt = new Date().toISOString();
+      job.durationMs = 0;
+      job.updatedAt = job.finishedAt;
+      return;
+    }
+    job.status = 'COMPLETED';
+    job.finishedAt = new Date().toISOString();
+    job.durationMs = 200;
+    job.updatedAt = job.finishedAt;
   }
 }
 
@@ -68,6 +93,32 @@ test('returns existing job idempotently', async () => {
   assert.equal(second.body.jobId, payload.jobId);
 });
 
+test('permite cancelar um job em execução', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const processor = new SleepingProcessor();
+  const app = createApp({ jobRegistry: registry, processor });
+  const payload = {
+    jobId: 'job-cancel-running',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'long running task',
+  };
+
+  await request(app).post('/jobs').send(payload).expect(201);
+  const cancelResponse = await request(app).post(`/jobs/${payload.jobId}/cancel`).expect(200);
+
+  assert.equal(cancelResponse.body.cancelRequested, true);
+  assert.ok(['RUNNING', 'CANCELLED', 'PENDING'].includes(cancelResponse.body.status));
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const stored = registry.get(payload.jobId);
+  assert.ok(stored, 'job não encontrado no registry após cancelamento');
+  assert.equal(stored!.status, 'CANCELLED');
+  assert.equal(stored!.cancelRequested, true);
+  assert.ok(stored!.finishedAt, 'finishedAt deveria ser preenchido após cancelamento');
+  assert.ok(typeof stored!.durationMs === 'number');
+});
+
 test('rejects invalid payload', async () => {
   const app = createApp({ processor: new StubProcessor() });
   await request(app).post('/jobs').send({}).expect(400);
@@ -115,6 +166,7 @@ test('respects SANDBOX_WORKDIR when creating workspaces', async () => {
       logs: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
     } as SandboxJob;
 
     await processor.process(job);
@@ -175,6 +227,7 @@ test('limits oversized task descriptions before calling the model', async () => 
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -209,6 +262,7 @@ test('returns job status', async () => {
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
     changedFiles: [],
   });
 
@@ -269,6 +323,7 @@ test('processes tool calls inside a sandbox', async () => {
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -358,6 +413,7 @@ test('truncates tool outputs before sending them back to the model', async () =>
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -469,6 +525,7 @@ test('collects patch and changed files even when the model commits changes', asy
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -534,6 +591,7 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -609,6 +667,7 @@ test('returns tool errors to the model instead of failing the job', async () => 
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -691,6 +750,7 @@ test('http_get fetches public content while sanitizing headers and truncating bo
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -775,6 +835,7 @@ test('http_get blocks private addresses and returns an error to the model', asyn
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -848,6 +909,7 @@ test('propagates tool errors for a single call id', async () => {
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   await processor.process(job);
@@ -936,6 +998,7 @@ test('pushes changes and opens a pull request when credentials are present', asy
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   const originalToken = process.env.GITHUB_PR_TOKEN;
@@ -1029,6 +1092,7 @@ test('limits pull request title and keeps full summary in body', async () => {
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   const originalToken = process.env.GITHUB_PR_TOKEN;
@@ -1131,6 +1195,7 @@ test('reuses repository credentials from repoUrl when creating a pull request', 
     logs: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
   } as SandboxJob;
 
   const originalPrToken = process.env.GITHUB_PR_TOKEN;

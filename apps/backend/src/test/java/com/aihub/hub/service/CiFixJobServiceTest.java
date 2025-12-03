@@ -51,7 +51,11 @@ class CiFixJobServiceTest {
                 null,
                 null,
                 null,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                null,
+                null,
+                null,
+                0
             ));
 
         CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
@@ -99,7 +103,11 @@ class CiFixJobServiceTest {
                 null,
                 null,
                 null,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                null,
+                null,
+                null,
+                0
             ));
 
         CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);

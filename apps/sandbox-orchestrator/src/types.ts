@@ -1,4 +1,4 @@
-export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type SandboxProfile = 'STANDARD' | 'ECONOMY';
 
 export interface SandboxJob {
@@ -25,6 +25,11 @@ export interface SandboxJob {
   logs: string[];
   createdAt: string;
   updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+  timeoutCount: number;
+  cancelRequested?: boolean;
 }
 
 export interface JobProcessor {

@@ -1,23 +1,28 @@
 package com.aihub.hub.service;
 
-import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexIntegrationProfile;
+import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -70,6 +75,7 @@ public class CodexRequestService {
         );
 
         codexRequest.setProfile(profile);
+        codexRequest.setStatus(CodexRequestStatus.PENDING);
         codexRequest.setPromptTokens(request.getPromptTokens());
         codexRequest.setCachedPromptTokens(request.getCachedPromptTokens());
         codexRequest.setCompletionTokens(request.getCompletionTokens());
@@ -78,6 +84,7 @@ public class CodexRequestService {
         codexRequest.setCachedPromptCost(request.getCachedPromptCost());
         codexRequest.setCompletionCost(request.getCompletionCost());
         codexRequest.setCost(request.getCost());
+        codexRequest.setTimeoutCount(0);
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
         PromptRecord promptRecord = new PromptRecord(
@@ -96,6 +103,7 @@ public class CodexRequestService {
         return saved;
     }
 
+    @Transactional(readOnly = true)
     public List<CodexRequest> list() {
         Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
@@ -122,6 +130,7 @@ public class CodexRequestService {
     }
 
     private RefreshDecision evaluateRefresh(CodexRequest request, Instant refreshCutoff) {
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
         boolean hasResponse = StringUtils.hasText(request.getResponseText());
         boolean hasUsageMetadata = request.getPromptTokens() != null
             && request.getCachedPromptTokens() != null
@@ -132,7 +141,7 @@ public class CodexRequestService {
             && request.getCompletionCost() != null
             && request.getCost() != null;
 
-        if (hasResponse && hasUsageMetadata) {
+        if (status.isTerminal() && hasResponse && hasUsageMetadata) {
             return RefreshDecision.skip();
         }
 
@@ -218,6 +227,17 @@ public class CodexRequestService {
         RepoCoordinates coordinates = RepoCoordinates.from(request.getEnvironment());
         if (coordinates == null) {
             log.info("Ambiente {} não corresponde a um repositório; ignorando envio para o sandbox", request.getEnvironment());
+            request.setStatus(CodexRequestStatus.FAILED);
+            if (!StringUtils.hasText(request.getResponseText())) {
+                request.setResponseText("Ambiente informado não corresponde a um repositório Git válido para o sandbox.");
+            }
+            Instant finishedAt = Instant.now();
+            request.setFinishedAt(finishedAt);
+            if (request.getStartedAt() == null) {
+                request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+            }
+            request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+            codexRequestRepository.save(request);
             return;
         }
 
@@ -243,9 +263,15 @@ public class CodexRequestService {
             .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse::jobId)
             .orElse(jobId);
         request.setExternalId(resolvedExternalId);
+        applySandboxMetadata(request, response);
         Optional.ofNullable(response)
             .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse::summary)
-            .ifPresent(request::setResponseText);
+            .filter(StringUtils::hasText)
+            .ifPresent(summary -> request.setResponseText(summary.trim()));
+        Optional.ofNullable(response)
+            .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse::error)
+            .filter(StringUtils::hasText)
+            .ifPresent(error -> request.setResponseText(error.trim()));
         applyUsageMetadata(request, response);
 
         codexRequestRepository.save(request);
@@ -304,6 +330,19 @@ public class CodexRequestService {
                 request.setCost(BigDecimal.ZERO);
                 updated = true;
             }
+            if (request.getStatus() != CodexRequestStatus.CANCELLED) {
+                request.setStatus(CodexRequestStatus.FAILED);
+                updated = true;
+            }
+            if (request.getFinishedAt() == null) {
+                Instant finishedAt = Instant.now();
+                request.setFinishedAt(finishedAt);
+                if (request.getStartedAt() == null) {
+                    request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+                }
+                request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+                updated = true;
+            }
 
             if (updated) {
                 codexRequestRepository.save(request);
@@ -312,7 +351,7 @@ public class CodexRequestService {
             return;
         }
 
-        boolean updated = false;
+        boolean updated = applySandboxMetadata(request, response);
         if (response.summary() != null && !response.summary().isBlank()) {
             log.info("Sandbox retornou resumo para CodexRequest {}", request.getId());
             request.setResponseText(response.summary().trim());
@@ -332,6 +371,126 @@ public class CodexRequestService {
         }
 
         recordResponse(extractMetadata(request.getEnvironment()), response);
+    }
+
+    @Transactional
+    public CodexRequest cancel(Long id) {
+        CodexRequest request = codexRequestRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (status.isTerminal()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Solicitação já foi finalizada");
+        }
+
+        if (!StringUtils.hasText(request.getExternalId())) {
+            Instant finishedAt = Instant.now();
+            request.setStatus(CodexRequestStatus.CANCELLED);
+            request.setFinishedAt(finishedAt);
+            if (request.getStartedAt() == null) {
+                request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+            }
+            request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+            return codexRequestRepository.save(request);
+        }
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.cancelJob(request.getExternalId());
+        if (response != null) {
+            applySandboxMetadata(request, response);
+            if (StringUtils.hasText(response.error())) {
+                request.setResponseText(response.error().trim());
+            } else if (StringUtils.hasText(response.summary())) {
+                request.setResponseText(response.summary().trim());
+            }
+            applyUsageMetadata(request, response);
+        } else {
+            Instant finishedAt = Instant.now();
+            request.setStatus(CodexRequestStatus.CANCELLED);
+            request.setFinishedAt(finishedAt);
+            if (request.getStartedAt() == null) {
+                request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+            }
+            request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+        }
+
+        if (request.getStatus() != null && request.getStatus().isTerminal() && request.getFinishedAt() == null) {
+            Instant finishedAt = Instant.now();
+            request.setFinishedAt(finishedAt);
+            if (request.getStartedAt() == null) {
+                request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+            }
+            request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+        }
+
+        return codexRequestRepository.save(request);
+    }
+
+    @Transactional
+    public CodexRequest rate(Long id, RateCodexRequest payload) {
+        CodexRequest request = codexRequestRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (status != CodexRequestStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Avaliações só são permitidas para solicitações concluídas");
+        }
+        if (payload.getRating() == null || payload.getRating() < 1 || payload.getRating() > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rating deve estar entre 1 e 5");
+        }
+        request.setRating(payload.getRating());
+        return codexRequestRepository.save(request);
+    }
+
+    private boolean applySandboxMetadata(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (response == null) {
+            return false;
+        }
+
+        boolean updated = false;
+        CodexRequestStatus sandboxStatus = CodexRequestStatus.fromSandboxStatus(response.status());
+        if (sandboxStatus != null && sandboxStatus != request.getStatus()) {
+            request.setStatus(sandboxStatus);
+            updated = true;
+        }
+
+        Instant startedAt = parseInstant(response.startedAt());
+        if (!Objects.equals(request.getStartedAt(), startedAt)) {
+            request.setStartedAt(startedAt);
+            updated = true;
+        }
+
+        Instant finishedAt = parseInstant(response.finishedAt());
+        if (!Objects.equals(request.getFinishedAt(), finishedAt)) {
+            request.setFinishedAt(finishedAt);
+            updated = true;
+        }
+
+        Long durationMs = response.durationMs();
+        if (durationMs == null && startedAt != null && finishedAt != null) {
+            durationMs = Duration.between(startedAt, finishedAt).toMillis();
+        }
+        if (!Objects.equals(request.getDurationMs(), durationMs)) {
+            request.setDurationMs(durationMs);
+            updated = true;
+        }
+
+        Integer timeoutCount = response.timeoutCount();
+        if (timeoutCount != null && !Objects.equals(request.getTimeoutCount(), timeoutCount)) {
+            request.setTimeoutCount(timeoutCount);
+            updated = true;
+        }
+
+        return updated;
+    }
+
+    private Instant parseInstant(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ex) {
+            log.warn("Não foi possível converter timestamp do sandbox: {}", value, ex);
+            return null;
+        }
     }
 
     private void recordResponse(PromptMetadata metadata, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {

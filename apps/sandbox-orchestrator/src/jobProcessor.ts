@@ -24,6 +24,13 @@ interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+class JobCancelledError extends Error {
+  constructor(message = 'Job cancelado pelo usuário') {
+    super(message);
+    this.name = 'JobCancelledError';
+  }
+}
+
 export class SandboxJobProcessor implements JobProcessor {
   private readonly openai?: OpenAI;
   private readonly model: string;
@@ -97,26 +104,44 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   async process(job: SandboxJob): Promise<void> {
-    job.status = 'RUNNING';
-    job.updatedAt = new Date().toISOString();
+    if (job.cancelRequested) {
+      const now = new Date().toISOString();
+      job.status = 'CANCELLED';
+      job.startedAt = job.startedAt ?? now;
+      job.finishedAt = job.finishedAt ?? now;
+      job.updatedAt = now;
+      job.durationMs = job.durationMs ?? 0;
+      return;
+    }
 
     job.profile = (job.profile ?? 'STANDARD') as SandboxProfile;
     const resolvedModel = this.resolveModel(job);
     job.model = resolvedModel;
+    job.timeoutCount = job.timeoutCount ?? 0;
 
-    const workspace = await this.prepareWorkspace(job);
-    const repoPath = path.join(workspace, 'repo');
-    job.sandboxPath = workspace;
-    this.log(job, `workspace criado em ${workspace}`);
-    this.log(job, `perfil ${job.profile} selecionado; modelo ${resolvedModel}`);
-    if (this.isEconomy(job)) {
-      this.log(
-        job,
-        `modo econômico: limite prompt=${this.economyMaxTaskDescriptionChars}, toolOutput=${this.economyToolOutputStringLimit}, http_get=${this.economyHttpToolMaxResponseChars}`,
-      );
-    }
+    const start = new Date();
+    job.startedAt = job.startedAt ?? start.toISOString();
+    job.updatedAt = job.startedAt;
+    job.status = 'RUNNING';
+
+    let workspace: string | undefined;
+    let repoPath: string | undefined;
 
     try {
+      this.ensureNotCancelled(job);
+      workspace = await this.prepareWorkspace(job);
+      repoPath = path.join(workspace, 'repo');
+      job.sandboxPath = workspace;
+      this.log(job, `workspace criado em ${workspace}`);
+      this.log(job, `perfil ${job.profile} selecionado; modelo ${resolvedModel}`);
+      if (this.isEconomy(job)) {
+        this.log(
+          job,
+          `modo econômico: limite prompt=${this.economyMaxTaskDescriptionChars}, toolOutput=${this.economyToolOutputStringLimit}, http_get=${this.economyHttpToolMaxResponseChars}`,
+        );
+      }
+
+      this.ensureNotCancelled(job);
       const githubAuth = this.resolveGithubAuth(job);
       if (githubAuth.token) {
         this.log(
@@ -129,28 +154,55 @@ export class SandboxJobProcessor implements JobProcessor {
 
       const cloneUrl = buildAuthRepoUrl(job.repoUrl, githubAuth.token, githubAuth.username);
       this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
-      await this.cloneRepository(job, repoPath, cloneUrl);
-      const baseCommit = await this.getHeadCommit(repoPath);
+      await this.cloneRepository(job, repoPath!, cloneUrl);
+      this.ensureNotCancelled(job);
+      const baseCommit = await this.getHeadCommit(repoPath!);
       if (!this.openai) {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
       }
 
+      this.ensureNotCancelled(job);
       this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
-      const summary = await this.runCodexLoop(job, repoPath, resolvedModel);
+      const summary = await this.runCodexLoop(job, repoPath!, resolvedModel);
       job.summary = summary;
-      job.changedFiles = await this.collectChangedFiles(repoPath, baseCommit);
-      job.patch = await this.generatePatch(repoPath, baseCommit);
-      await this.maybeCreatePullRequest(job, repoPath, githubAuth, baseCommit, job.patch);
+      this.ensureNotCancelled(job);
+      job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit);
+      this.ensureNotCancelled(job);
+      job.patch = await this.generatePatch(repoPath!, baseCommit);
+      await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
+      job.finishedAt = new Date().toISOString();
     } catch (error) {
-      job.status = 'FAILED';
-      job.error = error instanceof Error ? error.message : String(error);
-      this.log(job, `falha ao processar job: ${job.error}`);
+      if (error instanceof JobCancelledError) {
+        job.status = 'CANCELLED';
+        job.error = undefined;
+        this.log(job, 'job cancelado pelo usuário');
+      } else {
+        job.status = 'FAILED';
+        job.error = error instanceof Error ? error.message : String(error);
+        this.log(job, `falha ao processar job: ${job.error}`);
+      }
     } finally {
-      job.updatedAt = new Date().toISOString();
-      this.log(job, `limpando workspace ${workspace}`);
-      await this.cleanup(workspace);
+      if (workspace) {
+        this.log(job, `limpando workspace ${workspace}`);
+        await this.cleanup(workspace);
+      }
+      const finished = job.finishedAt ? new Date(job.finishedAt) : new Date();
+      job.finishedAt = finished.toISOString();
+      job.updatedAt = job.finishedAt;
+      if (job.startedAt) {
+        const startMs = Date.parse(job.startedAt);
+        if (Number.isFinite(startMs)) {
+          job.durationMs = Math.max(0, finished.getTime() - startMs);
+        }
+      }
+    }
+  }
+
+  private ensureNotCancelled(job: SandboxJob): void {
+    if (job.cancelRequested) {
+      throw new JobCancelledError();
     }
   }
 
@@ -279,6 +331,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async runCodexLoop(job: SandboxJob, repoPath: string, model: string): Promise<string> {
+    this.ensureNotCancelled(job);
     job.taskDescription = this.sanitizeTaskDescription(job.taskDescription, job);
 
     const tools = this.buildTools(repoPath);
@@ -312,7 +365,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
+      this.ensureNotCancelled(job);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
+      this.ensureNotCancelled(job);
       const response = await this.openai!.responses.create({
         model,
         input: messages,
@@ -367,6 +422,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
 
       const toolMessages: ResponseFunctionToolCallOutputItem[] = [];
       for (const [index, call] of toolCalls.entries()) {
+        this.ensureNotCancelled(job);
         const parsedArgs = this.parseArguments(call.arguments);
         const callId = call.call_id ?? this.extractCallId(call, index);
         const outputId = this.normalizeFunctionCallOutputId(callId, `call_${index}`);
@@ -484,6 +540,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
   }
 
   private async dispatchTool(call: ToolCall, repoPath: string, job: SandboxJob): Promise<unknown> {
+    this.ensureNotCancelled(job);
     switch (call.name) {
       case 'run_shell':
         return this.handleRunShell(call.arguments, repoPath, job);
@@ -585,6 +642,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     try {
       response = await this.fetchImpl(url.toString(), { method: 'GET', headers, signal: controller });
     } catch (err) {
+      if (this.isTimeoutError(err)) {
+        job.timeoutCount = (job.timeoutCount ?? 0) + 1;
+      }
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`falha ao buscar URL: ${message}`);
     }
@@ -609,6 +669,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
         this.log(job, `http_get: corpo truncado (omitiu ${truncation.omitted} caracteres)`);
       }
     } catch (err) {
+      if (this.isTimeoutError(err)) {
+        job.timeoutCount = (job.timeoutCount ?? 0) + 1;
+      }
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`falha ao ler corpo da resposta: ${message}`);
     }
@@ -621,6 +684,15 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       body,
       truncated,
     };
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const name = (error.name ?? '').toLowerCase();
+    const message = (error.message ?? '').toLowerCase();
+    return name.includes('abort') || name.includes('timeout') || message.includes('aborted') || message.includes('timeout');
   }
 
   private resolvePath(repoPath: string, requested: string | undefined, job?: SandboxJob): string {
@@ -754,6 +826,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       job,
       `run_shell finalizado (code=${exitResult.code}, signal=${exitResult.signal}, timedOut=${timedOut})`,
     );
+    if (timedOut) {
+      job.timeoutCount = (job.timeoutCount ?? 0) + 1;
+    }
 
     return {
       stdout,
@@ -854,6 +929,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     baseCommit?: string,
     diffPatch?: string,
   ): Promise<void> {
+    this.ensureNotCancelled(job);
     const token = githubAuth.token;
     if (!token) {
       this.log(job, 'nenhum token GitHub disponível; ignorando criação de PR');

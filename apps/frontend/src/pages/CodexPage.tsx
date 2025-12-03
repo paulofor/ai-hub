@@ -1,7 +1,9 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
 
 type CodexProfile = 'STANDARD' | 'ECONOMY';
+
+type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 interface CodexRequest {
   id: number;
@@ -20,6 +22,12 @@ interface CodexRequest {
   completionCost?: number;
   cost?: number;
   createdAt: string;
+  status: CodexStatus;
+  rating?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+  timeoutCount?: number;
 }
 
 interface EnvironmentOption {
@@ -52,6 +60,72 @@ const parseNumber = (value: unknown): number | undefined => {
 };
 
 const parseProfile = (value: unknown): CodexProfile => {
+const parseStatus = (value: unknown): CodexStatus => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toUpperCase();
+    if (['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(normalized)) {
+      return normalized as CodexStatus;
+    }
+  }
+  return 'PENDING';
+};
+
+const isTerminalStatus = (status: CodexStatus) => status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED';
+
+const formatStatus = (status: CodexStatus) => {
+  switch (status) {
+    case 'RUNNING':
+      return 'Em execução';
+    case 'COMPLETED':
+      return 'Concluída';
+    case 'FAILED':
+      return 'Falhou';
+    case 'CANCELLED':
+      return 'Cancelada';
+    case 'PENDING':
+    default:
+      return 'Pendente';
+  }
+};
+
+const formatDateTime = (value?: string) => {
+  if (!value) {
+    return '—';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return date.toLocaleString('pt-BR');
+};
+
+const formatDuration = (milliseconds?: number) => {
+  if (milliseconds === undefined || milliseconds === null || !Number.isFinite(milliseconds) || milliseconds < 0) {
+    return '—';
+  }
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 || hours > 0) {
+    parts.push(`${minutes}min`);
+  }
+  parts.push(`${seconds}s`);
+  return parts.join(' ');
+};
+
+const statusStyles: Record<CodexStatus, string> = {
+  PENDING: 'bg-slate-200 text-slate-700',
+  RUNNING: 'bg-amber-200 text-amber-800 animate-pulse',
+  COMPLETED: 'bg-emerald-200 text-emerald-800',
+  FAILED: 'bg-red-200 text-red-800',
+  CANCELLED: 'bg-slate-300 text-slate-700',
+};
+
   if (typeof value === 'string') {
     const normalized = value.trim().toUpperCase();
     if (normalized === 'ECONOMY') {
@@ -162,13 +236,52 @@ export default function CodexPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentOption[]>([]);
   const [modelOptions, setModelOptions] = useState<CodexModelOption[]>([]);
+  const [loadingActions, setLoadingActions] = useState<Record<number, boolean>>({});
+  const setActionLoading = useCallback((id: number, loading: boolean) => {
+    setLoadingActions((prev) => {
+      if (loading) {
+        return { ...prev, [id]: true };
+      }
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const mergeRequest = useCallback((updated: CodexRequest) => {
+    setRequests((prev) => {
+      const index = prev.findIndex((item) => item.id === updated.id);
+      if (index === -1) {
+        return [updated, ...prev];
+      }
+      const next = [...prev];
+      next[index] = updated;
+      return next;
+    });
+  }, []);
+
+
+  const fetchRequests = useCallback(async () => {
+    try {
+      const response = await client.get('/codex/requests');
+      setRequests(parseCodexRequests(response.data));
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, []);
 
   useEffect(() => {
-    client
-      .get('/codex/requests')
-      .then((response) => setRequests(parseCodexRequests(response.data)))
-      .catch((err: Error) => setError(err.message));
-  }, []);
+    fetchRequests();
+  }, [fetchRequests]);
+
+  useEffect(() => {
+    const hasActive = requests.some((item) => !isTerminalStatus(item.status));
+    const interval = setInterval(() => {
+      fetchRequests().catch(() => undefined);
+    }, hasActive ? 5000 : 15000);
+    return () => clearInterval(interval);
+  }, [requests, fetchRequests]);
 
   useEffect(() => {
     client
@@ -237,7 +350,9 @@ export default function CodexPage() {
         model: trimmedModel
       });
       const parsed = parseCodexRequest(response.data);
-      setRequests((prev) => (parsed ? [parsed, ...prev] : prev));
+      if (parsed) {
+        mergeRequest(parsed);
+      }
       setPrompt('');
       setEnvironment(trimmedEnvironment);
       setModel(trimmedModel);
@@ -247,6 +362,46 @@ export default function CodexPage() {
     } finally {
       setLoading(false);
     }
+  const handleCancel = useCallback(async (requestId: number) => {
+    setActionLoading(requestId, true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await client.post(`/codex/requests/${requestId}/cancel`);
+      const parsed = parseCodexRequest(response.data);
+      if (parsed) {
+        mergeRequest(parsed);
+        setSuccessMessage('Solicitação cancelada.');
+      } else {
+        await fetchRequests();
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setActionLoading(requestId, false);
+    }
+  }, [fetchRequests, mergeRequest, setActionLoading]);
+
+  const handleRating = useCallback(async (requestId: number, rating: number) => {
+    setActionLoading(requestId, true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await client.post(`/codex/requests/${requestId}/rating`, { rating });
+      const parsed = parseCodexRequest(response.data);
+      if (parsed) {
+        mergeRequest(parsed);
+        setSuccessMessage('Avaliação registrada.');
+      } else {
+        await fetchRequests();
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setActionLoading(requestId, false);
+    }
+  }, [fetchRequests, mergeRequest, setActionLoading]);
+
   };
 
   return (
@@ -393,6 +548,7 @@ export default function CodexPage() {
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Criado em</th>
+                <th className="px-4 py-3 text-left font-semibold">Execução</th>
                 <th className="px-4 py-3 text-left font-semibold">Ambiente</th>
                 <th className="px-4 py-3 text-left font-semibold">Perfil</th>
                 <th className="px-4 py-3 text-left font-semibold">Modelo</th>
@@ -400,13 +556,30 @@ export default function CodexPage() {
                 <th className="px-4 py-3 text-left font-semibold">Custos</th>
                 <th className="px-4 py-3 text-left font-semibold">Prompt</th>
                 <th className="px-4 py-3 text-left font-semibold">Resposta</th>
+                <th className="px-4 py-3 text-left font-semibold">Avaliação</th>
+                <th className="px-4 py-3 text-left font-semibold">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {sortedRequests.map((item) => (
                 <tr key={item.id}>
                   <td className="px-4 py-3 text-slate-500">
-                    {new Date(item.createdAt).toLocaleString()}
+                    {formatDateTime(item.createdAt)}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
+                    <div className="mb-2">
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyles[item.status]}`}
+                      >
+                        {formatStatus(item.status)}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div>Início: {formatDateTime(item.startedAt ?? item.createdAt)}</div>
+                      <div>Fim: {formatDateTime(item.finishedAt)}</div>
+                      <div>Tempo total: {formatDuration(item.durationMs)}</div>
+                      <div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-medium">{item.environment}</td>
                   <td className="px-4 py-3">
@@ -477,11 +650,64 @@ export default function CodexPage() {
                       <span>—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const currentRating = item.rating ?? 0;
+                      const isInteractive = item.status === 'COMPLETED';
+                      if (!isInteractive && currentRating === 0) {
+                        return <span className="text-slate-500">—</span>;
+                      }
+                      return (
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((value) => {
+                            const filled = value <= currentRating;
+                            if (!isInteractive) {
+                              return (
+                                <span
+                                  key={`static-${item.id}-${value}`}
+                                  className={`text-lg ${filled ? 'text-amber-500' : 'text-slate-400'}`}
+                                >
+                                  ★
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                key={`rate-${item.id}-${value}`}
+                                type="button"
+                                onClick={() => handleRating(item.id, value)}
+                                disabled={Boolean(loadingActions[item.id])}
+                                className="text-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                title={`Avaliar como ${value}`}
+                              >
+                                <span className={filled ? 'text-amber-500' : 'text-slate-400'}>★</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.status === 'PENDING' || item.status === 'RUNNING' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancel(item.id)}
+                        disabled={Boolean(loadingActions[item.id])}
+                        className="rounded-md border border-red-500 px-3 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400 dark:text-red-300 dark:hover:bg-red-400/10"
+                      >
+                        {loadingActions[item.id] ? 'Cancelando...' : 'Cancelar'}
+                      </button>
+                    ) : (
+                      <span className="text-slate-500">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
+
               {sortedRequests.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={8}>
+                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={11}>
                     Nenhuma solicitação enviada até o momento.
                   </td>
                 </tr>

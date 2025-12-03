@@ -102,6 +102,8 @@ export function createApp(options: AppOptions = {}) {
       logs: [],
       createdAt: now,
       updatedAt: now,
+      timeoutCount: 0,
+      cancelRequested: false,
     };
 
     jobRegistry.set(jobId, job);
@@ -109,7 +111,7 @@ export function createApp(options: AppOptions = {}) {
     processor
       .process(job)
       .catch((err) => {
-        job.status = 'FAILED';
+        job.status = job.status === 'CANCELLED' ? 'CANCELLED' : 'FAILED';
         job.error = err instanceof Error ? err.message : String(err);
         job.updatedAt = new Date().toISOString();
       })
@@ -125,6 +127,30 @@ export function createApp(options: AppOptions = {}) {
     if (!job) {
       return res.status(404).json({ error: 'job not found' });
     }
+    res.json(job);
+  });
+
+  app.post('/jobs/:id/cancel', (req: Request, res: Response) => {
+    const job = jobRegistry.get(req.params.id);
+    if (!job) {
+      return res.status(404).json({ error: 'job not found' });
+    }
+
+    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') {
+      return res.status(409).json({ error: `job already finished with status ${job.status}` });
+    }
+
+    job.cancelRequested = true;
+    const now = new Date().toISOString();
+    job.updatedAt = now;
+
+    if (job.status === 'PENDING') {
+      job.status = 'CANCELLED';
+      job.finishedAt = now;
+      job.durationMs = 0;
+    }
+
+    jobRegistry.set(job.jobId, job);
     res.json(job);
   });
 
