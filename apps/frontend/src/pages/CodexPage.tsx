@@ -60,6 +60,15 @@ const parseNumber = (value: unknown): number | undefined => {
 };
 
 const parseProfile = (value: unknown): CodexProfile => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toUpperCase();
+    if (normalized === 'ECONOMY') {
+      return 'ECONOMY';
+    }
+  }
+  return 'STANDARD';
+};
+
 const parseStatus = (value: unknown): CodexStatus => {
   if (typeof value === 'string') {
     const normalized = value.trim().toUpperCase();
@@ -126,15 +135,6 @@ const statusStyles: Record<CodexStatus, string> = {
   CANCELLED: 'bg-slate-300 text-slate-700',
 };
 
-  if (typeof value === 'string') {
-    const normalized = value.trim().toUpperCase();
-    if (normalized === 'ECONOMY') {
-      return 'ECONOMY';
-    }
-  }
-  return 'STANDARD';
-};
-
 const parseCodexRequest = (value: unknown): CodexRequest | null => {
   if (typeof value !== 'object' || value === null) {
     return null;
@@ -151,6 +151,12 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const completionCost = parseNumber(item.completionCost);
   const cost = parseNumber(item.cost);
   const profile = parseProfile(item.profile ?? item.integrationProfile);
+  const status = parseStatus(item.status);
+  const rating = parseNumber(item.rating);
+  const startedAt = typeof item.startedAt === 'string' ? item.startedAt : undefined;
+  const finishedAt = typeof item.finishedAt === 'string' ? item.finishedAt : undefined;
+  const durationMs = parseNumber(item.durationMs);
+  const timeoutCount = parseNumber(item.timeoutCount);
 
   return {
     id,
@@ -158,6 +164,8 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
     model: (item.model as string) ?? '',
     profile,
     prompt: (item.prompt as string) ?? '',
+    status,
+    rating,
     responseText: (item.responseText as string) ?? undefined,
     externalId: (item.externalId as string) ?? undefined,
     promptTokens,
@@ -168,7 +176,11 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
     cachedPromptCost,
     completionCost,
     cost,
-    createdAt: (item.createdAt as string) ?? ''
+    createdAt: (item.createdAt as string) ?? '',
+    startedAt,
+    finishedAt,
+    durationMs,
+    timeoutCount
   };
 };
 
@@ -362,6 +374,8 @@ export default function CodexPage() {
     } finally {
       setLoading(false);
     }
+  };
+
   const handleCancel = useCallback(async (requestId: number) => {
     setActionLoading(requestId, true);
     setError(null);
@@ -401,8 +415,6 @@ export default function CodexPage() {
       setActionLoading(requestId, false);
     }
   }, [fetchRequests, mergeRequest, setActionLoading]);
-
-  };
 
   return (
     <section className="space-y-6">
