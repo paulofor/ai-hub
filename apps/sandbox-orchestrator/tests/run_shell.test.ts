@@ -16,6 +16,7 @@ const createJob = (): SandboxJob => ({
   logs: [],
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
 });
 
 test('substitui grep -R por rg com log explicativo', async () => {
@@ -108,3 +109,32 @@ test('usa timeout estendido para comandos mvn', async () => {
     await fs.rm(repoPath, { recursive: true, force: true });
   }
 });
+
+
+test('incrementa timeoutCount quando run_shell atinge timeout', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-timeout-count-'));
+  const originalTimeout = process.env.RUN_SHELL_TIMEOUT_MS;
+  process.env.RUN_SHELL_TIMEOUT_MS = '50';
+
+  try {
+    const processor = new SandboxJobProcessor();
+    const job = createJob();
+
+    const result = await (processor as any).handleRunShell(
+      { command: ['node', '-e', 'setTimeout(() => {}, 1000);'], cwd: '.' },
+      repoPath,
+      job,
+    );
+
+    assert.equal(result.timedOut, true, 'o comando deveria ser encerrado por timeout');
+    assert.equal(job.timeoutCount, 1, 'timeoutCount deve ser incrementado após timeout');
+  } finally {
+    if (originalTimeout === undefined) {
+      delete process.env.RUN_SHELL_TIMEOUT_MS;
+    } else {
+      process.env.RUN_SHELL_TIMEOUT_MS = originalTimeout;
+    }
+    await fs.rm(repoPath, { recursive: true, force: true });
+  }
+});
+

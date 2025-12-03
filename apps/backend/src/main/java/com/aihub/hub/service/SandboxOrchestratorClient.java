@@ -68,6 +68,22 @@ public class SandboxOrchestratorClient {
         }
     }
 
+    public SandboxOrchestratorJobResponse cancelJob(String jobId) {
+        log.info("Solicitando cancelamento do job {} no sandbox-orchestrator", jobId);
+        try {
+            JsonNode response = restClient.post()
+                .uri(jobsPath + "/" + jobId + "/cancel")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of())
+                .retrieve()
+                .body(JsonNode.class);
+            return SandboxOrchestratorJobResponse.from(response);
+        } catch (HttpClientErrorException.NotFound ex) {
+            log.warn("Job {} não encontrado no sandbox-orchestrator ao cancelar", jobId);
+            return null;
+        }
+    }
+
     public record SandboxOrchestratorJobResponse(
         String jobId,
         String status,
@@ -80,7 +96,11 @@ public class SandboxOrchestratorClient {
         Integer cachedPromptTokens,
         Integer completionTokens,
         Integer totalTokens,
-        BigDecimal cost
+        BigDecimal cost,
+        String startedAt,
+        String finishedAt,
+        Long durationMs,
+        Integer timeoutCount
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
@@ -113,7 +133,11 @@ public class SandboxOrchestratorClient {
                 resolveCachedPromptTokens(node),
                 resolveCompletionTokens(node),
                 resolveTotalTokens(node),
-                resolveCost(node)
+                resolveCost(node),
+                readText(node, "startedAt", "started_at"),
+                readText(node, "finishedAt", "finished_at"),
+                readLong(node, "durationMs", "duration_ms"),
+                readInt(node, "timeoutCount", "timeout_count")
             );
         }
 
@@ -171,6 +195,23 @@ public class SandboxOrchestratorClient {
                 if (target.isTextual()) {
                     try {
                         return Integer.parseInt(target.asText().trim());
+                    } catch (NumberFormatException ignored) {
+                        // noop
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static Long readLong(JsonNode node, String... fields) {
+            for (String field : fields) {
+                JsonNode target = node.path(field);
+                if (target.isNumber()) {
+                    return target.longValue();
+                }
+                if (target.isTextual()) {
+                    try {
+                        return Long.parseLong(target.asText().trim());
                     } catch (NumberFormatException ignored) {
                         // noop
                     }

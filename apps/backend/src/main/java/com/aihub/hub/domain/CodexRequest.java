@@ -14,6 +14,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "codex_requests")
@@ -36,6 +37,13 @@ public class CodexRequest {
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(columnDefinition = "LONGTEXT", nullable = false)
     private String prompt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private CodexRequestStatus status = CodexRequestStatus.PENDING;
+
+    @Column(name = "rating")
+    private Integer rating;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "response_text", columnDefinition = "LONGTEXT")
@@ -68,6 +76,18 @@ public class CodexRequest {
     @Column(name = "cost", precision = 19, scale = 6)
     private BigDecimal cost;
 
+    @Column(name = "timeout_count")
+    private Integer timeoutCount;
+
+    @Column(name = "started_at")
+    private Instant startedAt;
+
+    @Column(name = "finished_at")
+    private Instant finishedAt;
+
+    @Column(name = "duration_ms")
+    private Long durationMs;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -79,6 +99,7 @@ public class CodexRequest {
         this.model = model;
         this.profile = profile;
         this.prompt = prompt;
+        this.status = CodexRequestStatus.PENDING;
     }
 
     public Long getId() {
@@ -115,6 +136,25 @@ public class CodexRequest {
 
     public void setPrompt(String prompt) {
         this.prompt = prompt;
+    }
+
+    public CodexRequestStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(CodexRequestStatus status) {
+        this.status = status;
+    }
+
+    public Integer getRating() {
+        return rating;
+    }
+
+    public void setRating(Integer rating) {
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new IllegalArgumentException("rating deve estar entre 1 e 5");
+        }
+        this.rating = rating;
     }
 
     public String getResponseText() {
@@ -197,11 +237,52 @@ public class CodexRequest {
         this.cost = cost;
     }
 
+    public Integer getTimeoutCount() {
+        return timeoutCount;
+    }
+
+    public void setTimeoutCount(Integer timeoutCount) {
+        this.timeoutCount = timeoutCount;
+    }
+
+    public Instant getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(Instant startedAt) {
+        this.startedAt = startedAt;
+    }
+
+    public Instant getFinishedAt() {
+        return finishedAt;
+    }
+
+    public void setFinishedAt(Instant finishedAt) {
+        this.finishedAt = finishedAt;
+    }
+
+    public Long getDurationMs() {
+        return durationMs;
+    }
+
+    public void setDurationMs(Long durationMs) {
+        this.durationMs = durationMs;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public void ensureDurationCalculated() {
+        if (durationMs != null) {
+            return;
+        }
+        Instant effectiveStart = Objects.requireNonNullElseGet(startedAt, () -> Objects.requireNonNullElse(createdAt, Instant.now()));
+        Instant effectiveEnd = Objects.requireNonNullElseGet(finishedAt, Instant::now);
+        this.durationMs = Math.max(0L, effectiveEnd.toEpochMilli() - effectiveStart.toEpochMilli());
     }
 }
