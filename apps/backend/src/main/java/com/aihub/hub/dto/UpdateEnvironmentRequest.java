@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record CreateEnvironmentRequest(
+public record UpdateEnvironmentRequest(
     @NotBlank(message = "Informe o nome do ambiente")
     @Size(max = 150, message = "O nome pode ter no máximo 150 caracteres")
     String name,
