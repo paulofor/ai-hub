@@ -237,12 +237,15 @@ const formatProfile = (profile: CodexProfile) => {
   }
 };
 
+const REQUESTS_PER_PAGE = 15;
+
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
   const [profile, setProfile] = useState<CodexProfile>('STANDARD');
   const [model, setModel] = useState('');
   const [requests, setRequests] = useState<CodexRequest[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -330,6 +333,17 @@ export default function CodexPage() {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [requests]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRequests.length / REQUESTS_PER_PAGE));
+
+  useEffect(() => {
+    setCurrentPage((previousPage) => Math.min(previousPage, totalPages));
+  }, [totalPages]);
+
+  const paginatedRequests = useMemo(() => {
+    const startIndex = (currentPage - 1) * REQUESTS_PER_PAGE;
+    return sortedRequests.slice(startIndex, startIndex + REQUESTS_PER_PAGE);
+  }, [sortedRequests, currentPage]);
 
   const selectedModel = useMemo(() => {
     return modelOptions.find((option) => option.modelName === model) ?? null;
@@ -573,7 +587,7 @@ export default function CodexPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {sortedRequests.map((item) => (
+              {paginatedRequests.map((item) => (
                 <tr key={item.id}>
                   <td className="px-4 py-3 text-slate-500">
                     {formatDateTime(item.createdAt)}
@@ -726,6 +740,39 @@ export default function CodexPage() {
               )}
             </tbody>
           </table>
+
+          {sortedRequests.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+              <span>
+                Mostrando {(currentPage - 1) * REQUESTS_PER_PAGE + 1}–
+                {Math.min(sortedRequests.length, currentPage * REQUESTS_PER_PAGE)} de {sortedRequests.length} solicitações
+              </span>
+
+              {sortedRequests.length > REQUESTS_PER_PAGE && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </section>
