@@ -13,8 +13,6 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
-import java.math.BigDecimal;
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +26,7 @@ class CiFixJobServiceTest {
     private final CiFixJobRepository jobRepository = mock(CiFixJobRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final AuditService auditService = mock(AuditService.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
     void createJobPersistsAndPropagatesToOrchestrator() {
@@ -38,25 +37,17 @@ class CiFixJobServiceTest {
         when(projectRepository.findById(42L)).thenReturn(Optional.of(project));
         when(jobRepository.save(org.mockito.ArgumentMatchers.any(CiFixJobRecord.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ObjectNode orchestratorPayload = OBJECT_MAPPER.createObjectNode();
+        orchestratorPayload.put("jobId", "job-1");
+        orchestratorPayload.put("status", "RUNNING");
+        orchestratorPayload.put("summary", "investigating");
+        orchestratorPayload.put("patch", "diff --git");
+        orchestratorPayload.putArray("changedFiles").add("README.md");
+        orchestratorPayload.put("pullRequestUrl", "https://github.com/owner/repo/pull/99");
+        orchestratorPayload.put("timeoutCount", 0);
         when(sandboxOrchestratorClient.createJob(org.mockito.ArgumentMatchers.any()))
-            .thenReturn(new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
-                "job-1",
-                "RUNNING",
-                "investigating",
-                List.of("README.md"),
-                "diff --git",
-                "https://github.com/owner/repo/pull/99",
-                null,
-                null,
-                null,
-                null,
-                null,
-                BigDecimal.ZERO,
-                null,
-                null,
-                null,
-                0
-            ));
+            .thenReturn(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(orchestratorPayload));
 
         CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
         CreateCiFixJobRequest request = new CreateCiFixJobRequest();
@@ -90,25 +81,17 @@ class CiFixJobServiceTest {
 
         when(jobRepository.findByJobId("job-refresh")).thenReturn(Optional.of(record));
         when(jobRepository.save(record)).thenReturn(record);
+
+        ObjectNode refreshPayload = OBJECT_MAPPER.createObjectNode();
+        refreshPayload.put("jobId", "job-refresh");
+        refreshPayload.put("status", "COMPLETED");
+        refreshPayload.put("summary", "done");
+        refreshPayload.put("patch", "diff --git");
+        refreshPayload.putArray("changedFiles").add("src/Main.java");
+        refreshPayload.put("pullRequestUrl", "https://github.com/owner/repo/pull/101");
+        refreshPayload.put("timeoutCount", 0);
         when(sandboxOrchestratorClient.getJob("job-refresh"))
-            .thenReturn(new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
-                "job-refresh",
-                "COMPLETED",
-                "done",
-                List.of("src/Main.java"),
-                "diff --git",
-                "https://github.com/owner/repo/pull/101",
-                null,
-                null,
-                null,
-                null,
-                null,
-                BigDecimal.ZERO,
-                null,
-                null,
-                null,
-                0
-            ));
+            .thenReturn(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(refreshPayload));
 
         CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
         CiFixJobView view = service.refreshFromOrchestrator("job-refresh");
@@ -126,8 +109,7 @@ class CiFixJobServiceTest {
         record.setStatus("PENDING");
         record.setUpdatedAt(Instant.now());
 
-        ObjectMapper mapper = new ObjectMapper();
-        ObjectNode payload = mapper.createObjectNode();
+        ObjectNode payload = OBJECT_MAPPER.createObjectNode();
         payload.put("jobId", "job-refresh-snake");
         payload.put("status", "COMPLETED");
         payload.put("summary", "done");
