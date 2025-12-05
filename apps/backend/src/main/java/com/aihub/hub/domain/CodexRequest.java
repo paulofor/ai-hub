@@ -79,6 +79,9 @@ public class CodexRequest {
     @Column(name = "timeout_count")
     private Integer timeoutCount;
 
+    @Column(name = "http_get_count")
+    private Integer httpGetCount;
+
     @Column(name = "started_at")
     private Instant startedAt;
 
@@ -243,6 +246,14 @@ public class CodexRequest {
 
     public void setTimeoutCount(Integer timeoutCount) {
         this.timeoutCount = timeoutCount;
+    }
+
+    public Integer getHttpGetCount() {
+        return httpGetCount;
+    }
+
+    public void setHttpGetCount(Integer httpGetCount) {
+        this.httpGetCount = httpGetCount;
     }
 
     public Instant getStartedAt() {

@@ -118,6 +118,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const resolvedModel = this.resolveModel(job);
     job.model = resolvedModel;
     job.timeoutCount = job.timeoutCount ?? 0;
+    job.httpGetCount = job.httpGetCount ?? 0;
 
     const start = new Date();
     job.startedAt = job.startedAt ?? start.toISOString();
@@ -625,6 +626,8 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     if (!this.fetchImpl) {
       throw new Error('fetch indisponível para http_get');
     }
+
+    job.httpGetCount = (job.httpGetCount ?? 0) + 1;
 
     const urlArg = typeof args.url === 'string' ? args.url : undefined;
     if (!urlArg) {

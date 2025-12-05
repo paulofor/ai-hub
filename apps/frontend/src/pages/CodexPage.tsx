@@ -28,6 +28,7 @@ interface CodexRequest {
   finishedAt?: string;
   durationMs?: number;
   timeoutCount?: number;
+  httpGetCount?: number;
 }
 
 interface EnvironmentOption {
@@ -157,6 +158,7 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const finishedAt = typeof item.finishedAt === 'string' ? item.finishedAt : undefined;
   const durationMs = parseNumber(item.durationMs);
   const timeoutCount = parseNumber(item.timeoutCount);
+  const httpGetCount = parseNumber(item.httpGetCount);
 
   return {
     id,
@@ -180,7 +182,8 @@ const parseCodexRequest = (value: unknown): CodexRequest | null => {
     startedAt,
     finishedAt,
     durationMs,
-    timeoutCount
+    timeoutCount,
+    httpGetCount
   };
 };
 
@@ -605,6 +608,7 @@ export default function CodexPage() {
                       <div>Fim: {formatDateTime(item.finishedAt)}</div>
                       <div>Tempo total: {formatDuration(item.durationMs)}</div>
                       <div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div>
+                      <div>HTTP GETs: {(item.httpGetCount ?? 0).toLocaleString('pt-BR')}</div>
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium">{item.environment}</td>

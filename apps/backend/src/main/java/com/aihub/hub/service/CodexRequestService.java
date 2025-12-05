@@ -85,6 +85,7 @@ public class CodexRequestService {
         codexRequest.setCompletionCost(request.getCompletionCost());
         codexRequest.setCost(request.getCost());
         codexRequest.setTimeoutCount(0);
+        codexRequest.setHttpGetCount(0);
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
         PromptRecord promptRecord = new PromptRecord(
@@ -475,6 +476,11 @@ public class CodexRequestService {
         Integer timeoutCount = response.timeoutCount();
         if (timeoutCount != null && !Objects.equals(request.getTimeoutCount(), timeoutCount)) {
             request.setTimeoutCount(timeoutCount);
+            updated = true;
+        }
+        Integer httpGetCount = response.httpGetCount();
+        if (httpGetCount != null && !Objects.equals(request.getHttpGetCount(), httpGetCount)) {
+            request.setHttpGetCount(httpGetCount);
             updated = true;
         }
 

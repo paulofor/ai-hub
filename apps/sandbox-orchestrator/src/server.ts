@@ -103,6 +103,7 @@ export function createApp(options: AppOptions = {}) {
       createdAt: now,
       updatedAt: now,
       timeoutCount: 0,
+      httpGetCount: 0,
       cancelRequested: false,
     };
 
