@@ -100,7 +100,8 @@ public class SandboxOrchestratorClient {
         String startedAt,
         String finishedAt,
         Long durationMs,
-        Integer timeoutCount
+        Integer timeoutCount,
+        Integer httpGetCount
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
@@ -137,7 +138,8 @@ public class SandboxOrchestratorClient {
                 readText(node, "startedAt", "started_at"),
                 readText(node, "finishedAt", "finished_at"),
                 readLong(node, "durationMs", "duration_ms"),
-                readInt(node, "timeoutCount", "timeout_count")
+                readInt(node, "timeoutCount", "timeout_count"),
+                readInt(node, "httpGetCount", "http_get_count")
             );
         }
 

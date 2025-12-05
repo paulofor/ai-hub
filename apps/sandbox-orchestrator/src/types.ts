@@ -29,6 +29,7 @@ export interface SandboxJob {
   finishedAt?: string;
   durationMs?: number;
   timeoutCount: number;
+  httpGetCount?: number;
   cancelRequested?: boolean;
 }
 

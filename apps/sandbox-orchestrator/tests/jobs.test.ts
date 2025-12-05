@@ -13,6 +13,7 @@ import { JobProcessor, SandboxJob } from '../src/types.js';
 class StubProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
     job.timeoutCount = job.timeoutCount ?? 0;
+    job.httpGetCount = job.httpGetCount ?? 0;
     job.startedAt = job.startedAt ?? new Date().toISOString();
     job.status = 'COMPLETED';
     job.summary = 'ok';
@@ -26,6 +27,7 @@ class StubProcessor implements JobProcessor {
 class SleepingProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
     job.timeoutCount = job.timeoutCount ?? 0;
+    job.httpGetCount = job.httpGetCount ?? 0;
     job.startedAt = job.startedAt ?? new Date().toISOString();
     job.status = 'RUNNING';
     job.updatedAt = job.startedAt;
@@ -754,6 +756,7 @@ test('http_get fetches public content while sanitizing headers and truncating bo
   } as SandboxJob;
 
   await processor.process(job);
+  assert.equal(job.httpGetCount, 1, 'http_get deve ser contabilizado');
 
   const callOutput = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
   const parsed = JSON.parse(callOutput.output);
@@ -839,6 +842,7 @@ test('http_get blocks private addresses and returns an error to the model', asyn
   } as SandboxJob;
 
   await processor.process(job);
+  assert.equal(job.httpGetCount, 1, 'http_get inválido também deve contar');
 
   const toolMessage = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
   const parsed = JSON.parse(toolMessage.output);
