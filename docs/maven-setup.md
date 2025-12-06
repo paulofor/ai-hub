@@ -1,6 +1,6 @@
 # Instalação do Maven
 
-A imagem do sandbox já vem com Maven e JDK configurados. Use os passos abaixo apenas se precisar habilitar o Maven na sua máquina local para rodar comandos do backend (ex.: `mvn test`).
+A imagem do sandbox já vem com Maven, JDK e Docker CLI configurados. Use os passos abaixo apenas se precisar habilitar o Maven na sua máquina local para rodar comandos do backend (ex.: `mvn test`).
 
 ## Passo a passo
 

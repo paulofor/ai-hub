@@ -36,3 +36,4 @@ O fluxo de automação agora centraliza a execução das correções no `sandbox
 ## Ferramentas disponíveis no sandbox
 
 - O contêiner do sandbox agora inclui o utilitário `apply_patch` (wrapper para `patch`/`gpatch`) em `/usr/local/bin`. Ele aceita patches com o marcador `*** Begin Patch` ou diffs tradicionais, permitindo edições segmentadas sem reescrever arquivos completos.
+- O Docker CLI vem pré-instalado para permitir workflows que dependem de contêineres; basta expor o socket do host ou usar uma engine acessível via rede.
