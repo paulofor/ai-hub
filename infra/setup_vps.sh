@@ -305,6 +305,10 @@ collect_env_values() {
   local default_public_url="http://localhost:${BACKEND_HTTP_PORT}"
   prompt_with_default HUB_PUBLIC_URL "URL pública da API (ex: https://app.seudominio.com)" "${default_public_url}"
 
+  local default_frontend_origin="http://localhost:${FRONTEND_HTTP_PORT}"
+  prompt_with_default HUB_ALLOWED_ORIGINS "Origens CORS permitidas (separe por vírgula)" "${default_frontend_origin}"
+  prompt_with_default HUB_CORS_ALLOW_CREDENTIALS "Permitir credenciais em CORS (true/false)" "false"
+
   prompt_with_default VITE_API_BASE_URL "Base da API usada pelo frontend" "/api"
 
   prompt_with_default OPENAI_MODEL "Modelo da OpenAI" "gpt-5-codex"
@@ -383,6 +387,8 @@ create_env_file() {
     printf 'DB_USER=%s\n' "${DB_USER}"
     printf 'DB_PASS=%s\n' "${DB_PASS}"
     printf 'HUB_PUBLIC_URL=%s\n' "${HUB_PUBLIC_URL}"
+    printf 'HUB_ALLOWED_ORIGINS=%s\n' "${HUB_ALLOWED_ORIGINS}"
+    printf 'HUB_CORS_ALLOW_CREDENTIALS=%s\n' "${HUB_CORS_ALLOW_CREDENTIALS}"
     printf 'VITE_API_BASE_URL=%s\n' "${VITE_API_BASE_URL}"
     printf 'FRONTEND_HTTP_PORT=%s\n' "${FRONTEND_HTTP_PORT}"
     printf 'BACKEND_HTTP_PORT=%s\n' "${BACKEND_HTTP_PORT}"
