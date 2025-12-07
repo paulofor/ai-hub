@@ -1,6 +1,9 @@
 import express, { Request, Response } from 'express';
 import morgan from 'morgan';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import { SandboxJobProcessor } from './jobProcessor.js';
 import { JobProcessor, SandboxJob, SandboxProfile } from './types.js';
@@ -123,12 +126,59 @@ export function createApp(options: AppOptions = {}) {
     res.status(201).json(job);
   });
 
-  app.get('/jobs/:id', (req: Request, res: Response) => {
-    const job = jobRegistry.get(req.params.id);
-    if (!job) {
-      return res.status(404).json({ error: 'job not found' });
+  const recoverOrphanJob = async (jobId: string): Promise<SandboxJob | undefined> => {
+    const baseDir = path.resolve(process.env.SANDBOX_WORKDIR ?? os.tmpdir());
+    const prefix = `ai-hub-${jobId}-`;
+
+    try {
+      const entries = await fs.readdir(baseDir, { withFileTypes: true });
+      const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith(prefix));
+      if (!match) {
+        return undefined;
+      }
+
+      const sandboxPath = path.join(baseDir, match.name);
+      const now = new Date().toISOString();
+      const error =
+        `job ${jobId} não está mais em memória; o processo do sandbox pode ter reiniciado. ` +
+        `Workspace preservado em ${sandboxPath}.`;
+
+      return {
+        jobId,
+        repoUrl: 'desconhecido',
+        branch: 'desconhecida',
+        taskDescription: 'workspace órfão',
+        status: 'FAILED',
+        error,
+        sandboxPath,
+        logs: [],
+        createdAt: now,
+        updatedAt: now,
+        timeoutCount: 0,
+        httpGetCount: 0,
+        cancelRequested: false,
+      } satisfies SandboxJob;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`Sandbox orchestrator: falha ao verificar workdir para job ${jobId}: ${message}`);
+      return undefined;
     }
-    res.json(job);
+  };
+
+  app.get('/jobs/:id', async (req: Request, res: Response) => {
+    const jobId = req.params.id;
+    const job = jobRegistry.get(jobId);
+    if (job) {
+      return res.json(job);
+    }
+
+    const recovered = await recoverOrphanJob(jobId);
+    if (recovered) {
+      jobRegistry.set(jobId, recovered);
+      return res.json(recovered);
+    }
+
+    res.status(404).json({ error: 'job not found' });
   });
 
   app.post('/jobs/:id/cancel', (req: Request, res: Response) => {

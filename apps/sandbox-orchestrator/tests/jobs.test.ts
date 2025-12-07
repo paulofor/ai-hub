@@ -272,6 +272,29 @@ test('returns job status', async () => {
   assert.equal(response.body.jobId, 'job-1');
 });
 
+test('returns orphaned workspace when registry is empty', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-orphans-'));
+  const originalWorkdir = process.env.SANDBOX_WORKDIR;
+  process.env.SANDBOX_WORKDIR = tempDir;
+
+  const sandboxPath = await fs.mkdtemp(path.join(tempDir, 'ai-hub-job-orphan-'));
+
+  try {
+    const registry = new Map<string, SandboxJob>();
+    const processor = new StubProcessor();
+    const app = createApp({ jobRegistry: registry, processor });
+
+    const response = await request(app).get('/jobs/job-orphan').expect(200);
+    assert.equal(response.body.jobId, 'job-orphan');
+    assert.equal(response.body.status, 'FAILED');
+    assert.equal(response.body.sandboxPath, sandboxPath);
+    assert.match(response.body.error, /workspace preservado/i);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+    process.env.SANDBOX_WORKDIR = originalWorkdir;
+  }
+});
+
 test('processes tool calls inside a sandbox', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-job-'));
   execSync('git init', { cwd: tempRepo });
