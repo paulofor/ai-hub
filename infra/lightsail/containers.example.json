@@ -13,14 +13,15 @@
         "GITHUB_APP_ID": "<id>",
         "GITHUB_PRIVATE_KEY_PEM": "<pem>",
         "GITHUB_WEBHOOK_SECRET": "<secret>",
-        "HUB_PUBLIC_URL": "https://<lightsail-domain>"
+        "HUB_PUBLIC_URL": "https://<lightsail-domain>",
+        "HUB_ALLOWED_ORIGINS": "https://<lightsail-domain>"
       }
     },
     "frontend": {
       "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-frontend:latest",
       "ports": { "80": "HTTP" },
       "environment": {
-        "VITE_API_BASE_URL": "http://backend:8081/api"
+        "VITE_API_BASE_URL": "/api"
       }
     },
     "sandbox-orchestrator": {

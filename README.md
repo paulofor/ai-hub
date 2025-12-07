@@ -42,6 +42,17 @@ infra/
 - Frontend: `npm --prefix apps/frontend run lint`
 - Sandbox Orchestrator: `npm --prefix apps/sandbox-orchestrator test`
 
+### Expondo o frontend via HTTP
+
+Para disponibilizar a interface web publicamente (sem TLS, usando apenas HTTP) ajuste o arquivo `.env` e recrie os contêineres:
+
+1. Defina `FRONTEND_HTTP_PORT=80` (ou outra porta pública exposta).
+2. Configure `HUB_ALLOWED_ORIGINS` com a origem pública do frontend (ex.: `http://seu.dominio.com`).
+3. Mantenha `VITE_API_BASE_URL=/api` — o nginx do container do frontend roteia as chamadas para o serviço `backend`.
+4. Ajuste `HUB_CORS_ALLOW_CREDENTIALS` para `true` apenas se precisar encaminhar cookies/autenticação cruzada.
+
+> No AWS Lightsail, replique esses valores em `infra/lightsail/containers.example.json` (`HUB_ALLOWED_ORIGINS` e `VITE_API_BASE_URL=/api`) antes de publicar o serviço.
+
 ## Deploy em produção
 
 - As imagens publicadas na pipeline ficam disponíveis em `ghcr.io/<seu-usuário>/ai-hub-backend`, `ghcr.io/<seu-usuário>/ai-hub-frontend` e `ghcr.io/<seu-usuário>/ai-hub-sandbox`.
