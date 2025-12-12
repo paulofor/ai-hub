@@ -7,6 +7,7 @@ import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
+import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
@@ -128,6 +129,23 @@ public class CodexRequestService {
         }
 
         return requests;
+    }
+
+    @Transactional(readOnly = true)
+    public CodexRequest find(Long id) {
+        return codexRequestRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
+    }
+
+    @Transactional
+    public CodexRequest saveComment(Long id, SaveCodexCommentRequest payload) {
+        CodexRequest request = find(id);
+        String comment = Optional.ofNullable(payload.getComment())
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .orElse(null);
+        request.setUserComment(comment);
+        return codexRequestRepository.save(request);
     }
 
     private RefreshDecision evaluateRefresh(CodexRequest request, Instant refreshCutoff) {
@@ -481,6 +499,12 @@ public class CodexRequestService {
         Integer httpGetCount = response.httpGetCount();
         if (httpGetCount != null && !Objects.equals(request.getHttpGetCount(), httpGetCount)) {
             request.setHttpGetCount(httpGetCount);
+            updated = true;
+        }
+
+        String pullRequestUrl = response.pullRequestUrl();
+        if (StringUtils.hasText(pullRequestUrl) && !Objects.equals(request.getPullRequestUrl(), pullRequestUrl.trim())) {
+            request.setPullRequestUrl(pullRequestUrl.trim());
             updated = true;
         }
 

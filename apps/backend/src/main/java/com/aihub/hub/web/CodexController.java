@@ -3,6 +3,7 @@ package com.aihub.hub.web;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
+import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.service.CodexRequestService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,9 +30,19 @@ public class CodexController {
         return codexRequestService.list();
     }
 
+    @GetMapping("/{id}")
+    public CodexRequest get(@PathVariable Long id) {
+        return codexRequestService.find(id);
+    }
+
     @PostMapping
     public CodexRequest create(@Valid @RequestBody CreateCodexRequest request) {
         return codexRequestService.create(request);
+    }
+
+    @PostMapping("/{id}/comment")
+    public CodexRequest comment(@PathVariable Long id, @Valid @RequestBody SaveCodexCommentRequest request) {
+        return codexRequestService.saveComment(id, request);
     }
 
     @PostMapping("/{id}/cancel")

@@ -1,35 +1,21 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import client from '../api/client';
-
-type CodexProfile = 'STANDARD' | 'ECONOMY';
-
-type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-
-interface CodexRequest {
-  id: number;
-  environment: string;
-  model: string;
-  profile: CodexProfile;
-  prompt: string;
-  responseText?: string;
-  externalId?: string;
-  promptTokens?: number;
-  cachedPromptTokens?: number;
-  completionTokens?: number;
-  totalTokens?: number;
-  promptCost?: number;
-  cachedPromptCost?: number;
-  completionCost?: number;
-  cost?: number;
-  createdAt: string;
-  status: CodexStatus;
-  rating?: number;
-  startedAt?: string;
-  finishedAt?: string;
-  durationMs?: number;
-  timeoutCount?: number;
-  httpGetCount?: number;
-}
+import {
+  CodexProfile,
+  CodexRequest,
+  codexStatusStyles,
+  formatCost,
+  formatDateTime,
+  formatDuration,
+  formatPricePerMillion,
+  formatProfile,
+  formatStatus,
+  formatTokens,
+  isTerminalStatus,
+  parseCodexRequest,
+  parseCodexRequests
+} from '../lib/codex';
 
 interface EnvironmentOption {
   id: number;
@@ -46,199 +32,6 @@ interface CodexModelOption {
   cachedInputPricePerMillion: number;
   outputPricePerMillion: number;
 }
-
-const parseNumber = (value: unknown): number | undefined => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return undefined;
-};
-
-const parseProfile = (value: unknown): CodexProfile => {
-  if (typeof value === 'string') {
-    const normalized = value.trim().toUpperCase();
-    if (normalized === 'ECONOMY') {
-      return 'ECONOMY';
-    }
-  }
-  return 'STANDARD';
-};
-
-const parseStatus = (value: unknown): CodexStatus => {
-  if (typeof value === 'string') {
-    const normalized = value.trim().toUpperCase();
-    if (['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(normalized)) {
-      return normalized as CodexStatus;
-    }
-  }
-  return 'PENDING';
-};
-
-const isTerminalStatus = (status: CodexStatus) => status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED';
-
-const formatStatus = (status: CodexStatus) => {
-  switch (status) {
-    case 'RUNNING':
-      return 'Em execução';
-    case 'COMPLETED':
-      return 'Concluída';
-    case 'FAILED':
-      return 'Falhou';
-    case 'CANCELLED':
-      return 'Cancelada';
-    case 'PENDING':
-    default:
-      return 'Pendente';
-  }
-};
-
-const formatDateTime = (value?: string) => {
-  if (!value) {
-    return '—';
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '—';
-  }
-  return date.toLocaleString('pt-BR');
-};
-
-const formatDuration = (milliseconds?: number) => {
-  if (milliseconds === undefined || milliseconds === null || !Number.isFinite(milliseconds) || milliseconds < 0) {
-    return '—';
-  }
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const parts: string[] = [];
-  if (hours > 0) {
-    parts.push(`${hours}h`);
-  }
-  if (minutes > 0 || hours > 0) {
-    parts.push(`${minutes}min`);
-  }
-  parts.push(`${seconds}s`);
-  return parts.join(' ');
-};
-
-const statusStyles: Record<CodexStatus, string> = {
-  PENDING: 'bg-slate-200 text-slate-700',
-  RUNNING: 'bg-amber-200 text-amber-800 animate-pulse',
-  COMPLETED: 'bg-emerald-200 text-emerald-800',
-  FAILED: 'bg-red-200 text-red-800',
-  CANCELLED: 'bg-slate-300 text-slate-700',
-};
-
-const parseCodexRequest = (value: unknown): CodexRequest | null => {
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-
-  const item = value as Record<string, unknown>;
-  const id = parseNumber(item.id) ?? 0;
-  const promptTokens = parseNumber(item.promptTokens);
-  const cachedPromptTokens = parseNumber(item.cachedPromptTokens);
-  const completionTokens = parseNumber(item.completionTokens);
-  const totalTokens = parseNumber(item.totalTokens);
-  const promptCost = parseNumber(item.promptCost);
-  const cachedPromptCost = parseNumber(item.cachedPromptCost);
-  const completionCost = parseNumber(item.completionCost);
-  const cost = parseNumber(item.cost);
-  const profile = parseProfile(item.profile ?? item.integrationProfile);
-  const status = parseStatus(item.status);
-  const rating = parseNumber(item.rating);
-  const startedAt = typeof item.startedAt === 'string' ? item.startedAt : undefined;
-  const finishedAt = typeof item.finishedAt === 'string' ? item.finishedAt : undefined;
-  const durationMs = parseNumber(item.durationMs);
-  const timeoutCount = parseNumber(item.timeoutCount);
-  const httpGetCount = parseNumber(item.httpGetCount);
-
-  return {
-    id,
-    environment: (item.environment as string) ?? '',
-    model: (item.model as string) ?? '',
-    profile,
-    prompt: (item.prompt as string) ?? '',
-    status,
-    rating,
-    responseText: (item.responseText as string) ?? undefined,
-    externalId: (item.externalId as string) ?? undefined,
-    promptTokens,
-    cachedPromptTokens,
-    completionTokens,
-    totalTokens,
-    promptCost,
-    cachedPromptCost,
-    completionCost,
-    cost,
-    createdAt: (item.createdAt as string) ?? '',
-    startedAt,
-    finishedAt,
-    durationMs,
-    timeoutCount,
-    httpGetCount
-  };
-};
-
-const parseCodexRequests = (payload: unknown): CodexRequest[] => {
-  const items = Array.isArray(payload)
-    ? payload
-    : Array.isArray((payload as { content?: unknown })?.content)
-      ? (payload as { content: unknown[] }).content
-      : [];
-
-  return items
-    .map((item) => parseCodexRequest(item))
-    .filter((item): item is CodexRequest => item !== null);
-};
-
-const formatTokens = (value?: number) => {
-  if (value === undefined || value === null) {
-    return '—';
-  }
-  return value.toLocaleString('pt-BR');
-};
-
-const formatCost = (value?: number, fractionDigits = 6) => {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return '—';
-  }
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits
-  }).format(value);
-};
-
-const formatPricePerMillion = (value?: number) => {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return '—';
-  }
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4
-  }).format(value);
-};
-
-const formatProfile = (profile: CodexProfile) => {
-  switch (profile) {
-    case 'ECONOMY':
-      return 'Econômico';
-    case 'STANDARD':
-    default:
-      return 'Padrão';
-  }
-};
 
 const REQUESTS_PER_PAGE = 15;
 
@@ -585,6 +378,7 @@ export default function CodexPage() {
                 <th className="px-4 py-3 text-left font-semibold">Custos</th>
                 <th className="px-4 py-3 text-left font-semibold">Prompt</th>
                 <th className="px-4 py-3 text-left font-semibold">Resposta</th>
+                <th className="px-4 py-3 text-left font-semibold">Comentário</th>
                 <th className="px-4 py-3 text-left font-semibold">Avaliação</th>
                 <th className="px-4 py-3 text-left font-semibold">Ações</th>
               </tr>
@@ -593,12 +387,15 @@ export default function CodexPage() {
               {paginatedRequests.map((item) => (
                 <tr key={item.id}>
                   <td className="px-4 py-3 text-slate-500">
-                    {formatDateTime(item.createdAt)}
+                    <Link to={`/codex/requests/${item.id}`} className="text-emerald-700 hover:underline">
+                      {formatDateTime(item.createdAt)}
+                    </Link>
+                    <div className="text-xs text-slate-400">ID #{item.id}</div>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
                     <div className="mb-2">
                       <span
-                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyles[item.status]}`}
+                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${codexStatusStyles[item.status]}`}
                       >
                         {formatStatus(item.status)}
                       </span>
@@ -680,6 +477,25 @@ export default function CodexPage() {
                       <span>—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
+                    {item.userComment ? (
+                      <div className="space-y-2">
+                        <p className="whitespace-pre-line">
+                          {item.userComment.length > 200 ? `${item.userComment.slice(0, 200)}…` : item.userComment}
+                        </p>
+                        <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
+                          Ver detalhes
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-slate-500">—</span>
+                        <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
+                          Adicionar comentário
+                        </Link>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {(() => {
                       const currentRating = item.rating ?? 0;
@@ -737,7 +553,7 @@ export default function CodexPage() {
 
               {sortedRequests.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={11}>
+                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={12}>
                     Nenhuma solicitação enviada até o momento.
                   </td>
                 </tr>
