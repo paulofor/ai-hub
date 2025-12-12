@@ -49,8 +49,15 @@ public class CodexRequest {
     @Column(name = "response_text", columnDefinition = "LONGTEXT")
     private String responseText;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "user_comment", columnDefinition = "LONGTEXT")
+    private String userComment;
+
     @Column(name = "external_id")
     private String externalId;
+
+    @Column(name = "pull_request_url")
+    private String pullRequestUrl;
 
     @Column(name = "prompt_tokens")
     private Integer promptTokens;
@@ -168,12 +175,28 @@ public class CodexRequest {
         this.responseText = responseText;
     }
 
+    public String getUserComment() {
+        return userComment;
+    }
+
+    public void setUserComment(String userComment) {
+        this.userComment = userComment;
+    }
+
     public String getExternalId() {
         return externalId;
     }
 
     public void setExternalId(String externalId) {
         this.externalId = externalId;
+    }
+
+    public String getPullRequestUrl() {
+        return pullRequestUrl;
+    }
+
+    public void setPullRequestUrl(String pullRequestUrl) {
+        this.pullRequestUrl = pullRequestUrl;
     }
 
     public Integer getPromptTokens() {
