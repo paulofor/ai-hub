@@ -107,6 +107,7 @@ export function createApp(options: AppOptions = {}) {
       updatedAt: now,
       timeoutCount: 0,
       httpGetCount: 0,
+      dbQueryCount: 0,
       cancelRequested: false,
     };
 
@@ -156,6 +157,7 @@ export function createApp(options: AppOptions = {}) {
         updatedAt: now,
         timeoutCount: 0,
         httpGetCount: 0,
+        dbQueryCount: 0,
         cancelRequested: false,
       } satisfies SandboxJob;
     } catch (err) {

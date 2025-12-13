@@ -119,6 +119,7 @@ export class SandboxJobProcessor implements JobProcessor {
     job.model = resolvedModel;
     job.timeoutCount = job.timeoutCount ?? 0;
     job.httpGetCount = job.httpGetCount ?? 0;
+    job.dbQueryCount = job.dbQueryCount ?? 0;
 
     const start = new Date();
     job.startedAt = job.startedAt ?? start.toISOString();

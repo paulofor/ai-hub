@@ -406,6 +406,7 @@ export default function CodexPage() {
                       <div>Tempo total: {formatDuration(item.durationMs)}</div>
                       <div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div>
                       <div>HTTP GETs: {(item.httpGetCount ?? 0).toLocaleString('pt-BR')}</div>
+                      <div>Consultas ao banco: {(item.dbQueryCount ?? 0).toLocaleString('pt-BR')}</div>
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium">{item.environment}</td>

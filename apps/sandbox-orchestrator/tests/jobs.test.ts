@@ -14,6 +14,7 @@ class StubProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
     job.timeoutCount = job.timeoutCount ?? 0;
     job.httpGetCount = job.httpGetCount ?? 0;
+    job.dbQueryCount = job.dbQueryCount ?? 0;
     job.startedAt = job.startedAt ?? new Date().toISOString();
     job.status = 'COMPLETED';
     job.summary = 'ok';
@@ -28,6 +29,7 @@ class SleepingProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
     job.timeoutCount = job.timeoutCount ?? 0;
     job.httpGetCount = job.httpGetCount ?? 0;
+    job.dbQueryCount = job.dbQueryCount ?? 0;
     job.startedAt = job.startedAt ?? new Date().toISOString();
     job.status = 'RUNNING';
     job.updatedAt = job.startedAt;
@@ -1261,4 +1263,59 @@ test('reuses repository credentials from repoUrl when creating a pull request', 
 
   await fs.rm(bareRepo, { recursive: true, force: true });
   await fs.rm(seedRepo, { recursive: true, force: true });
+});
+
+
+test('db_query executa SELECT e contabiliza chamadas', async () => {
+  const processor = new SandboxJobProcessor();
+  const job: SandboxJob = {
+    jobId: 'job-db-query',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'inspect database',
+    status: 'PENDING',
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  (processor as any).dbConfig = {
+    host: 'localhost',
+    port: 3306,
+    user: 'user',
+    password: 'pass',
+    database: 'db',
+  };
+
+  const fakeRows = [
+    { id: 1, name: 'Alice' },
+    { id: 2, name: 'Bob' },
+  ];
+
+  (processor as any).dbPool = {
+    query: async () => [fakeRows],
+  };
+
+  const first = await (processor as any).handleDbQuery(
+    { query: 'SELECT id, name FROM users', limit: 1 },
+    job,
+  );
+
+  assert.equal(job.dbQueryCount, 1, 'db_query deve ser contabilizado');
+  assert.equal(first.rowCount, 1);
+  assert.equal(first.truncated, true);
+  assert.deepEqual(first.columns, ['id', 'name']);
+  assert.equal(first.rows.length, 1);
+  assert.equal(first.rows[0].name, 'Alice');
+
+  const second = await (processor as any).handleDbQuery(
+    { query: 'WITH users_cte AS (SELECT * FROM users) SELECT * FROM users_cte' },
+    job,
+  );
+
+  assert.equal(job.dbQueryCount, 2, 'db_query deve acumular chamadas');
+  assert.equal(second.truncated, false);
+  assert.equal(second.rowCount, 2);
+  assert.deepEqual(second.columns, ['id', 'name']);
 });
