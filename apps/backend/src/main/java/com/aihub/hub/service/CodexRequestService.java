@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 public class CodexRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
+    private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
 
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
@@ -314,6 +315,21 @@ public class CodexRequestService {
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
             sandboxOrchestratorClient.getJob(request.getExternalId());
         if (response == null) {
+            CodexRequestStatus currentStatus = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+            Instant referenceInstant = Optional.ofNullable(request.getStartedAt())
+                .orElseGet(() -> Optional.ofNullable(request.getCreatedAt()).orElse(null));
+            boolean withinGracePeriod = referenceInstant == null
+                || referenceInstant.isAfter(Instant.now().minus(SANDBOX_NOT_FOUND_GRACE_PERIOD));
+
+            if (!currentStatus.isTerminal() && withinGracePeriod) {
+                log.warn(
+                    "Sandbox ainda não encontrou o job {} (status atual: {}); mantendo estado e tentando novamente dentro do período de tolerância",
+                    request.getExternalId(),
+                    currentStatus
+                );
+                return;
+            }
+
             log.info(
                 "Nenhuma resposta encontrada no sandbox para CodexRequest {} com externalId {}",
                 request.getId(),
