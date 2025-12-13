@@ -97,6 +97,9 @@ public class CodexRequest {
     @Column(name = "http_get_count")
     private Integer httpGetCount;
 
+    @Column(name = "db_query_count")
+    private Integer dbQueryCount;
+
     @Column(name = "started_at")
     private Instant startedAt;
 
@@ -301,6 +304,14 @@ public class CodexRequest {
 
     public void setHttpGetCount(Integer httpGetCount) {
         this.httpGetCount = httpGetCount;
+    }
+
+    public Integer getDbQueryCount() {
+        return dbQueryCount;
+    }
+
+    public void setDbQueryCount(Integer dbQueryCount) {
+        this.dbQueryCount = dbQueryCount;
     }
 
     public Instant getStartedAt() {

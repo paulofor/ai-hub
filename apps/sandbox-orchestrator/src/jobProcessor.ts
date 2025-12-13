@@ -137,6 +137,7 @@ export class SandboxJobProcessor implements JobProcessor {
     job.model = resolvedModel;
     job.timeoutCount = job.timeoutCount ?? 0;
     job.httpGetCount = job.httpGetCount ?? 0;
+    job.dbQueryCount = job.dbQueryCount ?? 0;
 
     const start = new Date();
     job.startedAt = job.startedAt ?? start.toISOString();
@@ -721,6 +722,8 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
   }
 
   private async handleDbQuery(args: Record<string, unknown>, job: SandboxJob) {
+    job.dbQueryCount = (job.dbQueryCount ?? 0) + 1;
+
     const query = typeof args.query === 'string' ? args.query.trim() : '';
     if (!query) {
       throw new Error('query é obrigatória para db_query');

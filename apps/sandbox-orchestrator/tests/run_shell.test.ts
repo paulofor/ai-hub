@@ -18,6 +18,7 @@ const createJob = (): SandboxJob => ({
   updatedAt: new Date().toISOString(),
   timeoutCount: 0,
   httpGetCount: 0,
+  dbQueryCount: 0,
 });
 
 test('substitui grep -R por rg com log explicativo', async () => {

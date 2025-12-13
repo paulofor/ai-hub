@@ -30,6 +30,7 @@ export interface CodexRequest {
   durationMs?: number;
   timeoutCount?: number;
   httpGetCount?: number;
+  dbQueryCount?: number;
 }
 
 const parseNumber = (value: unknown): number | undefined => {
@@ -155,7 +156,8 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const finishedAt = typeof item.finishedAt === 'string' ? item.finishedAt : undefined;
   const durationMs = parseNumber(item.durationMs);
   const timeoutCount = parseNumber(item.timeoutCount);
-  const httpGetCount = parseNumber(item.httpGetCount);
+  const httpGetCount = parseNumber(item.httpGetCount ?? (item as Record<string, unknown>).http_get_count);
+  const dbQueryCount = parseNumber(item.dbQueryCount ?? (item as Record<string, unknown>).db_query_count);
   const pullRequestUrlRaw = typeof item.pullRequestUrl === 'string'
     ? item.pullRequestUrl
     : typeof (item as Record<string, unknown>).pull_request_url === 'string'
@@ -209,7 +211,8 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     finishedAt,
     durationMs,
     timeoutCount,
-    httpGetCount
+    httpGetCount,
+    dbQueryCount
   };
 };
 
