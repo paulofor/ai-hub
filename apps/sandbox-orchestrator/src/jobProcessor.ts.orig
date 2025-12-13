@@ -4,7 +4,6 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import mysql, { Pool } from 'mysql2/promise';
 import OpenAI from 'openai';
 import {
   ResponseFunctionToolCallItem,
@@ -18,14 +17,6 @@ import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from 
 import { JobProcessor, SandboxJob, SandboxProfile } from './types.js';
 
 const exec = promisify(execCallback);
-
-interface DatabaseConfig {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-}
 
 interface ToolCall {
   id: string;
@@ -55,11 +46,6 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly economyToolOutputStringLimit: number;
   private readonly economyToolOutputSerializedLimit: number;
   private readonly economyHttpToolMaxResponseChars: number;
-  private readonly dbQueryTimeoutMs: number;
-  private readonly dbMaxRows: number;
-  private readonly dbConfig?: DatabaseConfig;
-  private dbPool?: Pool;
-
 
   constructor(
     apiKey?: string,
@@ -115,10 +101,6 @@ export class SandboxJobProcessor implements JobProcessor {
       Math.min(this.httpToolMaxResponseChars, 8_000),
     );
     this.economyHttpToolMaxResponseChars = Math.min(economyHttpMaxCharsRaw, this.httpToolMaxResponseChars);
-
-    this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
-    this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
-    this.dbConfig = this.loadDatabaseConfig();
   }
 
   async process(job: SandboxJob): Promise<void> {
@@ -346,24 +328,6 @@ export class SandboxJobProcessor implements JobProcessor {
         strict: true,
         description: 'Busca um recurso público via HTTP GET (bloqueia hosts internos e localhost)',
       },
-      {
-        type: 'function' as const,
-        name: 'db_query',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Instrução SQL de leitura (apenas SELECT)' },
-            limit: {
-              type: 'integer',
-              description: `Limite máximo de linhas a retornar (padrão ${this.dbMaxRows}, máximo ${this.dbMaxRows})`,
-            },
-          },
-          required: ['query'],
-          additionalProperties: false,
-        },
-        strict: true,
-        description: 'Executa uma consulta SELECT no banco de dados relacional configurado via DB_URL/DB_USER/DB_PASS',
-      },
     ];
   }
 
@@ -587,71 +551,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
         return this.handleWriteFile(call.arguments, repoPath, job);
       case 'http_get':
         return this.handleHttpGet(call.arguments, job);
-      case 'db_query':
-        return this.handleDbQuery(call.arguments, job);
       default:
         return { error: `Ferramenta desconhecida: ${call.name}` };
     }
-  }
-
-  private loadDatabaseConfig(): DatabaseConfig | undefined {
-    const rawUrl = process.env.DB_URL ?? process.env.DATABASE_URL;
-    const user = process.env.DB_USER;
-    const password = process.env.DB_PASS;
-
-    if (!rawUrl || !user || password === undefined) {
-      return undefined;
-    }
-
-    const sanitizedUrl = rawUrl.startsWith('jdbc:') ? rawUrl.replace(/^jdbc:/, '') : rawUrl;
-    let parsed: URL;
-    try {
-      parsed = new URL(sanitizedUrl);
-    } catch (err) {
-      console.warn(`Sandbox orchestrator: DB_URL inválida (${err instanceof Error ? err.message : String(err)})`);
-      return undefined;
-    }
-
-    if (!['mysql:', 'mariadb:'].includes(parsed.protocol)) {
-      console.warn(`Sandbox orchestrator: protocolo de banco não suportado: ${parsed.protocol}`);
-      return undefined;
-    }
-
-    const database = parsed.pathname.replace(/^\//, '');
-    if (!database) {
-      console.warn('Sandbox orchestrator: DB_URL não contém nome do database');
-      return undefined;
-    }
-
-    const port = Number(parsed.port) || 3306;
-    return {
-      host: parsed.hostname,
-      port: Number.isFinite(port) && port > 0 ? port : 3306,
-      user,
-      password,
-      database,
-    };
-  }
-
-  private getDbPool(): Pool {
-    if (!this.dbConfig) {
-      throw new Error('Banco de dados não configurado: defina DB_URL, DB_USER e DB_PASS');
-    }
-
-    if (!this.dbPool) {
-      this.dbPool = mysql.createPool({
-        host: this.dbConfig.host,
-        port: this.dbConfig.port,
-        user: this.dbConfig.user,
-        password: this.dbConfig.password,
-        database: this.dbConfig.database,
-        waitForConnections: true,
-        connectionLimit: 4,
-        queueLimit: 0,
-      });
-    }
-
-    return this.dbPool;
   }
 
   private sanitizeHeaders(raw: unknown): Record<string, string> | undefined {
@@ -718,51 +620,6 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     if (a === 127) return true;
     if (a === 169 && b === 254) return true;
     return false;
-  }
-
-  private async handleDbQuery(args: Record<string, unknown>, job: SandboxJob) {
-    const query = typeof args.query === 'string' ? args.query.trim() : '';
-    if (!query) {
-      throw new Error('query é obrigatória para db_query');
-    }
-    if (!/^(select|with)\b/i.test(query)) {
-      throw new Error('apenas consultas SELECT (incluindo CTEs com WITH) são permitidas em db_query');
-    }
-
-    const limitRaw = typeof args.limit === 'number' ? args.limit : Number(args.limit);
-    const normalizedLimit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(Number(limitRaw)) : this.dbMaxRows;
-    const maxRows = Math.min(normalizedLimit, this.dbMaxRows);
-
-    const pool = this.getDbPool();
-    this.log(job, `db_query: executando consulta com limite de ${maxRows} linhas (timeoutMs=${this.dbQueryTimeoutMs})`);
-    const started = Date.now();
-    let rows: any[] = [];
-
-    try {
-      const [result] = await pool.query({ sql: query, rowsAsArray: false, timeout: this.dbQueryTimeoutMs });
-      rows = Array.isArray(result) ? result : [];
-    } catch (err) {
-      if (this.isTimeoutError(err)) {
-        job.timeoutCount = (job.timeoutCount ?? 0) + 1;
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`falha ao executar consulta SQL: ${message}`);
-    }
-
-    const truncated = rows.length > maxRows;
-    const limitedRows = rows.slice(0, maxRows);
-    const columns = limitedRows.length > 0 && typeof limitedRows[0] === 'object' && limitedRows[0] !== null
-      ? Object.keys(limitedRows[0] as Record<string, unknown>)
-      : [];
-
-    return {
-      rowCount: limitedRows.length,
-      truncated,
-      maxRows,
-      columns,
-      rows: limitedRows,
-      elapsedMs: Date.now() - started,
-    };
   }
 
   private async handleHttpGet(args: Record<string, unknown>, job: SandboxJob) {
