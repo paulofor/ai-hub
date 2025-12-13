@@ -106,7 +106,7 @@ jobs:
       contents: read
       packages: write
     env:
-      DEPLOY_HOST: 191.252.102.54
+      DEPLOY_HOST: 144.217.144.145
       DEPLOY_USER: root
       REMOTE_PATH: /root/ai-hub
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
