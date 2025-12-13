@@ -53,6 +53,14 @@ public class CodexRequest {
     @Column(name = "user_comment", columnDefinition = "LONGTEXT")
     private String userComment;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "problem_description", columnDefinition = "LONGTEXT")
+    private String problemDescription;
+
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "resolution_difficulty", columnDefinition = "LONGTEXT")
+    private String resolutionDifficulty;
+
     @Column(name = "external_id")
     private String externalId;
 
@@ -181,6 +189,22 @@ public class CodexRequest {
 
     public void setUserComment(String userComment) {
         this.userComment = userComment;
+    }
+
+    public String getProblemDescription() {
+        return problemDescription;
+    }
+
+    public void setProblemDescription(String problemDescription) {
+        this.problemDescription = problemDescription;
+    }
+
+    public String getResolutionDifficulty() {
+        return resolutionDifficulty;
+    }
+
+    public void setResolutionDifficulty(String resolutionDifficulty) {
+        this.resolutionDifficulty = resolutionDifficulty;
     }
 
     public String getExternalId() {

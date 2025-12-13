@@ -12,6 +12,8 @@ export interface CodexRequest {
   externalId?: string;
   pullRequestUrl?: string;
   userComment?: string;
+  problemDescription?: string;
+  resolutionDifficulty?: string;
   promptTokens?: number;
   cachedPromptTokens?: number;
   completionTokens?: number;
@@ -164,8 +166,21 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     : typeof (item as Record<string, unknown>).user_comment === 'string'
       ? ((item as Record<string, unknown>).user_comment as string)
       : undefined;
+  const problemDescriptionRaw = typeof item.problemDescription === 'string'
+    ? item.problemDescription
+    : typeof (item as Record<string, unknown>).problem_description === 'string'
+      ? ((item as Record<string, unknown>).problem_description as string)
+      : undefined;
+  const resolutionDifficultyRaw = typeof item.resolutionDifficulty === 'string'
+    ? item.resolutionDifficulty
+    : typeof (item as Record<string, unknown>).resolution_difficulty === 'string'
+      ? ((item as Record<string, unknown>).resolution_difficulty as string)
+      : undefined;
   const pullRequestUrl = pullRequestUrlRaw && pullRequestUrlRaw.trim() ? pullRequestUrlRaw.trim() : undefined;
   const userComment = userCommentRaw && userCommentRaw.trim() ? userCommentRaw.trim() : undefined;
+  const problemDescription = problemDescriptionRaw && problemDescriptionRaw.trim() ? problemDescriptionRaw.trim() : undefined;
+  const resolutionDifficulty =
+    resolutionDifficultyRaw && resolutionDifficultyRaw.trim() ? resolutionDifficultyRaw.trim() : undefined;
 
   return {
     id,
@@ -179,6 +194,8 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     externalId: (item.externalId as string) ?? undefined,
     pullRequestUrl: pullRequestUrl ?? undefined,
     userComment: userComment ?? undefined,
+    problemDescription: problemDescription ?? undefined,
+    resolutionDifficulty: resolutionDifficulty ?? undefined,
     promptTokens,
     cachedPromptTokens,
     completionTokens,

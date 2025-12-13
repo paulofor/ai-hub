@@ -7,11 +7,33 @@ public class SaveCodexCommentRequest {
     @Size(max = 4000, message = "Comentário deve ter no máximo 4000 caracteres")
     private String comment;
 
+    @Size(max = 4000, message = "Descrição do problema deve ter no máximo 4000 caracteres")
+    private String problemDescription;
+
+    @Size(max = 4000, message = "Dificuldade de resolução deve ter no máximo 4000 caracteres")
+    private String resolutionDifficulty;
+
     public String getComment() {
         return comment;
     }
 
     public void setComment(String comment) {
         this.comment = comment;
+    }
+
+    public String getProblemDescription() {
+        return problemDescription;
+    }
+
+    public void setProblemDescription(String problemDescription) {
+        this.problemDescription = problemDescription;
+    }
+
+    public String getResolutionDifficulty() {
+        return resolutionDifficulty;
+    }
+
+    public void setResolutionDifficulty(String resolutionDifficulty) {
+        this.resolutionDifficulty = resolutionDifficulty;
     }
 }
