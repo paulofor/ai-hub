@@ -144,7 +144,17 @@ public class CodexRequestService {
             .map(String::trim)
             .filter(value -> !value.isBlank())
             .orElse(null);
+        String problemDescription = Optional.ofNullable(payload.getProblemDescription())
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .orElse(null);
+        String resolutionDifficulty = Optional.ofNullable(payload.getResolutionDifficulty())
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .orElse(null);
         request.setUserComment(comment);
+        request.setProblemDescription(problemDescription);
+        request.setResolutionDifficulty(resolutionDifficulty);
         return codexRequestRepository.save(request);
     }
 

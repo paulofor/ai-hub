@@ -20,15 +20,17 @@ export default function CodexRequestDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
-  const [commentDirty, setCommentDirty] = useState(false);
+  const [problemDescription, setProblemDescription] = useState('');
+  const [resolutionDifficulty, setResolutionDifficulty] = useState('');
+  const [feedbackDirty, setFeedbackDirty] = useState(false);
   const [savingComment, setSavingComment] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const commentDirtyRef = useRef(false);
+  const feedbackDirtyRef = useRef(false);
 
   useEffect(() => {
-    commentDirtyRef.current = commentDirty;
-  }, [commentDirty]);
+    feedbackDirtyRef.current = feedbackDirty;
+  }, [feedbackDirty]);
 
   const fetchRequest = useCallback(
     async (silent = false) => {
@@ -49,8 +51,10 @@ export default function CodexRequestDetailPage() {
           throw new Error('Não foi possível carregar a solicitação.');
         }
         setRequest(parsed);
-        if (!commentDirtyRef.current) {
+        if (!feedbackDirtyRef.current) {
           setComment(parsed.userComment ?? '');
+          setProblemDescription(parsed.problemDescription ?? '');
+          setResolutionDifficulty(parsed.resolutionDifficulty ?? '');
         }
       } catch (err) {
         setError((err as Error).message);
@@ -94,21 +98,27 @@ export default function CodexRequestDetailPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const response = await client.post(`/codex/requests/${request.id}/comment`, { comment });
+      const response = await client.post(`/codex/requests/${request.id}/comment`, {
+        comment,
+        problemDescription,
+        resolutionDifficulty
+      });
       const parsed = parseCodexRequest(response.data);
       if (!parsed) {
         throw new Error('Não foi possível salvar o comentário.');
       }
       setRequest(parsed);
       setComment(parsed.userComment ?? '');
-      setCommentDirty(false);
+      setProblemDescription(parsed.problemDescription ?? '');
+      setResolutionDifficulty(parsed.resolutionDifficulty ?? '');
+      setFeedbackDirty(false);
       setSuccessMessage('Comentário salvo com sucesso.');
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setSavingComment(false);
     }
-  }, [comment, request]);
+  }, [comment, problemDescription, request, resolutionDifficulty]);
 
   const handleRating = useCallback(
     async (rating: number) => {
@@ -346,17 +356,58 @@ export default function CodexRequestDetailPage() {
               Última atualização: {formatDateTime(request.finishedAt ?? request.createdAt)}
             </Link>
           </div>
-          <div className="mt-4 space-y-3">
-            <textarea
-              value={comment}
-              onChange={(event) => {
-                setComment(event.target.value);
-                setCommentDirty(true);
-              }}
-              rows={5}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              placeholder="Anote decisões, problemas encontrados ou ideias para melhorar o fluxo."
-            />
+          <div className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="problem-description">
+                Problema encontrado
+              </label>
+              <textarea
+                id="problem-description"
+                value={problemDescription}
+                onChange={(event) => {
+                  setProblemDescription(event.target.value);
+                  setFeedbackDirty(true);
+                }}
+                rows={3}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                placeholder="Descreva o problema, o contexto e o impacto observado."
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">Ajuda a entender o motivo da solicitação.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="resolution-difficulty">
+                Dificuldade de resolução
+              </label>
+              <textarea
+                id="resolution-difficulty"
+                value={resolutionDifficulty}
+                onChange={(event) => {
+                  setResolutionDifficulty(event.target.value);
+                  setFeedbackDirty(true);
+                }}
+                rows={2}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                placeholder="Baixa, média, alta ou detalhe do que tornou a resolução fácil ou difícil."
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">Documente desafios, bloqueios ou facilidades encontrados.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="comment-and-improvement">
+                Comentário e melhoria
+              </label>
+              <textarea
+                id="comment-and-improvement"
+                value={comment}
+                onChange={(event) => {
+                  setComment(event.target.value);
+                  setFeedbackDirty(true);
+                }}
+                rows={5}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                placeholder="Anote decisões, problemas encontrados ou ideias para melhorar o fluxo."
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">Guarde aprendizados para evoluir o processo.</p>
+            </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <button
                 type="button"
@@ -366,7 +417,7 @@ export default function CodexRequestDetailPage() {
               >
                 {savingComment ? 'Salvando...' : 'Salvar comentário'}
               </button>
-              {commentDirty && <span className="text-amber-600">Alterações não salvas</span>}
+              {feedbackDirty && <span className="text-amber-600">Alterações não salvas</span>}
             </div>
           </div>
         </div>
