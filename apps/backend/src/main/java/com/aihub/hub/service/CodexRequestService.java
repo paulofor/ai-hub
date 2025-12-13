@@ -172,7 +172,7 @@ public class CodexRequestService {
             && request.getCompletionCost() != null
             && request.getCost() != null;
 
-        if (status.isTerminal() && hasResponse && hasUsageMetadata) {
+        if (status.isTerminal() && hasResponse && hasUsageMetadata && !hasSandboxNotFoundFallback(request)) {
             return RefreshDecision.skip();
         }
 
@@ -193,6 +193,15 @@ public class CodexRequestService {
         }
 
         return new RefreshDecision(true, "metadados de uso ausentes após janela de atualização");
+    }
+
+    private boolean hasSandboxNotFoundFallback(CodexRequest request) {
+        if (request == null) {
+            return false;
+        }
+        String responseText = request.getResponseText();
+        return StringUtils.hasText(responseText)
+            && responseText.trim().startsWith("Sandbox não encontrou o job");
     }
 
     private CodexIntegrationProfile resolveProfile(CodexIntegrationProfile candidate) {
