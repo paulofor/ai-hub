@@ -102,7 +102,8 @@ public class SandboxOrchestratorClient {
         Long durationMs,
         Integer timeoutCount,
         Integer httpGetCount,
-        Integer dbQueryCount
+        Integer dbQueryCount,
+        List<Interaction> interactions
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
@@ -123,6 +124,30 @@ public class SandboxOrchestratorClient {
                 })
                 .toList();
 
+            java.util.List<Interaction> interactions = null;
+            JsonNode interactionsNode = node.path("interactions");
+            if (interactionsNode != null && interactionsNode.isArray()) {
+                java.util.List<Interaction> values = new java.util.ArrayList<>();
+                interactionsNode.forEach(element -> {
+                    if (element == null || element.isMissingNode() || element.isNull()) {
+                        return;
+                    }
+                    String interactionId = readText(element, "id", "interactionId", "interaction_id");
+                    if (interactionId == null || interactionId.isBlank()) {
+                        return;
+                    }
+                    String direction = readText(element, "direction");
+                    String content = readText(element, "content");
+                    Integer tokenCount = readInt(element, "tokenCount", "token_count");
+                    String createdAt = readText(element, "createdAt", "created_at");
+                    Integer sequence = readInt(element, "sequence");
+                    values.add(new Interaction(interactionId, direction, content, tokenCount, createdAt, sequence));
+                });
+                if (!values.isEmpty()) {
+                    interactions = java.util.List.copyOf(values);
+                }
+            }
+
             return new SandboxOrchestratorJobResponse(
                 node.path("jobId").asText(null),
                 node.path("status").asText(null),
@@ -141,9 +166,19 @@ public class SandboxOrchestratorClient {
                 readLong(node, "durationMs", "duration_ms"),
                 readInt(node, "timeoutCount", "timeout_count"),
                 readInt(node, "httpGetCount", "http_get_count"),
-                readInt(node, "dbQueryCount", "db_query_count")
+                readInt(node, "dbQueryCount", "db_query_count"),
+                interactions
             );
         }
+
+        public record Interaction(
+            String id,
+            String direction,
+            String content,
+            Integer tokenCount,
+            String createdAt,
+            Integer sequence
+        ) { }
 
         private static Integer resolvePromptTokens(JsonNode node) {
             Integer topLevel = readInt(node, "promptTokens", "prompt_tokens");

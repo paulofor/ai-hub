@@ -108,6 +108,8 @@ export function createApp(options: AppOptions = {}) {
       timeoutCount: 0,
       httpGetCount: 0,
       dbQueryCount: 0,
+      interactions: [],
+      interactionSequence: 0,
       cancelRequested: false,
     };
 
@@ -158,6 +160,8 @@ export function createApp(options: AppOptions = {}) {
         timeoutCount: 0,
         httpGetCount: 0,
         dbQueryCount: 0,
+        interactions: [],
+        interactionSequence: 0,
         cancelRequested: false,
       } satisfies SandboxJob;
     } catch (err) {

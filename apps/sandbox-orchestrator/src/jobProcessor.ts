@@ -15,7 +15,7 @@ import {
 } from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
-import { JobProcessor, SandboxJob, SandboxProfile } from './types.js';
+import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction } from './types.js';
 
 const exec = promisify(execCallback);
 
@@ -31,6 +31,13 @@ interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+}
+
+interface TokenUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost?: number;
 }
 
 class JobCancelledError extends Error {
@@ -136,6 +143,8 @@ export class SandboxJobProcessor implements JobProcessor {
     const resolvedModel = this.resolveModel(job);
     job.model = resolvedModel;
     job.timeoutCount = job.timeoutCount ?? 0;
+    job.interactions = Array.isArray(job.interactions) ? job.interactions : [];
+    job.interactionSequence = Number.isFinite(job.interactionSequence) ? job.interactionSequence : 0;
     job.httpGetCount = job.httpGetCount ?? 0;
     job.dbQueryCount = job.dbQueryCount ?? 0;
 
@@ -406,6 +415,11 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       this.ensureNotCancelled(job);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
       this.ensureNotCancelled(job);
+      const outboundInteraction = this.recordInteraction(
+        job,
+        'OUTBOUND',
+        this.formatMessagesForRecording(messages),
+      );
       const response = await this.openai!.responses.create({
         model,
         input: messages,
@@ -416,7 +430,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
         `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,
       );
 
-      this.addUsageMetrics(job, (response as any).usage);
+      const usageMetrics = this.addUsageMetrics(job, (response as any).usage);
 
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
@@ -433,6 +447,19 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       const toolCallDetails =
         toolCalls
           .map((call, idx) => {
+      const inboundInteraction = this.recordInteraction(
+        job,
+        'INBOUND',
+        this.formatMessagesForRecording(normalizedOutput),
+      );
+
+      if (usageMetrics?.promptTokens !== undefined) {
+        outboundInteraction.tokenCount = usageMetrics.promptTokens;
+      }
+      if (usageMetrics?.completionTokens !== undefined) {
+        inboundInteraction.tokenCount = usageMetrics.completionTokens;
+      }
+
             const callId = call.call_id ?? this.extractCallId(call, idx);
             return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
           })
@@ -498,6 +525,107 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     }
   }
 
+  private formatMessagesForRecording(items: ResponseItem[]): string {
+    if (!Array.isArray(items) || items.length === 0) {
+      return '';
+    }
+    return items
+      .map((item, index) => this.formatSingleResponseItem(item, index))
+      .join("\\n\\n---\\n\\n");
+  }
+
+  private formatSingleResponseItem(item: ResponseItem, index: number): string {
+    switch (item.type) {
+      case 'message': {
+        const message = item as ResponseOutputMessage;
+        const role = message.role ?? 'assistant';
+        const text = this.collectMessageTexts(message.content);
+        return `[${role}]\n${text}`;
+      }
+      case 'function_call': {
+        const call = item as ResponseFunctionToolCallItem;
+        const args =
+          typeof call.arguments === 'string'
+            ? call.arguments
+            : this.safeStringify(call.arguments ?? {});
+        const callId = call.call_id ?? call.id ?? `call_${index}`;
+        const name = call.name ?? 'sem_nome';
+        return `[tool_call:${name}] id=${callId}\n${args}`;
+      }
+      case 'function_call_output': {
+        const output = item as ResponseFunctionToolCallOutputItem;
+        const callId = output.call_id ?? `call_${index}`;
+        const rendered =
+          typeof output.output === 'string' ? output.output : this.safeStringify(output.output ?? {});
+        return `[tool_result:${callId}]\n${rendered}`;
+      }
+      default: {
+        return `[${item.type}] ${this.safeStringify(item)}`;
+      }
+    }
+  }
+
+  private collectMessageTexts(content: ResponseOutputMessage['content'] | undefined): string {
+    if (!Array.isArray(content) || content.length === 0) {
+      return '';
+    }
+    const segments: string[] = [];
+    for (const entry of content) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+      if ('text' in entry && typeof (entry as any).text === 'string') {
+        const value = ((entry as any).text as string).trim();
+        if (value) {
+          segments.push(value);
+        }
+      } else if ('content' in entry && typeof (entry as any).content === 'string') {
+        const value = ((entry as any).content as string).trim();
+        if (value) {
+          segments.push(value);
+        }
+      }
+    }
+    if (segments.length === 0) {
+      return this.safeStringify(content);
+    }
+    return segments.join("\\n");
+  }
+
+  private safeStringify(value: unknown): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    try {
+      return JSON.stringify(value);
+    } catch (err) {
+      return String(value);
+    }
+  }
+
+  private recordInteraction(
+    job: SandboxJob,
+    direction: SandboxInteraction['direction'],
+    content: string,
+    tokenCount?: number,
+  ): SandboxInteraction {
+    const createdAt = new Date().toISOString();
+    const currentSequence = Number.isFinite(job.interactionSequence) ? job.interactionSequence + 1 : 1;
+    job.interactionSequence = currentSequence;
+    const sequence = currentSequence;
+    const identifier = `${job.jobId}-${String(sequence).padStart(4, '0')}-${direction.toLowerCase()}`;
+    const interaction: SandboxInteraction = {
+      id: identifier,
+      direction,
+      content: typeof content === 'string' ? content : this.safeStringify(content),
+      tokenCount,
+      createdAt,
+      sequence,
+    };
+    job.interactions.push(interaction);
+    return interaction;
+  }
+
   private extractOutputText(content: ResponseOutputMessage['content'] | undefined): string | undefined {
     if (!Array.isArray(content)) {
       return undefined;
@@ -513,9 +641,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return texts.join('\n').trim();
   }
 
-  private addUsageMetrics(job: SandboxJob, usage: unknown): void {
+  private addUsageMetrics(job: SandboxJob, usage: unknown): TokenUsage | undefined {
     if (!usage || typeof usage !== 'object') {
-      return;
+      return undefined;
     }
 
     const source = usage as Record<string, unknown>;
@@ -542,6 +670,8 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     if (cost !== undefined) {
       job.cost = (job.cost ?? 0) + cost;
     }
+
+    return { promptTokens, completionTokens, totalTokens, cost };
   }
 
   private readNumberField(source: Record<string, unknown>, candidates: string[]): number | undefined {
