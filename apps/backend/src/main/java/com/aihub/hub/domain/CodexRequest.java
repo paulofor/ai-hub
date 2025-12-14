@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -111,6 +112,9 @@ public class CodexRequest {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
+
+    @Transient
+    private Integer interactionCount;
 
     public CodexRequest() {
     }
@@ -353,5 +357,13 @@ public class CodexRequest {
         Instant effectiveStart = Objects.requireNonNullElseGet(startedAt, () -> Objects.requireNonNullElse(createdAt, Instant.now()));
         Instant effectiveEnd = Objects.requireNonNullElseGet(finishedAt, Instant::now);
         this.durationMs = Math.max(0L, effectiveEnd.toEpochMilli() - effectiveStart.toEpochMilli());
+    }
+
+    public Integer getInteractionCount() {
+        return interactionCount;
+    }
+
+    public void setInteractionCount(Integer interactionCount) {
+        this.interactionCount = interactionCount;
     }
 }

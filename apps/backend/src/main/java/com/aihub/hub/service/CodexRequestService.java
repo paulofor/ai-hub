@@ -1,6 +1,8 @@
 package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
+import com.aihub.hub.domain.CodexInteractionDirection;
+import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
@@ -8,6 +10,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
+import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
@@ -24,7 +27,10 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +46,7 @@ public class CodexRequestService {
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
     private final ResponseRepository responseRepository;
+    private final CodexInteractionRepository codexInteractionRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
@@ -49,6 +56,7 @@ public class CodexRequestService {
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
                                ResponseRepository responseRepository,
+                               CodexInteractionRepository codexInteractionRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                TokenCostCalculator tokenCostCalculator,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
@@ -57,6 +65,7 @@ public class CodexRequestService {
         this.codexRequestRepository = codexRequestRepository;
         this.promptRepository = promptRepository;
         this.responseRepository = responseRepository;
+        this.codexInteractionRepository = codexInteractionRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
@@ -103,6 +112,7 @@ public class CodexRequestService {
 
         CodexRequest saved = codexRequestRepository.save(codexRequest);
         log.info("CodexRequest {} salvo, enviando para sandbox se aplicável", saved.getId());
+        saved.setInteractionCount(0);
         dispatchToSandbox(saved);
         return saved;
     }
@@ -130,13 +140,16 @@ public class CodexRequestService {
             refreshFromSandbox(request);
         }
 
+        applyInteractionCounts(requests);
         return requests;
     }
 
     @Transactional(readOnly = true)
     public CodexRequest find(Long id) {
-        return codexRequestRepository.findById(id)
+        CodexRequest request = codexRequestRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
+        request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(id));
+        return request;
     }
 
     @Transactional
@@ -157,6 +170,7 @@ public class CodexRequestService {
         request.setUserComment(comment);
         request.setProblemDescription(problemDescription);
         request.setResolutionDifficulty(resolutionDifficulty);
+        updateInteractionCount(request);
         return codexRequestRepository.save(request);
     }
 
@@ -318,6 +332,7 @@ public class CodexRequestService {
         log.info("CodexRequest {} atualizado com externalId {}", request.getId(), resolvedExternalId);
 
         recordResponse(metadata, response);
+        recordInteractions(request, response);
     }
 
     private void refreshFromSandbox(CodexRequest request) {
@@ -426,6 +441,7 @@ public class CodexRequestService {
         }
 
         recordResponse(extractMetadata(request.getEnvironment()), response);
+        recordInteractions(request, response);
     }
 
     @Transactional
@@ -445,7 +461,9 @@ public class CodexRequestService {
                 request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
             }
             request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
-            return codexRequestRepository.save(request);
+            CodexRequest saved = codexRequestRepository.save(request);
+            saved.setInteractionCount(codexInteractionRepository.countByCodexRequestId(saved.getId()));
+            return saved;
         }
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.cancelJob(request.getExternalId());
@@ -457,6 +475,7 @@ public class CodexRequestService {
                 request.setResponseText(response.summary().trim());
             }
             applyUsageMetadata(request, response);
+            recordInteractions(request, response);
         } else {
             Instant finishedAt = Instant.now();
             request.setStatus(CodexRequestStatus.CANCELLED);
@@ -476,7 +495,9 @@ public class CodexRequestService {
             request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
         }
 
-        return codexRequestRepository.save(request);
+        CodexRequest saved = codexRequestRepository.save(request);
+        saved.setInteractionCount(codexInteractionRepository.countByCodexRequestId(saved.getId()));
+        return saved;
     }
 
     @Transactional
@@ -491,6 +512,7 @@ public class CodexRequestService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rating deve estar entre 1 e 5");
         }
         request.setRating(payload.getRating());
+        updateInteractionCount(request);
         return codexRequestRepository.save(request);
     }
 
@@ -751,4 +773,110 @@ public class CodexRequestService {
             return new RefreshDecision(false, "dados completos");
         }
     }
+
+    private void recordInteractions(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (request == null || request.getId() == null || response == null || response.interactions() == null) {
+            return;
+        }
+
+        int baseCount = request.getInteractionCount() != null
+            ? request.getInteractionCount()
+            : codexInteractionRepository.countByCodexRequestId(request.getId());
+        int inserted = 0;
+
+        for (SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction interaction : response.interactions()) {
+            if (interaction == null) {
+                continue;
+            }
+
+            String sandboxInteractionId = Optional.ofNullable(interaction.id())
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .orElse(null);
+            if (sandboxInteractionId == null) {
+                continue;
+            }
+            if (codexInteractionRepository.existsBySandboxInteractionId(sandboxInteractionId)) {
+                continue;
+            }
+
+            String content = Optional.ofNullable(interaction.content()).map(String::trim).orElse("");
+            Integer sequence = interaction.sequence();
+            if (sequence == null) {
+                sequence = baseCount + inserted + 1;
+            }
+            Instant createdAt = parseInstant(interaction.createdAt());
+            CodexInteractionRecord record = new CodexInteractionRecord(
+                request,
+                sandboxInteractionId,
+                CodexInteractionDirection.fromSandboxValue(interaction.direction()),
+                content,
+                interaction.tokenCount(),
+                sequence,
+                createdAt
+            );
+            codexInteractionRepository.save(record);
+            inserted++;
+        }
+
+        if (inserted > 0 || request.getInteractionCount() == null) {
+            updateInteractionCount(request);
+        }
+    }
+
+    private void updateInteractionCount(CodexRequest request) {
+        if (request == null || request.getId() == null) {
+            return;
+        }
+        request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(request.getId()));
+    }
+
+    private void applyInteractionCounts(List<CodexRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+
+        List<Long> ids = new ArrayList<>();
+        for (CodexRequest request : requests) {
+            if (request.getId() != null) {
+                ids.add(request.getId());
+            } else {
+                request.setInteractionCount(0);
+            }
+        }
+
+        if (ids.isEmpty()) {
+            return;
+        }
+
+        Map<Long, Integer> counts = new HashMap<>();
+        for (Object[] row : codexInteractionRepository.countByCodexRequestIds(ids)) {
+            if (row == null || row.length < 2) {
+                continue;
+            }
+            Long requestId = null;
+            if (row[0] instanceof Number) {
+                requestId = ((Number) row[0]).longValue();
+            } else if (row[0] instanceof String) {
+                try {
+                    requestId = Long.parseLong(((String) row[0]).trim());
+                } catch (NumberFormatException ignored) {
+                    requestId = null;
+                }
+            }
+            Number total = row[1] instanceof Number ? (Number) row[1] : null;
+            if (requestId != null) {
+                counts.put(requestId, total != null ? total.intValue() : 0);
+            }
+        }
+
+        for (CodexRequest request : requests) {
+            Long requestId = request.getId();
+            if (requestId == null) {
+                continue;
+            }
+            request.setInteractionCount(counts.getOrDefault(requestId, 0));
+        }
+    }
+
 }

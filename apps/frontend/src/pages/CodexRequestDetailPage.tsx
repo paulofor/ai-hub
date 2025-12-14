@@ -266,6 +266,10 @@ export default function CodexRequestDetailPage() {
               <InfoItem label="HTTP GETs" value={(request.httpGetCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem label="Consultas ao banco" value={(request.dbQueryCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem
+                label="Interações com o modelo"
+                value={typeof request.interactionCount === 'number' ? request.interactionCount.toLocaleString('pt-BR') : '—'}
+              />
+              <InfoItem
                 label="Job no sandbox"
                 value={request.externalId ? `ID ${request.externalId}` : '—'}
               />

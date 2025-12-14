@@ -14,6 +14,8 @@ const createJob = (): SandboxJob => ({
   taskDescription: 'validate run_shell behavior',
   status: 'PENDING',
   logs: [],
+  interactions: [],
+  interactionSequence: 0,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   timeoutCount: 0,

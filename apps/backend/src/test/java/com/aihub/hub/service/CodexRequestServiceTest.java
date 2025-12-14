@@ -3,6 +3,7 @@ package com.aihub.hub.service;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
@@ -30,6 +31,7 @@ class CodexRequestServiceTest {
     private final CodexRequestRepository codexRequestRepository = mock(CodexRequestRepository.class);
     private final PromptRepository promptRepository = mock(PromptRepository.class);
     private final ResponseRepository responseRepository = mock(ResponseRepository.class);
+    private final CodexInteractionRepository codexInteractionRepository = mock(CodexInteractionRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
 
@@ -54,9 +56,8 @@ class CodexRequestServiceTest {
         when(promptRepository.findTopByRepoOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
         when(promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(anyString(), anyLong(), anyInt())).thenReturn(Optional.empty());
         when(promptRepository.findTopByRepoAndRunIdOrderByCreatedAtDesc(anyString(), anyLong())).thenReturn(Optional.empty());
-        when(promptRepository.findTopByRepoAndPrNumberOrderByCreatedAtDesc(anyString(), anyInt())).thenReturn(Optional.empty());
-        when(responseRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(tokenCostCalculator.calculate(any(), any(), any(), any(), any())).thenReturn(null);
+        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
+        when(codexInteractionRepository.countByCodexRequestId(anyLong())).thenReturn(0);
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse orchestratorResponse =
             new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
@@ -77,7 +78,8 @@ class CodexRequestServiceTest {
                 120_000L,
                 0,
                 0,
-                0
+                0,
+                Collections.emptyList()
             );
         when(sandboxOrchestratorClient.getJob("job-123")).thenReturn(orchestratorResponse);
 
@@ -85,6 +87,7 @@ class CodexRequestServiceTest {
             codexRequestRepository,
             promptRepository,
             responseRepository,
+            codexInteractionRepository,
             sandboxOrchestratorClient,
             tokenCostCalculator,
             "gpt-5-codex",
