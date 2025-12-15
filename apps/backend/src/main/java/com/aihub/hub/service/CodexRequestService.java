@@ -345,7 +345,16 @@ public class CodexRequestService {
             boolean withinGracePeriod = referenceInstant == null
                 || referenceInstant.isAfter(Instant.now().minus(SANDBOX_NOT_FOUND_GRACE_PERIOD));
 
-            if (!currentStatus.isTerminal() && withinGracePeriod) {
+            if (currentStatus.isTerminal()) {
+                log.warn(
+                    "Sandbox não encontrou o job {}, mas a solicitação já está finalizada com status {}. Mantendo dados atuais.",
+                    request.getExternalId(),
+                    currentStatus
+                );
+                return;
+            }
+
+            if (withinGracePeriod) {
                 log.warn(
                     "Sandbox ainda não encontrou o job {} (status atual: {}); mantendo estado e tentando novamente dentro do período de tolerância",
                     request.getExternalId(),

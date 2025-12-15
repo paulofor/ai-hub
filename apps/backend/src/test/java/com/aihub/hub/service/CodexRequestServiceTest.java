@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -104,4 +105,50 @@ class CodexRequestServiceTest {
         verify(sandboxOrchestratorClient).getJob("job-123");
         verify(codexRequestRepository, atLeastOnce()).save(request);
     }
+
+    @Test
+    void doesNotOverrideTerminalRequestWhenSandboxJobIsMissing() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-456");
+        request.setStatus(CodexRequestStatus.COMPLETED);
+        request.setResponseText("feito");
+        Instant createdAt = Instant.now().minus(Duration.ofMinutes(30));
+        Instant startedAt = createdAt.plusSeconds(30);
+        Instant finishedAt = startedAt.plusSeconds(120);
+        request.setCreatedAt(createdAt);
+        request.setStartedAt(startedAt);
+        request.setFinishedAt(finishedAt);
+        request.setDurationMs(Duration.between(startedAt, finishedAt).toMillis());
+
+        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(promptRepository.findTopByRepoOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
+        when(promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(anyString(), anyLong(), anyInt())).thenReturn(Optional.empty());
+        when(promptRepository.findTopByRepoAndRunIdOrderByCreatedAtDesc(anyString(), anyLong())).thenReturn(Optional.empty());
+        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
+        when(codexInteractionRepository.countByCodexRequestId(anyLong())).thenReturn(0);
+        when(sandboxOrchestratorClient.getJob("job-456")).thenReturn(null);
+
+        CodexRequestService service = new CodexRequestService(
+            codexRequestRepository,
+            promptRepository,
+            responseRepository,
+            codexInteractionRepository,
+            sandboxOrchestratorClient,
+            tokenCostCalculator,
+            "gpt-5-codex",
+            "gpt-4.1-mini",
+            "main"
+        );
+
+        List<CodexRequest> refreshed = service.list();
+
+        assertThat(refreshed).containsExactly(request);
+        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
+        assertThat(request.getResponseText()).isEqualTo("feito");
+        assertThat(request.getFinishedAt()).isEqualTo(finishedAt);
+        verify(sandboxOrchestratorClient).getJob("job-456");
+        verify(codexRequestRepository, never()).save(any(CodexRequest.class));
+    }
+
 }
