@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
 import {
   CodexRequest,
@@ -11,7 +11,8 @@ import {
   formatStatus,
   formatTokens,
   isTerminalStatus,
-  parseCodexRequest
+  parseCodexRequest,
+  parseCodexRequests
 } from '../lib/codex';
 
 export default function CodexRequestDetailPage() {
@@ -26,6 +27,9 @@ export default function CodexRequestDetailPage() {
   const [savingComment, setSavingComment] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [nextRequestId, setNextRequestId] = useState<number | null>(null);
+  const [loadingNext, setLoadingNext] = useState(false);
+  const navigate = useNavigate();
   const feedbackDirtyRef = useRef(false);
 
   useEffect(() => {
@@ -70,6 +74,42 @@ export default function CodexRequestDetailPage() {
   useEffect(() => {
     fetchRequest();
   }, [fetchRequest]);
+
+  const fetchNextRequestId = useCallback(async () => {
+    if (!id) {
+      setNextRequestId(null);
+      return;
+    }
+
+    setLoadingNext(true);
+    try {
+      const response = await client.get('/codex/requests');
+      const requests = parseCodexRequests(response.data);
+      const sorted = [...requests].sort((a, b) => {
+        const aDate = new Date(a.createdAt).getTime();
+        const bDate = new Date(b.createdAt).getTime();
+        if (Number.isFinite(aDate) && Number.isFinite(bDate) && aDate !== bDate) {
+          return bDate - aDate;
+        }
+        return b.id - a.id;
+      });
+
+      const currentIndex = sorted.findIndex((item) => item.id === Number(id));
+      if (currentIndex >= 0 && currentIndex < sorted.length - 1) {
+        setNextRequestId(sorted[currentIndex + 1].id);
+      } else {
+        setNextRequestId(null);
+      }
+    } catch (err) {
+      setNextRequestId(null);
+    } finally {
+      setLoadingNext(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchNextRequestId();
+  }, [fetchNextRequestId]);
 
   useEffect(() => {
     if (!request || isTerminalStatus(request.status)) {
@@ -179,6 +219,11 @@ export default function CodexRequestDetailPage() {
     );
   }, [handleRating, request, savingRating]);
 
+  const handleGoToNext = useCallback(() => {
+    if (!nextRequestId) return;
+    navigate(`/codex/requests/${nextRequestId}`);
+  }, [navigate, nextRequestId]);
+
   if (!loading && !request) {
     return (
       <div className="space-y-4 rounded-xl border border-slate-200 bg-white/70 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
@@ -213,6 +258,15 @@ export default function CodexRequestDetailPage() {
             disabled={loading}
           >
             Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={handleGoToNext}
+            disabled={!nextRequestId || loadingNext}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            title={nextRequestId ? `Ir para a solicitação ${nextRequestId}` : 'Sem próximas solicitações'}
+          >
+            {loadingNext ? 'Carregando...' : 'Próximo'}
           </button>
           <Link
             to="/codex"
