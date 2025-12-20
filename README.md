@@ -7,7 +7,8 @@ AI Hub é um monorepo full-stack que centraliza a criação e governança de sis
 - **UI-first**: nenhuma ação destrutiva é executada sem confirmação explícita na UI.
 - **Integrações GitHub**: criação de repositórios, disparo de workflows, análise de logs, comentários e PRs de correção.
 - **OpenAI Responses API**: integração mediada pelo sandbox-orchestrator para gerar correções e relatórios `CiFix` a partir de falhas em pipelines.
-- **Persistência**: MySQL 5.7 (produção) com Flyway para auditoria, blueprints, projetos, prompts e respostas.
+- **Persistência**: MySQL 5.7 (produção) com Flyway para auditoria, blueprints, prompts e respostas.
+- **Módulo de projetos descontinuado**: fluxos de criação, catálogo e detalhes de projetos foram removidos para abrir espaço para a próxima geração de experiências.
 
 ## Estrutura de pastas
 

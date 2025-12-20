@@ -5,7 +5,6 @@ import clsx from 'clsx';
 const links = [
   { to: '/', label: 'Dashboard' },
   { to: '/blueprints', label: 'Blueprints' },
-  { to: '/projects', label: 'Projetos' },
   { to: '/prompts', label: 'Prompts' },
   { to: '/environments', label: 'Ambientes' },
   { to: '/codex', label: 'Codex' },
