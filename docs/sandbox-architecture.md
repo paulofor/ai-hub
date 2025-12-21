@@ -3,11 +3,11 @@
 O fluxo de automação agora centraliza a execução das correções no `sandbox-orchestrator`, mantendo o backend livre de chamadas diretas à OpenAI.
 
 1. **Frontend → Backend**
-   - O usuário seleciona um projeto e descreve a tarefa (ex.: investigar falha de pipeline, corrigir testes).
-   - O frontend envia a requisição para o backend (`POST /api/cifix/jobs`), incluindo `projectId`, branch/commit e comandos de teste opcionais.
+   - O usuário descreve a tarefa para um repositório (ex.: investigar falha de pipeline, corrigir testes) e informa o run/branch relevante.
+   - O frontend envia a requisição para o backend (`POST /api/cifix/jobs`), incluindo dados do repositório, branch/commit e comandos de teste opcionais.
 
 2. **Backend → Sandbox-orchestrator**
-   - O backend resolve metadados do projeto (URL do repositório, branch padrão) e cria um registro de job (tabela `cifix_jobs`).
+   - O backend resolve metadados do repositório e cria um registro de job (tabela `cifix_jobs`).
    - Em seguida envia o payload para o sandbox-orchestrator (`POST /jobs`) com `jobId`, `repoUrl`, `branch`, `task` e `testCommand`.
    - Consultas posteriores usam `GET /jobs/{id}` com `refresh=true` para sincronizar status e resultados.
 
@@ -26,7 +26,7 @@ O fluxo de automação agora centraliza a execução das correções no `sandbox
 ## Endpoints relevantes
 
 - **Backend**
-  - `POST /api/cifix/jobs`: cria um job de análise/correção a partir de um projeto existente.
+  - `POST /api/cifix/jobs`: cria um job de análise/correção para um repositório.
   - `GET /api/cifix/jobs/{jobId}`: retorna o status salvo; use `?refresh=true` para consultar o sandbox-orchestrator.
 
 - **Sandbox-orchestrator**
