@@ -98,6 +98,9 @@ public class CodexRequest {
     @Column(name = "http_get_count")
     private Integer httpGetCount;
 
+    @Column(name = "http_get_success_count")
+    private Integer httpGetSuccessCount;
+
     @Column(name = "db_query_count")
     private Integer dbQueryCount;
 
@@ -308,6 +311,14 @@ public class CodexRequest {
 
     public void setHttpGetCount(Integer httpGetCount) {
         this.httpGetCount = httpGetCount;
+    }
+
+    public Integer getHttpGetSuccessCount() {
+        return httpGetSuccessCount;
+    }
+
+    public void setHttpGetSuccessCount(Integer httpGetSuccessCount) {
+        this.httpGetSuccessCount = httpGetSuccessCount;
     }
 
     public Integer getDbQueryCount() {

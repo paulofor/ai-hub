@@ -30,6 +30,7 @@ export interface CodexRequest {
   durationMs?: number;
   timeoutCount?: number;
   httpGetCount?: number;
+  httpGetSuccessCount?: number;
   dbQueryCount?: number;
   interactionCount?: number;
 }
@@ -158,6 +159,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const durationMs = parseNumber(item.durationMs);
   const timeoutCount = parseNumber(item.timeoutCount);
   const httpGetCount = parseNumber(item.httpGetCount ?? (item as Record<string, unknown>).http_get_count);
+  const httpGetSuccessCount = parseNumber(item.httpGetSuccessCount ?? (item as Record<string, unknown>).http_get_success_count);
   const dbQueryCount = parseNumber(item.dbQueryCount ?? (item as Record<string, unknown>).db_query_count);
   const interactionCount = parseNumber(
     item.interactionCount ?? (item as Record<string, unknown>).interaction_count
@@ -216,6 +218,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     durationMs,
     timeoutCount,
     httpGetCount,
+    httpGetSuccessCount,
     dbQueryCount,
     interactionCount
   };

@@ -15,7 +15,7 @@ import {
 } from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
-import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction } from './types.js';
+import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog } from './types.js';
 
 const exec = promisify(execCallback);
 
@@ -146,6 +146,8 @@ export class SandboxJobProcessor implements JobProcessor {
     job.interactions = Array.isArray(job.interactions) ? job.interactions : [];
     job.interactionSequence = Number.isFinite(job.interactionSequence) ? job.interactionSequence : 0;
     job.httpGetCount = job.httpGetCount ?? 0;
+    job.httpGetSuccessCount = job.httpGetSuccessCount ?? 0;
+    job.httpRequests = Array.isArray(job.httpRequests) ? job.httpRequests : [];
     job.dbQueryCount = job.dbQueryCount ?? 0;
 
     const start = new Date();
@@ -356,6 +358,26 @@ export class SandboxJobProcessor implements JobProcessor {
         strict: true,
         description:
           'Busca um recurso público via HTTP GET (bloqueia hosts internos e localhost); consulte documentação oficial de APIs externas antes de integrá-las',
+      },
+      {
+        type: 'function' as const,
+        name: 'WebSearch',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL http(s) pública para consulta' },
+            headers: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+              description: 'Cabeçalhos opcionais; Authorization é ignorado',
+            },
+          },
+          required: ['url'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description:
+          'Alias de http_get para buscar conteúdos públicos na web bloqueando hosts internos/localhost',
       },
       {
         type: 'function' as const,
@@ -718,7 +740,8 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       case 'write_file':
         return this.handleWriteFile(call.arguments, repoPath, job);
       case 'http_get':
-        return this.handleHttpGet(call.arguments, job);
+      case 'WebSearch':
+        return this.handleHttpGet(call, job);
       case 'db_query':
         return this.handleDbQuery(call.arguments, job);
       default:
@@ -899,23 +922,27 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     };
   }
 
-  private async handleHttpGet(args: Record<string, unknown>, job: SandboxJob) {
+  private async handleHttpGet(call: ToolCall, job: SandboxJob) {
     if (!this.fetchImpl) {
       throw new Error('fetch indisponível para http_get');
     }
 
     job.httpGetCount = (job.httpGetCount ?? 0) + 1;
 
+    const args = call?.arguments ?? {};
     const urlArg = typeof args.url === 'string' ? args.url : undefined;
     if (!urlArg) {
       throw new Error('url é obrigatório para http_get');
     }
 
+    const toolName = call?.name ?? 'http_get';
+    const callId = call?.id;
     const url = this.validateExternalUrl(urlArg);
-    const headers = this.sanitizeHeaders(args.headers);
+    const headers = this.sanitizeHeaders((args as Record<string, unknown>).headers);
     const maxResponseChars = this.resolveHttpToolMaxResponseChars(job);
+    const requestedAt = new Date().toISOString();
 
-    this.log(job, `http_get: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs}, maxResponseChars=${maxResponseChars})`);
+    this.log(job, `${toolName}: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs}, maxResponseChars=${maxResponseChars})`);
 
     const controller = AbortSignal.timeout(this.httpToolTimeoutMs);
     let response: any;
@@ -946,7 +973,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       body = truncation.value;
       truncated = truncation.truncated;
       if (truncation.truncated) {
-        this.log(job, `http_get: corpo truncado (omitiu ${truncation.omitted} caracteres)`);
+        this.log(job, `${toolName}: corpo truncado (omitiu ${truncation.omitted} caracteres)`);
       }
     } catch (err) {
       if (this.isTimeoutError(err)) {
@@ -956,14 +983,48 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       throw new Error(`falha ao ler corpo da resposta: ${message}`);
     }
 
+    const status = typeof response?.status === 'number' ? response.status : undefined;
+    const success = this.isSuccessfulHttpResponse(response);
+    if (success) {
+      job.httpGetSuccessCount = (job.httpGetSuccessCount ?? 0) + 1;
+    }
+
+    this.recordHttpRequest(job, {
+      callId,
+      url: url.toString(),
+      status,
+      success,
+      toolName,
+      requestedAt,
+    });
+
     return {
       url: url.toString(),
-      status: typeof response.status === 'number' ? response.status : undefined,
+      status,
       statusText: response.statusText,
       headers: headersObject,
       body,
       truncated,
     };
+  }
+
+  private recordHttpRequest(job: SandboxJob, entry: SandboxHttpRequestLog) {
+    job.httpRequests = Array.isArray(job.httpRequests) ? job.httpRequests : [];
+    job.httpRequests.push(entry);
+  }
+
+  private isSuccessfulHttpResponse(response: any): boolean {
+    if (response?.ok === true) {
+      return true;
+    }
+    if (response?.ok === false) {
+      return false;
+    }
+    const status = typeof response?.status === 'number' ? response.status : undefined;
+    if (status === undefined) {
+      return false;
+    }
+    return status >= 200 && status < 300;
   }
 
   private isTimeoutError(error: unknown): boolean {
