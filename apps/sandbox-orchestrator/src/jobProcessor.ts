@@ -1210,7 +1210,8 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     let stdoutTruncationLogged = false;
     let stderrTruncationLogged = false;
 
-    const child = spawn('bash', ['-lc', command], { cwd: repoPath });
+    const { shell, args } = this.getShellCommand(command);
+    const child = spawn(shell, args, { cwd: repoPath });
 
     const logIfTruncated = (stream: 'stdout' | 'stderr', truncated: boolean) => {
       if (!truncated) {
@@ -1285,6 +1286,16 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     }
 
     return { stdout, stderr, exitCode: exitResult.code, stdoutTruncated, stderrTruncated };
+  }
+
+  private getShellCommand(command: string): { shell: string; args: string[] } {
+    if (process.platform === 'win32') {
+      const shell = process.env.COMSPEC || 'cmd.exe';
+      return { shell, args: ['/d', '/s', '/c', command] };
+    }
+
+    const shell = process.env.SHELL || '/bin/sh';
+    return { shell, args: ['-c', command] };
   }
 
   private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
