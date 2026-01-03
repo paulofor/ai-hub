@@ -3,6 +3,7 @@ package com.aihub.hub.service;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
@@ -33,6 +34,7 @@ class CodexRequestServiceTest {
     private final PromptRepository promptRepository = mock(PromptRepository.class);
     private final ResponseRepository responseRepository = mock(ResponseRepository.class);
     private final CodexInteractionRepository codexInteractionRepository = mock(CodexInteractionRepository.class);
+    private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
 
@@ -80,6 +82,8 @@ class CodexRequestServiceTest {
                 0,
                 0,
                 0,
+                0,
+                Collections.emptyList(),
                 Collections.emptyList()
             );
         when(sandboxOrchestratorClient.getJob("job-123")).thenReturn(orchestratorResponse);
@@ -89,6 +93,7 @@ class CodexRequestServiceTest {
             promptRepository,
             responseRepository,
             codexInteractionRepository,
+            codexHttpRequestRepository,
             sandboxOrchestratorClient,
             tokenCostCalculator,
             "gpt-5-codex",
@@ -134,6 +139,7 @@ class CodexRequestServiceTest {
             promptRepository,
             responseRepository,
             codexInteractionRepository,
+            codexHttpRequestRepository,
             sandboxOrchestratorClient,
             tokenCostCalculator,
             "gpt-5-codex",
