@@ -102,8 +102,10 @@ public class SandboxOrchestratorClient {
         Long durationMs,
         Integer timeoutCount,
         Integer httpGetCount,
+        Integer httpGetSuccessCount,
         Integer dbQueryCount,
-        List<Interaction> interactions
+        List<Interaction> interactions,
+        List<HttpRequest> httpRequests
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
@@ -148,6 +150,30 @@ public class SandboxOrchestratorClient {
                 }
             }
 
+            java.util.List<HttpRequest> httpRequests = null;
+            JsonNode httpRequestsNode = node.path("httpRequests");
+            if (httpRequestsNode != null && httpRequestsNode.isArray()) {
+                java.util.List<HttpRequest> values = new java.util.ArrayList<>();
+                httpRequestsNode.forEach(element -> {
+                    if (element == null || element.isMissingNode() || element.isNull()) {
+                        return;
+                    }
+                    String url = readText(element, "url");
+                    if (url == null || url.isBlank()) {
+                        return;
+                    }
+                    String callId = readText(element, "callId", "call_id");
+                    Integer status = readInt(element, "status", "statusCode", "status_code");
+                    Boolean success = readBoolean(element, "success");
+                    String toolName = readText(element, "toolName", "tool_name");
+                    String requestedAt = readText(element, "requestedAt", "requested_at");
+                    values.add(new HttpRequest(callId, url, status, success, toolName, requestedAt));
+                });
+                if (!values.isEmpty()) {
+                    httpRequests = java.util.List.copyOf(values);
+                }
+            }
+
             return new SandboxOrchestratorJobResponse(
                 node.path("jobId").asText(null),
                 node.path("status").asText(null),
@@ -166,8 +192,10 @@ public class SandboxOrchestratorClient {
                 readLong(node, "durationMs", "duration_ms"),
                 readInt(node, "timeoutCount", "timeout_count"),
                 readInt(node, "httpGetCount", "http_get_count"),
+                readInt(node, "httpGetSuccessCount", "http_get_success_count"),
                 readInt(node, "dbQueryCount", "db_query_count"),
-                interactions
+                interactions,
+                httpRequests
             );
         }
 
@@ -178,6 +206,15 @@ public class SandboxOrchestratorClient {
             Integer tokenCount,
             String createdAt,
             Integer sequence
+        ) { }
+
+        public record HttpRequest(
+            String callId,
+            String url,
+            Integer status,
+            Boolean success,
+            String toolName,
+            String requestedAt
         ) { }
 
         private static Integer resolvePromptTokens(JsonNode node) {
@@ -253,6 +290,22 @@ public class SandboxOrchestratorClient {
                         return Long.parseLong(target.asText().trim());
                     } catch (NumberFormatException ignored) {
                         // noop
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static Boolean readBoolean(JsonNode node, String... fields) {
+            for (String field : fields) {
+                JsonNode target = node.path(field);
+                if (target.isBoolean()) {
+                    return target.booleanValue();
+                }
+                if (target.isTextual()) {
+                    String text = target.asText().trim().toLowerCase();
+                    if (text.equals("true") || text.equals("false")) {
+                        return Boolean.parseBoolean(text);
                     }
                 }
             }

@@ -3,6 +3,7 @@ package com.aihub.hub.service;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexInteractionDirection;
 import com.aihub.hub.domain.CodexInteractionRecord;
+import com.aihub.hub.domain.CodexHttpRequestLog;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
@@ -10,6 +11,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
+import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
@@ -24,6 +26,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -47,6 +50,7 @@ public class CodexRequestService {
     private final PromptRepository promptRepository;
     private final ResponseRepository responseRepository;
     private final CodexInteractionRepository codexInteractionRepository;
+    private final CodexHttpRequestRepository codexHttpRequestRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
@@ -57,6 +61,7 @@ public class CodexRequestService {
                                PromptRepository promptRepository,
                                ResponseRepository responseRepository,
                                CodexInteractionRepository codexInteractionRepository,
+                               CodexHttpRequestRepository codexHttpRequestRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                TokenCostCalculator tokenCostCalculator,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
@@ -66,6 +71,7 @@ public class CodexRequestService {
         this.promptRepository = promptRepository;
         this.responseRepository = responseRepository;
         this.codexInteractionRepository = codexInteractionRepository;
+        this.codexHttpRequestRepository = codexHttpRequestRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
@@ -333,6 +339,7 @@ public class CodexRequestService {
 
         recordResponse(metadata, response);
         recordInteractions(request, response);
+        recordHttpRequests(request, response);
     }
 
     private void refreshFromSandbox(CodexRequest request) {
@@ -451,6 +458,7 @@ public class CodexRequestService {
 
         recordResponse(extractMetadata(request.getEnvironment()), response);
         recordInteractions(request, response);
+        recordHttpRequests(request, response);
     }
 
     @Transactional
@@ -485,6 +493,7 @@ public class CodexRequestService {
             }
             applyUsageMetadata(request, response);
             recordInteractions(request, response);
+        recordHttpRequests(request, response);
         } else {
             Instant finishedAt = Instant.now();
             request.setStatus(CodexRequestStatus.CANCELLED);
@@ -566,6 +575,11 @@ public class CodexRequestService {
         Integer httpGetCount = response.httpGetCount();
         if (httpGetCount != null && !Objects.equals(request.getHttpGetCount(), httpGetCount)) {
             request.setHttpGetCount(httpGetCount);
+            updated = true;
+        }
+        Integer httpGetSuccessCount = response.httpGetSuccessCount();
+        if (httpGetSuccessCount != null && !Objects.equals(request.getHttpGetSuccessCount(), httpGetSuccessCount)) {
+            request.setHttpGetSuccessCount(httpGetSuccessCount);
             updated = true;
         }
 
@@ -781,6 +795,49 @@ public class CodexRequestService {
         private static RefreshDecision skip() {
             return new RefreshDecision(false, "dados completos");
         }
+    }
+
+    private void recordHttpRequests(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (request == null || request.getId() == null || response == null || response.httpRequests() == null) {
+            return;
+        }
+
+        String sandboxJobId = Optional.ofNullable(response.jobId()).orElse(request.getExternalId());
+        if (!StringUtils.hasText(sandboxJobId)) {
+            sandboxJobId = "unknown-" + request.getId();
+        }
+
+        for (SandboxOrchestratorClient.SandboxOrchestratorJobResponse.HttpRequest httpRequest : response.httpRequests()) {
+            if (httpRequest == null || !StringUtils.hasText(httpRequest.url())) {
+                continue;
+            }
+
+            String callId = Optional.ofNullable(httpRequest.callId())
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .orElse(buildSyntheticCallId(httpRequest, sandboxJobId));
+            if (codexHttpRequestRepository.existsBySandboxJobIdAndSandboxCallId(sandboxJobId, callId)) {
+                continue;
+            }
+
+            Instant requestedAt = parseInstant(httpRequest.requestedAt());
+            CodexHttpRequestLog logRecord = new CodexHttpRequestLog(
+                request,
+                sandboxJobId,
+                callId,
+                httpRequest.url().trim(),
+                httpRequest.status(),
+                httpRequest.success(),
+                httpRequest.toolName(),
+                requestedAt
+            );
+            codexHttpRequestRepository.save(logRecord);
+        }
+    }
+
+    private String buildSyntheticCallId(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.HttpRequest httpRequest, String sandboxJobId) {
+        String seed = sandboxJobId + "|" + Optional.ofNullable(httpRequest.url()).orElse("") + "|" + Optional.ofNullable(httpRequest.requestedAt()).orElse("");
+        return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private void recordInteractions(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {

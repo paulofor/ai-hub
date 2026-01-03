@@ -12,6 +12,15 @@ export interface SandboxInteraction {
   sequence: number;
 }
 
+export interface SandboxHttpRequestLog {
+  callId?: string;
+  url: string;
+  status?: number;
+  success: boolean;
+  toolName: string;
+  requestedAt: string;
+}
+
 export interface SandboxJob {
   jobId: string;
   repoSlug?: string;
@@ -43,8 +52,10 @@ export interface SandboxJob {
   durationMs?: number;
   timeoutCount: number;
   httpGetCount?: number;
+  httpGetSuccessCount?: number;
   dbQueryCount?: number;
   cancelRequested?: boolean;
+  httpRequests?: SandboxHttpRequestLog[];
 }
 
 export interface JobProcessor {
