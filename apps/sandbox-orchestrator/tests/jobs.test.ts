@@ -887,13 +887,92 @@ test('http_get blocks private addresses and returns an error to the model', asyn
   } as SandboxJob;
 
   await processor.process(job);
-  assert.equal(job.httpGetCount, 1, 'http_get inválido também deve contar');
+  assert.equal(job.httpGetCount, 0, 'http_get inválido não deve ser contabilizado');
 
   const toolMessage = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
   const parsed = JSON.parse(toolMessage.output);
   assert.ok(parsed.error?.includes('bloqueado') || parsed.error?.includes('permitidas'));
   assert.equal(job.summary, 'http error propagated');
   assert.equal(job.status, 'COMPLETED');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
+
+test('http_get só contabiliza respostas bem-sucedidas', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-http-status-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'http-fail',
+                name: 'http_get',
+                arguments: JSON.stringify({ url: 'https://example.com/fail' }),
+              },
+              { type: 'message', id: 'msg-http-fail-1', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-http-fail-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'http failed', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fakeFetch = async () => ({
+    status: 500,
+    statusText: 'Internal Server Error',
+    ok: false,
+    headers: new Map([['content-type', 'application/json']]),
+    text: async () => JSON.stringify({ error: 'fail' }),
+  });
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const job: SandboxJob = {
+    jobId: 'job-http-fail',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'fetch failed',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  timeoutCount: 0,
+  } as SandboxJob;
+
+  await processor.process(job);
+  assert.equal(job.httpGetCount, 0, 'respostas sem sucesso não devem ser contabilizadas');
+
+  const callOutput = fakeOpenAI.calls[1].input.find((msg: any) => msg.type === 'function_call_output');
+  const parsed = JSON.parse(callOutput.output);
+  assert.equal(parsed.status, 500);
+  assert.ok(parsed.body.includes('fail'));
+  assert.equal(job.summary, 'http failed');
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });

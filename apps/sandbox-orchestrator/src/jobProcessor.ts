@@ -904,8 +904,6 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       throw new Error('fetch indisponível para http_get');
     }
 
-    job.httpGetCount = (job.httpGetCount ?? 0) + 1;
-
     const urlArg = typeof args.url === 'string' ? args.url : undefined;
     if (!urlArg) {
       throw new Error('url é obrigatório para http_get');
@@ -956,9 +954,16 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       throw new Error(`falha ao ler corpo da resposta: ${message}`);
     }
 
+    const status = typeof response.status === 'number' ? response.status : undefined;
+    const okFlag = typeof response.ok === 'boolean' ? response.ok : undefined;
+    const success = okFlag ?? (typeof status === 'number' ? status >= 200 && status < 300 : true);
+    if (success) {
+      job.httpGetCount = (job.httpGetCount ?? 0) + 1;
+    }
+
     return {
       url: url.toString(),
-      status: typeof response.status === 'number' ? response.status : undefined,
+      status,
       statusText: response.statusText,
       headers: headersObject,
       body,
