@@ -1273,12 +1273,13 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       ) as NodeJS.ErrnoException & {
         stdout?: string;
         stderr?: string;
-        code?: number;
+        exitCode?: number;
         signal?: NodeJS.Signals | null;
       };
       error.stdout = stdout;
       error.stderr = stderr;
-      error.code = exitResult.code;
+      error.code = exitResult.code === null ? undefined : exitResult.code.toString();
+      error.exitCode = exitResult.code ?? undefined;
       error.signal = exitResult.signal;
       throw error;
     }
