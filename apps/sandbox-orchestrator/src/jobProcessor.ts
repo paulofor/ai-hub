@@ -197,9 +197,9 @@ export class SandboxJobProcessor implements JobProcessor {
       const summary = await this.runCodexLoop(job, repoPath!, resolvedModel);
       job.summary = summary;
       this.ensureNotCancelled(job);
-      job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit);
+      job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
       this.ensureNotCancelled(job);
-      job.patch = await this.generatePatch(repoPath!, baseCommit);
+      job.patch = await this.generatePatch(repoPath!, baseCommit, job);
       await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
@@ -1036,6 +1036,22 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return name.includes('abort') || name.includes('timeout') || message.includes('aborted') || message.includes('timeout');
   }
 
+  private getMaxBufferBytes(): number {
+    const maxBufferEnv = Number(process.env.RUN_SHELL_MAX_BUFFER_BYTES);
+    return Number.isFinite(maxBufferEnv) && maxBufferEnv > 0 ? maxBufferEnv : 5 * 1024 * 1024;
+  }
+
+  private appendWithLimit(current: string, chunk: string, max: number): { value: string; truncated: boolean } {
+    if (current.length >= max) {
+      return { value: current, truncated: true };
+    }
+    const remaining = max - current.length;
+    if (chunk.length <= remaining) {
+      return { value: current + chunk, truncated: false };
+    }
+    return { value: current + chunk.slice(0, remaining), truncated: true };
+  }
+
   private resolvePath(repoPath: string, requested: string | undefined, job?: SandboxJob): string {
     if (!requested) {
       throw new Error('path ausente');
@@ -1100,8 +1116,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     if (isMavenCommand && timeoutMs > defaultTimeoutMs) {
       this.log(job, 'mvn detectado; aumentando timeout para 15 minutos');
     }
-    const maxBufferEnv = Number(process.env.RUN_SHELL_MAX_BUFFER_BYTES);
-    const maxBuffer = Number.isFinite(maxBufferEnv) && maxBufferEnv > 0 ? maxBufferEnv : 5 * 1024 * 1024;
+    const maxBuffer = this.getMaxBufferBytes();
 
     this.log(
       job,
@@ -1116,20 +1131,9 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
 
     const child = spawn(command[0], command.slice(1), { cwd });
 
-    const appendWithLimit = (current: string, chunk: string): { value: string; truncated: boolean } => {
-      if (current.length >= maxBuffer) {
-        return { value: current, truncated: true };
-      }
-      const remaining = maxBuffer - current.length;
-      if (chunk.length <= remaining) {
-        return { value: current + chunk, truncated: false };
-      }
-      return { value: current + chunk.slice(0, remaining), truncated: true };
-    };
-
     child.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString();
-      const result = appendWithLimit(stdout, chunk);
+      const result = this.appendWithLimit(stdout, chunk, maxBuffer);
       stdout = result.value;
       stdoutTruncated = stdoutTruncated || result.truncated;
       this.log(job, `run_shell stdout: ${this.truncate(chunk, 500)}`);
@@ -1137,7 +1141,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
 
     child.stderr.on('data', (data: Buffer) => {
       const chunk = data.toString();
-      const result = appendWithLimit(stderr, chunk);
+      const result = this.appendWithLimit(stderr, chunk, maxBuffer);
       stderr = result.value;
       stderrTruncated = stderrTruncated || result.truncated;
       this.log(job, `run_shell stderr: ${this.truncate(chunk, 500)}`);
@@ -1182,6 +1186,106 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     };
   }
 
+  private async runGitCommand(
+    command: string,
+    repoPath: string,
+    job?: SandboxJob,
+    allowedExitCodes: number[] = [0],
+  ): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    stdoutTruncated: boolean;
+    stderrTruncated: boolean;
+  }> {
+    const maxBuffer = this.getMaxBufferBytes();
+    if (job) {
+      this.log(job, `git comando: ${command} (cwd=${repoPath}, maxBufferBytes=${maxBuffer})`);
+    }
+
+    let stdout = '';
+    let stderr = '';
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
+    let stdoutTruncationLogged = false;
+    let stderrTruncationLogged = false;
+
+    const child = spawn('bash', ['-lc', command], { cwd: repoPath });
+
+    const logIfTruncated = (stream: 'stdout' | 'stderr', truncated: boolean) => {
+      if (!truncated) {
+        return;
+      }
+      if (stream === 'stdout' && stdoutTruncationLogged) {
+        return;
+      }
+      if (stream === 'stderr' && stderrTruncationLogged) {
+        return;
+      }
+      const message = `git ${stream} truncado após atingir maxBufferBytes=${maxBuffer} para comando: ${command}`;
+      if (job) {
+        this.log(job, message);
+      } else {
+        console.warn(message);
+      }
+      if (stream === 'stdout') {
+        stdoutTruncationLogged = true;
+      } else {
+        stderrTruncationLogged = true;
+      }
+    };
+
+    child.stdout.on('data', (data: Buffer) => {
+      const chunk = data.toString();
+      const result = this.appendWithLimit(stdout, chunk, maxBuffer);
+      stdout = result.value;
+      const wasTruncated = stdoutTruncated || result.truncated;
+      if (!stdoutTruncated && wasTruncated) {
+        logIfTruncated('stdout', true);
+      }
+      stdoutTruncated = wasTruncated;
+    });
+
+    child.stderr.on('data', (data: Buffer) => {
+      const chunk = data.toString();
+      const result = this.appendWithLimit(stderr, chunk, maxBuffer);
+      stderr = result.value;
+      const wasTruncated = stderrTruncated || result.truncated;
+      if (!stderrTruncated && wasTruncated) {
+        logIfTruncated('stderr', true);
+      }
+      stderrTruncated = wasTruncated;
+    });
+
+    const exitResult = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      child.on('error', (err) => reject(err));
+      child.on('close', (code, signal) => resolve({ code, signal }));
+    });
+
+    if (stdoutTruncated || stderrTruncated) {
+      logIfTruncated('stdout', stdoutTruncated);
+      logIfTruncated('stderr', stderrTruncated);
+    }
+
+    if (exitResult.code !== null && !allowedExitCodes.includes(exitResult.code)) {
+      const error = new Error(
+        `git comando falhou (exitCode=${exitResult.code}, signal=${exitResult.signal}): ${command}`,
+      ) as NodeJS.ErrnoException & {
+        stdout?: string;
+        stderr?: string;
+        code?: number;
+        signal?: NodeJS.Signals | null;
+      };
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.code = exitResult.code;
+      error.signal = exitResult.signal;
+      throw error;
+    }
+
+    return { stdout, stderr, exitCode: exitResult.code, stdoutTruncated, stderrTruncated };
+  }
+
   private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
     const { absolute, relative } = this.normalizeRepoPath(
       repoPath,
@@ -1203,16 +1307,16 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return { status: 'ok', path: relative, content };
   }
 
-  private async listUntrackedFiles(repoPath: string): Promise<string[]> {
-    const statusLines = await this.getStatusLines(repoPath);
+  private async listUntrackedFiles(repoPath: string, job?: SandboxJob): Promise<string[]> {
+    const statusLines = await this.getStatusLines(repoPath, job);
     return statusLines
       .filter((line) => line.startsWith('?? '))
       .map((line) => line.slice(3).trim())
       .filter((line) => line.length > 0);
   }
 
-  private async getStatusLines(repoPath: string): Promise<string[]> {
-    const { stdout } = await exec('git status --porcelain=v1 --untracked-files=all', { cwd: repoPath });
+  private async getStatusLines(repoPath: string, job?: SandboxJob): Promise<string[]> {
+    const { stdout } = await this.runGitCommand('git status --porcelain=v1 --untracked-files=all', repoPath, job);
     return stdout
       .split('\n')
       .map((line) => line.trim())
@@ -1223,31 +1327,36 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return Array.from(new Set(paths));
   }
 
-  private async collectChangedFiles(repoPath: string, baseCommit?: string): Promise<string[]> {
+  private async collectChangedFiles(repoPath: string, baseCommit?: string, job?: SandboxJob): Promise<string[]> {
     if (!(await this.isGitRepository(repoPath))) {
       return [];
     }
-    const { stdout } = await exec(`git diff --name-only ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
+    const { stdout } = await this.runGitCommand(`git diff --name-only ${baseCommit ?? 'HEAD'}`, repoPath, job);
     const tracked = stdout
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
-    const untracked = await this.listUntrackedFiles(repoPath);
+    const untracked = await this.listUntrackedFiles(repoPath, job);
     return this.uniquePaths([...tracked, ...untracked]);
   }
 
-  private async generatePatch(repoPath: string, baseCommit?: string): Promise<string> {
+  private async generatePatch(repoPath: string, baseCommit?: string, job?: SandboxJob): Promise<string> {
     if (!(await this.isGitRepository(repoPath))) {
       return '';
     }
-    const { stdout: trackedDiff } = await exec(`git diff ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
-    const untracked = await this.listUntrackedFiles(repoPath);
+    const { stdout: trackedDiff } = await this.runGitCommand(`git diff ${baseCommit ?? 'HEAD'}`, repoPath, job);
+    const untracked = await this.listUntrackedFiles(repoPath, job);
 
     const untrackedDiffs: string[] = [];
     for (const file of untracked) {
       const escaped = this.escapePathForShell(file);
       try {
-        const { stdout } = await exec(`git diff --no-index --binary -- /dev/null ${escaped}`, { cwd: repoPath });
+        const { stdout } = await this.runGitCommand(
+          `git diff --no-index --binary -- /dev/null ${escaped}`,
+          repoPath,
+          job,
+          [0, 1],
+        );
         if (stdout.trim().length > 0) {
           untrackedDiffs.push(stdout);
         }
@@ -1335,7 +1444,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       return;
     }
 
-    const diff = diffPatch ?? (await this.generatePatch(repoPath, baseCommit));
+    const diff = diffPatch ?? (await this.generatePatch(repoPath, baseCommit, job));
     if (!diff.trim()) {
       this.log(job, 'nenhuma alteração detectada; PR não será criado');
       return;
