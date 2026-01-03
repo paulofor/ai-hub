@@ -1203,23 +1203,65 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return { status: 'ok', path: relative, content };
   }
 
-  private async collectChangedFiles(repoPath: string, baseCommit?: string): Promise<string[]> {
-    if (!(await this.isGitRepository(repoPath))) {
-      return [];
-    }
-    const { stdout } = await exec(`git diff --name-only ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
+  private async listUntrackedFiles(repoPath: string): Promise<string[]> {
+    const statusLines = await this.getStatusLines(repoPath);
+    return statusLines
+      .filter((line) => line.startsWith('?? '))
+      .map((line) => line.slice(3).trim())
+      .filter((line) => line.length > 0);
+  }
+
+  private async getStatusLines(repoPath: string): Promise<string[]> {
+    const { stdout } = await exec('git status --porcelain=v1 --untracked-files=all', { cwd: repoPath });
     return stdout
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
   }
 
+  private uniquePaths(paths: string[]): string[] {
+    return Array.from(new Set(paths));
+  }
+
+  private async collectChangedFiles(repoPath: string, baseCommit?: string): Promise<string[]> {
+    if (!(await this.isGitRepository(repoPath))) {
+      return [];
+    }
+    const { stdout } = await exec(`git diff --name-only ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
+    const tracked = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const untracked = await this.listUntrackedFiles(repoPath);
+    return this.uniquePaths([...tracked, ...untracked]);
+  }
+
   private async generatePatch(repoPath: string, baseCommit?: string): Promise<string> {
     if (!(await this.isGitRepository(repoPath))) {
       return '';
     }
-    const { stdout } = await exec(`git diff ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
-    return stdout;
+    const { stdout: trackedDiff } = await exec(`git diff ${baseCommit ?? 'HEAD'}`, { cwd: repoPath });
+    const untracked = await this.listUntrackedFiles(repoPath);
+
+    const untrackedDiffs: string[] = [];
+    for (const file of untracked) {
+      const escaped = this.escapePathForShell(file);
+      try {
+        const { stdout } = await exec(`git diff --no-index --binary -- /dev/null ${escaped}`, { cwd: repoPath });
+        if (stdout.trim().length > 0) {
+          untrackedDiffs.push(stdout);
+        }
+      } catch (err: any) {
+        if (err?.code === 1 && typeof err.stdout === 'string' && err.stdout.trim().length > 0) {
+          // git diff --no-index retorna exit code 1 quando diferenças são encontradas
+          untrackedDiffs.push(err.stdout);
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return [trackedDiff, ...untrackedDiffs].filter((chunk) => chunk.trim().length > 0).join('\n');
   }
 
   private async isGitRepository(repoPath: string): Promise<boolean> {
@@ -1434,6 +1476,10 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     }
     const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '_');
     return sanitized.length > 0 ? sanitized : 'msg_default';
+  }
+
+  private escapePathForShell(target: string): string {
+    return `'${target.replace(/'/g, "'\''")}'`;
   }
 
   private buildPrTitle(summary?: string): string {
