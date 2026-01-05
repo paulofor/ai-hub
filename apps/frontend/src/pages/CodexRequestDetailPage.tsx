@@ -317,7 +317,11 @@ export default function CodexRequestDetailPage() {
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />
               <InfoItem label="Duração" value={formatDuration(request.durationMs)} />
               <InfoItem label="Timeouts" value={(request.timeoutCount ?? 0).toLocaleString('pt-BR')} />
-              <InfoItem label="HTTP GETs" value={(request.httpGetCount ?? 0).toLocaleString('pt-BR')} />
+              <InfoItem label="HTTP GETs (total)" value={(request.httpGetCount ?? 0).toLocaleString('pt-BR')} />
+              <InfoItem
+                label="HTTP GETs com sucesso"
+                value={(request.httpGetSuccessCount ?? 0).toLocaleString('pt-BR')}
+              />
               <InfoItem label="Consultas ao banco" value={(request.dbQueryCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem
                 label="Interações com o modelo"
