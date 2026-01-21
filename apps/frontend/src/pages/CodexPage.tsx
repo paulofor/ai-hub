@@ -33,7 +33,8 @@ interface CodexModelOption {
   outputPricePerMillion: number;
 }
 
-const REQUESTS_PER_PAGE = 15;
+const REQUESTS_PER_PAGE = 3;
+const ACTIVE_POLL_INTERVAL_MS = 15000;
 
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
@@ -88,9 +89,12 @@ export default function CodexPage() {
 
   useEffect(() => {
     const hasActive = requests.some((item) => !isTerminalStatus(item.status));
+    if (!hasActive) {
+      return () => undefined;
+    }
     const interval = setInterval(() => {
       fetchRequests().catch(() => undefined);
-    }, hasActive ? 5000 : 15000);
+    }, ACTIVE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [requests, fetchRequests]);
 
