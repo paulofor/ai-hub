@@ -43,6 +43,18 @@ public class SandboxOrchestratorClient {
         Optional.ofNullable(request.profile()).ifPresent(value -> body.put("profile", value));
         Optional.ofNullable(request.model()).ifPresent(value -> body.put("model", value));
 
+        Optional.ofNullable(request.database()).ifPresent(database -> {
+            Map<String, Object> dbPayload = new HashMap<>();
+            Optional.ofNullable(database.host()).ifPresent(value -> dbPayload.put("host", value));
+            Optional.ofNullable(database.port()).ifPresent(value -> dbPayload.put("port", value));
+            Optional.ofNullable(database.database()).ifPresent(value -> dbPayload.put("database", value));
+            Optional.ofNullable(database.user()).ifPresent(value -> dbPayload.put("user", value));
+            Optional.ofNullable(database.password()).ifPresent(value -> dbPayload.put("password", value));
+            if (!dbPayload.isEmpty()) {
+                body.put("database", dbPayload);
+            }
+        });
+
         log.info("Enviando job {} para sandbox-orchestrator no path {}", request.jobId(), jobsPath);
         JsonNode response = restClient.post()
             .uri(jobsPath)

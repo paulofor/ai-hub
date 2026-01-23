@@ -4,10 +4,12 @@ import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
+import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -35,8 +37,14 @@ class CodexRequestServiceTest {
     private final ResponseRepository responseRepository = mock(ResponseRepository.class);
     private final CodexInteractionRepository codexInteractionRepository = mock(CodexInteractionRepository.class);
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
+    private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
+
+    @BeforeEach
+    void setup() {
+        when(environmentRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+    }
 
     @Test
     void listRefreshesRequestsMarkedFailedAfterSandboxNotFoundFallback() {
@@ -94,6 +102,7 @@ class CodexRequestServiceTest {
             responseRepository,
             codexInteractionRepository,
             codexHttpRequestRepository,
+            environmentRepository,
             sandboxOrchestratorClient,
             tokenCostCalculator,
             "gpt-5-codex",
@@ -140,6 +149,7 @@ class CodexRequestServiceTest {
             responseRepository,
             codexInteractionRepository,
             codexHttpRequestRepository,
+            environmentRepository,
             sandboxOrchestratorClient,
             tokenCostCalculator,
             "gpt-5-codex",

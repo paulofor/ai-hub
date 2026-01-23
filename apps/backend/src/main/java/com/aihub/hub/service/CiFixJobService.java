@@ -63,6 +63,7 @@ public class CiFixJobService {
             request.getCommitHash(),
             request.getTestCommand(),
             null,
+            null,
             null
         );
 

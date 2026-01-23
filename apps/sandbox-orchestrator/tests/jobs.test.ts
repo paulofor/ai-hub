@@ -1509,7 +1509,7 @@ test('db_query executa SELECT e contabiliza chamadas', async () => {
     timeoutCount: 0,
   } as SandboxJob;
 
-  (processor as any).dbConfig = {
+  job.database = {
     host: 'localhost',
     port: 3306,
     user: 'user',
@@ -1522,9 +1522,9 @@ test('db_query executa SELECT e contabiliza chamadas', async () => {
     { id: 2, name: 'Bob' },
   ];
 
-  (processor as any).dbPool = {
+  (processor as any).dbPools.set(job.jobId, {
     query: async () => [fakeRows],
-  };
+  });
 
   const first = await (processor as any).handleDbQuery(
     { query: 'SELECT id, name FROM users', limit: 1 },

@@ -9,6 +9,14 @@ public record SandboxJobRequest(
     String commitHash,
     String testCommand,
     String profile,
-    String model
+    String model,
+    DatabaseConnection database
 ) {
+    public record DatabaseConnection(
+        String host,
+        Integer port,
+        String database,
+        String user,
+        String password
+    ) { }
 }
