@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexInteractionDirection;
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexHttpRequestLog;
+import com.aihub.hub.domain.EnvironmentRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
@@ -12,6 +13,7 @@ import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
+import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
@@ -51,6 +53,7 @@ public class CodexRequestService {
     private final ResponseRepository responseRepository;
     private final CodexInteractionRepository codexInteractionRepository;
     private final CodexHttpRequestRepository codexHttpRequestRepository;
+    private final EnvironmentRepository environmentRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
@@ -62,6 +65,7 @@ public class CodexRequestService {
                                ResponseRepository responseRepository,
                                CodexInteractionRepository codexInteractionRepository,
                                CodexHttpRequestRepository codexHttpRequestRepository,
+                               EnvironmentRepository environmentRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                TokenCostCalculator tokenCostCalculator,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
@@ -72,6 +76,7 @@ public class CodexRequestService {
         this.responseRepository = responseRepository;
         this.codexInteractionRepository = codexInteractionRepository;
         this.codexHttpRequestRepository = codexHttpRequestRepository;
+        this.environmentRepository = environmentRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
@@ -179,6 +184,33 @@ public class CodexRequestService {
         updateInteractionCount(request);
         return codexRequestRepository.save(request);
     }
+
+    private SandboxJobRequest.DatabaseConnection resolveDatabase(String environmentName) {
+        if (!StringUtils.hasText(environmentName)) {
+            return null;
+        }
+
+        Optional<EnvironmentRecord> record = environmentRepository.findByNameIgnoreCase(environmentName.trim());
+        if (record.isEmpty()) {
+            return null;
+        }
+
+        EnvironmentRecord environment = record.get();
+        if (!StringUtils.hasText(environment.getDbHost())
+            || !StringUtils.hasText(environment.getDbName())
+            || !StringUtils.hasText(environment.getDbUser())) {
+            return null;
+        }
+
+        return new SandboxJobRequest.DatabaseConnection(
+            environment.getDbHost().trim(),
+            environment.getDbPort(),
+            environment.getDbName().trim(),
+            environment.getDbUser().trim(),
+            environment.getDbPassword()
+        );
+    }
+
 
     private RefreshDecision evaluateRefresh(CodexRequest request, Instant refreshCutoff) {
         CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
@@ -314,7 +346,8 @@ public class CodexRequestService {
             null,
             null,
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
-            request.getModel()
+            request.getModel(),
+            resolveDatabase(request.getEnvironment())
         );
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.createJob(jobRequest);

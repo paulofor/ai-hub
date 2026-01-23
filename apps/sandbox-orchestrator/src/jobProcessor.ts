@@ -15,17 +15,9 @@ import {
 } from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
-import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog } from './types.js';
+import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog, SandboxDatabaseConfig } from './types.js';
 
 const exec = promisify(execCallback);
-
-interface DatabaseConfig {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-}
 
 interface ToolCall {
   id: string;
@@ -64,9 +56,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly economyHttpToolMaxResponseChars: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
-  private readonly dbConfig?: DatabaseConfig;
-  private dbPool?: Pool;
-
+  private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
+  private readonly dbPools: Map<string, Pool> = new Map();
 
   constructor(
     apiKey?: string,
@@ -125,7 +116,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
-    this.dbConfig = this.loadDatabaseConfig();
+    this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
   async process(job: SandboxJob): Promise<void> {
@@ -219,6 +210,7 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(job, `limpando workspace ${workspace}`);
         await this.cleanup(workspace);
       }
+      await this.disposeDbPool(job.jobId);
       const finished = job.finishedAt ? new Date(job.finishedAt) : new Date();
       job.finishedAt = finished.toISOString();
       job.updatedAt = job.finishedAt;
@@ -391,11 +383,11 @@ export class SandboxJobProcessor implements JobProcessor {
               description: `Limite máximo de linhas a retornar (padrão ${this.dbMaxRows}, máximo ${this.dbMaxRows})`,
             },
           },
-          required: ['query', 'limit'],
+          required: ['query'],
           additionalProperties: false,
         },
         strict: true,
-        description: 'Executa uma consulta SELECT no banco de dados relacional configurado via DB_URL/DB_USER/DB_PASS',
+        description: 'Executa uma consulta SELECT no banco de dados configurado para este ambiente (não usa o banco principal da aplicação)',
       },
     ];
   }
@@ -749,9 +741,27 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     }
   }
 
-  private loadDatabaseConfig(): DatabaseConfig | undefined {
+  private normalizeDatabaseConfig(config?: SandboxDatabaseConfig): SandboxDatabaseConfig | undefined {
+    if (!config) {
+      return undefined;
+    }
+
+    const host = typeof config.host === 'string' ? config.host.trim() : '';
+    const database = typeof config.database === 'string' ? config.database.trim() : '';
+    const user = typeof config.user === 'string' ? config.user.trim() : '';
+    const password = typeof config.password === 'string' ? config.password : undefined;
+    const port = Number.isFinite(config.port) && config.port ? Math.floor(config.port) : undefined;
+
+    if (!host || !database || !user) {
+      return undefined;
+    }
+
+    return { host, database, user, password, port } satisfies SandboxDatabaseConfig;
+  }
+
+  private loadDatabaseConfig(): SandboxDatabaseConfig | undefined {
     const rawUrl = process.env.DB_URL ?? process.env.DATABASE_URL;
-    const user = process.env.DB_USER;
+    const user = process.env.DB_USER?.trim();
     const password = process.env.DB_PASS;
 
     if (!rawUrl || !user || password === undefined) {
@@ -772,41 +782,69 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       return undefined;
     }
 
-    const database = parsed.pathname.replace(/^\//, '');
+    const database = parsed.pathname.replace(/^\//, '').trim();
     if (!database) {
       console.warn('Sandbox orchestrator: DB_URL não contém nome do database');
       return undefined;
     }
 
     const port = Number(parsed.port) || 3306;
-    return {
+    return this.normalizeDatabaseConfig({
       host: parsed.hostname,
       port: Number.isFinite(port) && port > 0 ? port : 3306,
       user,
       password,
       database,
-    };
+    });
   }
 
-  private getDbPool(): Pool {
-    if (!this.dbConfig) {
-      throw new Error('Banco de dados não configurado: defina DB_URL, DB_USER e DB_PASS');
+  private resolveDatabaseConfig(job: SandboxJob): SandboxDatabaseConfig {
+    const fromJob = this.normalizeDatabaseConfig(job.database);
+    if (fromJob) {
+      return fromJob;
     }
 
-    if (!this.dbPool) {
-      this.dbPool = mysql.createPool({
-        host: this.dbConfig.host,
-        port: this.dbConfig.port,
-        user: this.dbConfig.user,
-        password: this.dbConfig.password,
-        database: this.dbConfig.database,
-        waitForConnections: true,
-        connectionLimit: 4,
-        queueLimit: 0,
-      });
+    const fromEnv = this.normalizeDatabaseConfig(this.dbConfigFromEnv);
+    if (fromEnv) {
+      return fromEnv;
     }
 
-    return this.dbPool;
+    throw new Error('Banco de dados não configurado para este job: configure as credenciais do ambiente solicitado.');
+  }
+
+  private getDbPool(job: SandboxJob): Pool {
+    const existing = this.dbPools.get(job.jobId);
+    if (existing) {
+      return existing;
+    }
+
+    const config = this.resolveDatabaseConfig(job);
+    const pool = mysql.createPool({
+      host: config.host,
+      port: Number.isFinite(config.port) && config.port ? config.port : 3306,
+      user: config.user,
+      password: config.password ?? undefined,
+      database: config.database,
+      waitForConnections: true,
+      connectionLimit: 4,
+      queueLimit: 0,
+    });
+
+    this.dbPools.set(job.jobId, pool);
+    return pool;
+  }
+
+  private async disposeDbPool(jobId: string): Promise<void> {
+    const pool = this.dbPools.get(jobId);
+    if (!pool) {
+      return;
+    }
+    this.dbPools.delete(jobId);
+    try {
+      await pool.end();
+    } catch {
+      // ignore cleanup errors
+    }
   }
 
   private sanitizeHeaders(raw: unknown): Record<string, string> | undefined {
@@ -890,7 +928,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     const normalizedLimit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(Number(limitRaw)) : this.dbMaxRows;
     const maxRows = Math.min(normalizedLimit, this.dbMaxRows);
 
-    const pool = this.getDbPool();
+    const pool = this.getDbPool(job);
     this.log(job, `db_query: executando consulta com limite de ${maxRows} linhas (timeoutMs=${this.dbQueryTimeoutMs})`);
     const started = Date.now();
     let rows: any[] = [];

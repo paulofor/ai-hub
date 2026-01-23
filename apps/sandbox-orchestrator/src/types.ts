@@ -3,6 +3,14 @@ export type SandboxProfile = 'STANDARD' | 'ECONOMY';
 
 export type InteractionDirection = 'OUTBOUND' | 'INBOUND';
 
+export interface SandboxDatabaseConfig {
+  host: string;
+  port?: number;
+  database: string;
+  user: string;
+  password?: string;
+}
+
 export interface SandboxInteraction {
   id: string;
   direction: InteractionDirection;
@@ -44,6 +52,7 @@ export interface SandboxJob {
   completionTokens?: number;
   totalTokens?: number;
   cost?: number;
+  database?: SandboxDatabaseConfig;
   logs: string[];
   createdAt: string;
   updatedAt: string;

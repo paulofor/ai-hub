@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { SandboxJobProcessor } from './jobProcessor.js';
-import { JobProcessor, SandboxJob, SandboxProfile } from './types.js';
+import { JobProcessor, SandboxDatabaseConfig, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
   jobRegistry?: Map<string, SandboxJob>;
@@ -19,6 +19,34 @@ function validateString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeDatabaseConfig(raw: unknown): SandboxDatabaseConfig | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const source = raw as Record<string, unknown>;
+  const host = validateString(source.host);
+  const database = validateString(source.database ?? (source as any).dbName);
+  const user = validateString(source.user ?? (source as any).username ?? (source as any).dbUser);
+  const password = typeof source.password === 'string' ? source.password : validateString(source.password);
+  const portRaw = typeof source.port === 'number' ? source.port : Number((source as any).port);
+  const port = Number.isFinite(portRaw) && portRaw > 0 ? Math.floor(portRaw) : undefined;
+
+  if (!host || !database || !user) {
+    return undefined;
+  }
+
+  return { host, database, user, password: password ?? undefined, port } satisfies SandboxDatabaseConfig;
+}
+
+function redactDatabasePassword(job: SandboxJob): SandboxJob {
+  if (!job.database || job.database.password === undefined) {
+    return job;
+  }
+  const { password: _password, ...database } = job.database;
+  return { ...job, database } satisfies SandboxJob;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -73,6 +101,7 @@ export function createApp(options: AppOptions = {}) {
     const commitHash = validateString(req.body?.commit);
     const testCommand = validateString(req.body?.testCommand);
     const model = validateString(req.body?.model);
+    const database = normalizeDatabaseConfig(req.body?.database);
     const profile = normalizeProfile(validateString(req.body?.profile));
 
     if (!jobId || (!repoUrl && !repoSlug) || !branch || !taskDescription) {
@@ -82,7 +111,7 @@ export function createApp(options: AppOptions = {}) {
     const existing = jobRegistry.get(jobId);
     if (existing) {
       console.log(`Sandbox orchestrator: received duplicate job ${jobId}, returning cached status ${existing.status}`);
-      return res.json(existing);
+      return res.json(redactDatabasePassword(existing));
     }
 
     const modelLabel = model ? `, modelo ${model}` : '';
@@ -101,6 +130,7 @@ export function createApp(options: AppOptions = {}) {
       testCommand,
       profile,
       model: model ?? undefined,
+      database,
       status: 'PENDING',
       logs: [],
       createdAt: now,
@@ -128,7 +158,7 @@ export function createApp(options: AppOptions = {}) {
         jobRegistry.set(jobId, job);
       });
 
-    res.status(201).json(job);
+    res.status(201).json(redactDatabasePassword(job));
   });
 
   const recoverOrphanJob = async (jobId: string): Promise<SandboxJob | undefined> => {
@@ -179,13 +209,13 @@ export function createApp(options: AppOptions = {}) {
     const jobId = req.params.id;
     const job = jobRegistry.get(jobId);
     if (job) {
-      return res.json(job);
+      return res.json(redactDatabasePassword(job));
     }
 
     const recovered = await recoverOrphanJob(jobId);
     if (recovered) {
       jobRegistry.set(jobId, recovered);
-      return res.json(recovered);
+      return res.json(redactDatabasePassword(recovered));
     }
 
     res.status(404).json({ error: 'job not found' });
@@ -212,7 +242,7 @@ export function createApp(options: AppOptions = {}) {
     }
 
     jobRegistry.set(job.jobId, job);
-    res.json(job);
+    res.json(redactDatabasePassword(job));
   });
 
   app.use((err: Error, _req: Request, res: Response, _next: () => void) => {
