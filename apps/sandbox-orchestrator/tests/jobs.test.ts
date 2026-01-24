@@ -941,7 +941,7 @@ test('http_get blocks private addresses and returns an error to the model', asyn
                 type: 'function_call',
                 call_id: 'http-block',
                 name: 'http_get',
-                arguments: JSON.stringify({ url: 'http://127.0.0.1:8080' }),
+                arguments: JSON.stringify({ url: 'http://127.0.0.1:8083' }),
               },
               { type: 'message', id: 'msg-http-block-1', role: 'assistant', status: 'completed', content: [] },
             ],

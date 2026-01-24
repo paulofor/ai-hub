@@ -19,7 +19,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 
 | Variável | Descrição | Padrão |
 | --- | --- | --- |
-| `PORT` | Porta HTTP exposta pelo serviço | `8080` |
+| `PORT` | Porta HTTP exposta pelo serviço | `8083` |
 | `SANDBOX_SLUG_PREFIX` | Prefixo aplicado antes do slug original | *(vazio)* |
 | `SANDBOX_SLUG_SUFFIX` | Sufixo aplicado após o slug original | `-sandbox` |
 | `SANDBOX_IMAGE` | Imagem base utilizada para provisionar o contêiner/VM efêmero | `ghcr.io/ai-hub/sandbox:latest` |
@@ -42,7 +42,7 @@ O Dockerfile publicado pela pipeline gera uma imagem enxuta baseada em `node:20-
 
 ```bash
 docker build -t sandbox-orchestrator apps/sandbox-orchestrator
-docker run --rm -p 8080:8080 sandbox-orchestrator
+docker run --rm -p 8083:8083 sandbox-orchestrator
 ```
 
 Com Docker Compose (na raiz do monorepo) o serviço é iniciado automaticamente com o backend e frontend.
