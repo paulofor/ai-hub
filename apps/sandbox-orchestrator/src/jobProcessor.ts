@@ -383,7 +383,7 @@ export class SandboxJobProcessor implements JobProcessor {
               description: `Limite máximo de linhas a retornar (padrão ${this.dbMaxRows}, máximo ${this.dbMaxRows})`,
             },
           },
-          required: ['query'],
+          required: ['query', 'limit'],
           additionalProperties: false,
         },
         strict: true,
