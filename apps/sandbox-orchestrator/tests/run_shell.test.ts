@@ -114,6 +114,25 @@ test('usa timeout estendido para comandos mvn', async () => {
   }
 });
 
+test('aplica CI=1 automaticamente para evitar modo watch em comandos de teste', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-ci-env-'));
+  const npmPath = path.join(repoPath, 'npm');
+  await fs.writeFile(npmPath, '#!/bin/sh\necho CI=$CI');
+  await fs.chmod(npmPath, 0o755);
+
+  const processor = new SandboxJobProcessor();
+  const job = createJob();
+
+  const result = await (processor as any).handleRunShell({ command: ['./npm', 'test'], cwd: '.' }, repoPath, job);
+
+  assert.equal(result.exitCode, 0, 'stub npm deveria executar com sucesso');
+  assert.ok(result.stdout.includes('CI=1'), 'stdout deve indicar CI=1 aplicado');
+  const ciLog = job.logs.find((entry) => entry.includes('CI=1 aplicado para evitar modo watch'));
+  assert.ok(ciLog, 'log de aplicação do CI=1 não encontrado');
+
+  await fs.rm(repoPath, { recursive: true, force: true });
+});
+
 
 test('incrementa timeoutCount quando run_shell atinge timeout', async () => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-timeout-count-'));
@@ -141,4 +160,3 @@ test('incrementa timeoutCount quando run_shell atinge timeout', async () => {
     await fs.rm(repoPath, { recursive: true, force: true });
   }
 });
-

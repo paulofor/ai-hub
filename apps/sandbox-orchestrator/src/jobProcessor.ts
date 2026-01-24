@@ -1090,6 +1090,18 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return { value: current + chunk.slice(0, remaining), truncated: true };
   }
 
+  private shouldForceCiEnv(command: string[]): boolean {
+    const commandName = path.basename(command[0]);
+    const args = command.slice(1);
+    if (['vitest', 'jest', 'playwright'].includes(commandName)) {
+      return true;
+    }
+    if (['npm', 'pnpm', 'yarn', 'bun'].includes(commandName)) {
+      return args.some((arg) => ['test', 'vitest', 'jest', 'playwright'].includes(arg));
+    }
+    return false;
+  }
+
   private resolvePath(repoPath: string, requested: string | undefined, job?: SandboxJob): string {
     if (!requested) {
       throw new Error('path ausente');
@@ -1167,7 +1179,13 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     let stderrTruncated = false;
     let timedOut = false;
 
-    const child = spawn(command[0], command.slice(1), { cwd });
+    const forceCi = this.shouldForceCiEnv(command);
+    const env = forceCi ? { ...process.env, CI: '1' } : process.env;
+    if (forceCi) {
+      this.log(job, `run_shell: CI=1 aplicado para evitar modo watch`);
+    }
+
+    const child = spawn(command[0], command.slice(1), { cwd, env });
 
     child.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString();
