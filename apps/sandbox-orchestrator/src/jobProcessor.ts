@@ -56,6 +56,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly economyHttpToolMaxResponseChars: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
+  private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
   private readonly dbPools: Map<string, Pool> = new Map();
 
   constructor(
@@ -115,6 +116,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
+    this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
   async process(job: SandboxJob): Promise<void> {
@@ -757,10 +759,54 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     return { host, database, user, password, port } satisfies SandboxDatabaseConfig;
   }
 
+  private loadDatabaseConfig(): SandboxDatabaseConfig | undefined {
+    const rawUrl = process.env.DB_URL ?? process.env.DATABASE_URL;
+    const user = process.env.DB_USER?.trim();
+    const password = process.env.DB_PASS;
+
+    if (!rawUrl || !user || password === undefined) {
+      return undefined;
+    }
+
+    const sanitizedUrl = rawUrl.startsWith('jdbc:') ? rawUrl.replace(/^jdbc:/, '') : rawUrl;
+    let parsed: URL;
+    try {
+      parsed = new URL(sanitizedUrl);
+    } catch (err) {
+      console.warn(`Sandbox orchestrator: DB_URL inválida (${err instanceof Error ? err.message : String(err)})`);
+      return undefined;
+    }
+
+    if (!['mysql:', 'mariadb:'].includes(parsed.protocol)) {
+      console.warn(`Sandbox orchestrator: protocolo de banco não suportado: ${parsed.protocol}`);
+      return undefined;
+    }
+
+    const database = parsed.pathname.replace(/^\//, '').trim();
+    if (!database) {
+      console.warn('Sandbox orchestrator: DB_URL não contém nome do database');
+      return undefined;
+    }
+
+    const port = Number(parsed.port) || 3306;
+    return this.normalizeDatabaseConfig({
+      host: parsed.hostname,
+      port: Number.isFinite(port) && port > 0 ? port : 3306,
+      user,
+      password,
+      database,
+    });
+  }
+
   private resolveDatabaseConfig(job: SandboxJob): SandboxDatabaseConfig {
     const fromJob = this.normalizeDatabaseConfig(job.database);
     if (fromJob) {
       return fromJob;
+    }
+
+    const fromEnv = this.normalizeDatabaseConfig(this.dbConfigFromEnv);
+    if (fromEnv) {
+      return fromEnv;
     }
 
     throw new Error('Banco de dados não configurado para este job: configure as credenciais do ambiente solicitado.');
