@@ -45,6 +45,6 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 ENV NODE_ENV=production
-ENV PORT=8080
-EXPOSE 8080
+ENV PORT=8083
+EXPOSE 8083
 CMD ["node", "dist/src/index.js"]

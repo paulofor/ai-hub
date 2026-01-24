@@ -26,9 +26,9 @@
     },
     "sandbox-orchestrator": {
       "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-sandbox:latest",
-      "ports": { "8080": "HTTP" },
+      "ports": { "8083": "HTTP" },
       "environment": {
-        "PORT": "8080",
+        "PORT": "8083",
         "SANDBOX_SLUG_PREFIX": "",
         "SANDBOX_SLUG_SUFFIX": "-sandbox"
       }
