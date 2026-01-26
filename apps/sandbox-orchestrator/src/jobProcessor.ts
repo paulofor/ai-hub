@@ -411,7 +411,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.${profileInstruction}`,
+            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.${profileInstruction}`,
           },
         ],
       },
@@ -1524,7 +1524,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       await exec('git config user.name "AI Hub Bot"', { cwd: repoPath });
       await exec(`git checkout -B ${branchName}`, { cwd: repoPath });
       await exec('git add -A', { cwd: repoPath });
-      await exec('git commit -m "AI Hub automated fix"', { cwd: repoPath });
+      await exec('git commit -m "Correção automática do AI Hub"', { cwd: repoPath });
 
       const authenticatedRemote = buildAuthRepoUrl(
         job.repoUrl,
@@ -1660,7 +1660,7 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
   }
 
   private buildPrTitle(summary?: string): string {
-    const defaultTitle = 'AI Hub automated fix';
+    const defaultTitle = 'Correção automática do AI Hub';
     const prefix = 'AI Hub: ';
     const maxLength = 256;
 
