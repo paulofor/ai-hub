@@ -21,6 +21,8 @@ import com.aihub.hub.repository.ResponseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -153,6 +155,35 @@ public class CodexRequestService {
 
         applyInteractionCounts(requests);
         return requests;
+    }
+
+    @Transactional
+    public Page<CodexRequest> listPage(int page, int size) {
+        Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
+        Page<CodexRequest> requestPage = codexRequestRepository.findAllByOrderByCreatedAtDesc(
+            PageRequest.of(page, size)
+        );
+
+        for (CodexRequest request : requestPage.getContent()) {
+            if (request.getExternalId() == null) {
+                continue;
+            }
+
+            RefreshDecision decision = evaluateRefresh(request, refreshCutoff);
+            if (!decision.shouldRefresh()) {
+                continue;
+            }
+
+            log.info(
+                "Atualizando CodexRequest {} a partir do sandbox ({})",
+                request.getId(),
+                decision.reason()
+            );
+            refreshFromSandbox(request);
+        }
+
+        applyInteractionCounts(requestPage.getContent());
+        return requestPage;
     }
 
     @Transactional(readOnly = true)
