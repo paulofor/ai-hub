@@ -33,7 +33,7 @@ interface CodexModelOption {
   outputPricePerMillion: number;
 }
 
-const REQUESTS_PER_PAGE = 3;
+const REQUESTS_PER_PAGE = 5;
 const ACTIVE_POLL_INTERVAL_MS = 15000;
 
 export default function CodexPage() {
@@ -41,7 +41,9 @@ export default function CodexPage() {
   const [environment, setEnvironment] = useState('');
   const [profile, setProfile] = useState<CodexProfile>('STANDARD');
   const [model, setModel] = useState('');
-  const [requests, setRequests] = useState<CodexRequest[]>([]);
+  const [requestsByPage, setRequestsByPage] = useState<Record<number, CodexRequest[]>>({});
+  const [totalRequests, setTotalRequests] = useState(0);
+  const [loadingRequests, setLoadingRequests] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,42 +63,87 @@ export default function CodexPage() {
   }, []);
 
   const mergeRequest = useCallback((updated: CodexRequest) => {
-    setRequests((prev) => {
-      const index = prev.findIndex((item) => item.id === updated.id);
-      if (index === -1) {
-        return [updated, ...prev];
+    let isNew = false;
+    setRequestsByPage((prev) => {
+      const next: Record<number, CodexRequest[]> = {};
+      let found = false;
+      Object.entries(prev).forEach(([pageKey, items]) => {
+        const pageNumber = Number(pageKey);
+        const index = items.findIndex((item) => item.id === updated.id);
+        if (index === -1) {
+          next[pageNumber] = items;
+          return;
+        }
+        const updatedItems = [...items];
+        updatedItems[index] = updated;
+        next[pageNumber] = updatedItems;
+        found = true;
+      });
+      if (!found) {
+        isNew = true;
+        const firstPageItems = prev[1] ? [...prev[1]] : [];
+        firstPageItems.unshift(updated);
+        next[1] = firstPageItems.slice(0, REQUESTS_PER_PAGE);
       }
-      const next = [...prev];
-      next[index] = updated;
       return next;
     });
-  }, []);
-
-
-  const fetchRequests = useCallback(async () => {
-    try {
-      const response = await client.get('/codex/requests');
-      setRequests(parseCodexRequests(response.data));
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
+    if (isNew) {
+      setTotalRequests((prev) => prev + 1);
     }
   }, []);
 
+  const fetchRequests = useCallback(async (page = 1, options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoadingRequests(true);
+    }
+    try {
+      const response = await client.get('/codex/requests', {
+        params: {
+          page: page - 1,
+          size: REQUESTS_PER_PAGE
+        }
+      });
+      setRequestsByPage((prev) => ({
+        ...prev,
+        [page]: parseCodexRequests(response.data)
+      }));
+      const total = typeof response.data?.totalElements === 'number'
+        ? response.data.totalElements
+        : Array.isArray(response.data)
+          ? response.data.length
+          : totalRequests;
+      if (Number.isFinite(total)) {
+        setTotalRequests(total);
+      }
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      if (!options?.silent) {
+        setLoadingRequests(false);
+      }
+    }
+  }, [totalRequests]);
+
   useEffect(() => {
-    fetchRequests();
+    fetchRequests(1);
   }, [fetchRequests]);
 
   useEffect(() => {
-    const hasActive = requests.some((item) => !isTerminalStatus(item.status));
+    const loadedPages = Object.keys(requestsByPage).map(Number).filter((page) => Number.isFinite(page));
+    const hasActive = loadedPages.some((page) =>
+      (requestsByPage[page] ?? []).some((item) => !isTerminalStatus(item.status))
+    );
     if (!hasActive) {
       return () => undefined;
     }
     const interval = setInterval(() => {
-      fetchRequests().catch(() => undefined);
+      loadedPages.forEach((page) => {
+        fetchRequests(page, { silent: true }).catch(() => undefined);
+      });
     }, ACTIVE_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [requests, fetchRequests]);
+  }, [requestsByPage, fetchRequests]);
 
   useEffect(() => {
     client
@@ -128,22 +175,23 @@ export default function CodexPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
-  const sortedRequests = useMemo(() => {
-    return [...requests].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  }, [requests]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedRequests.length / REQUESTS_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(totalRequests / REQUESTS_PER_PAGE));
 
   useEffect(() => {
     setCurrentPage((previousPage) => Math.min(previousPage, totalPages));
   }, [totalPages]);
 
+  useEffect(() => {
+    if (!requestsByPage[currentPage]) {
+      fetchRequests(currentPage);
+    }
+  }, [currentPage, fetchRequests, requestsByPage]);
+
   const paginatedRequests = useMemo(() => {
-    const startIndex = (currentPage - 1) * REQUESTS_PER_PAGE;
-    return sortedRequests.slice(startIndex, startIndex + REQUESTS_PER_PAGE);
-  }, [sortedRequests, currentPage]);
+    return requestsByPage[currentPage] ?? [];
+  }, [currentPage, requestsByPage]);
+
+  const isPageLoading = loadingRequests && paginatedRequests.length === 0;
 
   const selectedModel = useMemo(() => {
     return modelOptions.find((option) => option.modelName === model) ?? null;
@@ -201,14 +249,14 @@ export default function CodexPage() {
         mergeRequest(parsed);
         setSuccessMessage('Solicitação cancelada.');
       } else {
-        await fetchRequests();
+        await fetchRequests(currentPage);
       }
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setActionLoading(requestId, false);
     }
-  }, [fetchRequests, mergeRequest, setActionLoading]);
+  }, [currentPage, fetchRequests, mergeRequest, setActionLoading]);
 
   const handleRating = useCallback(async (requestId: number, rating: number) => {
     setActionLoading(requestId, true);
@@ -221,14 +269,14 @@ export default function CodexPage() {
         mergeRequest(parsed);
         setSuccessMessage('Avaliação registrada.');
       } else {
-        await fetchRequests();
+        await fetchRequests(currentPage);
       }
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setActionLoading(requestId, false);
     }
-  }, [fetchRequests, mergeRequest, setActionLoading]);
+  }, [currentPage, fetchRequests, mergeRequest, setActionLoading]);
 
   return (
     <section className="space-y-6">
@@ -556,7 +604,15 @@ export default function CodexPage() {
                 </tr>
               ))}
 
-              {sortedRequests.length === 0 && (
+              {isPageLoading && (
+                <tr>
+                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={12}>
+                    Carregando solicitações...
+                  </td>
+                </tr>
+              )}
+
+              {!isPageLoading && totalRequests === 0 && (
                 <tr>
                   <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={12}>
                     Nenhuma solicitação enviada até o momento.
@@ -566,14 +622,14 @@ export default function CodexPage() {
             </tbody>
           </table>
 
-          {sortedRequests.length > 0 && (
+          {totalRequests > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
               <span>
                 Mostrando {(currentPage - 1) * REQUESTS_PER_PAGE + 1}–
-                {Math.min(sortedRequests.length, currentPage * REQUESTS_PER_PAGE)} de {sortedRequests.length} solicitações
+                {Math.min(totalRequests, currentPage * REQUESTS_PER_PAGE)} de {totalRequests} solicitações
               </span>
 
-              {sortedRequests.length > REQUESTS_PER_PAGE && (
+              {totalRequests > REQUESTS_PER_PAGE && (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
