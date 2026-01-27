@@ -660,11 +660,17 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
   }
 
   private async runConfiguredTestCommand(job: SandboxJob, repoPath: string): Promise<void> {
-    const rawCommand = typeof job.testCommand === 'string' ? job.testCommand : '';
-    const normalized = rawCommand.trim();
+    let rawCommand = typeof job.testCommand === 'string' ? job.testCommand : '';
+    let normalized = rawCommand.trim();
     if (!normalized) {
-      this.log(job, 'nenhum testCommand configurado; pulando verificação automática de compilação/testes');
-      return;
+      const inferred = await this.inferTestCommand(job, repoPath);
+      if (!inferred) {
+        this.log(job, 'nenhum testCommand configurado; pulando verificação automática de compilação/testes');
+        return;
+      }
+      rawCommand = inferred;
+      normalized = inferred.trim();
+      this.log(job, `testCommand inferido automaticamente: ${normalized}`);
     }
 
     const label = this.truncate(normalized.replace(/\s+/g, ' '), 200);
@@ -695,6 +701,88 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
     }
 
     this.log(job, `testCommand finalizado com sucesso (exitCode=${exitCode})`);
+  }
+
+  private async inferTestCommand(job: SandboxJob, repoPath: string): Promise<string | null> {
+    const changedFiles = Array.isArray(job.changedFiles) ? job.changedFiles : [];
+    if (changedFiles.length === 0) {
+      return null;
+    }
+
+    const modules = await this.detectMavenModules(repoPath, changedFiles);
+    if (modules.length === 0) {
+      return null;
+    }
+
+    if (modules.includes('.')) {
+      return 'mvn test';
+    }
+
+    if (modules.length === 1) {
+      return `mvn -pl ${modules[0]} -am test`;
+    }
+
+    return `mvn -pl ${modules.join(',')} -am test`;
+  }
+
+  private async detectMavenModules(repoPath: string, changedFiles: string[]): Promise<string[]> {
+    const repoRoot = path.resolve(repoPath);
+    const modules = new Set<string>();
+    const pomCache = new Map<string, string | null>();
+
+    for (const file of changedFiles) {
+      if (!file || path.isAbsolute(file)) {
+        continue;
+      }
+      const absolute = path.resolve(repoRoot, file);
+      if (!absolute.startsWith(repoRoot)) {
+        continue;
+      }
+
+      const modulePath = await this.findNearestPomModule(repoRoot, absolute, pomCache);
+      if (modulePath) {
+        modules.add(modulePath);
+      }
+    }
+
+    return Array.from(modules.values()).sort();
+  }
+
+  private async findNearestPomModule(
+    repoRoot: string,
+    absolutePath: string,
+    pomCache: Map<string, string | null>,
+  ): Promise<string | null> {
+    let currentDir = path.dirname(absolutePath);
+    while (currentDir.startsWith(repoRoot)) {
+      const cached = pomCache.get(currentDir);
+      if (cached !== undefined) {
+        if (cached) {
+          return cached;
+        }
+      } else {
+        const pomPath = path.join(currentDir, 'pom.xml');
+        try {
+          const stats = await fs.stat(pomPath);
+          if (stats.isFile()) {
+            const relative = path.relative(repoRoot, currentDir) || '.';
+            pomCache.set(currentDir, relative);
+            return relative;
+          }
+          pomCache.set(currentDir, null);
+        } catch {
+          pomCache.set(currentDir, null);
+        }
+      }
+
+      const parent = path.dirname(currentDir);
+      if (parent === currentDir) {
+        break;
+      }
+      currentDir = parent;
+    }
+
+    return null;
   }
 
   private addUsageMetrics(job: SandboxJob, usage: unknown): TokenUsage | undefined {

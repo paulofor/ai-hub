@@ -14,6 +14,7 @@ A integração com o GPT-5-Codex agora segue o fluxo **Frontend → Backend → 
   - `GET /jobs/{id}`: retorna o status (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`), `logs`, `summary`, `changedFiles` e `patch` produzidos no sandbox.
 - Para cada job:
   - Caso um `testCommand` seja fornecido, ele é executado automaticamente após o diff ser gerado. Qualquer falha (exit code diferente de 0, sinal ou timeout) marca o job como `FAILED` e impede a criação de PR.
+  - Se nenhum `testCommand` for enviado, o orquestrador tenta inferir um comando Maven quando detectar alterações em módulos com `pom.xml` (ex.: `mvn test` no módulo raiz ou `mvn -pl <modulo> -am test` para módulos específicos).
   1. Cria um diretório isolado e clona o repositório alvo.
   2. Inicia um loop com a Responses API (`gpt-5-codex`), fornecendo tools seguras limitadas ao sandbox:
      - `run_shell(command: string[], cwd?: string)`
