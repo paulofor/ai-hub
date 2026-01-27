@@ -11,6 +11,7 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 ### Endpoints
 
 - `POST /jobs`: cria um job informando `jobId`, `repoUrl` ou `repoSlug`, `branch`, `taskDescription` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório em um diretório temporário, expõe as tools `run_shell`, `read_file`, `write_file` e `http_get` ao modelo e inicia o loop de tool-calling. A tool `http_get` permite consultas HTTP públicas, bloqueando hosts locais/privados e truncando respostas grandes.
+  Quando um `testCommand` é enviado, ele é executado automaticamente no final do job; se o comando retornar erro ou expirar, o job é marcado como `FAILED` e o patch não é enviado para PR.
 - `GET /jobs/{id}`: retorna o status atualizado do job (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`), além de `logs`, resumo, arquivos alterados e patch gerado (`git diff`).
 
 Jobs ficam armazenados em memória enquanto executam e são atualizados de forma assíncrona pelo `SandboxJobProcessor`.

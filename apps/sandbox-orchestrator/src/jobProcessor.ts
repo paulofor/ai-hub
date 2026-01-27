@@ -191,6 +191,9 @@ export class SandboxJobProcessor implements JobProcessor {
       job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
       this.ensureNotCancelled(job);
       job.patch = await this.generatePatch(repoPath!, baseCommit, job);
+      this.ensureNotCancelled(job);
+      await this.runConfiguredTestCommand(job, repoPath!);
+      this.ensureNotCancelled(job);
       await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
@@ -654,6 +657,44 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       return undefined;
     }
     return texts.join('\n').trim();
+  }
+
+  private async runConfiguredTestCommand(job: SandboxJob, repoPath: string): Promise<void> {
+    const rawCommand = typeof job.testCommand === 'string' ? job.testCommand : '';
+    const normalized = rawCommand.trim();
+    if (!normalized) {
+      this.log(job, 'nenhum testCommand configurado; pulando verificação automática de compilação/testes');
+      return;
+    }
+
+    const label = this.truncate(normalized.replace(/\s+/g, ' '), 200);
+    this.log(job, `executando testCommand configurado para validar compilação/testes: ${label}`);
+
+    const result = await this.handleRunShell(
+      { command: ['bash', '-lc', rawCommand], cwd: '.' },
+      repoPath,
+      job,
+    );
+
+    const exitCode = result.exitCode ?? 0;
+    const failed = result.timedOut || (result.signal ?? null) !== null || exitCode !== 0;
+    if (failed) {
+      const failureDetail = result.timedOut
+        ? 'tempo limite excedido'
+        : result.signal
+          ? `processo interrompido com sinal ${result.signal}`
+          : `exitCode ${exitCode}`;
+      const stderrSnippet = this.truncate((result.stderr ?? '').trim(), 400);
+      const stdoutSnippet = this.truncate((result.stdout ?? '').trim(), 400);
+      const outputHint = stderrSnippet
+        ? `stderr: ${stderrSnippet}`
+        : stdoutSnippet
+          ? `stdout: ${stdoutSnippet}`
+          : 'verifique os logs do sandbox para detalhes.';
+      throw new Error(`testCommand "${label}" falhou (${failureDetail}). ${outputHint}`);
+    }
+
+    this.log(job, `testCommand finalizado com sucesso (exitCode=${exitCode})`);
   }
 
   private addUsageMetrics(job: SandboxJob, usage: unknown): TokenUsage | undefined {
