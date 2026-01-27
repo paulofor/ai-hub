@@ -1548,3 +1548,144 @@ test('db_query executa SELECT e contabiliza chamadas', async () => {
   assert.equal(second.rowCount, 2);
   assert.deepEqual(second.columns, ['id', 'name']);
 });
+
+
+test('executa testCommand configurado antes de concluir o job', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-testcmd-success-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async () => {
+        fakeOpenAI.calls.push(null);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'write-testcmd',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'test command OK' }),
+              },
+              { type: 'message', id: 'msg-testcmd', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-testcmd-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-testcmd-success',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'touch file',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+    testCommand: 'ls',
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    assert.ok(job.patch?.includes('test command OK'));
+    assert.ok(job.logs.some((entry) => entry.includes('testCommand finalizado com sucesso')));
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+
+test('marca o job como falho quando o testCommand retorna erro', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-testcmd-fail-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async () => {
+        fakeOpenAI.calls.push(null);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'write-testcmd-fail',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'broken change' }),
+              },
+              { type: 'message', id: 'msg-testcmd-fail', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-testcmd-fail-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'summary', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-testcmd-failure',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'touch file',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+    testCommand: 'exit 7',
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'FAILED');
+    assert.match(job.error ?? '', /testCommand/);
+    assert.ok(job.patch?.includes('broken change'));
+    assert.ok(job.logs.some((entry) => entry.includes('executando testCommand configurado')));
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});

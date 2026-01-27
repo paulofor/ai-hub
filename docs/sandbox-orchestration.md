@@ -13,6 +13,7 @@ A integração com o GPT-5-Codex agora segue o fluxo **Frontend → Backend → 
   - `POST /jobs`: recebe `jobId`, `repoUrl` ou `repoSlug`, `branch`, `taskDescription`, `commit` opcional e `testCommand` opcional. Cria um sandbox temporário e dispara o processamento assíncrono.
   - `GET /jobs/{id}`: retorna o status (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`), `logs`, `summary`, `changedFiles` e `patch` produzidos no sandbox.
 - Para cada job:
+  - Caso um `testCommand` seja fornecido, ele é executado automaticamente após o diff ser gerado. Qualquer falha (exit code diferente de 0, sinal ou timeout) marca o job como `FAILED` e impede a criação de PR.
   1. Cria um diretório isolado e clona o repositório alvo.
   2. Inicia um loop com a Responses API (`gpt-5-codex`), fornecendo tools seguras limitadas ao sandbox:
      - `run_shell(command: string[], cwd?: string)`
