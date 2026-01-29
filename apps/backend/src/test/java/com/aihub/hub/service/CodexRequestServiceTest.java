@@ -11,6 +11,10 @@ import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -24,7 +28,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -42,6 +45,37 @@ class CodexRequestServiceTest {
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
+    private final PlatformTransactionManager transactionManager = new PlatformTransactionManager() {
+        @Override
+        public TransactionStatus getTransaction(TransactionDefinition definition) {
+            return new SimpleTransactionStatus();
+        }
+
+        @Override
+        public void commit(TransactionStatus status) {
+        }
+
+        @Override
+        public void rollback(TransactionStatus status) {
+        }
+    };
+
+    private CodexRequestService buildService() {
+        return new CodexRequestService(
+            codexRequestRepository,
+            promptRepository,
+            responseRepository,
+            codexInteractionRepository,
+            codexHttpRequestRepository,
+            environmentRepository,
+            sandboxOrchestratorClient,
+            tokenCostCalculator,
+            transactionManager,
+            "gpt-5-codex",
+            "gpt-4.1-mini",
+            "main"
+        );
+    }
 
     @BeforeEach
     void setup() {
@@ -55,7 +89,7 @@ class CodexRequestServiceTest {
         request.setStatus(CodexRequestStatus.FAILED);
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(20)));
 
-        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request), List.of(request));
+        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenAnswer(invocation -> List.of(request));
         when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(promptRepository.findTopByRepoOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
         when(promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(anyString(), anyLong(), anyInt())).thenReturn(Optional.empty());
@@ -64,19 +98,7 @@ class CodexRequestServiceTest {
         when(codexInteractionRepository.countByCodexRequestId(anyLong())).thenReturn(0);
         when(sandboxOrchestratorClient.getJob("job-123")).thenReturn(null);
 
-        CodexRequestService service = new CodexRequestService(
-            codexRequestRepository,
-            promptRepository,
-            responseRepository,
-            codexInteractionRepository,
-            codexHttpRequestRepository,
-            environmentRepository,
-            sandboxOrchestratorClient,
-            tokenCostCalculator,
-            "gpt-5-codex",
-            "gpt-4.1-mini",
-            "main"
-        );
+        CodexRequestService service = buildService();
 
         List<CodexRequest> firstRefresh = service.list();
         assertThat(firstRefresh).containsExactly(request);
@@ -121,19 +143,7 @@ class CodexRequestServiceTest {
         when(codexInteractionRepository.countByCodexRequestId(anyLong())).thenReturn(0);
         when(sandboxOrchestratorClient.getJob("job-456")).thenReturn(null);
 
-        CodexRequestService service = new CodexRequestService(
-            codexRequestRepository,
-            promptRepository,
-            responseRepository,
-            codexInteractionRepository,
-            codexHttpRequestRepository,
-            environmentRepository,
-            sandboxOrchestratorClient,
-            tokenCostCalculator,
-            "gpt-5-codex",
-            "gpt-4.1-mini",
-            "main"
-        );
+        CodexRequestService service = buildService();
 
         List<CodexRequest> refreshed = service.list();
 

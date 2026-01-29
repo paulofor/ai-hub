@@ -25,7 +25,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -41,6 +44,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,6 +65,7 @@ public class CodexRequestService {
     private final String defaultModel;
     private final String economyModel;
     private final String defaultBranch;
+    private final TransactionTemplate sandboxRefreshTemplate;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -70,6 +75,7 @@ public class CodexRequestService {
                                EnvironmentRepository environmentRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                TokenCostCalculator tokenCostCalculator,
+                               PlatformTransactionManager transactionManager,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch) {
@@ -84,6 +90,9 @@ public class CodexRequestService {
         this.defaultModel = defaultModel;
         this.economyModel = economyModel;
         this.defaultBranch = defaultBranch;
+        Objects.requireNonNull(transactionManager, "transactionManager is required");
+        this.sandboxRefreshTemplate = new TransactionTemplate(transactionManager);
+        this.sandboxRefreshTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Transactional
@@ -130,10 +139,10 @@ public class CodexRequestService {
         return saved;
     }
 
-    @Transactional
     public List<CodexRequest> list() {
         Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
+        boolean refreshedAny = false;
 
         for (CodexRequest request : requests) {
             if (request.getExternalId() == null) {
@@ -150,19 +159,23 @@ public class CodexRequestService {
                 request.getId(),
                 decision.reason()
             );
-            refreshFromSandbox(request);
+            boolean updated = refreshFromSandbox(request);
+            refreshedAny = refreshedAny || updated;
+        }
+
+        if (refreshedAny) {
+            requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
         }
 
         applyInteractionCounts(requests);
         return requests;
     }
 
-    @Transactional
     public Page<CodexRequest> listPage(int page, int size) {
         Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
-        Page<CodexRequest> requestPage = codexRequestRepository.findAllByOrderByCreatedAtDesc(
-            PageRequest.of(page, size)
-        );
+        PageRequest pageRequest = PageRequest.of(page, size);
+        Page<CodexRequest> requestPage = codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+        boolean refreshedAny = false;
 
         for (CodexRequest request : requestPage.getContent()) {
             if (request.getExternalId() == null) {
@@ -179,7 +192,12 @@ public class CodexRequestService {
                 request.getId(),
                 decision.reason()
             );
-            refreshFromSandbox(request);
+            boolean updated = refreshFromSandbox(request);
+            refreshedAny = refreshedAny || updated;
+        }
+
+        if (refreshedAny) {
+            requestPage = codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest);
         }
 
         applyInteractionCounts(requestPage.getContent());
@@ -478,52 +496,37 @@ public class CodexRequestService {
         recordHttpRequests(request, response);
     }
 
-    private void refreshFromSandbox(CodexRequest request) {
+    private boolean refreshFromSandbox(CodexRequest request) {
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
             sandboxOrchestratorClient.getJob(request.getExternalId());
-        if (response == null) {
-            CodexRequestStatus currentStatus = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
-            Instant referenceInstant = Optional.ofNullable(request.getStartedAt())
-                .orElseGet(() -> Optional.ofNullable(request.getCreatedAt()).orElse(null));
-            boolean withinGracePeriod = referenceInstant == null
-                || referenceInstant.isAfter(Instant.now().minus(SANDBOX_NOT_FOUND_GRACE_PERIOD));
 
-            if (withinGracePeriod) {
-                log.warn(
-                    "Sandbox ainda não encontrou o job {} (status atual: {}); mantendo estado e tentando novamente dentro do período de tolerância",
-                    request.getExternalId(),
-                    currentStatus
-                );
-                return;
-            }
+        if (request.getId() == null) {
+            return synchronizeRequestWithSandbox(request, response);
+        }
 
-            boolean hasResponseText = StringUtils.hasText(request.getResponseText());
-            boolean missingCriticalData = !hasResponseText
-                || !hasUsageMetadata(request)
-                || request.getFinishedAt() == null
-                || (request.getDurationMs() == null && request.getStartedAt() != null);
-
-            if (!missingCriticalData) {
-                log.warn(
-                    "Sandbox não encontrou o job {}, mas a solicitação já está finalizada com status {}. Mantendo dados atuais.",
-                    request.getExternalId(),
-                    currentStatus
-                );
-                return;
-            }
-
-            log.info(
-                "Nenhuma resposta encontrada no sandbox para CodexRequest {} com externalId {}",
-                request.getId(),
-                request.getExternalId()
+        AtomicBoolean updated = new AtomicBoolean(false);
+        try {
+            sandboxRefreshTemplate.executeWithoutResult(status ->
+                codexRequestRepository.findById(request.getId()).ifPresent(managed -> {
+                    boolean changed = synchronizeRequestWithSandbox(managed, response);
+                    if (changed) {
+                        updated.set(true);
+                    }
+                })
             );
+        } catch (Exception ex) {
+            log.error("Falha ao atualizar CodexRequest {} a partir do sandbox", request.getId(), ex);
+        }
+        return updated.get();
+    }
 
-            boolean updated = applySandboxNotFoundFallback(request, !currentStatus.isTerminal());
-            if (updated) {
-                codexRequestRepository.save(request);
-            }
+    private boolean synchronizeRequestWithSandbox(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (request == null || !StringUtils.hasText(request.getExternalId())) {
+            return false;
+        }
 
-            return;
+        if (response == null) {
+            return handleMissingSandboxResponse(request);
         }
 
         boolean updated = applySandboxMetadata(request, response);
@@ -548,6 +551,53 @@ public class CodexRequestService {
         recordResponse(extractMetadata(request.getEnvironment()), response);
         recordInteractions(request, response);
         recordHttpRequests(request, response);
+
+        return updated || usageUpdated;
+    }
+
+    private boolean handleMissingSandboxResponse(CodexRequest request) {
+        CodexRequestStatus currentStatus = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        Instant referenceInstant = Optional.ofNullable(request.getStartedAt())
+            .orElseGet(() -> Optional.ofNullable(request.getCreatedAt()).orElse(null));
+        boolean withinGracePeriod = referenceInstant == null
+            || referenceInstant.isAfter(Instant.now().minus(SANDBOX_NOT_FOUND_GRACE_PERIOD));
+
+        if (withinGracePeriod) {
+            log.warn(
+                "Sandbox ainda não encontrou o job {} (status atual: {}); mantendo estado e tentando novamente dentro do período de tolerância",
+                request.getExternalId(),
+                currentStatus
+            );
+            return false;
+        }
+
+        boolean hasResponseText = StringUtils.hasText(request.getResponseText());
+        boolean missingCriticalData = !hasResponseText
+            || !hasUsageMetadata(request)
+            || request.getFinishedAt() == null
+            || (request.getDurationMs() == null && request.getStartedAt() != null);
+
+        if (!missingCriticalData) {
+            log.warn(
+                "Sandbox não encontrou o job {}, mas a solicitação já está finalizada com status {}. Mantendo dados atuais.",
+                request.getExternalId(),
+                currentStatus
+            );
+            return false;
+        }
+
+        log.info(
+            "Nenhuma resposta encontrada no sandbox para CodexRequest {} com externalId {}",
+            request.getId(),
+            request.getExternalId()
+        );
+
+        boolean updated = applySandboxNotFoundFallback(request, !currentStatus.isTerminal());
+        if (updated) {
+            codexRequestRepository.save(request);
+        }
+
+        return updated;
     }
 
     @Transactional
