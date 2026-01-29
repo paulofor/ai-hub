@@ -246,16 +246,12 @@ public class CodexRequestService {
     private RefreshDecision evaluateRefresh(CodexRequest request, Instant refreshCutoff) {
         CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
         boolean hasResponse = StringUtils.hasText(request.getResponseText());
-        boolean hasUsageMetadata = request.getPromptTokens() != null
-            && request.getCachedPromptTokens() != null
-            && request.getCompletionTokens() != null
-            && request.getTotalTokens() != null
-            && request.getPromptCost() != null
-            && request.getCachedPromptCost() != null
-            && request.getCompletionCost() != null
-            && request.getCost() != null;
+        boolean hasUsageMetadata = hasUsageMetadata(request);
 
-        if (status.isTerminal() && hasResponse && hasUsageMetadata && !hasSandboxNotFoundFallback(request)) {
+        if (status.isTerminal() && hasResponse && hasUsageMetadata) {
+            if (hasSandboxNotFoundFallback(request)) {
+                return RefreshDecision.skip("sandbox já informou ausência do job");
+            }
             return RefreshDecision.skip();
         }
 
@@ -285,6 +281,82 @@ public class CodexRequestService {
         String responseText = request.getResponseText();
         return StringUtils.hasText(responseText)
             && responseText.trim().startsWith("Sandbox não encontrou o job");
+    }
+
+    private boolean hasUsageMetadata(CodexRequest request) {
+        if (request == null) {
+            return false;
+        }
+        return request.getPromptTokens() != null
+            && request.getCachedPromptTokens() != null
+            && request.getCompletionTokens() != null
+            && request.getTotalTokens() != null
+            && request.getPromptCost() != null
+            && request.getCachedPromptCost() != null
+            && request.getCompletionCost() != null
+            && request.getCost() != null;
+    }
+
+    private boolean applySandboxNotFoundFallback(CodexRequest request, boolean allowStatusOverride) {
+        boolean updated = false;
+
+        if (!StringUtils.hasText(request.getResponseText())) {
+            request.setResponseText(String.format(
+                "Sandbox não encontrou o job %s; os dados podem ter expirado.",
+                request.getExternalId()
+            ));
+            updated = true;
+        }
+        if (request.getPromptTokens() == null) {
+            request.setPromptTokens(0);
+            updated = true;
+        }
+        if (request.getCachedPromptTokens() == null) {
+            request.setCachedPromptTokens(0);
+            updated = true;
+        }
+        if (request.getCompletionTokens() == null) {
+            request.setCompletionTokens(0);
+            updated = true;
+        }
+        if (request.getTotalTokens() == null) {
+            request.setTotalTokens(0);
+            updated = true;
+        }
+        if (request.getPromptCost() == null) {
+            request.setPromptCost(BigDecimal.ZERO);
+            updated = true;
+        }
+        if (request.getCachedPromptCost() == null) {
+            request.setCachedPromptCost(BigDecimal.ZERO);
+            updated = true;
+        }
+        if (request.getCompletionCost() == null) {
+            request.setCompletionCost(BigDecimal.ZERO);
+            updated = true;
+        }
+        if (request.getCost() == null) {
+            request.setCost(BigDecimal.ZERO);
+            updated = true;
+        }
+        if (allowStatusOverride && request.getStatus() != CodexRequestStatus.CANCELLED) {
+            request.setStatus(CodexRequestStatus.FAILED);
+            updated = true;
+        }
+        if (request.getFinishedAt() == null) {
+            Instant finishedAt = Instant.now();
+            request.setFinishedAt(finishedAt);
+            if (request.getStartedAt() == null) {
+                request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+            }
+            request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+            updated = true;
+        } else if (request.getDurationMs() == null && request.getStartedAt() != null) {
+            request.setDurationMs(Duration.between(request.getStartedAt(), request.getFinishedAt()).toMillis());
+            updated = true;
+        }
+
+        return updated;
     }
 
     private CodexIntegrationProfile resolveProfile(CodexIntegrationProfile candidate) {
@@ -416,18 +488,24 @@ public class CodexRequestService {
             boolean withinGracePeriod = referenceInstant == null
                 || referenceInstant.isAfter(Instant.now().minus(SANDBOX_NOT_FOUND_GRACE_PERIOD));
 
-            if (currentStatus.isTerminal()) {
+            if (withinGracePeriod) {
                 log.warn(
-                    "Sandbox não encontrou o job {}, mas a solicitação já está finalizada com status {}. Mantendo dados atuais.",
+                    "Sandbox ainda não encontrou o job {} (status atual: {}); mantendo estado e tentando novamente dentro do período de tolerância",
                     request.getExternalId(),
                     currentStatus
                 );
                 return;
             }
 
-            if (withinGracePeriod) {
+            boolean hasResponseText = StringUtils.hasText(request.getResponseText());
+            boolean missingCriticalData = !hasResponseText
+                || !hasUsageMetadata(request)
+                || request.getFinishedAt() == null
+                || (request.getDurationMs() == null && request.getStartedAt() != null);
+
+            if (!missingCriticalData) {
                 log.warn(
-                    "Sandbox ainda não encontrou o job {} (status atual: {}); mantendo estado e tentando novamente dentro do período de tolerância",
+                    "Sandbox não encontrou o job {}, mas a solicitação já está finalizada com status {}. Mantendo dados atuais.",
                     request.getExternalId(),
                     currentStatus
                 );
@@ -440,60 +518,7 @@ public class CodexRequestService {
                 request.getExternalId()
             );
 
-            boolean updated = false;
-            if (!StringUtils.hasText(request.getResponseText())) {
-                request.setResponseText(String.format(
-                    "Sandbox não encontrou o job %s; os dados podem ter expirado.",
-                    request.getExternalId()
-                ));
-                updated = true;
-            }
-            if (request.getPromptTokens() == null) {
-                request.setPromptTokens(0);
-                updated = true;
-            }
-            if (request.getCachedPromptTokens() == null) {
-                request.setCachedPromptTokens(0);
-                updated = true;
-            }
-            if (request.getCompletionTokens() == null) {
-                request.setCompletionTokens(0);
-                updated = true;
-            }
-            if (request.getTotalTokens() == null) {
-                request.setTotalTokens(0);
-                updated = true;
-            }
-            if (request.getPromptCost() == null) {
-                request.setPromptCost(BigDecimal.ZERO);
-                updated = true;
-            }
-            if (request.getCachedPromptCost() == null) {
-                request.setCachedPromptCost(BigDecimal.ZERO);
-                updated = true;
-            }
-            if (request.getCompletionCost() == null) {
-                request.setCompletionCost(BigDecimal.ZERO);
-                updated = true;
-            }
-            if (request.getCost() == null) {
-                request.setCost(BigDecimal.ZERO);
-                updated = true;
-            }
-            if (request.getStatus() != CodexRequestStatus.CANCELLED) {
-                request.setStatus(CodexRequestStatus.FAILED);
-                updated = true;
-            }
-            if (request.getFinishedAt() == null) {
-                Instant finishedAt = Instant.now();
-                request.setFinishedAt(finishedAt);
-                if (request.getStartedAt() == null) {
-                    request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
-                }
-                request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
-                updated = true;
-            }
-
+            boolean updated = applySandboxNotFoundFallback(request, !currentStatus.isTerminal());
             if (updated) {
                 codexRequestRepository.save(request);
             }
@@ -858,6 +883,10 @@ public class CodexRequestService {
     private record RefreshDecision(boolean shouldRefresh, String reason) {
         private static RefreshDecision skip() {
             return new RefreshDecision(false, "dados completos");
+        }
+
+        private static RefreshDecision skip(String reason) {
+            return new RefreshDecision(false, reason);
         }
     }
 
