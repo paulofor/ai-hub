@@ -27,7 +27,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class CodexRequestServiceTest {
@@ -47,54 +49,20 @@ class CodexRequestServiceTest {
     }
 
     @Test
-    void listRefreshesRequestsMarkedFailedAfterSandboxNotFoundFallback() {
+    void appliesFallbackAndStopsRefreshingWhenSandboxJobIsMissing() {
         CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
         request.setExternalId("job-123");
         request.setStatus(CodexRequestStatus.FAILED);
-        request.setResponseText("Sandbox não encontrou o job job-123; os dados podem ter expirado.");
-        request.setPromptTokens(0);
-        request.setCachedPromptTokens(0);
-        request.setCompletionTokens(0);
-        request.setTotalTokens(0);
-        request.setPromptCost(BigDecimal.ZERO);
-        request.setCachedPromptCost(BigDecimal.ZERO);
-        request.setCompletionCost(BigDecimal.ZERO);
-        request.setCost(BigDecimal.ZERO);
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(20)));
 
-        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request));
+        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request), List.of(request));
         when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(promptRepository.findTopByRepoOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
         when(promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(anyString(), anyLong(), anyInt())).thenReturn(Optional.empty());
         when(promptRepository.findTopByRepoAndRunIdOrderByCreatedAtDesc(anyString(), anyLong())).thenReturn(Optional.empty());
         when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
         when(codexInteractionRepository.countByCodexRequestId(anyLong())).thenReturn(0);
-
-        SandboxOrchestratorClient.SandboxOrchestratorJobResponse orchestratorResponse =
-            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
-                "job-123",
-                "COMPLETED",
-                "feito",
-                Collections.emptyList(),
-                null,
-                "https://github.com/owner/repo/pull/1",
-                null,
-                10,
-                0,
-                20,
-                30,
-                new BigDecimal("1.23"),
-                Instant.now().minusSeconds(120).toString(),
-                Instant.now().toString(),
-                120_000L,
-                0,
-                0,
-                0,
-                0,
-                Collections.emptyList(),
-                Collections.emptyList()
-            );
-        when(sandboxOrchestratorClient.getJob("job-123")).thenReturn(orchestratorResponse);
+        when(sandboxOrchestratorClient.getJob("job-123")).thenReturn(null);
 
         CodexRequestService service = new CodexRequestService(
             codexRequestRepository,
@@ -110,14 +78,16 @@ class CodexRequestServiceTest {
             "main"
         );
 
-        List<CodexRequest> refreshed = service.list();
-
-        assertThat(refreshed).containsExactly(request);
-        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
-        assertThat(request.getResponseText()).isEqualTo("feito");
-        assertThat(request.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/1");
+        List<CodexRequest> firstRefresh = service.list();
+        assertThat(firstRefresh).containsExactly(request);
+        assertThat(request.getResponseText()).contains("Sandbox não encontrou o job job-123");
+        assertThat(request.getPromptTokens()).isZero();
+        verify(codexRequestRepository).save(request);
         verify(sandboxOrchestratorClient).getJob("job-123");
-        verify(codexRequestRepository, atLeastOnce()).save(request);
+
+        List<CodexRequest> secondRefresh = service.list();
+        assertThat(secondRefresh).containsExactly(request);
+        verify(sandboxOrchestratorClient, times(1)).getJob("job-123");
     }
 
     @Test
@@ -133,6 +103,14 @@ class CodexRequestServiceTest {
         request.setStartedAt(startedAt);
         request.setFinishedAt(finishedAt);
         request.setDurationMs(Duration.between(startedAt, finishedAt).toMillis());
+        request.setPromptTokens(10);
+        request.setCachedPromptTokens(0);
+        request.setCompletionTokens(20);
+        request.setTotalTokens(30);
+        request.setPromptCost(BigDecimal.ZERO);
+        request.setCachedPromptCost(BigDecimal.ZERO);
+        request.setCompletionCost(BigDecimal.ZERO);
+        request.setCost(BigDecimal.ZERO);
 
         when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request));
         when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -163,7 +141,7 @@ class CodexRequestServiceTest {
         assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
         assertThat(request.getResponseText()).isEqualTo("feito");
         assertThat(request.getFinishedAt()).isEqualTo(finishedAt);
-        verify(sandboxOrchestratorClient).getJob("job-456");
+        verifyNoInteractions(sandboxOrchestratorClient);
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
 
