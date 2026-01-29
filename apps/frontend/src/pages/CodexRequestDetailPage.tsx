@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
+import { useToasts } from '../components/ToastContext';
 import {
   CodexRequest,
   codexStatusStyles,
@@ -31,6 +32,31 @@ export default function CodexRequestDetailPage() {
   const [loadingNext, setLoadingNext] = useState(false);
   const navigate = useNavigate();
   const feedbackDirtyRef = useRef(false);
+  const { pushToast } = useToasts();
+
+  const handleCopyPrompt = useCallback(
+    async (text: string) => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.style.position = 'fixed';
+          textarea.style.left = '-9999px';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        }
+        pushToast('Prompt copiado para a área de transferência.');
+      } catch (err) {
+        pushToast('Não foi possível copiar o prompt.', 'error');
+      }
+    },
+    [pushToast]
+  );
 
   useEffect(() => {
     feedbackDirtyRef.current = feedbackDirty;
@@ -359,7 +385,16 @@ export default function CodexRequestDetailPage() {
               <div className="rounded-lg border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="mb-2 flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Prompt enviado</h4>
-                  <span className="text-xs text-slate-500">{request.prompt.length.toLocaleString('pt-BR')} caracteres</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPrompt(request.prompt)}
+                      className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                    >
+                      Copiar prompt
+                    </button>
+                    <span className="text-xs text-slate-500">{request.prompt.length.toLocaleString('pt-BR')} caracteres</span>
+                  </div>
                 </div>
                 <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md bg-slate-900/90 p-4 text-xs leading-relaxed text-emerald-100">
                   {request.prompt}
