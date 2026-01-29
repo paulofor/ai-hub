@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
+import { useToasts } from '../components/ToastContext';
 import {
   CodexProfile,
   CodexRequest,
@@ -51,6 +52,7 @@ export default function CodexPage() {
   const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentOption[]>([]);
   const [modelOptions, setModelOptions] = useState<CodexModelOption[]>([]);
   const [loadingActions, setLoadingActions] = useState<Record<number, boolean>>({});
+  const { pushToast } = useToasts();
   const setActionLoading = useCallback((id: number, loading: boolean) => {
     setLoadingActions((prev) => {
       if (loading) {
@@ -61,6 +63,30 @@ export default function CodexPage() {
       return next;
     });
   }, []);
+
+  const handleCopyPrompt = useCallback(
+    async (text: string) => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.style.position = 'fixed';
+          textarea.style.left = '-9999px';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        }
+        pushToast('Prompt copiado para a área de transferência.');
+      } catch (err) {
+        pushToast('Não foi possível copiar o prompt.', 'error');
+      }
+    },
+    [pushToast]
+  );
 
   const mergeRequest = useCallback((updated: CodexRequest) => {
     let isNew = false;
@@ -513,6 +539,13 @@ export default function CodexPage() {
                   <td className="px-4 py-3">
                     <details>
                       <summary className="cursor-pointer text-emerald-600">Ver prompt</summary>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPrompt(item.prompt)}
+                        className="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                      >
+                        Copiar prompt
+                      </button>
                       <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
                         {item.prompt}
                       </pre>
