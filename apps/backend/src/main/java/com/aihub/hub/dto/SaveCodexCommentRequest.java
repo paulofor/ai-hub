@@ -13,7 +13,7 @@ public class SaveCodexCommentRequest {
     @Size(max = 4000, message = "Dificuldade de resolução deve ter no máximo 4000 caracteres")
     private String resolutionDifficulty;
 
-    @Size(max = 4000, message = "Log deve ter no máximo 4000 caracteres")
+    @Size(max = 200000, message = "Log deve ter no máximo 200000 caracteres")
     private String executionLog;
 
     public String getComment() {
