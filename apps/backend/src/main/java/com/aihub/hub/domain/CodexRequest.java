@@ -62,6 +62,10 @@ public class CodexRequest {
     @Column(name = "resolution_difficulty", columnDefinition = "LONGTEXT")
     private String resolutionDifficulty;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "execution_log", columnDefinition = "LONGTEXT")
+    private String executionLog;
+
     @Column(name = "external_id")
     private String externalId;
 
@@ -215,6 +219,14 @@ public class CodexRequest {
 
     public void setResolutionDifficulty(String resolutionDifficulty) {
         this.resolutionDifficulty = resolutionDifficulty;
+    }
+
+    public String getExecutionLog() {
+        return executionLog;
+    }
+
+    public void setExecutionLog(String executionLog) {
+        this.executionLog = executionLog;
     }
 
     public String getExternalId() {

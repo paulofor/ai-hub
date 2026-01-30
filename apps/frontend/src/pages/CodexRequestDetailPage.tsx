@@ -24,6 +24,7 @@ export default function CodexRequestDetailPage() {
   const [comment, setComment] = useState('');
   const [problemDescription, setProblemDescription] = useState('');
   const [resolutionDifficulty, setResolutionDifficulty] = useState('');
+  const [executionLog, setExecutionLog] = useState('');
   const [feedbackDirty, setFeedbackDirty] = useState(false);
   const [savingComment, setSavingComment] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
@@ -85,6 +86,7 @@ export default function CodexRequestDetailPage() {
           setComment(parsed.userComment ?? '');
           setProblemDescription(parsed.problemDescription ?? '');
           setResolutionDifficulty(parsed.resolutionDifficulty ?? '');
+          setExecutionLog(parsed.executionLog ?? '');
         }
       } catch (err) {
         setError((err as Error).message);
@@ -167,7 +169,8 @@ export default function CodexRequestDetailPage() {
       const response = await client.post(`/codex/requests/${request.id}/comment`, {
         comment,
         problemDescription,
-        resolutionDifficulty
+        resolutionDifficulty,
+        executionLog
       });
       const parsed = parseCodexRequest(response.data);
       if (!parsed) {
@@ -177,6 +180,7 @@ export default function CodexRequestDetailPage() {
       setComment(parsed.userComment ?? '');
       setProblemDescription(parsed.problemDescription ?? '');
       setResolutionDifficulty(parsed.resolutionDifficulty ?? '');
+      setExecutionLog(parsed.executionLog ?? '');
       setFeedbackDirty(false);
       setSuccessMessage('Comentário salvo com sucesso.');
     } catch (err) {
@@ -184,7 +188,7 @@ export default function CodexRequestDetailPage() {
     } finally {
       setSavingComment(false);
     }
-  }, [comment, problemDescription, request, resolutionDifficulty]);
+  }, [comment, executionLog, problemDescription, request, resolutionDifficulty]);
 
   const handleRating = useCallback(
     async (rating: number) => {
@@ -505,6 +509,25 @@ export default function CodexRequestDetailPage() {
                 placeholder="Anote decisões, problemas encontrados ou ideias para melhorar o fluxo."
               />
               <p className="text-xs text-slate-500 dark:text-slate-400">Guarde aprendizados para evoluir o processo.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="execution-log">
+                Log
+              </label>
+              <textarea
+                id="execution-log"
+                value={executionLog}
+                onChange={(event) => {
+                  setExecutionLog(event.target.value);
+                  setFeedbackDirty(true);
+                }}
+                rows={3}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                placeholder="Registre um log ou observação após a solicitação ser executada."
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Ajuda a documentar ações realizadas e melhorias futuras.
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <button
