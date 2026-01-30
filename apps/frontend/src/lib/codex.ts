@@ -14,6 +14,7 @@ export interface CodexRequest {
   userComment?: string;
   problemDescription?: string;
   resolutionDifficulty?: string;
+  executionLog?: string;
   promptTokens?: number;
   cachedPromptTokens?: number;
   completionTokens?: number;
@@ -184,11 +185,17 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     : typeof (item as Record<string, unknown>).resolution_difficulty === 'string'
       ? ((item as Record<string, unknown>).resolution_difficulty as string)
       : undefined;
+  const executionLogRaw = typeof item.executionLog === 'string'
+    ? item.executionLog
+    : typeof (item as Record<string, unknown>).execution_log === 'string'
+      ? ((item as Record<string, unknown>).execution_log as string)
+      : undefined;
   const pullRequestUrl = pullRequestUrlRaw && pullRequestUrlRaw.trim() ? pullRequestUrlRaw.trim() : undefined;
   const userComment = userCommentRaw && userCommentRaw.trim() ? userCommentRaw.trim() : undefined;
   const problemDescription = problemDescriptionRaw && problemDescriptionRaw.trim() ? problemDescriptionRaw.trim() : undefined;
   const resolutionDifficulty =
     resolutionDifficultyRaw && resolutionDifficultyRaw.trim() ? resolutionDifficultyRaw.trim() : undefined;
+  const executionLog = executionLogRaw && executionLogRaw.trim() ? executionLogRaw.trim() : undefined;
 
   return {
     id,
@@ -204,6 +211,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     userComment: userComment ?? undefined,
     problemDescription: problemDescription ?? undefined,
     resolutionDifficulty: resolutionDifficulty ?? undefined,
+    executionLog: executionLog ?? undefined,
     promptTokens,
     cachedPromptTokens,
     completionTokens,

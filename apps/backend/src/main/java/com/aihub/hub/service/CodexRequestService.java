@@ -227,9 +227,14 @@ public class CodexRequestService {
             .map(String::trim)
             .filter(value -> !value.isBlank())
             .orElse(null);
+        String executionLog = Optional.ofNullable(payload.getExecutionLog())
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .orElse(null);
         request.setUserComment(comment);
         request.setProblemDescription(problemDescription);
         request.setResolutionDifficulty(resolutionDifficulty);
+        request.setExecutionLog(executionLog);
         updateInteractionCount(request);
         return codexRequestRepository.save(request);
     }
