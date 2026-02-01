@@ -414,7 +414,15 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.${profileInstruction}`,
+            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+
+Se a tarefa envolver criação ou alteração de migrations Liquibase, consulte docs/database/liquibase-mysql57.md e siga estas regras:
+- Gere arquivos YAML com raiz 'databaseChangeLog' e inclua-os em apps/backend/src/main/resources/db/changelog/changelog-master.yaml quando necessário.
+- Defina 'id' e 'author' consistentes, utilize preConditions com dbms (onFail: MARK_RAN) e marque cada bloco SQL com dbms: mysql.
+- O alvo padrão é MySQL 5.7: evite recursos não suportados (CTE/'WITH', window functions, CHECK constraints) e, quando precisar de workarounds, descreva-os.
+- Prefira splitStatements: true, stripComments: true, ENGINE=InnoDB e valide o SQL mentalmente como se fosse executado via 'liquibase updateSQL' antes de finalizar.
+- Use os exemplos existentes em db/changelog/changeset-001-create-users.yaml como referência para formatação, nomenclatura e estruturas adicionais.
+${profileInstruction}`,
           },
         ],
       },
