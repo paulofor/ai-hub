@@ -9,6 +9,7 @@ import CodexPage from './pages/CodexPage';
 import CodexModelsPage from './pages/CodexModelsPage';
 import CodexRequestDetailPage from './pages/CodexRequestDetailPage';
 import EnvironmentsPage from './pages/EnvironmentsPage';
+import LogInterpreterPage from './pages/LogInterpreterPage';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Route path="/blueprints" element={<BlueprintsPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/environments" element={<EnvironmentsPage />} />
+        <Route path="/logs" element={<LogInterpreterPage />} />
         <Route path="/codex" element={<CodexPage />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
