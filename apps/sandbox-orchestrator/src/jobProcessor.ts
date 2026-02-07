@@ -1140,14 +1140,40 @@ ${profileInstruction}`,
   }
 
   private shouldForceCiEnv(command: string[]): boolean {
+    return this.isTestCommand(command);
+  }
+
+  private isTestCommand(command: string[]): boolean {
     const commandName = path.basename(command[0]);
     const args = command.slice(1);
-    if (['vitest', 'jest', 'playwright'].includes(commandName)) {
+    const testRunners = new Set(['vitest', 'jest', 'playwright']);
+    const packageManagers = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+    const dlxCommands = new Set(['npx', 'pnpm', 'yarn', 'bunx']);
+    const isTestToken = (token: string) => token === 'test' || token.startsWith('test:') || testRunners.has(token);
+
+    if (testRunners.has(commandName)) {
       return true;
     }
-    if (['npm', 'pnpm', 'yarn', 'bun'].includes(commandName)) {
-      return args.some((arg) => ['test', 'vitest', 'jest', 'playwright'].includes(arg));
+
+    if (dlxCommands.has(commandName) && args.length > 0 && testRunners.has(args[0])) {
+      return true;
     }
+
+    if (!packageManagers.has(commandName)) {
+      return false;
+    }
+
+    if (commandName === 'npm') {
+      const scriptName = args[0] === 'run' ? args[1] : args[0];
+      return typeof scriptName === 'string' && isTestToken(scriptName);
+    }
+
+    if (commandName === 'pnpm' || commandName === 'yarn' || commandName === 'bun') {
+      const first = args[0];
+      const scriptName = first === 'run' ? args[1] : first;
+      return typeof scriptName === 'string' && isTestToken(scriptName);
+    }
+
     return false;
   }
 
@@ -1229,9 +1255,10 @@ ${profileInstruction}`,
     let timedOut = false;
 
     const forceCi = this.shouldForceCiEnv(command);
-    const env = forceCi ? { ...process.env, CI: '1' } : process.env;
+    const env = forceCi ? { ...process.env, CI: '1', NODE_ENV: 'test' } : process.env;
     if (forceCi) {
       this.log(job, `run_shell: CI=1 aplicado para evitar modo watch`);
+      this.log(job, `run_shell: NODE_ENV=test aplicado para evitar React em modo produção durante testes`);
     }
 
     const child = spawn(command[0], command.slice(1), { cwd, env });

@@ -117,7 +117,7 @@ test('usa timeout estendido para comandos mvn', async () => {
 test('aplica CI=1 automaticamente para evitar modo watch em comandos de teste', async () => {
   const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-ci-env-'));
   const npmPath = path.join(repoPath, 'npm');
-  await fs.writeFile(npmPath, '#!/bin/sh\necho CI=$CI');
+  await fs.writeFile(npmPath, '#!/bin/sh\necho CI=$CI NODE_ENV=$NODE_ENV');
   await fs.chmod(npmPath, 0o755);
 
   const processor = new SandboxJobProcessor();
@@ -127,8 +127,35 @@ test('aplica CI=1 automaticamente para evitar modo watch em comandos de teste', 
 
   assert.equal(result.exitCode, 0, 'stub npm deveria executar com sucesso');
   assert.ok(result.stdout.includes('CI=1'), 'stdout deve indicar CI=1 aplicado');
+  assert.ok(result.stdout.includes('NODE_ENV=test'), 'stdout deve indicar NODE_ENV=test aplicado');
   const ciLog = job.logs.find((entry) => entry.includes('CI=1 aplicado para evitar modo watch'));
   assert.ok(ciLog, 'log de aplicação do CI=1 não encontrado');
+  const nodeEnvLog = job.logs.find((entry) =>
+    entry.includes('NODE_ENV=test aplicado para evitar React em modo produção durante testes'),
+  );
+  assert.ok(nodeEnvLog, 'log de aplicação do NODE_ENV=test não encontrado');
+
+  await fs.rm(repoPath, { recursive: true, force: true });
+});
+
+test('identifica scripts de teste com npm run test:* para aplicar CI=1 e NODE_ENV=test', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-npm-run-test-script-'));
+  const npmPath = path.join(repoPath, 'npm');
+  await fs.writeFile(npmPath, '#!/bin/sh\necho CI=$CI NODE_ENV=$NODE_ENV');
+  await fs.chmod(npmPath, 0o755);
+
+  const processor = new SandboxJobProcessor();
+  const job = createJob();
+
+  const result = await (processor as any).handleRunShell(
+    { command: ['./npm', 'run', 'test:unit'], cwd: '.' },
+    repoPath,
+    job,
+  );
+
+  assert.equal(result.exitCode, 0, 'stub npm run test:unit deveria executar com sucesso');
+  assert.ok(result.stdout.includes('CI=1'), 'stdout deve indicar CI=1 aplicado para npm run test:*');
+  assert.ok(result.stdout.includes('NODE_ENV=test'), 'stdout deve indicar NODE_ENV=test aplicado para npm run test:*');
 
   await fs.rm(repoPath, { recursive: true, force: true });
 });
