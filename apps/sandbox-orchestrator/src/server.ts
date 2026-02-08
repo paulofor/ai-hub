@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { SandboxJobProcessor } from './jobProcessor.js';
+import { logWithTimestamp } from './logger.js';
 import { JobProcessor, SandboxDatabaseConfig, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
@@ -76,13 +77,13 @@ export function createApp(options: AppOptions = {}) {
     const pip = pipVersion.status === 0 ? pipVersion.stdout.trim() : undefined;
 
     if (python) {
-      console.log(`Sandbox orchestrator healthcheck: python3 disponível em ${python}`);
+      logWithTimestamp('info', `Sandbox orchestrator healthcheck: python3 disponível em ${python}`);
     } else {
-      console.warn('Sandbox orchestrator healthcheck: python3 não encontrado');
+      logWithTimestamp('warn', 'Sandbox orchestrator healthcheck: python3 não encontrado');
     }
 
     if (pip) {
-      console.log(`Sandbox orchestrator healthcheck: pip3 detectado (${pip})`);
+      logWithTimestamp('info', `Sandbox orchestrator healthcheck: pip3 detectado (${pip})`);
     }
 
     return { python, pip };
@@ -110,13 +111,14 @@ export function createApp(options: AppOptions = {}) {
 
     const existing = jobRegistry.get(jobId);
     if (existing) {
-      console.log(`Sandbox orchestrator: received duplicate job ${jobId}, returning cached status ${existing.status}`);
+      logWithTimestamp('info', `Sandbox orchestrator: received duplicate job ${jobId}, returning cached status ${existing.status}`);
       return res.json(redactDatabasePassword(existing));
     }
 
     const modelLabel = model ? `, modelo ${model}` : '';
-    console.log(
-      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch} (perfil ${profile}${modelLabel})`,
+    logWithTimestamp(
+      'info',
+      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch} (perfil ${profile}${modelLabel})`
     );
 
     const now = new Date().toISOString();
@@ -200,7 +202,7 @@ export function createApp(options: AppOptions = {}) {
       } satisfies SandboxJob;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`Sandbox orchestrator: falha ao verificar workdir para job ${jobId}: ${message}`);
+      logWithTimestamp('warn', `Sandbox orchestrator: falha ao verificar workdir para job ${jobId}: ${message}`);
       return undefined;
     }
   };
@@ -246,7 +248,7 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.use((err: Error, _req: Request, res: Response, _next: () => void) => {
-    console.error('Unexpected error handling request', err);
+    logWithTimestamp('error', 'Unexpected error handling request', err);
     res.status(500).json({ error: 'internal_error' });
   });
 
