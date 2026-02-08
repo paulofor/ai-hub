@@ -15,6 +15,7 @@ import {
 } from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
+import { logWithTimestamp } from './logger.js';
 import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog, SandboxDatabaseConfig } from './types.js';
 
 const exec = promisify(execCallback);
@@ -832,18 +833,18 @@ ${profileInstruction}`,
     try {
       parsed = new URL(sanitizedUrl);
     } catch (err) {
-      console.warn(`Sandbox orchestrator: DB_URL inválida (${err instanceof Error ? err.message : String(err)})`);
+      logWithTimestamp('warn', `Sandbox orchestrator: DB_URL inválida (${err instanceof Error ? err.message : String(err)})`);
       return undefined;
     }
 
     if (!['mysql:', 'mariadb:'].includes(parsed.protocol)) {
-      console.warn(`Sandbox orchestrator: protocolo de banco não suportado: ${parsed.protocol}`);
+      logWithTimestamp('warn', `Sandbox orchestrator: protocolo de banco não suportado: ${parsed.protocol}`);
       return undefined;
     }
 
     const database = parsed.pathname.replace(/^\//, '').trim();
     if (!database) {
-      console.warn('Sandbox orchestrator: DB_URL não contém nome do database');
+      logWithTimestamp('warn', 'Sandbox orchestrator: DB_URL não contém nome do database');
       return undefined;
     }
 
@@ -1369,7 +1370,7 @@ ${profileInstruction}`,
       if (job) {
         this.log(job, message);
       } else {
-        console.warn(message);
+        logWithTimestamp('warn', message);
       }
       if (stream === 'stdout') {
         stdoutTruncationLogged = true;
@@ -1678,9 +1679,10 @@ ${profileInstruction}`,
   }
 
   private log(job: SandboxJob, message: string) {
-    const entry = `[${new Date().toISOString()}] ${message}`;
+    const timestamp = new Date().toISOString();
+    const entry = `[${timestamp}] ${message}`;
     job.logs.push(entry);
-    console.info(`Sandbox job ${job.jobId}: ${message}`);
+    logWithTimestamp('info', `[${timestamp}] Sandbox job ${job.jobId}: ${message}`);
   }
 
   private async describePathStatus(target: string): Promise<string> {
