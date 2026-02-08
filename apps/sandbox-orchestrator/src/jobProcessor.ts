@@ -54,6 +54,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly economyToolOutputStringLimit: number;
   private readonly economyToolOutputSerializedLimit: number;
   private readonly economyHttpToolMaxResponseChars: number;
+  private readonly modelInputMaxChars: number;
+  private readonly economyModelInputMaxChars: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
   private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
@@ -113,6 +115,13 @@ export class SandboxJobProcessor implements JobProcessor {
       Math.min(this.httpToolMaxResponseChars, 8_000),
     );
     this.economyHttpToolMaxResponseChars = Math.min(economyHttpMaxCharsRaw, this.httpToolMaxResponseChars);
+
+    this.modelInputMaxChars = this.parsePositiveInteger(process.env.MODEL_INPUT_MAX_CHARS, 180_000);
+    const economyModelCharsRaw = this.parsePositiveInteger(
+      process.env.ECONOMY_MODEL_INPUT_MAX_CHARS,
+      Math.min(this.modelInputMaxChars, 90_000),
+    );
+    this.economyModelInputMaxChars = Math.min(economyModelCharsRaw, this.modelInputMaxChars);
 
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
@@ -439,6 +448,7 @@ ${profileInstruction}`,
 
     while (true) {
       this.ensureNotCancelled(job);
+      this.compactMessageHistory(messages, job);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
@@ -1862,6 +1872,170 @@ ${profileInstruction}`,
 
   private resolveHttpToolMaxResponseChars(job: SandboxJob): number {
     return this.isEconomy(job) ? this.economyHttpToolMaxResponseChars : this.httpToolMaxResponseChars;
+  }
+
+  private resolveModelInputMaxChars(job: SandboxJob): number {
+    return this.isEconomy(job) ? this.economyModelInputMaxChars : this.modelInputMaxChars;
+  }
+
+  private compactMessageHistory(messages: ResponseItem[], job: SandboxJob): void {
+    const limit = this.resolveModelInputMaxChars(job);
+    if (!Number.isFinite(limit) || limit <= 0) {
+      return;
+    }
+
+    let totalLength = this.measureMessageSize(messages);
+    if (totalLength <= limit) {
+      return;
+    }
+
+    const baseIndex = 2;
+    if (messages.length <= baseIndex) {
+      return;
+    }
+
+    const removed: ResponseItem[] = [];
+    let pendingToolResults = 0;
+
+    const removeAt = (index: number): boolean => {
+      if (messages.length <= index) {
+        return false;
+      }
+      const [removedItem] = messages.splice(index, 1);
+      if (!removedItem) {
+        return false;
+      }
+      removed.push(removedItem);
+      if (removedItem.type === 'function_call') {
+        pendingToolResults += 1;
+      } else if (removedItem.type === 'function_call_output' && pendingToolResults > 0) {
+        pendingToolResults -= 1;
+      }
+      return true;
+    };
+
+    const shrinkTo = (targetLength: number) => {
+      while (messages.length > baseIndex && totalLength > targetLength) {
+        if (!removeAt(baseIndex)) {
+          break;
+        }
+        totalLength = this.measureMessageSize(messages);
+      }
+      while (pendingToolResults > 0 && messages.length > baseIndex) {
+        if (!removeAt(baseIndex)) {
+          break;
+        }
+      }
+      totalLength = this.measureMessageSize(messages);
+    };
+
+    shrinkTo(limit);
+
+    if (removed.length === 0) {
+      return;
+    }
+
+    const summaryLimit = Math.max(600, Math.floor(limit * 0.1));
+    const summaryBudget = Math.max(0, Math.min(limit - 1, summaryLimit + 400));
+    shrinkTo(Math.max(0, limit - summaryBudget));
+
+    const summaryText = this.buildHistorySummary(removed, summaryLimit);
+    if (!summaryText) {
+      const finalSizeNoSummary = this.measureMessageSize(messages);
+      this.log(
+        job,
+        `histórico enviado ao modelo excedeu ${limit} caracteres e ${removed.length} itens antigos foram removidos (tamanho atual ~${finalSizeNoSummary} caracteres)`,
+      );
+      return;
+    }
+
+    const summaryMessage: ResponseItem = {
+      type: 'message',
+      id: this.sanitizeId(`msg_history_${Date.now()}`),
+      role: 'system',
+      content: [
+        {
+          type: 'input_text',
+          text: `Resumo de interações anteriores removidas automaticamente para manter o contexto dentro do limite:
+${summaryText}`,
+        },
+      ],
+    } as ResponseItem;
+    messages.splice(baseIndex, 0, summaryMessage);
+
+    const finalSize = this.measureMessageSize(messages);
+    if (finalSize > limit) {
+      messages.splice(baseIndex, 1);
+      const fallbackSize = this.measureMessageSize(messages);
+      this.log(
+        job,
+        `histórico excedeu ${limit} caracteres; ${removed.length} itens antigos foram removidos, mas não houve espaço para o resumo (tamanho atual ~${fallbackSize} caracteres)`,
+      );
+      return;
+    }
+
+    this.log(
+      job,
+      `histórico enviado ao modelo excedeu ${limit} caracteres; ${removed.length} itens antigos foram resumidos (tamanho atual ~${finalSize} caracteres)`,
+    );
+  }
+
+  private buildHistorySummary(items: ResponseItem[], maxLength: number): string {
+    if (!Array.isArray(items) || items.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    for (const item of items) {
+      switch (item.type) {
+        case 'message': {
+          const message = item as ResponseOutputMessage;
+          const role = message.role ?? 'assistant';
+          const text = this.collectMessageTexts(message.content);
+          if (text) {
+            lines.push(`${role}: ${this.truncate(text, 400)}`);
+          }
+          break;
+        }
+        case 'function_call': {
+          const call = item as ResponseFunctionToolCallItem;
+          const callId = call.call_id ?? call.id ?? 'n/d';
+          const args =
+            typeof call.arguments === 'string'
+              ? call.arguments
+              : this.safeStringify(call.arguments ?? {});
+          lines.push(`tool_call ${call.name ?? 'sem_nome'}(${callId}): ${this.truncate(args, 400)}`);
+          break;
+        }
+        case 'function_call_output': {
+          const output = item as ResponseFunctionToolCallOutputItem;
+          const rendered =
+            typeof output.output === 'string'
+              ? output.output
+              : this.safeStringify(output.output ?? {});
+          lines.push(`tool_result ${output.call_id ?? 'n/d'}: ${this.truncate(rendered, 400)}`);
+          break;
+        }
+        default: {
+          lines.push(`${item.type}: ${this.truncate(this.safeStringify(item), 400)}`);
+          break;
+        }
+      }
+      if (lines.length >= 50) {
+        break;
+      }
+    }
+
+    const combined = lines.join('\n');
+    return this.truncateStringValue(combined, maxLength).value;
+  }
+
+  private measureMessageSize(value: ResponseItem | ResponseItem[]): number {
+    try {
+      return JSON.stringify(value).length;
+    } catch {
+      return 0;
+    }
   }
 
   private truncateStringFields(value: unknown, maxLength: number, tracker: { truncated: boolean }): unknown {

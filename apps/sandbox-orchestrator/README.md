@@ -33,6 +33,8 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `RUN_SHELL_TIMEOUT_MS` | Tempo máximo (ms) para cada chamada `run_shell` antes de encerrar o processo | `300000` |
 | `HTTP_TOOL_TIMEOUT_MS` | Timeout (ms) para chamadas `http_get` | `15000` |
 | `HTTP_TOOL_MAX_RESPONSE_CHARS` | Máximo de caracteres retornados pelo corpo de `http_get` antes de truncar | `20000` |
+| `MODEL_INPUT_MAX_CHARS` | Limite (em caracteres) para o payload enviado ao modelo. Ao ultrapassar o valor, o histórico mais antigo é resumido automaticamente antes da próxima chamada. | `180000` |
+| `ECONOMY_MODEL_INPUT_MAX_CHARS` | Limite equivalente aplicado quando o perfil `ECONOMY` está ativo (nunca maior que `MODEL_INPUT_MAX_CHARS`). | `90000` |
 | `GITHUB_CLONE_TOKEN` | Token utilizado para todas as operações no GitHub (clone, push e criação de PR). Se ausente, o serviço tenta `GITHUB_TOKEN`, `GITHUB_PR_TOKEN` ou um token embutido em `repoUrl`. | *(vazio)* |
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
