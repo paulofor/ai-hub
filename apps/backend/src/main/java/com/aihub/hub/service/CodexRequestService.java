@@ -562,7 +562,6 @@ public class CodexRequestService {
 
     private boolean handleMissingSandboxResponse(CodexRequest request) {
         CodexRequestStatus currentStatus = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
-        boolean hasPullRequestUrl = StringUtils.hasText(request.getPullRequestUrl());
         Instant referenceInstant = Optional.ofNullable(request.getStartedAt())
             .orElseGet(() -> Optional.ofNullable(request.getCreatedAt()).orElse(null));
         boolean withinGracePeriod = referenceInstant == null
@@ -577,45 +576,9 @@ public class CodexRequestService {
             return false;
         }
 
-        if (hasPullRequestUrl) {
-            boolean updated = false;
-            if (!currentStatus.isTerminal()) {
-                request.setStatus(CodexRequestStatus.COMPLETED);
-                updated = true;
-            }
-            if (request.getFinishedAt() == null) {
-                Instant finishedAt = Instant.now();
-                request.setFinishedAt(finishedAt);
-                if (request.getStartedAt() == null) {
-                    request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
-                }
-                request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
-                updated = true;
-            } else if (request.getDurationMs() == null && request.getStartedAt() != null) {
-                request.setDurationMs(Duration.between(request.getStartedAt(), request.getFinishedAt()).toMillis());
-                updated = true;
-            }
-
-            if (updated) {
-                codexRequestRepository.save(request);
-                log.info(
-                    "Sandbox não encontrou o job {}, mas a solicitação possui pull request {}. Mantendo execução como concluída.",
-                    request.getExternalId(),
-                    request.getPullRequestUrl()
-                );
-            } else {
-                log.warn(
-                    "Sandbox não encontrou o job {}, mas a solicitação já possui pull request {}. Mantendo dados atuais.",
-                    request.getExternalId(),
-                    request.getPullRequestUrl()
-                );
-            }
-
-            return updated;
-        }
-
         boolean hasResponseText = StringUtils.hasText(request.getResponseText());
         boolean missingCriticalData = !hasResponseText
+            || !hasUsageMetadata(request)
             || request.getFinishedAt() == null
             || (request.getDurationMs() == null && request.getStartedAt() != null);
 
