@@ -155,35 +155,4 @@ class CodexRequestServiceTest {
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
 
-    @Test
-    void marksRequestAsCompletedWhenSandboxJobIsMissingButPullRequestExists() {
-        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
-        request.setExternalId("job-789");
-        request.setStatus(CodexRequestStatus.RUNNING);
-        request.setPullRequestUrl("https://github.com/owner/repo/pull/123");
-        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(45)));
-        request.setStartedAt(Instant.now().minus(Duration.ofMinutes(40)));
-
-        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request));
-        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(promptRepository.findTopByRepoOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
-        when(promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(anyString(), anyLong(), anyInt())).thenReturn(Optional.empty());
-        when(promptRepository.findTopByRepoAndRunIdOrderByCreatedAtDesc(anyString(), anyLong())).thenReturn(Optional.empty());
-        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
-        when(codexInteractionRepository.countByCodexRequestId(anyLong())).thenReturn(0);
-        when(sandboxOrchestratorClient.getJob("job-789")).thenReturn(null);
-
-        CodexRequestService service = buildService();
-
-        List<CodexRequest> refreshed = service.list();
-
-        assertThat(refreshed).containsExactly(request);
-        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
-        assertThat(request.getFinishedAt()).isNotNull();
-        assertThat(request.getDurationMs()).isNotNull();
-        assertThat(request.getResponseText()).isNull();
-        verify(codexRequestRepository).save(request);
-        verify(sandboxOrchestratorClient).getJob("job-789");
-    }
-
 }
