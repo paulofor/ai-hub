@@ -6,9 +6,18 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS production
+FROM node:20-bookworm-slim AS production
 WORKDIR /app
-RUN apk add --no-cache git python3 py3-pip patch openjdk21-jdk maven ripgrep docker-cli bash google-cloud-cli \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/google-cloud.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/google-cloud.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+    > /etc/apt/sources.list.d/google-cloud-sdk.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends git python3 python3-pip patch openjdk-21-jdk maven ripgrep docker.io bash google-cloud-cli \
+  && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
 set -euo pipefail
