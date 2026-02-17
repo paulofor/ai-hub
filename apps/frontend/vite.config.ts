@@ -9,5 +9,12 @@ export default defineConfig({
       '/api': 'http://localhost:8081',
       '/webhooks': 'http://localhost:8081'
     }
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/setupTests.ts',
+    css: true,
+    passWithNoTests: true
   }
 });
