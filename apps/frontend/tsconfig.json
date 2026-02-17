@@ -2,7 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": "./src",
-    "types": ["node", "vite/client", "vitest/globals"]
+    "types": ["node", "vite/client"]
   },
   "include": ["src"]
 }
