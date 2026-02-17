@@ -16,7 +16,7 @@ RUN apt-get update \
   && echo "deb [signed-by=/etc/apt/keyrings/google-cloud.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
     > /etc/apt/sources.list.d/google-cloud-sdk.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git python3 python3-pip patch openjdk-21-jdk maven ripgrep docker.io bash google-cloud-cli \
+  && apt-get install -y --no-install-recommends git python3 python3-pip patch openjdk-17-jdk maven ripgrep docker.io bash google-cloud-cli \
   && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
