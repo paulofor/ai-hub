@@ -18,7 +18,15 @@
     <description>AI Hub Backend</description>
 
     <properties>
-        <java.version>21</java.version>
+        <!--
+         | O sandbox padrão expõe apenas o OpenJDK 17 na linha de comando. Ao
+         | compilar com release 21 o Maven exige um JDK 21+, o que faz os testes
+         | locais falharem com "release version 21 not supported". Mantemos o
+         | runtime oficial em Java 21 (vide Dockerfile), mas compilamos com o
+         | target 17 para garantir compatibilidade com o ambiente de
+         | desenvolvimento.
+         -->
+        <java.version>17</java.version>
     </properties>
 
     <dependencies>

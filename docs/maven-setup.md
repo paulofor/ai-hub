@@ -10,7 +10,7 @@ A imagem do sandbox já vem com Maven, JDK e Docker CLI configurados. Use os pas
    sudo apt-get update
    ```
 
-2. Instale o Maven (o pacote já puxa o `openjdk-21-jre-headless` como dependência):
+2. Instale o Maven (o pacote já puxa o `openjdk-17-jre-headless` como dependência):
 
    ```bash
    sudo apt-get install -y maven
@@ -22,4 +22,4 @@ A imagem do sandbox já vem com Maven, JDK e Docker CLI configurados. Use os pas
    mvn -version
    ```
 
-O comando acima deve exibir a versão do Maven (3.8.x) e do Java (OpenJDK 21). Caso prefira uma versão diferente do Java, configure `JAVA_HOME` antes de executar o Maven.
+O comando acima deve exibir a versão do Maven (3.8.x) e do Java (OpenJDK 17). Caso prefira uma versão diferente do Java, configure `JAVA_HOME` antes de executar o Maven.
