@@ -36,6 +36,10 @@ interface CodexModelOption {
 
 const REQUESTS_PER_PAGE = 5;
 const ACTIVE_POLL_INTERVAL_MS = 15000;
+const EXTRA_PROMPT_HINTS = {
+  metaAdsApi: 'use a tool de web search para acessar a documentação da api de Meta Ads',
+  database: 'use a tool de banco de dados para pesquisar as informações necessárias'
+} as const;
 
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
@@ -51,6 +55,8 @@ export default function CodexPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentOption[]>([]);
   const [modelOptions, setModelOptions] = useState<CodexModelOption[]>([]);
+  const [includeMetaAdsApiHint, setIncludeMetaAdsApiHint] = useState(false);
+  const [includeDatabaseHint, setIncludeDatabaseHint] = useState(false);
   const [loadingActions, setLoadingActions] = useState<Record<number, boolean>>({});
   const { pushToast } = useToasts();
   const setActionLoading = useCallback((id: number, loading: boolean) => {
@@ -239,12 +245,24 @@ export default function CodexPage() {
       return;
     }
 
+    const promptHints: string[] = [];
+    if (includeMetaAdsApiHint) {
+      promptHints.push(EXTRA_PROMPT_HINTS.metaAdsApi);
+    }
+    if (includeDatabaseHint) {
+      promptHints.push(EXTRA_PROMPT_HINTS.database);
+    }
+
+    const finalPrompt = promptHints.length > 0
+      ? `${trimmedPrompt}\n\n${promptHints.join('\n')}`
+      : trimmedPrompt;
+
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
     try {
       const response = await client.post('/codex/requests', {
-        prompt: trimmedPrompt,
+        prompt: finalPrompt,
         environment: trimmedEnvironment,
         profile,
         model: trimmedModel
@@ -254,6 +272,8 @@ export default function CodexPage() {
         mergeRequest(parsed);
       }
       setPrompt('');
+      setIncludeMetaAdsApiHint(false);
+      setIncludeDatabaseHint(false);
       setEnvironment(trimmedEnvironment);
       setModel(trimmedModel);
       setSuccessMessage('Solicitação enviada para o Codex.');
@@ -425,6 +445,39 @@ export default function CodexPage() {
               className="h-32 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed dark:border-slate-700 dark:bg-slate-900"
               placeholder="Descreva o que o Codex deve fazer..."
             />
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
+              <p className="mb-2 font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={includeMetaAdsApiHint}
+                    onChange={(event) => setIncludeMetaAdsApiHint(event.target.checked)}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span>
+                    Api do Meta Ads
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">
+                      Adiciona: “{EXTRA_PROMPT_HINTS.metaAdsApi}”
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={includeDatabaseHint}
+                    onChange={(event) => setIncludeDatabaseHint(event.target.checked)}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span>
+                    Banco de Dados
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">
+                      Adiciona: “{EXTRA_PROMPT_HINTS.database}”
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
