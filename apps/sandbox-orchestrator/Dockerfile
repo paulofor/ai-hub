@@ -15,10 +15,14 @@ RUN apt-get update \
     | gpg --dearmor -o /etc/apt/keyrings/google-cloud.gpg \
   && echo "deb [signed-by=/etc/apt/keyrings/google-cloud.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
     > /etc/apt/sources.list.d/google-cloud-sdk.list \
+  && curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
+    | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb bookworm main" \
+    > /etc/apt/sources.list.d/adoptium.list \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git python3 python3-pip patch openjdk-21-jdk/bookworm-backports maven ripgrep docker.io bash google-cloud-cli \
+  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker.io bash google-cloud-cli \
   && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
