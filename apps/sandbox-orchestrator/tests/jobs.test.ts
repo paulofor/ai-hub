@@ -97,6 +97,27 @@ test('returns existing job idempotently', async () => {
   assert.equal(second.body.jobId, payload.jobId);
 });
 
+test('não expõe o callbackSecret nas respostas', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  const payload = {
+    jobId: 'job-with-callback',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'callback test',
+    callbackUrl: 'http://backend:8081/api/callback',
+    callbackSecret: 'super-secret',
+  };
+
+  const creation = await request(app).post('/jobs').send(payload).expect(201);
+  assert.equal(creation.body.jobId, payload.jobId);
+  assert.equal(creation.body.callbackUrl, payload.callbackUrl);
+  assert.ok(!('callbackSecret' in creation.body) || creation.body.callbackSecret === undefined, 'callbackSecret should not be exposed');
+
+  const stored = registry.get(payload.jobId);
+  assert.equal(stored?.callbackSecret, 'super-secret');
+});
+
 test('permite cancelar um job em execução', async () => {
   const registry = new Map<string, SandboxJob>();
   const processor = new SleepingProcessor();

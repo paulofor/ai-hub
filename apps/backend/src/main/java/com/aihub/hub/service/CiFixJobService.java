@@ -64,6 +64,8 @@ public class CiFixJobService {
             request.getTestCommand(),
             null,
             null,
+            null,
+            null,
             null
         );
 

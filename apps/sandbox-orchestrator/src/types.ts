@@ -39,6 +39,8 @@ export interface SandboxJob {
   commitHash?: string;
   profile?: SandboxProfile;
   model?: string;
+  callbackUrl?: string;
+  callbackSecret?: string;
   status: JobStatus;
   summary?: string;
   interactions: SandboxInteraction[];

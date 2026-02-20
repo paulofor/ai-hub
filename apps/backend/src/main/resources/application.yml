@@ -57,6 +57,13 @@ hub:
   cors:
     allowed-origins: ${HUB_ALLOWED_ORIGINS:}
     allow-credentials: ${HUB_CORS_ALLOW_CREDENTIALS:false}
+  sandbox:
+    orchestrator:
+      api-url: ${HUB_SANDBOX_ORCHESTRATOR_API_URL:http://sandbox-orchestrator:8083}
+      jobs-path: ${HUB_SANDBOX_ORCHESTRATOR_JOBS_PATH:/jobs}
+    callback:
+      url: ${HUB_SANDBOX_CALLBACK_URL:http://backend:8081/api/codex/requests/callbacks/sandbox}
+      secret: ${HUB_SANDBOX_CALLBACK_SECRET:}
 
 server:
   port: 8081

@@ -223,6 +223,7 @@ export class SandboxJobProcessor implements JobProcessor {
           job.durationMs = Math.max(0, finished.getTime() - startMs);
         }
       }
+      await this.sendCallback(job);
     }
   }
 
@@ -1665,6 +1666,49 @@ ${profileInstruction}`,
       return 'verifique se o token tem escopos de push e pull_request';
     }
     return undefined;
+  }
+
+  private buildCallbackPayload(job: SandboxJob): SandboxJob {
+    const { callbackSecret: _secret, ...rest } = job;
+    const payload = { ...rest } as SandboxJob;
+    if (job.database) {
+      const { password: _password, ...database } = job.database;
+      payload.database = database;
+    }
+    return payload;
+  }
+
+  private async sendCallback(job: SandboxJob): Promise<void> {
+    if (!job.callbackUrl) {
+      return;
+    }
+    if (!this.fetchImpl) {
+      this.log(job, 'callback configurado, mas fetch não está disponível no ambiente');
+      return;
+    }
+
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (job.callbackSecret) {
+      headers['X-Sandbox-Callback-Token'] = job.callbackSecret;
+    }
+
+    const payload = this.buildCallbackPayload(job);
+
+    try {
+      const response = await this.fetchImpl(job.callbackUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => '');
+        throw new Error(`status ${response.status}: ${this.truncate(bodyText, 400)}`);
+      }
+      this.log(job, `callback enviado para ${job.callbackUrl}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(job, `falha ao enviar callback para ${job.callbackUrl}: ${message}`);
+    }
   }
 
   private log(job: SandboxJob, message: string) {
