@@ -10,7 +10,9 @@ public record SandboxJobRequest(
     String testCommand,
     String profile,
     String model,
-    DatabaseConnection database
+    DatabaseConnection database,
+    String callbackUrl,
+    String callbackSecret
 ) {
     public record DatabaseConnection(
         String host,

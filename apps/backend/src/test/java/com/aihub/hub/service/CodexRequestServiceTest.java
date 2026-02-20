@@ -73,7 +73,9 @@ class CodexRequestServiceTest {
             transactionManager,
             "gpt-5-codex",
             "gpt-4.1-mini",
-            "main"
+            "main",
+            null,
+            null
         );
     }
 
@@ -155,4 +157,49 @@ class CodexRequestServiceTest {
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
 
+    @Test
+    void handleSandboxCallbackUpdatesRequestWhenJobExists() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-999");
+        request.setCreatedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        when(codexRequestRepository.findByExternalId("job-999")).thenReturn(Optional.of(request));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCostCalculator.calculate(any(), any(), any(), any(), any())).thenReturn(
+            new TokenCostBreakdown(10, 0, 5, 15, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+        );
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
+                "job-999",
+                "COMPLETED",
+                null,
+                null,
+                null,
+                "https://example.com/pr/1",
+                null,
+                10,
+                0,
+                5,
+                15,
+                BigDecimal.ZERO,
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:06:00Z",
+                300000L,
+                1,
+                2,
+                1,
+                0,
+                null,
+                null
+            );
+
+        CodexRequestService service = buildService();
+        boolean updated = service.handleSandboxCallback(response);
+
+        assertThat(updated).isTrue();
+        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
+        assertThat(request.getFinishedAt()).isEqualTo(Instant.parse("2024-01-01T00:06:00Z"));
+        verify(codexRequestRepository).save(request);
+    }
 }

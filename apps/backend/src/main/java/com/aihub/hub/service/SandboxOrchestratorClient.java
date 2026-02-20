@@ -55,6 +55,9 @@ public class SandboxOrchestratorClient {
             }
         });
 
+        Optional.ofNullable(request.callbackUrl()).ifPresent(value -> body.put("callbackUrl", value));
+        Optional.ofNullable(request.callbackSecret()).ifPresent(value -> body.put("callbackSecret", value));
+
         log.info("Enviando job {} para sandbox-orchestrator no path {}", request.jobId(), jobsPath);
         JsonNode response = restClient.post()
             .uri(jobsPath)

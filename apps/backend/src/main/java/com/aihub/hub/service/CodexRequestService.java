@@ -66,6 +66,8 @@ public class CodexRequestService {
     private final String economyModel;
     private final String defaultBranch;
     private final TransactionTemplate sandboxRefreshTemplate;
+    private final String sandboxCallbackUrl;
+    private final String sandboxCallbackSecret;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -78,7 +80,9 @@ public class CodexRequestService {
                                PlatformTransactionManager transactionManager,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
-                               @Value("${hub.codex.default-branch:main}") String defaultBranch) {
+                               @Value("${hub.codex.default-branch:main}") String defaultBranch,
+                               @Value("${hub.sandbox.callback.url:}") String sandboxCallbackUrl,
+                               @Value("${hub.sandbox.callback.secret:}") String sandboxCallbackSecret) {
         this.codexRequestRepository = codexRequestRepository;
         this.promptRepository = promptRepository;
         this.responseRepository = responseRepository;
@@ -90,6 +94,8 @@ public class CodexRequestService {
         this.defaultModel = defaultModel;
         this.economyModel = economyModel;
         this.defaultBranch = defaultBranch;
+        this.sandboxCallbackUrl = StringUtils.hasText(sandboxCallbackUrl) ? sandboxCallbackUrl.trim() : null;
+        this.sandboxCallbackSecret = StringUtils.hasText(sandboxCallbackSecret) ? sandboxCallbackSecret.trim() : null;
         Objects.requireNonNull(transactionManager, "transactionManager is required");
         this.sandboxRefreshTemplate = new TransactionTemplate(transactionManager);
         this.sandboxRefreshTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -463,6 +469,9 @@ public class CodexRequestService {
         log.info("Enviando CodexRequest {} para sandbox com jobId {} e branch padrão {}", request.getId(), jobId, defaultBranch);
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
 
+        String callbackUrl = this.sandboxCallbackUrl;
+        String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
+
         SandboxJobRequest jobRequest = new SandboxJobRequest(
             jobId,
             coordinates.owner() + "/" + coordinates.repo(),
@@ -473,7 +482,9 @@ public class CodexRequestService {
             null,
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
             request.getModel(),
-            resolveDatabase(request.getEnvironment())
+            resolveDatabase(request.getEnvironment()),
+            callbackUrl,
+            callbackSecret
         );
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.createJob(jobRequest);
@@ -499,6 +510,30 @@ public class CodexRequestService {
         recordResponse(metadata, response);
         recordInteractions(request, response);
         recordHttpRequests(request, response);
+    }
+
+    @Transactional
+    public boolean handleSandboxCallback(SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (response == null || !StringUtils.hasText(response.jobId())) {
+            log.warn("Callback do sandbox ignorado: payload sem jobId");
+            return false;
+        }
+
+        String jobId = response.jobId().trim();
+        Optional<CodexRequest> optional = codexRequestRepository.findByExternalId(jobId);
+        if (optional.isEmpty()) {
+            log.warn("Callback do sandbox ignorado: nenhum CodexRequest com externalId {}", jobId);
+            return false;
+        }
+
+        CodexRequest managed = optional.get();
+        boolean updated = synchronizeRequestWithSandbox(managed, response);
+        if (updated) {
+            log.info("CodexRequest {} atualizado via callback do sandbox", managed.getId());
+        } else {
+            log.info("Callback do sandbox recebido para CodexRequest {} sem alterações", managed.getId());
+        }
+        return updated;
     }
 
     private boolean refreshFromSandbox(CodexRequest request) {

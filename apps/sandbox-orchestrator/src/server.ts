@@ -41,12 +41,13 @@ function normalizeDatabaseConfig(raw: unknown): SandboxDatabaseConfig | undefine
   return { host, database, user, password: password ?? undefined, port } satisfies SandboxDatabaseConfig;
 }
 
-function redactDatabasePassword(job: SandboxJob): SandboxJob {
-  if (!job.database || job.database.password === undefined) {
-    return job;
+function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
+  const sanitized: SandboxJob = { ...job, callbackSecret: undefined };
+  if (job.database) {
+    const { password: _password, ...database } = job.database;
+    sanitized.database = database;
   }
-  const { password: _password, ...database } = job.database;
-  return { ...job, database } satisfies SandboxJob;
+  return sanitized;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -103,6 +104,8 @@ export function createApp(options: AppOptions = {}) {
     const model = validateString(req.body?.model);
     const database = normalizeDatabaseConfig(req.body?.database);
     const profile = normalizeProfile(validateString(req.body?.profile));
+    const callbackUrl = validateString(req.body?.callbackUrl);
+    const callbackSecret = validateString(req.body?.callbackSecret);
 
     if (!jobId || (!repoUrl && !repoSlug) || !branch || !taskDescription) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
@@ -111,7 +114,7 @@ export function createApp(options: AppOptions = {}) {
     const existing = jobRegistry.get(jobId);
     if (existing) {
       console.log(`Sandbox orchestrator: received duplicate job ${jobId}, returning cached status ${existing.status}`);
-      return res.json(redactDatabasePassword(existing));
+      return res.json(sanitizeJobForResponse(existing));
     }
 
     const modelLabel = model ? `, modelo ${model}` : '';
@@ -131,6 +134,8 @@ export function createApp(options: AppOptions = {}) {
       profile,
       model: model ?? undefined,
       database,
+      callbackUrl: callbackUrl ?? undefined,
+      callbackSecret: callbackSecret ?? undefined,
       status: 'PENDING',
       logs: [],
       createdAt: now,
@@ -158,7 +163,7 @@ export function createApp(options: AppOptions = {}) {
         jobRegistry.set(jobId, job);
       });
 
-    res.status(201).json(redactDatabasePassword(job));
+    res.status(201).json(sanitizeJobForResponse(job));
   });
 
   const recoverOrphanJob = async (jobId: string): Promise<SandboxJob | undefined> => {
@@ -209,13 +214,13 @@ export function createApp(options: AppOptions = {}) {
     const jobId = req.params.id;
     const job = jobRegistry.get(jobId);
     if (job) {
-      return res.json(redactDatabasePassword(job));
+      return res.json(sanitizeJobForResponse(job));
     }
 
     const recovered = await recoverOrphanJob(jobId);
     if (recovered) {
       jobRegistry.set(jobId, recovered);
-      return res.json(redactDatabasePassword(recovered));
+      return res.json(sanitizeJobForResponse(recovered));
     }
 
     res.status(404).json({ error: 'job not found' });
@@ -242,7 +247,7 @@ export function createApp(options: AppOptions = {}) {
     }
 
     jobRegistry.set(job.jobId, job);
-    res.json(redactDatabasePassword(job));
+    res.json(sanitizeJobForResponse(job));
   });
 
   app.use((err: Error, _req: Request, res: Response, _next: () => void) => {
