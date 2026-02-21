@@ -34,12 +34,16 @@ interface CodexModelOption {
   outputPricePerMillion: number;
 }
 
+interface PromptHintOption {
+  id: number;
+  label: string;
+  phrase: string;
+  environmentId?: number | null;
+  environmentName?: string | null;
+}
+
 const REQUESTS_PER_PAGE = 5;
 const ACTIVE_POLL_INTERVAL_MS = 15000;
-const EXTRA_PROMPT_HINTS = {
-  metaAdsApi: 'use a tool de web search para acessar a documentação da api de Meta Ads',
-  database: 'use a tool de banco de dados para pesquisar as informações necessárias'
-} as const;
 
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
@@ -55,8 +59,10 @@ export default function CodexPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [environmentOptions, setEnvironmentOptions] = useState<EnvironmentOption[]>([]);
   const [modelOptions, setModelOptions] = useState<CodexModelOption[]>([]);
-  const [includeMetaAdsApiHint, setIncludeMetaAdsApiHint] = useState(false);
-  const [includeDatabaseHint, setIncludeDatabaseHint] = useState(false);
+  const [promptHints, setPromptHints] = useState<PromptHintOption[]>([]);
+  const [selectedPromptHintIds, setSelectedPromptHintIds] = useState<number[]>([]);
+  const [promptHintsError, setPromptHintsError] = useState<string | null>(null);
+  const [loadingPromptHints, setLoadingPromptHints] = useState(false);
   const [loadingActions, setLoadingActions] = useState<Record<number, boolean>>({});
   const { pushToast } = useToasts();
   const setActionLoading = useCallback((id: number, loading: boolean) => {
@@ -93,6 +99,18 @@ export default function CodexPage() {
     },
     [pushToast]
   );
+
+  const handlePromptHintToggle = useCallback((hintId: number, checked: boolean) => {
+    setSelectedPromptHintIds((prev) => {
+      if (checked) {
+        if (prev.includes(hintId)) {
+          return prev;
+        }
+        return [...prev, hintId];
+      }
+      return prev.filter((id) => id !== hintId);
+    });
+  }, []);
 
   const mergeRequest = useCallback((updated: CodexRequest) => {
     let isNew = false;
@@ -207,6 +225,47 @@ export default function CodexPage() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
+  useEffect(() => {
+    const trimmedEnvironment = environment.trim();
+    if (!trimmedEnvironment) {
+      setPromptHints([]);
+      setSelectedPromptHintIds([]);
+      setPromptHintsError(null);
+      setLoadingPromptHints(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingPromptHints(true);
+    client
+      .get<PromptHintOption[]>('/prompt-hints', {
+        params: { environment: trimmedEnvironment }
+      })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setPromptHints(response.data);
+        setPromptHintsError(null);
+        setSelectedPromptHintIds((prev) => prev.filter((id) => response.data.some((hint) => hint.id === id)));
+      })
+      .catch((err: Error) => {
+        if (cancelled) {
+          return;
+        }
+        setPromptHintsError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingPromptHints(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [environment]);
+
   const totalPages = Math.max(1, Math.ceil(totalRequests / REQUESTS_PER_PAGE));
 
   useEffect(() => {
@@ -229,6 +288,26 @@ export default function CodexPage() {
     return modelOptions.find((option) => option.modelName === model) ?? null;
   }, [modelOptions, model]);
 
+  const selectedPromptHints = useMemo(() => {
+    if (promptHints.length === 0 || selectedPromptHintIds.length === 0) {
+      return [];
+    }
+    const hintsById = new Map(promptHints.map((hint) => [hint.id, hint]));
+    return selectedPromptHintIds
+      .map((id) => hintsById.get(id))
+      .filter((hint): hint is PromptHintOption => Boolean(hint));
+  }, [promptHints, selectedPromptHintIds]);
+
+  const generalPromptHints = useMemo(
+    () => promptHints.filter((hint) => !hint.environmentId),
+    [promptHints]
+  );
+
+  const scopedPromptHints = useMemo(
+    () => promptHints.filter((hint) => hint.environmentId),
+    [promptHints]
+  );
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmedPrompt = prompt.trim();
@@ -245,16 +324,12 @@ export default function CodexPage() {
       return;
     }
 
-    const promptHints: string[] = [];
-    if (includeMetaAdsApiHint) {
-      promptHints.push(EXTRA_PROMPT_HINTS.metaAdsApi);
-    }
-    if (includeDatabaseHint) {
-      promptHints.push(EXTRA_PROMPT_HINTS.database);
-    }
+    const hintPhrases = selectedPromptHints
+      .map((hint) => hint.phrase.trim())
+      .filter((value) => value.length > 0);
 
-    const finalPrompt = promptHints.length > 0
-      ? `${trimmedPrompt}\n\n${promptHints.join('\n')}`
+    const finalPrompt = hintPhrases.length > 0
+      ? `${trimmedPrompt}\n\n${hintPhrases.join('\n')}`
       : trimmedPrompt;
 
     setLoading(true);
@@ -272,8 +347,7 @@ export default function CodexPage() {
         mergeRequest(parsed);
       }
       setPrompt('');
-      setIncludeMetaAdsApiHint(false);
-      setIncludeDatabaseHint(false);
+      setSelectedPromptHintIds([]);
       setEnvironment(trimmedEnvironment);
       setModel(trimmedModel);
       setSuccessMessage('Solicitação enviada para o Codex.');
@@ -446,37 +520,80 @@ export default function CodexPage() {
               placeholder="Descreva o que o Codex deve fazer..."
             />
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
-              <p className="mb-2 font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
-              <div className="space-y-2">
-                <label className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={includeMetaAdsApiHint}
-                    onChange={(event) => setIncludeMetaAdsApiHint(event.target.checked)}
-                    className="mt-0.5 h-4 w-4"
-                  />
-                  <span>
-                    Api do Meta Ads
-                    <span className="block text-xs text-slate-500 dark:text-slate-400">
-                      Adiciona: “{EXTRA_PROMPT_HINTS.metaAdsApi}”
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={includeDatabaseHint}
-                    onChange={(event) => setIncludeDatabaseHint(event.target.checked)}
-                    className="mt-0.5 h-4 w-4"
-                  />
-                  <span>
-                    Banco de Dados
-                    <span className="block text-xs text-slate-500 dark:text-slate-400">
-                      Adiciona: “{EXTRA_PROMPT_HINTS.database}”
-                    </span>
-                  </span>
-                </label>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
+                <Link
+                  to="/prompt-hints"
+                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-500"
+                >
+                  Gerenciar itens
+                </Link>
               </div>
+              {loadingPromptHints && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">Carregando itens disponíveis...</p>
+              )}
+              {promptHintsError && (
+                <p className="text-xs text-red-500">{promptHintsError}</p>
+              )}
+              {!loadingPromptHints && !promptHintsError && promptHints.length === 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Nenhum item configurado para este ambiente.
+                </p>
+              )}
+              {(generalPromptHints.length > 0 || scopedPromptHints.length > 0) && (
+                <div className="space-y-4">
+                  {generalPromptHints.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Itens gerais
+                      </p>
+                      <div className="space-y-2">
+                        {generalPromptHints.map((hint) => (
+                          <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={selectedPromptHintIds.includes(hint.id)}
+                              onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                              className="mt-0.5 h-4 w-4"
+                            />
+                            <span>
+                              {hint.label}
+                              <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
+                                {hint.phrase}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {scopedPromptHints.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Itens para {environment || 'o ambiente selecionado'}
+                      </p>
+                      <div className="space-y-2">
+                        {scopedPromptHints.map((hint) => (
+                          <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={selectedPromptHintIds.includes(hint.id)}
+                              onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                              className="mt-0.5 h-4 w-4"
+                            />
+                            <span>
+                              {hint.label}
+                              <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
+                                {hint.phrase}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
