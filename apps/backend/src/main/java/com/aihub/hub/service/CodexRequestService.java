@@ -68,6 +68,7 @@ public class CodexRequestService {
     private final TransactionTemplate sandboxRefreshTemplate;
     private final String sandboxCallbackUrl;
     private final String sandboxCallbackSecret;
+    private final int smartEconomyEconomyTokenCeiling;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -81,6 +82,7 @@ public class CodexRequestService {
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch,
+                               @Value("${hub.codex.smart-economy.max-economy-tokens:1500000}") int smartEconomyEconomyTokenCeiling,
                                @Value("${hub.sandbox.callback.url:}") String sandboxCallbackUrl,
                                @Value("${hub.sandbox.callback.secret:}") String sandboxCallbackSecret) {
         this.codexRequestRepository = codexRequestRepository;
@@ -96,6 +98,7 @@ public class CodexRequestService {
         this.defaultBranch = defaultBranch;
         this.sandboxCallbackUrl = StringUtils.hasText(sandboxCallbackUrl) ? sandboxCallbackUrl.trim() : null;
         this.sandboxCallbackSecret = StringUtils.hasText(sandboxCallbackSecret) ? sandboxCallbackSecret.trim() : null;
+        this.smartEconomyEconomyTokenCeiling = smartEconomyEconomyTokenCeiling > 0 ? smartEconomyEconomyTokenCeiling : 1_500_000;
         Objects.requireNonNull(transactionManager, "transactionManager is required");
         this.sandboxRefreshTemplate = new TransactionTemplate(transactionManager);
         this.sandboxRefreshTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -104,7 +107,7 @@ public class CodexRequestService {
     @Transactional
     public CodexRequest create(CreateCodexRequest request) {
         CodexIntegrationProfile profile = resolveProfile(request.getProfile());
-        String model = resolveModel(profile, request.getModel());
+        String model = resolveModel(profile, request.getModel(), request);
         log.info("Criando CodexRequest para ambiente {} com modelo {} (perfil {})", request.getEnvironment(), model, profile);
         CodexRequest codexRequest = new CodexRequest(
             request.getEnvironment().trim(),
@@ -392,14 +395,59 @@ public class CodexRequestService {
         return candidate != null ? candidate : CodexIntegrationProfile.STANDARD;
     }
 
-    private String resolveModel(CodexIntegrationProfile profile, String candidate) {
+    private String resolveModel(CodexIntegrationProfile profile, String candidate, CreateCodexRequest request) {
         if (StringUtils.hasText(candidate)) {
             return candidate.trim();
+        }
+        if (profile == CodexIntegrationProfile.SMART_ECONOMY) {
+            boolean preferEconomy = shouldRunSmartEconomyAsEconomy(request);
+            if (preferEconomy && StringUtils.hasText(economyModel)) {
+                return economyModel.trim();
+            }
+            return defaultModel;
         }
         if (profile == CodexIntegrationProfile.ECONOMY && StringUtils.hasText(economyModel)) {
             return economyModel.trim();
         }
         return defaultModel;
+    }
+
+    private boolean shouldRunSmartEconomyAsEconomy(CreateCodexRequest request) {
+        if (request == null) {
+            return false;
+        }
+        if (!StringUtils.hasText(economyModel)) {
+            return false;
+        }
+        int footprint = estimateTokenFootprint(request);
+        return footprint > 0 && footprint <= smartEconomyEconomyTokenCeiling;
+    }
+
+    private int estimateTokenFootprint(CreateCodexRequest request) {
+        if (request == null) {
+            return 0;
+        }
+        if (request.getTotalTokens() != null && request.getTotalTokens() > 0) {
+            return request.getTotalTokens();
+        }
+        int aggregate = 0;
+        if (request.getPromptTokens() != null && request.getPromptTokens() > 0) {
+            aggregate += request.getPromptTokens();
+        }
+        if (request.getCachedPromptTokens() != null && request.getCachedPromptTokens() > 0) {
+            aggregate += request.getCachedPromptTokens();
+        }
+        if (request.getCompletionTokens() != null && request.getCompletionTokens() > 0) {
+            aggregate += request.getCompletionTokens();
+        }
+        if (aggregate > 0) {
+            return aggregate;
+        }
+        String prompt = request.getPrompt();
+        if (StringUtils.hasText(prompt)) {
+            return Math.max(1, prompt.trim().length() / 4);
+        }
+        return 0;
     }
 
     private PromptMetadata extractMetadata(String environment) {

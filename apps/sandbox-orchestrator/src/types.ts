@@ -1,5 +1,5 @@
 export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type SandboxProfile = 'STANDARD' | 'ECONOMY';
+export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY';
 
 export type InteractionDirection = 'OUTBOUND' | 'INBOUND';
 

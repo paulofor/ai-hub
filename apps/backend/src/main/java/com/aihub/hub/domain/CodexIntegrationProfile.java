@@ -2,7 +2,8 @@ package com.aihub.hub.domain;
 
 public enum CodexIntegrationProfile {
     STANDARD,
-    ECONOMY;
+    ECONOMY,
+    SMART_ECONOMY;
 
     public static CodexIntegrationProfile fromString(String value) {
         if (value == null || value.isBlank()) {

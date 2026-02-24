@@ -54,6 +54,10 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly economyToolOutputStringLimit: number;
   private readonly economyToolOutputSerializedLimit: number;
   private readonly economyHttpToolMaxResponseChars: number;
+  private readonly smartEconomyMaxTaskDescriptionChars: number;
+  private readonly smartEconomyToolOutputStringLimit: number;
+  private readonly smartEconomyToolOutputSerializedLimit: number;
+  private readonly smartEconomyHttpToolMaxResponseChars: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
   private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
@@ -116,6 +120,39 @@ export class SandboxJobProcessor implements JobProcessor {
     );
     this.economyHttpToolMaxResponseChars = Math.min(economyHttpMaxCharsRaw, this.httpToolMaxResponseChars);
 
+    const smartEconomyTaskLimitRaw = this.parsePositiveInteger(
+      process.env.SMART_ECONOMY_TASK_DESCRIPTION_MAX_CHARS,
+      Math.min(this.maxTaskDescriptionChars, 10_000),
+    );
+    this.smartEconomyMaxTaskDescriptionChars = Math.min(smartEconomyTaskLimitRaw, this.maxTaskDescriptionChars);
+
+    const smartEconomyToolOutputLimitRaw = this.parsePositiveInteger(
+      process.env.SMART_ECONOMY_TOOL_OUTPUT_STRING_LIMIT,
+      Math.min(this.toolOutputStringLimit, 10_000),
+    );
+    this.smartEconomyToolOutputStringLimit = Math.min(
+      smartEconomyToolOutputLimitRaw,
+      this.toolOutputStringLimit,
+    );
+
+    const smartEconomyToolOutputSerializedLimitRaw = this.parsePositiveInteger(
+      process.env.SMART_ECONOMY_TOOL_OUTPUT_SERIALIZED_LIMIT,
+      Math.min(this.toolOutputSerializedLimit, 40_000),
+    );
+    this.smartEconomyToolOutputSerializedLimit = Math.min(
+      smartEconomyToolOutputSerializedLimitRaw,
+      this.toolOutputSerializedLimit,
+    );
+
+    const smartEconomyHttpMaxCharsRaw = this.parsePositiveInteger(
+      process.env.SMART_ECONOMY_HTTP_TOOL_MAX_RESPONSE_CHARS,
+      Math.min(this.httpToolMaxResponseChars, 15_000),
+    );
+    this.smartEconomyHttpToolMaxResponseChars = Math.min(
+      smartEconomyHttpMaxCharsRaw,
+      this.httpToolMaxResponseChars,
+    );
+
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
@@ -164,6 +201,11 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(
           job,
           `modo econômico: limite prompt=${this.economyMaxTaskDescriptionChars}, toolOutput=${this.economyToolOutputStringLimit}, http_get=${this.economyHttpToolMaxResponseChars}`,
+        );
+      } else if (this.isSmartEconomy(job)) {
+        this.log(
+          job,
+          `modo econômico inteligente: limite prompt=${this.smartEconomyMaxTaskDescriptionChars}, toolOutput=${this.smartEconomyToolOutputStringLimit}, http_get=${this.smartEconomyHttpToolMaxResponseChars}`,
         );
       }
 
@@ -408,7 +450,10 @@ export class SandboxJobProcessor implements JobProcessor {
     const profileInstruction = this.isEconomy(job)
       ? `
 Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, escreva respostas objetivas e evite reexecuções desnecessárias.`
-      : '';
+      : this.isSmartEconomy(job)
+        ? `
+Modo econômico inteligente ativo: aproveite estratégias enxutas (reutilizar resultados, evitar loops desnecessários) sem abrir mão da validação completa. Justifique quando precisar executar comandos mais longos e confirme se a cobertura da tarefa permanece adequada.`
+        : '';
     const messages: ResponseItem[] = [
       {
         type: 'message',
@@ -1988,7 +2033,7 @@ ${profileInstruction}`,
     if (candidate) {
       return candidate;
     }
-    if (this.isEconomy(job) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -1998,20 +2043,48 @@ ${profileInstruction}`,
     return (job.profile ?? 'STANDARD') === 'ECONOMY';
   }
 
+  private isSmartEconomy(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'SMART_ECONOMY';
+  }
+
   private resolveTaskDescriptionLimit(job: SandboxJob): number {
-    return this.isEconomy(job) ? this.economyMaxTaskDescriptionChars : this.maxTaskDescriptionChars;
+    if (this.isEconomy(job)) {
+      return this.economyMaxTaskDescriptionChars;
+    }
+    if (this.isSmartEconomy(job)) {
+      return this.smartEconomyMaxTaskDescriptionChars;
+    }
+    return this.maxTaskDescriptionChars;
   }
 
   private resolveToolOutputStringLimit(job: SandboxJob): number {
-    return this.isEconomy(job) ? this.economyToolOutputStringLimit : this.toolOutputStringLimit;
+    if (this.isEconomy(job)) {
+      return this.economyToolOutputStringLimit;
+    }
+    if (this.isSmartEconomy(job)) {
+      return this.smartEconomyToolOutputStringLimit;
+    }
+    return this.toolOutputStringLimit;
   }
 
   private resolveToolOutputSerializedLimit(job: SandboxJob): number {
-    return this.isEconomy(job) ? this.economyToolOutputSerializedLimit : this.toolOutputSerializedLimit;
+    if (this.isEconomy(job)) {
+      return this.economyToolOutputSerializedLimit;
+    }
+    if (this.isSmartEconomy(job)) {
+      return this.smartEconomyToolOutputSerializedLimit;
+    }
+    return this.toolOutputSerializedLimit;
   }
 
   private resolveHttpToolMaxResponseChars(job: SandboxJob): number {
-    return this.isEconomy(job) ? this.economyHttpToolMaxResponseChars : this.httpToolMaxResponseChars;
+    if (this.isEconomy(job)) {
+      return this.economyHttpToolMaxResponseChars;
+    }
+    if (this.isSmartEconomy(job)) {
+      return this.smartEconomyHttpToolMaxResponseChars;
+    }
+    return this.httpToolMaxResponseChars;
   }
 
   private truncateStringFields(value: unknown, maxLength: number, tracker: { truncated: boolean }): unknown {
