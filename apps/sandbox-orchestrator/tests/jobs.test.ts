@@ -1514,6 +1514,138 @@ test('reuses repository credentials from repoUrl when creating a pull request', 
 });
 
 
+
+
+test('retries pull request creation after transient errors', async () => {
+  const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-retry-remote-'));
+  execSync('git init --bare', { cwd: bareRepo });
+
+  const seedRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-retry-seed-'));
+  execSync('git init', { cwd: seedRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: seedRepo });
+  execSync('git config user.name "CI Bot"', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "init"', { cwd: seedRepo });
+  execSync('git branch -M main', { cwd: seedRepo });
+  execSync(`git remote add origin ${bareRepo}`, { cwd: seedRepo });
+  execSync('git push origin main', { cwd: seedRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-pr-retry-1',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'retry content' }),
+              },
+              { type: 'message', id: 'msg-pr-retry', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-pr-retry-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'retry summary', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const attempt = fetchCalls.length + 1;
+    fetchCalls.push({ attempt, url, init });
+    if (attempt === 1) {
+      const error: any = new Error('fetch failed');
+      error.code = 'ECONNRESET';
+      throw error;
+    }
+    if (attempt === 2) {
+      return {
+        ok: false,
+        status: 502,
+        text: async () => 'bad gateway',
+      } as any;
+    }
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({ html_url: 'https://github.com/example/repo/pull/7' }),
+      text: async () => 'ok',
+    } as any;
+  };
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const job: SandboxJob = {
+    jobId: 'job-pr-retry',
+    repoSlug: 'example/repo',
+    repoUrl: bareRepo,
+    branch: 'main',
+    taskDescription: 'retry pr creation',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  const originalToken = process.env.GITHUB_PR_TOKEN;
+  const originalAttempts = process.env.PR_CREATE_RETRY_ATTEMPTS;
+  const originalDelay = process.env.PR_CREATE_RETRY_DELAY_MS;
+  process.env.GITHUB_PR_TOKEN = 'fake-token';
+  process.env.PR_CREATE_RETRY_ATTEMPTS = '3';
+  process.env.PR_CREATE_RETRY_DELAY_MS = '1';
+
+  try {
+    await processor.process(job);
+  } finally {
+    if (originalToken === undefined) {
+      delete process.env.GITHUB_PR_TOKEN;
+    } else {
+      process.env.GITHUB_PR_TOKEN = originalToken;
+    }
+    if (originalAttempts === undefined) {
+      delete process.env.PR_CREATE_RETRY_ATTEMPTS;
+    } else {
+      process.env.PR_CREATE_RETRY_ATTEMPTS = originalAttempts;
+    }
+    if (originalDelay === undefined) {
+      delete process.env.PR_CREATE_RETRY_DELAY_MS;
+    } else {
+      process.env.PR_CREATE_RETRY_DELAY_MS = originalDelay;
+    }
+  }
+
+  assert.equal(job.pullRequestUrl, 'https://github.com/example/repo/pull/7');
+  assert.equal(fetchCalls.length, 3);
+  assert.ok(
+    job.logs.some((entry) => entry.includes('tentativa 1/3 falhou ao chamar API do GitHub')),
+    'deve registrar o retry após erro de rede',
+  );
+  assert.ok(
+    job.logs.some((entry) => entry.includes('tentativa 2/3 ao criar PR retornou status 502')),
+    'deve registrar o retry após status HTTP 5xx',
+  );
+
+  await fs.rm(bareRepo, { recursive: true, force: true });
+  await fs.rm(seedRepo, { recursive: true, force: true });
+});
 test('db_query executa SELECT e contabiliza chamadas', async () => {
   const processor = new SandboxJobProcessor();
   const job: SandboxJob = {
