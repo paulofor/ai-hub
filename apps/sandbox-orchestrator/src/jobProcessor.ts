@@ -58,6 +58,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly dbMaxRows: number;
   private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
   private readonly dbPools: Map<string, Pool> = new Map();
+  private readonly prCreateMaxAttempts: number;
+  private readonly prCreateRetryDelayMs: number;
 
   constructor(
     apiKey?: string,
@@ -116,6 +118,8 @@ export class SandboxJobProcessor implements JobProcessor {
 
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
+    this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
+    this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -1621,35 +1625,15 @@ ${profileInstruction}`,
 
       const prTitle = this.buildPrTitle(job.summary);
       const prBody = this.buildPrBody(job.summary, job.taskDescription);
-      const response = await this.fetchImpl(`${this.githubApiBase}/repos/${repoSlug}/pulls`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/vnd.github+json',
-        },
-        body: JSON.stringify({
-          title: prTitle,
-          head: branchName,
-          base: job.branch,
-          body: prBody,
-        }),
-      });
-
-      if (!response.ok) {
-        const message = (await response.text()) || 'erro desconhecido da API do GitHub';
-        const permissionHint =
-          response.status === 401 || response.status === 403
-            ? 'token pode estar sem permissão de pull request ou push'
-            : undefined;
-        throw new Error(
-          `Falha ao criar PR: ${response.status} ${message}${
-            permissionHint ? ` (${permissionHint})` : ''
-          }`,
-        );
-      }
-
-      const pr = await response.json();
+      const pr = await this.createPullRequestWithRetry(
+        job,
+        repoSlug,
+        token,
+        branchName,
+        job.branch,
+        prTitle,
+        prBody,
+      );
       if (pr?.html_url) {
         job.pullRequestUrl = pr.html_url;
         this.log(job, `pull request criado em ${job.pullRequestUrl}`);
@@ -1658,6 +1642,128 @@ ${profileInstruction}`,
       const message = err instanceof Error ? err.message : String(err);
       this.log(job, `falha ao criar pull request: ${message}`);
     }
+  }
+
+
+  private async createPullRequestWithRetry(
+    job: SandboxJob,
+    repoSlug: string,
+    token: string,
+    head: string,
+    baseBranch: string,
+    title: string,
+    body: string,
+  ): Promise<any> {
+    if (!this.fetchImpl) {
+      throw new Error('fetch API indisponível; não é possível criar PR');
+    }
+    const maxAttempts = Math.max(1, this.prCreateMaxAttempts);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await this.fetchImpl(`${this.githubApiBase}/repos/${repoSlug}/pulls`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/vnd.github+json',
+          },
+          body: JSON.stringify({ title, head, base: baseBranch, body }),
+        });
+
+        if (!response.ok) {
+          const rawBody = (await response.text().catch(() => '')) ?? '';
+          const normalized = rawBody.trim().length > 0 ? rawBody : 'erro desconhecido da API do GitHub';
+          const message = this.truncate(normalized, 400);
+          const permissionHint =
+            response.status === 401 || response.status === 403
+              ? 'token pode estar sem permissão de pull request ou push'
+              : undefined;
+
+          if (this.shouldRetryPullRequestStatus(response.status) && attempt < maxAttempts) {
+            const delayMs = this.calculatePrRetryDelay(attempt);
+            this.log(
+              job,
+              `tentativa ${attempt}/${maxAttempts} ao criar PR retornou status ${response.status}; ` +
+                `nova tentativa em ${delayMs}ms (${message})`,
+            );
+            await this.sleep(delayMs);
+            continue;
+          }
+
+          throw new Error(
+            `Falha ao criar PR: ${response.status} ${message}${
+              permissionHint ? ` (${permissionHint})` : ''
+            }`,
+          );
+        }
+
+        return await response.json();
+      } catch (error) {
+        if (this.isRetryableNetworkError(error) && attempt < maxAttempts) {
+          const delayMs = this.calculatePrRetryDelay(attempt);
+          this.log(
+            job,
+            `tentativa ${attempt}/${maxAttempts} falhou ao chamar API do GitHub (${this.formatError(error)}); ` +
+              `aguardando ${delayMs}ms antes de tentar novamente`,
+          );
+          await this.sleep(delayMs);
+          continue;
+        }
+        throw error instanceof Error ? error : new Error(String(error));
+      }
+    }
+
+    throw new Error('Falha ao criar PR após múltiplas tentativas');
+  }
+
+  private shouldRetryPullRequestStatus(status: number): boolean {
+    if (!Number.isFinite(status)) {
+      return false;
+    }
+    if (status === 429 || status === 408) {
+      return true;
+    }
+    return status >= 500 && status < 600;
+  }
+
+  private isRetryableNetworkError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const code = typeof (error as any)?.code === 'string' ? (error as any).code.toUpperCase() : undefined;
+    if (code && ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNABORTED', 'ENOTFOUND'].includes(code)) {
+      return true;
+    }
+    const message = (error.message ?? '').toLowerCase();
+    return (
+      message.includes('fetch failed') ||
+      message.includes('networkerror') ||
+      message.includes('timed out') ||
+      message.includes('socket hang up') ||
+      message.includes('tls handshake timeout')
+    );
+  }
+
+  private formatError(error: unknown): string {
+    if (error instanceof Error) {
+      const label = error.name && error.name !== 'Error' ? `${error.name}: ${error.message}` : error.message ?? '';
+      const fallback = label && label.trim().length > 0 ? label : error.toString();
+      return this.truncate(fallback, 200);
+    }
+    return this.truncate(String(error), 200);
+  }
+
+  private calculatePrRetryDelay(attempt: number): number {
+    const base = Math.max(0, this.prCreateRetryDelayMs);
+    return base * Math.max(1, attempt);
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    if (ms <= 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private permissionHintFromMessage(message: string): string | undefined {
