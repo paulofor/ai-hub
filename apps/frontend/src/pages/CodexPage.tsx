@@ -48,7 +48,7 @@ const ACTIVE_POLL_INTERVAL_MS = 15000;
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
-  const [profile, setProfile] = useState<CodexProfile>('STANDARD');
+  const [profile, setProfile] = useState<CodexProfile>('SMART_ECONOMY');
   const [model, setModel] = useState('');
   const [requestsByPage, setRequestsByPage] = useState<Record<number, CodexRequest[]>>({});
   const [totalRequests, setTotalRequests] = useState(0);
@@ -473,6 +473,22 @@ export default function CodexPage() {
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Perfil de integração</span>
             <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
+                  value="SMART_ECONOMY"
+                  checked={profile === 'SMART_ECONOMY'}
+                  onChange={() => setProfile('SMART_ECONOMY')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Economia inteligente
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Escolha automática do modelo mais econômico sem abrir mão de validações completas (recomendado)
+                  </span>
+                </span>
+              </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                 <input
                   type="radio"

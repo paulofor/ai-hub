@@ -60,7 +60,13 @@ export function createApp(options: AppOptions = {}) {
       return 'STANDARD';
     }
     const normalized = value.trim().toUpperCase();
-    return normalized === 'ECONOMY' ? 'ECONOMY' : 'STANDARD';
+    if (normalized === 'ECONOMY') {
+      return 'ECONOMY';
+    }
+    if (normalized === 'SMART_ECONOMY') {
+      return 'SMART_ECONOMY';
+    }
+    return 'STANDARD';
   };
 
   const app = express();

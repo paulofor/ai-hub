@@ -2,6 +2,7 @@ package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
@@ -74,6 +75,7 @@ class CodexRequestServiceTest {
             "gpt-5-codex",
             "gpt-4.1-mini",
             "main",
+            1_500_000,
             null,
             null
         );
@@ -202,4 +204,39 @@ class CodexRequestServiceTest {
         assertThat(request.getFinishedAt()).isEqualTo(Instant.parse("2024-01-01T00:06:00Z"));
         verify(codexRequestRepository).save(request);
     }
+
+    @Test
+    void smartEconomyUsesEconomyModelWhenFootprintIsBelowThreshold() {
+        CodexRequestService service = buildService();
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("ajuste simples");
+        payload.setProfile(CodexIntegrationProfile.SMART_ECONOMY);
+        payload.setTotalTokens(900_000);
+
+        CodexRequest created = service.create(payload);
+        assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
+    }
+
+    @Test
+    void smartEconomyFallsBackToStandardModelWhenFootprintExceedsThreshold() {
+        CodexRequestService service = buildService();
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("ajuste complexo");
+        payload.setProfile(CodexIntegrationProfile.SMART_ECONOMY);
+        payload.setTotalTokens(2_000_000);
+
+        CodexRequest created = service.create(payload);
+        assertThat(created.getModel()).isEqualTo("gpt-5-codex");
+    }
+
 }
