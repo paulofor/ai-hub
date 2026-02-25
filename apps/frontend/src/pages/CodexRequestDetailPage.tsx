@@ -342,6 +342,19 @@ export default function CodexRequestDetailPage() {
               </div>
             </div>
 
+            {request.profile === 'ECO_1' && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
+                <p className="font-semibold">Modo ECO-1</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Limite o carregamento de instruções fixas usando project_doc_max_bytes e priorize resumos curtos.</li>
+                  <li>Trunque e registre saídas de ferramentas antes de enviá-las ao histórico compartilhado.</li>
+                  <li>Execute compaction sempre que o histórico se aproximar da janela do modelo e trate imagens inline com orçamentos fixos.</li>
+                  <li>Mude para o modelo econômico assim que o nudge de 90% de uso aparecer.</li>
+                </ul>
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-200">Referência: docs/estrategia-token/modo-eco1.md</p>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />
