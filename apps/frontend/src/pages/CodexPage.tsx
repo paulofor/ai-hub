@@ -60,7 +60,7 @@ export default function CodexPage() {
   const [loadingProblems, setLoadingProblems] = useState(false);
   const [problemsError, setProblemsError] = useState<string | null>(null);
   const [selectedProblemId, setSelectedProblemId] = useState('');
-  const [profile, setProfile] = useState<CodexProfile>('SMART_ECONOMY');
+  const [profile, setProfile] = useState<CodexProfile>('STANDARD');
   const [model, setModel] = useState('');
   const [requestsByPage, setRequestsByPage] = useState<Record<number, CodexRequest[]>>({});
   const [totalRequests, setTotalRequests] = useState(0);
@@ -594,22 +594,6 @@ export default function CodexPage() {
                 <input
                   type="radio"
                   name="codex-profile"
-                  value="SMART_ECONOMY"
-                  checked={profile === 'SMART_ECONOMY'}
-                  onChange={() => setProfile('SMART_ECONOMY')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  Economia inteligente
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Escolha automática do modelo mais econômico sem abrir mão de validações completas (recomendado)
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
                   value="STANDARD"
                   checked={profile === 'STANDARD'}
                   onChange={() => setProfile('STANDARD')}
@@ -619,22 +603,6 @@ export default function CodexPage() {
                   Padrão
                   <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
                     Máxima autonomia do modelo
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="ECONOMY"
-                  checked={profile === 'ECONOMY'}
-                  onChange={() => setProfile('ECONOMY')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  Econômico
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Reduz limites de tokens e privilegia execuções enxutas
                   </span>
                 </span>
               </label>
