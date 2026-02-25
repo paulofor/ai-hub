@@ -58,6 +58,10 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly smartEconomyToolOutputStringLimit: number;
   private readonly smartEconomyToolOutputSerializedLimit: number;
   private readonly smartEconomyHttpToolMaxResponseChars: number;
+  private readonly ecoOneMaxTaskDescriptionChars: number;
+  private readonly ecoOneToolOutputStringLimit: number;
+  private readonly ecoOneToolOutputSerializedLimit: number;
+  private readonly ecoOneHttpToolMaxResponseChars: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
   private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
@@ -153,6 +157,36 @@ export class SandboxJobProcessor implements JobProcessor {
       this.httpToolMaxResponseChars,
     );
 
+    const ecoOneTaskLimitRaw = this.parsePositiveInteger(
+      process.env.ECO1_TASK_DESCRIPTION_MAX_CHARS,
+      Math.min(this.maxTaskDescriptionChars, 5_000),
+    );
+    this.ecoOneMaxTaskDescriptionChars = Math.min(ecoOneTaskLimitRaw, this.maxTaskDescriptionChars);
+
+    const ecoOneToolOutputLimitRaw = this.parsePositiveInteger(
+      process.env.ECO1_TOOL_OUTPUT_STRING_LIMIT,
+      Math.min(this.toolOutputStringLimit, 4_000),
+    );
+    this.ecoOneToolOutputStringLimit = Math.min(ecoOneToolOutputLimitRaw, this.toolOutputStringLimit);
+
+    const ecoOneToolOutputSerializedLimitRaw = this.parsePositiveInteger(
+      process.env.ECO1_TOOL_OUTPUT_SERIALIZED_LIMIT,
+      Math.min(this.toolOutputSerializedLimit, 12_000),
+    );
+    this.ecoOneToolOutputSerializedLimit = Math.min(
+      ecoOneToolOutputSerializedLimitRaw,
+      this.toolOutputSerializedLimit,
+    );
+
+    const ecoOneHttpMaxCharsRaw = this.parsePositiveInteger(
+      process.env.ECO1_HTTP_TOOL_MAX_RESPONSE_CHARS,
+      Math.min(this.httpToolMaxResponseChars, 6_000),
+    );
+    this.ecoOneHttpToolMaxResponseChars = Math.min(
+      ecoOneHttpMaxCharsRaw,
+      this.httpToolMaxResponseChars,
+    );
+
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
@@ -206,6 +240,11 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(
           job,
           `modo econômico inteligente: limite prompt=${this.smartEconomyMaxTaskDescriptionChars}, toolOutput=${this.smartEconomyToolOutputStringLimit}, http_get=${this.smartEconomyHttpToolMaxResponseChars}`,
+        );
+      } else if (this.isEcoOne(job)) {
+        this.log(
+          job,
+          `modo ECO-1: limite prompt=${this.ecoOneMaxTaskDescriptionChars}, toolOutput=${this.ecoOneToolOutputStringLimit}, http_get=${this.ecoOneHttpToolMaxResponseChars}`,
         );
       }
 
@@ -453,7 +492,10 @@ Modo econômico ativo: minimize leituras extensas, priorize comandos curtos, esc
       : this.isSmartEconomy(job)
         ? `
 Modo econômico inteligente ativo: aproveite estratégias enxutas (reutilizar resultados, evitar loops desnecessários) sem abrir mão da validação completa. Justifique quando precisar executar comandos mais longos e confirme se a cobertura da tarefa permanece adequada.`
-        : '';
+        : this.isEcoOne(job)
+          ? `
+Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md — limite o carregamento de instruções fixas (project_doc_max_bytes), corte e resuma outputs de tools antes de salvá-los, force compaction sempre que o histórico se aproximar do limite do modelo, trate imagens inline como estimativas fixas e aceite automaticamente o nudge para modelos econômicos ao atingir 90% do orçamento. Registre todas as truncagens para que o time saiba o que ficou de fora.`
+          : '';
     const messages: ResponseItem[] = [
       {
         type: 'message',
@@ -2087,11 +2129,13 @@ ${profileInstruction}`,
   }
 
   private sanitizeTaskDescription(description: string, job: SandboxJob): string {
-    const { value, truncated, omitted } = this.truncateStringValue(description ?? '', this.maxTaskDescriptionChars);
+    const limit = this.resolveTaskDescriptionLimit(job);
+    const sanitizedDescription = description ?? '';
+    const { value, truncated, omitted } = this.truncateStringValue(sanitizedDescription, limit);
     if (truncated) {
       this.log(
         job,
-        `taskDescription com ${description.length} caracteres truncado para ${this.maxTaskDescriptionChars} para evitar erro de contexto (omitiu ${omitted} caracteres)`,
+        `taskDescription com ${sanitizedDescription.length} caracteres truncado para ${limit} para evitar erro de contexto (omitiu ${omitted} caracteres)`,
       );
     }
     return value;
@@ -2132,7 +2176,7 @@ ${profileInstruction}`,
     if (candidate) {
       return candidate;
     }
-    if ((this.isEconomy(job) || this.isSmartEconomy(job)) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -2140,6 +2184,10 @@ ${profileInstruction}`,
 
   private isEconomy(job: SandboxJob): boolean {
     return (job.profile ?? 'STANDARD') === 'ECONOMY';
+  }
+
+  private isEcoOne(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'ECO_1';
   }
 
   private isSmartEconomy(job: SandboxJob): boolean {
@@ -2153,6 +2201,9 @@ ${profileInstruction}`,
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyMaxTaskDescriptionChars;
     }
+    if (this.isEcoOne(job)) {
+      return this.ecoOneMaxTaskDescriptionChars;
+    }
     return this.maxTaskDescriptionChars;
   }
 
@@ -2162,6 +2213,9 @@ ${profileInstruction}`,
     }
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyToolOutputStringLimit;
+    }
+    if (this.isEcoOne(job)) {
+      return this.ecoOneToolOutputStringLimit;
     }
     return this.toolOutputStringLimit;
   }
@@ -2173,6 +2227,9 @@ ${profileInstruction}`,
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyToolOutputSerializedLimit;
     }
+    if (this.isEcoOne(job)) {
+      return this.ecoOneToolOutputSerializedLimit;
+    }
     return this.toolOutputSerializedLimit;
   }
 
@@ -2182,6 +2239,9 @@ ${profileInstruction}`,
     }
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyHttpToolMaxResponseChars;
+    }
+    if (this.isEcoOne(job)) {
+      return this.ecoOneHttpToolMaxResponseChars;
     }
     return this.httpToolMaxResponseChars;
   }

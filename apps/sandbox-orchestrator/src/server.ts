@@ -59,12 +59,15 @@ export function createApp(options: AppOptions = {}) {
     if (!value) {
       return 'STANDARD';
     }
-    const normalized = value.trim().toUpperCase();
+    const normalized = value.trim().toUpperCase().replace('-', '_');
     if (normalized === 'ECONOMY') {
       return 'ECONOMY';
     }
     if (normalized === 'SMART_ECONOMY') {
       return 'SMART_ECONOMY';
+    }
+    if (normalized === 'ECO_1') {
+      return 'ECO_1';
     }
     return 'STANDARD';
   };

@@ -2,6 +2,8 @@
 
 Este guia resume os principais mecanismos dentro deste repositório que ajudam a conter o uso de tokens/modelos e o que você pode fazer para se beneficiar deles. Sempre que cito código, copio o trecho correspondente porque quem lerá este documento não terá acesso ao repositório.
 
+> Este conjunto de práticas alimenta o perfil de integração **ECO-1** no hub: ao selecionar o perfil, as orientações abaixo são adotadas automaticamente para maximizar economia de tokens.
+
 ## 1. Limite o tamanho das instruções fixas do projeto
 
 **O que o código faz:** o carregamento de arquivos `AGENTS.md`/docs do projeto respeita `project_doc_max_bytes`. Assim que o total permitido é atingido, os arquivos restantes deixam de ser enviados ao modelo e o excesso é truncado com aviso.

@@ -1,4 +1,4 @@
-export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY';
+export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1';
 
 export type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
@@ -53,12 +53,15 @@ const parseNumber = (value: unknown): number | undefined => {
 
 const parseProfile = (value: unknown): CodexProfile => {
   if (typeof value === 'string') {
-    const normalized = value.trim().toUpperCase();
+    const normalized = value.trim().toUpperCase().replace('-', '_');
     if (normalized === 'ECONOMY') {
       return 'ECONOMY';
     }
     if (normalized === 'SMART_ECONOMY') {
       return 'SMART_ECONOMY';
+    }
+    if (normalized === 'ECO_1') {
+      return 'ECO_1';
     }
   }
   return 'STANDARD';
@@ -295,6 +298,8 @@ export const formatProfile = (profile: CodexProfile) => {
       return 'Econômico';
     case 'SMART_ECONOMY':
       return 'Econômico inteligente';
+    case 'ECO_1':
+      return 'Modo ECO-1';
     case 'STANDARD':
     default:
       return 'Padrão';
