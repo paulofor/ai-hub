@@ -7,6 +7,7 @@ import com.aihub.hub.domain.Project;
 import com.aihub.hub.dto.CreateProblemRequest;
 import com.aihub.hub.dto.ProblemUpdatePayload;
 import com.aihub.hub.dto.ProblemUpdateView;
+import com.aihub.hub.dto.ProblemSummaryView;
 import com.aihub.hub.dto.ProblemView;
 import com.aihub.hub.dto.UpdateProblemRequest;
 import com.aihub.hub.repository.EnvironmentRepository;
@@ -51,6 +52,25 @@ public class ProblemService {
         ProblemRecord record = problemRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problema não encontrado"));
         return toView(record);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProblemSummaryView> listActiveByEnvironment(Long environmentId) {
+        if (environmentId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o ambiente para filtrar os problemas ativos");
+        }
+        EnvironmentRecord environment = environmentRepository.findById(environmentId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ambiente não encontrado"));
+        return problemRepository
+            .findByEnvironmentIdAndFinalizedAtIsNullOrderByIncludedAtDescCreatedAtDesc(environment.getId())
+            .stream()
+            .map(record -> new ProblemSummaryView(
+                record.getId(),
+                record.getTitle(),
+                record.getIncludedAt(),
+                record.getTotalCost()
+            ))
+            .toList();
     }
 
     @Transactional
@@ -155,6 +175,7 @@ public class ProblemService {
             environment != null ? environment.getName() : null,
             project != null ? project.getId() : null,
             project != null ? project.getRepo() : null,
+            record.getTotalCost(),
             updates,
             record.getFinalizationDescription(),
             record.getFinalizedAt(),

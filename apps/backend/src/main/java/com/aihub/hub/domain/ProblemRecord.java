@@ -17,6 +17,7 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -61,6 +62,9 @@ public class ProblemRecord {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    @Column(name = "total_cost", precision = 19, scale = 6, nullable = false)
+    private BigDecimal totalCost = BigDecimal.ZERO;
+
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("entryDate ASC, id ASC")
     private List<ProblemUpdateRecord> updates = new ArrayList<>();
@@ -73,11 +77,17 @@ public class ProblemRecord {
         Instant now = Instant.now();
         this.createdAt = now;
         this.updatedAt = now;
+        if (this.totalCost == null) {
+            this.totalCost = BigDecimal.ZERO;
+        }
     }
 
     @PreUpdate
     public void onUpdate() {
         this.updatedAt = Instant.now();
+        if (this.totalCost == null) {
+            this.totalCost = BigDecimal.ZERO;
+        }
     }
 
     public Long getId() {
@@ -146,6 +156,14 @@ public class ProblemRecord {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public BigDecimal getTotalCost() {
+        return totalCost;
+    }
+
+    public void setTotalCost(BigDecimal totalCost) {
+        this.totalCost = totalCost;
     }
 
     public List<ProblemUpdateRecord> getUpdates() {

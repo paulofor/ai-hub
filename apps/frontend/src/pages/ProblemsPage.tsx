@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import client from '../api/client';
+import { formatCost } from '../lib/codex';
 
 interface ProblemUpdate {
   id: number;
@@ -18,6 +19,7 @@ interface Problem {
   environmentName?: string | null;
   projectId?: number | null;
   projectName?: string | null;
+  totalCost?: number | null;
   dailyUpdates: ProblemUpdate[];
   finalizationDescription?: string | null;
   finalizedAt?: string | null;
@@ -438,6 +440,10 @@ export default function ProblemsPage() {
                   <div>
                     <dt className="font-semibold text-slate-600 dark:text-slate-300">Projeto</dt>
                     <dd>{problem.projectName ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-slate-600 dark:text-slate-300">Gasto acumulado</dt>
+                    <dd>{problem.totalCost != null ? formatCost(problem.totalCost, 4) : '—'}</dd>
                   </div>
                   <div>
                     <dt className="font-semibold text-slate-600 dark:text-slate-300">Finalizado em</dt>

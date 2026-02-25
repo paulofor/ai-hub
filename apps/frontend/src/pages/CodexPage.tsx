@@ -42,12 +42,24 @@ interface PromptHintOption {
   environmentName?: string | null;
 }
 
+interface ActiveProblemOption {
+  id: number;
+  title: string;
+  includedAt: string;
+  totalCost?: number | null;
+}
+
 const REQUESTS_PER_PAGE = 5;
 const ACTIVE_POLL_INTERVAL_MS = 15000;
 
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<number | null>(null);
+  const [activeProblems, setActiveProblems] = useState<ActiveProblemOption[]>([]);
+  const [loadingProblems, setLoadingProblems] = useState(false);
+  const [problemsError, setProblemsError] = useState<string | null>(null);
+  const [selectedProblemId, setSelectedProblemId] = useState('');
   const [profile, setProfile] = useState<CodexProfile>('SMART_ECONOMY');
   const [model, setModel] = useState('');
   const [requestsByPage, setRequestsByPage] = useState<Record<number, CodexRequest[]>>({});
@@ -110,6 +122,21 @@ export default function CodexPage() {
       }
       return prev.filter((id) => id !== hintId);
     });
+  }, []);
+
+  const handleEnvironmentSelection = useCallback((name: string) => {
+    setEnvironment(name);
+    const match = environmentOptions.find((option) => option.name === name);
+    setSelectedEnvironmentId(match ? match.id : null);
+    setSelectedProblemId('');
+    setActiveProblems([]);
+    setProblemsError(null);
+  }, [environmentOptions]);
+
+  const formatProblemOptionLabel = useCallback((problem: ActiveProblemOption) => {
+    const includedDate = problem.includedAt ? new Date(problem.includedAt).toLocaleDateString('pt-BR') : 'sem data';
+    const totalCost = typeof problem.totalCost === 'number' ? problem.totalCost : 0;
+    return `#${problem.id} — ${problem.title} (desde ${includedDate}, custo ${formatCost(totalCost, 4)})`;
   }, []);
 
   const mergeRequest = useCallback((updated: CodexRequest) => {
@@ -200,14 +227,31 @@ export default function CodexPage() {
       .get<EnvironmentOption[]>('/environments')
       .then((response) => {
         setEnvironmentOptions(response.data);
+        if (response.data.length === 0) {
+          setEnvironment('');
+          setSelectedEnvironmentId(null);
+          setSelectedProblemId('');
+          setActiveProblems([]);
+          return;
+        }
         setEnvironment((current) => {
-          if (current && response.data.some((item) => item.name === current)) {
-            return current;
+          const hasCurrent = current && response.data.some((item) => item.name === current);
+          const resolved = hasCurrent ? current : response.data[0]?.name ?? '';
+          const matched = response.data.find((item) => item.name === resolved) ?? null;
+          setSelectedEnvironmentId(matched ? matched.id : null);
+          if (!matched) {
+            setSelectedProblemId('');
+            setActiveProblems([]);
           }
-          return response.data[0]?.name ?? '';
+          return resolved;
         });
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        setError(err.message);
+        setSelectedEnvironmentId(null);
+        setSelectedProblemId('');
+        setActiveProblems([]);
+      });
   }, []);
 
   useEffect(() => {
@@ -265,6 +309,53 @@ export default function CodexPage() {
       cancelled = true;
     };
   }, [environment]);
+
+  useEffect(() => {
+    if (!selectedEnvironmentId) {
+      setActiveProblems([]);
+      setProblemsError(null);
+      setSelectedProblemId('');
+      setLoadingProblems(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingProblems(true);
+    setProblemsError(null);
+    client
+      .get<ActiveProblemOption[]>('/problems/active', {
+        params: { environmentId: selectedEnvironmentId }
+      })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setActiveProblems(response.data);
+        setProblemsError(null);
+        setSelectedProblemId((current) => {
+          if (current && response.data.some((problem) => String(problem.id) === current)) {
+            return current;
+          }
+          return '';
+        });
+      })
+      .catch((err: Error) => {
+        if (cancelled) {
+          return;
+        }
+        setProblemsError(err.message);
+        setActiveProblems([]);
+        setSelectedProblemId('');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingProblems(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEnvironmentId]);
 
   const totalPages = Math.max(1, Math.ceil(totalRequests / REQUESTS_PER_PAGE));
 
@@ -340,7 +431,8 @@ export default function CodexPage() {
         prompt: finalPrompt,
         environment: trimmedEnvironment,
         profile,
-        model: trimmedModel
+        model: trimmedModel,
+        problemId: selectedProblemId ? Number(selectedProblemId) : undefined
       });
       const parsed = parseCodexRequest(response.data);
       if (parsed) {
@@ -418,7 +510,7 @@ export default function CodexPage() {
             <select
               id="environment"
               value={environment}
-              onChange={(event) => setEnvironment(event.target.value)}
+              onChange={(event) => handleEnvironmentSelection(event.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
               disabled={environmentOptions.length === 0}
             >
@@ -433,6 +525,31 @@ export default function CodexPage() {
                 ))
               )}
             </select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="problem-id" className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Problema em aberto (opcional)
+            </label>
+            <select
+              id="problem-id"
+              value={selectedProblemId}
+              onChange={(event) => setSelectedProblemId(event.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+              disabled={selectedEnvironmentId === null || loadingProblems || activeProblems.length === 0}
+            >
+              <option value="">Não vincular</option>
+              {activeProblems.map((problem) => (
+                <option key={problem.id} value={String(problem.id)}>
+                  {formatProblemOptionLabel(problem)}
+                </option>
+              ))}
+            </select>
+            {loadingProblems && <span className="text-xs text-slate-500">Carregando problemas em aberto...</span>}
+            {problemsError && <span className="text-xs text-red-500">{problemsError}</span>}
+            {!loadingProblems && !problemsError && selectedEnvironmentId && activeProblems.length === 0 && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">Nenhum problema ativo para este ambiente.</span>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -636,6 +753,7 @@ export default function CodexPage() {
                 <th className="px-4 py-3 text-left font-semibold">Criado em</th>
                 <th className="px-4 py-3 text-left font-semibold">Execução</th>
                 <th className="px-4 py-3 text-left font-semibold">Ambiente</th>
+                <th className="px-4 py-3 text-left font-semibold">Problema</th>
                 <th className="px-4 py-3 text-left font-semibold">Perfil</th>
                 <th className="px-4 py-3 text-left font-semibold">Modelo</th>
                 <th className="px-4 py-3 text-left font-semibold">Tokens</th>
@@ -674,6 +792,15 @@ export default function CodexPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium">{item.environment}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                    {item.problemTitle ? (
+                      <div>
+                        <p className="font-semibold text-slate-800 dark:text-slate-100">#{item.problemId} — {item.problemTitle}</p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                       {formatProfile(item.profile)}

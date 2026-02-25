@@ -1,12 +1,18 @@
 package com.aihub.hub.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 
@@ -119,6 +125,15 @@ public class CodexRequest {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "problem_id")
+    @JsonIgnore
+    private ProblemRecord problem;
+
+    @Column(name = "problem_cost_contribution", precision = 19, scale = 6)
+    @JsonIgnore
+    private BigDecimal problemCostContribution = BigDecimal.ZERO;
 
     @Transient
     private Integer interactionCount;
@@ -371,6 +386,32 @@ public class CodexRequest {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public ProblemRecord getProblem() {
+        return problem;
+    }
+
+    public void setProblem(ProblemRecord problem) {
+        this.problem = problem;
+    }
+
+    public BigDecimal getProblemCostContribution() {
+        return problemCostContribution;
+    }
+
+    public void setProblemCostContribution(BigDecimal problemCostContribution) {
+        this.problemCostContribution = problemCostContribution;
+    }
+
+    @JsonProperty("problemId")
+    public Long getProblemReferenceId() {
+        return problem != null ? problem.getId() : null;
+    }
+
+    @JsonProperty("problemTitle")
+    public String getProblemTitle() {
+        return problem != null ? problem.getTitle() : null;
     }
 
     public void ensureDurationCalculated() {

@@ -13,6 +13,8 @@ export interface CodexRequest {
   pullRequestUrl?: string;
   userComment?: string;
   problemDescription?: string;
+  problemId?: number;
+  problemTitle?: string;
   resolutionDifficulty?: string;
   executionLog?: string;
   promptTokens?: number;
@@ -168,6 +170,13 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const interactionCount = parseNumber(
     item.interactionCount ?? (item as Record<string, unknown>).interaction_count
   );
+  const problemId = parseNumber(item.problemId ?? (item as Record<string, unknown>).problem_id);
+  const problemTitleRaw = typeof item.problemTitle === 'string'
+    ? item.problemTitle
+    : typeof (item as Record<string, unknown>).problem_title === 'string'
+      ? ((item as Record<string, unknown>).problem_title as string)
+      : undefined;
+  const problemTitle = problemTitleRaw && problemTitleRaw.trim() ? problemTitleRaw.trim() : undefined;
   const pullRequestUrlRaw = typeof item.pullRequestUrl === 'string'
     ? item.pullRequestUrl
     : typeof (item as Record<string, unknown>).pull_request_url === 'string'
@@ -231,7 +240,9 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     httpGetCount,
     httpGetSuccessCount,
     dbQueryCount,
-    interactionCount
+    interactionCount,
+    problemId: problemId ?? undefined,
+    problemTitle: problemTitle ?? undefined
   };
 };
 

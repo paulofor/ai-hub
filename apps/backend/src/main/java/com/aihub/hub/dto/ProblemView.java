@@ -1,5 +1,6 @@
 package com.aihub.hub.dto;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,6 +14,7 @@ public record ProblemView(
     String environmentName,
     Long projectId,
     String projectName,
+    BigDecimal totalCost,
     List<ProblemUpdateView> dailyUpdates,
     String finalizationDescription,
     LocalDate finalizedAt,

@@ -6,6 +6,7 @@ import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexHttpRequestLog;
 import com.aihub.hub.domain.EnvironmentRecord;
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.domain.ProblemRecord;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.domain.ResponseRecord;
@@ -16,6 +17,7 @@ import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
+import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.slf4j.Logger;
@@ -60,6 +62,7 @@ public class CodexRequestService {
     private final CodexInteractionRepository codexInteractionRepository;
     private final CodexHttpRequestRepository codexHttpRequestRepository;
     private final EnvironmentRepository environmentRepository;
+    private final ProblemRepository problemRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
@@ -76,6 +79,7 @@ public class CodexRequestService {
                                CodexInteractionRepository codexInteractionRepository,
                                CodexHttpRequestRepository codexHttpRequestRepository,
                                EnvironmentRepository environmentRepository,
+                               ProblemRepository problemRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                TokenCostCalculator tokenCostCalculator,
                                PlatformTransactionManager transactionManager,
@@ -91,6 +95,7 @@ public class CodexRequestService {
         this.codexInteractionRepository = codexInteractionRepository;
         this.codexHttpRequestRepository = codexHttpRequestRepository;
         this.environmentRepository = environmentRepository;
+        this.problemRepository = problemRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
@@ -108,9 +113,10 @@ public class CodexRequestService {
     public CodexRequest create(CreateCodexRequest request) {
         CodexIntegrationProfile profile = resolveProfile(request.getProfile());
         String model = resolveModel(profile, request.getModel(), request);
+        String normalizedEnvironment = request.getEnvironment().trim();
         log.info("Criando CodexRequest para ambiente {} com modelo {} (perfil {})", request.getEnvironment(), model, profile);
         CodexRequest codexRequest = new CodexRequest(
-            request.getEnvironment().trim(),
+            normalizedEnvironment,
             model,
             profile,
             request.getPrompt().trim()
@@ -126,6 +132,10 @@ public class CodexRequestService {
         codexRequest.setCachedPromptCost(request.getCachedPromptCost());
         codexRequest.setCompletionCost(request.getCompletionCost());
         codexRequest.setCost(request.getCost());
+        ProblemRecord problem = resolveProblemAssociation(request.getProblemId(), normalizedEnvironment);
+        if (problem != null) {
+            codexRequest.setProblem(problem);
+        }
         codexRequest.setTimeoutCount(0);
         codexRequest.setHttpGetCount(0);
         codexRequest.setDbQueryCount(0);
@@ -141,7 +151,7 @@ public class CodexRequestService {
         );
         promptRepository.save(promptRecord);
 
-        CodexRequest saved = codexRequestRepository.save(codexRequest);
+        CodexRequest saved = saveRequest(codexRequest);
         log.info("CodexRequest {} salvo, enviando para sandbox se aplicável", saved.getId());
         saved.setInteractionCount(0);
         dispatchToSandbox(saved);
@@ -245,7 +255,7 @@ public class CodexRequestService {
         request.setResolutionDifficulty(resolutionDifficulty);
         request.setExecutionLog(executionLog);
         updateInteractionCount(request);
-        return codexRequestRepository.save(request);
+        return saveRequest(request);
     }
 
     private SandboxJobRequest.DatabaseConnection resolveDatabase(String environmentName) {
@@ -509,7 +519,7 @@ public class CodexRequestService {
                 request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
             }
             request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
-            codexRequestRepository.save(request);
+            saveRequest(request);
             return;
         }
 
@@ -552,7 +562,7 @@ public class CodexRequestService {
             .ifPresent(error -> request.setResponseText(error.trim()));
         applyUsageMetadata(request, response);
 
-        codexRequestRepository.save(request);
+        saveRequest(request);
         log.info("CodexRequest {} atualizado com externalId {}", request.getId(), resolvedExternalId);
 
         recordResponse(metadata, response);
@@ -632,7 +642,7 @@ public class CodexRequestService {
         boolean usageUpdated = applyUsageMetadata(request, response);
 
         if (updated || usageUpdated) {
-            codexRequestRepository.save(request);
+            saveRequest(request);
             log.info("CodexRequest {} atualizado a partir do sandbox", request.getId());
         }
 
@@ -682,7 +692,7 @@ public class CodexRequestService {
 
         boolean updated = applySandboxNotFoundFallback(request, !currentStatus.isTerminal());
         if (updated) {
-            codexRequestRepository.save(request);
+            saveRequest(request);
         }
 
         return updated;
@@ -705,7 +715,7 @@ public class CodexRequestService {
                 request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
             }
             request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
-            CodexRequest saved = codexRequestRepository.save(request);
+            CodexRequest saved = saveRequest(request);
             saved.setInteractionCount(codexInteractionRepository.countByCodexRequestId(saved.getId()));
             return saved;
         }
@@ -740,7 +750,7 @@ public class CodexRequestService {
             request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
         }
 
-        CodexRequest saved = codexRequestRepository.save(request);
+        CodexRequest saved = saveRequest(request);
         saved.setInteractionCount(codexInteractionRepository.countByCodexRequestId(saved.getId()));
         return saved;
     }
@@ -758,7 +768,7 @@ public class CodexRequestService {
         }
         request.setRating(payload.getRating());
         updateInteractionCount(request);
-        return codexRequestRepository.save(request);
+        return saveRequest(request);
     }
 
     private boolean applySandboxMetadata(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
@@ -1001,6 +1011,68 @@ public class CodexRequestService {
         }
 
         return updated;
+    }
+
+    private CodexRequest saveRequest(CodexRequest request) {
+        updateProblemCostAggregation(request);
+        return codexRequestRepository.save(request);
+    }
+
+    private void updateProblemCostAggregation(CodexRequest request) {
+        if (request == null) {
+            return;
+        }
+        ProblemRecord problem = request.getProblem();
+        if (problem == null || problem.getId() == null) {
+            return;
+        }
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (!status.isTerminal()) {
+            return;
+        }
+        BigDecimal resolvedCost = Optional.ofNullable(request.getCost()).orElse(BigDecimal.ZERO);
+        if (resolvedCost.compareTo(BigDecimal.ZERO) < 0) {
+            resolvedCost = BigDecimal.ZERO;
+        }
+        final BigDecimal currentCost = resolvedCost;
+        final BigDecimal appliedCost = Optional.ofNullable(request.getProblemCostContribution()).orElse(BigDecimal.ZERO);
+        if (currentCost.compareTo(appliedCost) == 0) {
+            return;
+        }
+        boolean updatedProblem = problemRepository.findById(problem.getId()).map(managed -> {
+            BigDecimal totalCost = Optional.ofNullable(managed.getTotalCost()).orElse(BigDecimal.ZERO);
+            BigDecimal nextTotal = totalCost.add(currentCost.subtract(appliedCost));
+            if (nextTotal.compareTo(BigDecimal.ZERO) < 0) {
+                nextTotal = BigDecimal.ZERO;
+            }
+            managed.setTotalCost(nextTotal);
+            problemRepository.save(managed);
+            request.setProblemCostContribution(currentCost);
+            return true;
+        }).orElse(false);
+        if (!updatedProblem) {
+            log.warn("Não foi possível atualizar o custo do problema {} para a solicitação {}", problem.getId(), request.getId());
+            request.setProblemCostContribution(currentCost);
+        }
+    }
+
+    private ProblemRecord resolveProblemAssociation(Long problemId, String environmentName) {
+        if (problemId == null) {
+            return null;
+        }
+        ProblemRecord problem = problemRepository.findById(problemId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Problema selecionado não existe"));
+        if (problem.getFinalizedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Problema selecionado já foi finalizado");
+        }
+        EnvironmentRecord problemEnvironment = problem.getEnvironment();
+        if (problemEnvironment == null || !StringUtils.hasText(problemEnvironment.getName())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Problema selecionado não está vinculado a um ambiente");
+        }
+        if (!StringUtils.hasText(environmentName) || !problemEnvironment.getName().equalsIgnoreCase(environmentName.trim())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Problema selecionado não pertence ao ambiente informado");
+        }
+        return problem;
     }
 
     private record PromptMetadata(String repo, String branch, Long runId, Integer prNumber) {}

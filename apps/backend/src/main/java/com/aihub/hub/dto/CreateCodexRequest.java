@@ -17,6 +17,8 @@ public class CreateCodexRequest {
 
     private CodexIntegrationProfile profile;
 
+    private Long problemId;
+
     private Integer promptTokens;
 
     private Integer cachedPromptTokens;
@@ -66,6 +68,14 @@ public class CreateCodexRequest {
 
     public void setProfile(CodexIntegrationProfile profile) {
         this.profile = profile;
+    }
+
+    public Long getProblemId() {
+        return problemId;
+    }
+
+    public void setProblemId(Long problemId) {
+        this.problemId = problemId;
     }
 
     public Integer getPromptTokens() {
