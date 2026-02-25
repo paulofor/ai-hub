@@ -654,6 +654,22 @@ export default function CodexPage() {
                   </span>
                 </span>
               </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
+                  value="ECO_2"
+                  checked={profile === 'ECO_2'}
+                  onChange={() => setProfile('ECO_2')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  ECO-2
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Ativa as rotinas do docs/estrategia-token/modo-eco2.md: compactações automáticas, histórico de usuário limitado a 20k tokens e truncamento agressivo de outputs/remotes.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
 

@@ -2,6 +2,8 @@
 
 Este documento resume os mecanismos já presentes no cliente Codex (e como você pode utilizá‑los) para manter o consumo de tokens sob controle. Quando trechos de código forem citados, eles estão copiados abaixo para referência direta.
 
+> Este conjunto de práticas alimenta o perfil de integração **ECO-2** no hub. Ao selecionar esse perfil, o sandbox aplica automaticamente as rotinas de compactação, limitação de histórico e truncamento descritas neste documento para conter custos sem exigir novas configurações do usuário.
+
 ## 1. Compactação automática sempre que o limite de tokens é atingido
 
 Durante cada turno, o `run_turn` monitora `total_usage_tokens` e, caso o valor ultrapasse `auto_compact_limit` enquanto o modelo ainda precisa continuar respondendo, dispara uma compactação inline antes da próxima iteração. Isso garante que o histórico enviado ao modelo seja reduzido automaticamente.

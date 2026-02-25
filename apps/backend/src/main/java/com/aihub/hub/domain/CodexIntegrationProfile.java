@@ -4,7 +4,8 @@ public enum CodexIntegrationProfile {
     STANDARD,
     ECONOMY,
     SMART_ECONOMY,
-    ECO_1;
+    ECO_1,
+    ECO_2;
 
     public static CodexIntegrationProfile fromString(String value) {
         if (value == null || value.isBlank()) {
