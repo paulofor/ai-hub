@@ -6,7 +6,7 @@ Este guia resume os principais mecanismos dentro deste repositório que ajudam a
 
 **O que o código faz:** o carregamento de arquivos `AGENTS.md`/docs do projeto respeita `project_doc_max_bytes`. Assim que o total permitido é atingido, os arquivos restantes deixam de ser enviados ao modelo e o excesso é truncado com aviso.
 
-_Fonte: `codex-rs/core/src/project_doc.rs`_
+Exemplo:
 
 ```rust
 pub async fn read_project_docs(config: &Config) -> std::io::Result<Option<String>> {
@@ -34,7 +34,7 @@ pub async fn read_project_docs(config: &Config) -> std::io::Result<Option<String
 
 **O que o código faz:** qualquer valor definido em `tool_output_token_limit` é propagado para a `truncation_policy` do modelo e usado para cortar outputs de ferramentas, funções e comandos locais antes de guardá-los no histórico compartilhado com o modelo.
 
-_Fonte: `codex-rs/core/src/models_manager/model_info.rs`_
+Exemplo:
 
 ```rust
 if let Some(token_limit) = config.tool_output_token_limit {
@@ -52,7 +52,7 @@ if let Some(token_limit) = config.tool_output_token_limit {
 }
 ```
 
-_Fonte: `codex-rs/core/src/context_manager/history.rs`_
+Exemplo:
 
 ```rust
 fn process_item(&self, item: &ResponseItem, policy: TruncationPolicy) -> ResponseItem {
@@ -89,7 +89,7 @@ fn process_item(&self, item: &ResponseItem, policy: TruncationPolicy) -> Respons
 
 **O que o código faz:** tarefas de compaction (`codex compact` ou triggers automáticos) fazem streaming de um resumo e, caso a janela do modelo seja excedida, removem itens antigos até caber de novo antes de reexecutar o pedido.
 
-_Fonte: `codex-rs/core/src/compact.rs`_
+Exemplo:
 
 ```rust
             Err(e @ CodexErr::ContextWindowExceeded) => {
@@ -116,7 +116,7 @@ _Fonte: `codex-rs/core/src/compact.rs`_
 
 **O que o código faz:** quando há imagens embutidas em base64, o estimador substitui o payload bruto por um custo fixo (`IMAGE_BYTES_ESTIMATE`). Isso impede que anexos muito grandes distorçam a contagem e acionem compaction muito cedo (o que aumentaria o custo total por exigir novos resumos).
 
-_Fonte: `codex-rs/core/src/context_manager/history.rs`_
+Exemplo:
 
 ```rust
 const IMAGE_BYTES_ESTIMATE: i64 = 7373;
@@ -154,7 +154,7 @@ fn image_data_url_estimate_adjustment(item: &ResponseItem) -> (i64, i64) {
 
 **O que o código faz:** quando o uso chega a 90 % do limite de plano, a TUI agenda um prompt para sugerir troca automática para `gpt-5.1-codex-mini`, um modelo mais barato/de menor consumo.
 
-_Fonte: `codex-rs/tui/src/chatwidget.rs`_
+Exemplo:
 
 ```rust
 const NUDGE_MODEL_SLUG: &str = "gpt-5.1-codex-mini";
