@@ -1190,12 +1190,20 @@ ${profileInstruction}`,
   }
 
   private shouldForceCiEnv(command: string[]): boolean {
-    return this.isTestCommand(command);
+    if (this.isTestCommand(command)) {
+      return true;
+    }
+    const shellSubcommands = this.extractShellSubcommands(command);
+    return shellSubcommands.some((subcommand) => this.isTestCommand(subcommand));
   }
 
   private isTestCommand(command: string[]): boolean {
-    const commandName = path.basename(command[0]);
-    const args = command.slice(1);
+    const normalized = this.stripEnvAssignments(command);
+    if (normalized.length === 0) {
+      return false;
+    }
+    const commandName = path.basename(normalized[0]);
+    const args = normalized.slice(1);
     const testRunners = new Set(['vitest', 'jest', 'playwright']);
     const packageManagers = new Set(['npm', 'pnpm', 'yarn', 'bun']);
     const dlxCommands = new Set(['npx', 'pnpm', 'yarn', 'bunx']);
@@ -1225,6 +1233,97 @@ ${profileInstruction}`,
     }
 
     return false;
+  }
+
+  private stripEnvAssignments(tokens: string[]): string[] {
+    const normalized = [...tokens];
+    while (normalized.length > 0 && this.isEnvAssignment(normalized[0])) {
+      normalized.shift();
+    }
+    return normalized;
+  }
+
+  private isEnvAssignment(token: string): boolean {
+    return /^[A-Za-z_][A-Za-z0-9_]*=.*$/.test(token);
+  }
+
+  private extractShellSubcommands(command: string[]): string[][] {
+    if (command.length === 0) {
+      return [];
+    }
+    const shellNames = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'ash', 'fish']);
+    const commandName = path.basename(command[0]);
+    if (!shellNames.has(commandName)) {
+      return [];
+    }
+
+    const args = command.slice(1);
+    const scriptCandidates: string[] = [];
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = args[i];
+      if (typeof arg !== 'string') {
+        continue;
+      }
+      if (this.isShellExecuteFlag(arg)) {
+        const script = args[i + 1];
+        if (typeof script === 'string' && script.trim().length > 0) {
+          scriptCandidates.push(script);
+        }
+        i += 1;
+      }
+    }
+
+    if (scriptCandidates.length === 0 && args.length > 0) {
+      const fallback = args[args.length - 1];
+      if (typeof fallback === 'string' && fallback.trim().length > 0) {
+        scriptCandidates.push(fallback);
+      }
+    }
+
+    return scriptCandidates.flatMap((candidate) => this.tokenizeShellCommand(candidate));
+  }
+
+  private isShellExecuteFlag(arg: string): boolean {
+    if (arg === '-c' || arg === '--command') {
+      return true;
+    }
+    return /^-[^-]*c[^-]*$/.test(arg);
+  }
+
+  private tokenizeShellCommand(script: string): string[][] {
+    return this.splitCompositeCommand(script)
+      .map((segment) => this.tokenizeSegment(segment))
+      .filter((tokens) => tokens.length > 0);
+  }
+
+  private splitCompositeCommand(script: string): string[] {
+    return script
+      .split(/&&|\|\||;|\n/)
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+  }
+
+  private tokenizeSegment(segment: string): string[] {
+    const matches = segment.match(/(?:[^\s"'`]+|"[^"]*"|'[^']*'|`[^`]*`)+/g);
+    if (!matches) {
+      return [];
+    }
+    return matches.map((token) => this.stripQuotes(token));
+  }
+
+  private stripQuotes(token: string): string {
+    if (token.length >= 2) {
+      const first = token[0];
+      const last = token[token.length - 1];
+      if (
+        (first === '"' && last === '"') ||
+        (first === '\'' && last === '\'') ||
+        (first === '`' && last === '`')
+      ) {
+        return token.slice(1, -1);
+      }
+    }
+    return token;
   }
 
   private resolvePath(repoPath: string, requested: string | undefined, job?: SandboxJob): string {
