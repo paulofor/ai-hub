@@ -416,7 +416,10 @@ public class CodexRequestService {
             }
             return defaultModel;
         }
-        if ((profile == CodexIntegrationProfile.ECONOMY || profile == CodexIntegrationProfile.ECO_1) && StringUtils.hasText(economyModel)) {
+        if ((profile == CodexIntegrationProfile.ECONOMY
+            || profile == CodexIntegrationProfile.ECO_1
+            || profile == CodexIntegrationProfile.ECO_2)
+            && StringUtils.hasText(economyModel)) {
             return economyModel.trim();
         }
         return defaultModel;

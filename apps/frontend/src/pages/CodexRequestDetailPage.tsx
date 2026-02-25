@@ -355,6 +355,21 @@ export default function CodexRequestDetailPage() {
               </div>
             )}
 
+            {request.profile === 'ECO_2' && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-900 dark:border-sky-900/60 dark:bg-sky-900/20 dark:text-sky-100">
+                <p className="font-semibold">Modo ECO-2</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Dispara compactações automáticas quando o total_usage_tokens ultrapassa o limite configurado.</li>
+                  <li>Executa uma compactação preventiva antes de cada turno e após trocas para modelos com janela menor.</li>
+                  <li>Alterna entre compactação local e remota conforme o provedor suportado.</li>
+                  <li>Mantém no máximo 20 000 tokens de mensagens de usuário, truncando e registrando excedentes.</li>
+                  <li>Poda chamadas de função/tool mais recentes antes de reenviar o histórico resumido.</li>
+                  <li>Trunca outputs de ferramentas antes de devolvê-los ao modelo para evitar desperdício.</li>
+                </ul>
+                <p className="mt-2 text-xs text-slate-600 dark:text-sky-200">Referência: docs/estrategia-token/modo-eco2.md</p>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />

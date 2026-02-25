@@ -62,6 +62,13 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly ecoOneToolOutputStringLimit: number;
   private readonly ecoOneToolOutputSerializedLimit: number;
   private readonly ecoOneHttpToolMaxResponseChars: number;
+  private readonly ecoTwoAutoCompactTokenLimit: number;
+  private readonly ecoTwoHistoryTargetTokens: number;
+  private readonly ecoTwoUserMessageTokenLimit: number;
+  private readonly ecoTwoToolOutputStringLimit: number;
+  private readonly ecoTwoToolOutputSerializedLimit: number;
+  private readonly ecoTwoHttpToolMaxResponseChars: number;
+  private readonly ecoTwoCharsPerTokenEstimate: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
   private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
@@ -187,6 +194,57 @@ export class SandboxJobProcessor implements JobProcessor {
       this.httpToolMaxResponseChars,
     );
 
+    this.ecoTwoAutoCompactTokenLimit = this.parsePositiveInteger(
+      process.env.ECO2_AUTO_COMPACT_TOKEN_LIMIT,
+      1_000_000,
+    );
+    const ecoTwoHistoryTargetRaw = this.parsePositiveInteger(
+      process.env.ECO2_HISTORY_TARGET_TOKENS,
+      Math.min(this.ecoTwoAutoCompactTokenLimit, 800_000),
+    );
+    this.ecoTwoHistoryTargetTokens = Math.min(
+      ecoTwoHistoryTargetRaw,
+      this.ecoTwoAutoCompactTokenLimit,
+    );
+
+    const ecoTwoUserLimitRaw = this.parsePositiveInteger(
+      process.env.ECO2_USER_MESSAGE_TOKEN_LIMIT,
+      20_000,
+    );
+    this.ecoTwoUserMessageTokenLimit = Math.min(ecoTwoUserLimitRaw, 50_000);
+
+    const ecoTwoToolOutputLimitRaw = this.parsePositiveInteger(
+      process.env.ECO2_TOOL_OUTPUT_STRING_LIMIT,
+      Math.min(this.toolOutputStringLimit, 5_000),
+    );
+    this.ecoTwoToolOutputStringLimit = Math.min(
+      ecoTwoToolOutputLimitRaw,
+      this.toolOutputStringLimit,
+    );
+
+    const ecoTwoToolOutputSerializedLimitRaw = this.parsePositiveInteger(
+      process.env.ECO2_TOOL_OUTPUT_SERIALIZED_LIMIT,
+      Math.min(this.toolOutputSerializedLimit, 18_000),
+    );
+    this.ecoTwoToolOutputSerializedLimit = Math.min(
+      ecoTwoToolOutputSerializedLimitRaw,
+      this.toolOutputSerializedLimit,
+    );
+
+    const ecoTwoHttpMaxCharsRaw = this.parsePositiveInteger(
+      process.env.ECO2_HTTP_TOOL_MAX_RESPONSE_CHARS,
+      Math.min(this.httpToolMaxResponseChars, 10_000),
+    );
+    this.ecoTwoHttpToolMaxResponseChars = Math.min(
+      ecoTwoHttpMaxCharsRaw,
+      this.httpToolMaxResponseChars,
+    );
+
+    this.ecoTwoCharsPerTokenEstimate = this.parsePositiveInteger(
+      process.env.ECO2_APPROX_CHARS_PER_TOKEN,
+      4,
+    );
+
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
@@ -245,6 +303,11 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(
           job,
           `modo ECO-1: limite prompt=${this.ecoOneMaxTaskDescriptionChars}, toolOutput=${this.ecoOneToolOutputStringLimit}, http_get=${this.ecoOneHttpToolMaxResponseChars}`,
+        );
+      } else if (this.isEcoTwo(job)) {
+        this.log(
+          job,
+          `modo ECO-2: auto-compact=${this.ecoTwoAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoTwoHistoryTargetTokens}, toolOutput=${this.ecoTwoToolOutputStringLimit}, http_get=${this.ecoTwoHttpToolMaxResponseChars}`,
         );
       }
 
@@ -495,7 +558,10 @@ Modo econômico inteligente ativo: aproveite estratégias enxutas (reutilizar re
         : this.isEcoOne(job)
           ? `
 Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md — limite o carregamento de instruções fixas (project_doc_max_bytes), corte e resuma outputs de tools antes de salvá-los, force compaction sempre que o histórico se aproximar do limite do modelo, trate imagens inline como estimativas fixas e aceite automaticamente o nudge para modelos econômicos ao atingir 90% do orçamento. Registre todas as truncagens para que o time saiba o que ficou de fora.`
-          : '';
+          : this.isEcoTwo(job)
+            ? `
+Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo.`
+            : '';
     const messages: ResponseItem[] = [
       {
         type: 'message',
@@ -531,6 +597,7 @@ ${profileInstruction}`,
 
     while (true) {
       this.ensureNotCancelled(job);
+      this.applyEcoTwoPreSamplingCompaction(job, messages);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
@@ -640,6 +707,7 @@ ${profileInstruction}`,
       }
 
       messages.push(...toolMessages);
+      this.enforceEcoTwoAutoCompaction(job, messages);
     }
   }
 
@@ -2176,7 +2244,7 @@ ${profileInstruction}`,
     if (candidate) {
       return candidate;
     }
-    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job)) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -2188,6 +2256,10 @@ ${profileInstruction}`,
 
   private isEcoOne(job: SandboxJob): boolean {
     return (job.profile ?? 'STANDARD') === 'ECO_1';
+  }
+
+  private isEcoTwo(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'ECO_2';
   }
 
   private isSmartEconomy(job: SandboxJob): boolean {
@@ -2214,6 +2286,9 @@ ${profileInstruction}`,
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyToolOutputStringLimit;
     }
+    if (this.isEcoTwo(job)) {
+      return this.ecoTwoToolOutputStringLimit;
+    }
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputStringLimit;
     }
@@ -2226,6 +2301,9 @@ ${profileInstruction}`,
     }
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyToolOutputSerializedLimit;
+    }
+    if (this.isEcoTwo(job)) {
+      return this.ecoTwoToolOutputSerializedLimit;
     }
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputSerializedLimit;
@@ -2240,10 +2318,208 @@ ${profileInstruction}`,
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyHttpToolMaxResponseChars;
     }
+    if (this.isEcoTwo(job)) {
+      return this.ecoTwoHttpToolMaxResponseChars;
+    }
     if (this.isEcoOne(job)) {
       return this.ecoOneHttpToolMaxResponseChars;
     }
     return this.httpToolMaxResponseChars;
+  }
+
+  private applyEcoTwoPreSamplingCompaction(job: SandboxJob, messages: ResponseItem[]): void {
+    if (!this.isEcoTwo(job)) {
+      return;
+    }
+    const trimmedHistory = this.pruneEcoTwoHistory(job, messages, this.ecoTwoHistoryTargetTokens);
+    const trimmedUsers = this.enforceEcoTwoUserMessageBudget(job, messages);
+    if (trimmedHistory || trimmedUsers) {
+      this.log(job, 'Modo ECO-2: histórico compactado preventivamente antes da próxima iteração.');
+    }
+  }
+
+  private enforceEcoTwoUserMessageBudget(job: SandboxJob, messages: ResponseItem[]): boolean {
+    if (!this.isEcoTwo(job)) {
+      return false;
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return false;
+    }
+    let remaining = Math.max(0, this.ecoTwoUserMessageTokenLimit);
+    let preservedUserMessages = 0;
+    let changed = false;
+
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const item = messages[index];
+      if (!item || item.type !== 'message') {
+        continue;
+      }
+      const message = item as ResponseOutputMessage;
+      const role = (message as { role?: string }).role ?? 'assistant';
+      if (role !== 'user') {
+        continue;
+      }
+
+      const text = this.collectMessageTexts(message.content);
+      const tokens = this.approximateTokensFromText(text);
+      if (tokens <= remaining) {
+        remaining = Math.max(0, remaining - tokens);
+        preservedUserMessages++;
+        continue;
+      }
+
+      if (remaining > 0) {
+        const truncated = this.truncateTextByTokenBudget(text, remaining);
+        const note = `\n\n[Modo ECO-2: ${truncated.omittedTokens} tokens omitidos do histórico do usuário]`;
+        message.content = [{ type: 'output_text', text: `${truncated.value}${note}` }] as ResponseOutputMessage['content'];
+        remaining = 0;
+        preservedUserMessages++;
+        changed = true;
+        this.log(job, 'Modo ECO-2: mensagem de usuário truncada para manter o limite de 20k tokens.');
+        continue;
+      }
+
+      if (preservedUserMessages === 0) {
+        const fallbackTokens = Math.max(1, Math.floor(this.ecoTwoUserMessageTokenLimit * 0.1));
+        const truncated = this.truncateTextByTokenBudget(text, fallbackTokens);
+        const note = `\n\n[Modo ECO-2: ${truncated.omittedTokens} tokens omitidos para preservar contexto do usuário]`;
+        message.content = [{ type: 'output_text', text: `${truncated.value}${note}` }] as ResponseOutputMessage['content'];
+        preservedUserMessages++;
+        changed = true;
+        this.log(job, 'Modo ECO-2: mensagem de usuário preservada com resumo mínimo.');
+      } else {
+        messages.splice(index, 1);
+        changed = true;
+        this.log(job, 'Modo ECO-2: mensagem de usuário antiga removida para respeitar o limite do histórico.');
+      }
+    }
+
+    return changed;
+  }
+
+  private enforceEcoTwoAutoCompaction(job: SandboxJob, messages: ResponseItem[]): void {
+    if (!this.isEcoTwo(job)) {
+      return;
+    }
+    const totalTokens = job.totalTokens ?? 0;
+    if (totalTokens <= 0 || totalTokens < this.ecoTwoAutoCompactTokenLimit) {
+      return;
+    }
+    const target = Math.min(
+      this.ecoTwoHistoryTargetTokens,
+      Math.floor(this.ecoTwoAutoCompactTokenLimit * 0.9),
+    );
+    if (target <= 0) {
+      return;
+    }
+    if (this.pruneEcoTwoHistory(job, messages, target)) {
+      this.log(
+        job,
+        `Modo ECO-2: auto-compactação executada após atingir ${totalTokens} tokens (alvo ${target}).`,
+      );
+    }
+  }
+
+  private pruneEcoTwoHistory(job: SandboxJob, messages: ResponseItem[], targetTokens: number): boolean {
+    if (!this.isEcoTwo(job)) {
+      return false;
+    }
+    if (!Array.isArray(messages) || messages.length === 0 || !Number.isFinite(targetTokens) || targetTokens <= 0) {
+      return false;
+    }
+    let estimated = this.estimateMessagesTokenFootprint(messages);
+    if (estimated <= targetTokens) {
+      return false;
+    }
+    let removed = 0;
+
+    for (let index = messages.length - 1; index >= 0 && estimated > targetTokens; index--) {
+      const item = messages[index];
+      if (!this.isEcoTwoRemovableHistoryItem(item)) {
+        break;
+      }
+      const footprint = this.estimateItemTokenFootprint(item);
+      messages.splice(index, 1);
+      estimated = Math.max(0, estimated - footprint);
+      removed++;
+    }
+
+    if (removed > 0) {
+      this.log(job, `Modo ECO-2: removidos ${removed} item(ns) do histórico para manter ${targetTokens} tokens.`);
+      return true;
+    }
+    return false;
+  }
+
+  private isEcoTwoRemovableHistoryItem(item: ResponseItem | undefined): boolean {
+    if (!item) {
+      return false;
+    }
+    if (item.type === 'function_call' || item.type === 'function_call_output') {
+      return true;
+    }
+    if (item.type === 'message') {
+      const message = item as ResponseOutputMessage;
+      const role = (message as { role?: string }).role ?? 'assistant';
+      return role === 'assistant';
+    }
+    return false;
+  }
+
+  private estimateMessagesTokenFootprint(messages: ResponseItem[]): number {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return 0;
+    }
+    return messages.reduce((total, item) => total + this.estimateItemTokenFootprint(item), 0);
+  }
+
+  private estimateItemTokenFootprint(item: ResponseItem | undefined): number {
+    if (!item) {
+      return 0;
+    }
+    if (item.type === 'message') {
+      const message = item as ResponseOutputMessage;
+      return this.approximateTokensFromText(this.collectMessageTexts(message.content));
+    }
+    if (item.type === 'function_call') {
+      const call = item as ResponseFunctionToolCallItem;
+      return this.approximateTokensFromText(this.safeStringify({
+        name: call.name ?? 'tool_call',
+        arguments: call.arguments ?? {},
+      }));
+    }
+    if (item.type === 'function_call_output') {
+      const output = item as ResponseFunctionToolCallOutputItem;
+      return this.approximateTokensFromText(
+        typeof output.output === 'string' ? output.output : this.safeStringify(output.output ?? {}),
+      );
+    }
+    return this.approximateTokensFromText(this.safeStringify(item));
+  }
+
+  private approximateTokensFromText(value: string | undefined): number {
+    if (!value) {
+      return 0;
+    }
+    return Math.max(1, Math.ceil(value.length / Math.max(1, this.ecoTwoCharsPerTokenEstimate)));
+  }
+
+  private truncateTextByTokenBudget(
+    text: string,
+    tokenBudget: number,
+  ): { value: string; truncated: boolean; omittedTokens: number } {
+    if (!text) {
+      return { value: '', truncated: false, omittedTokens: 0 };
+    }
+    const safeBudget = Math.max(1, Math.floor(tokenBudget));
+    const estimated = this.approximateTokensFromText(text);
+    if (estimated <= safeBudget) {
+      return { value: text, truncated: false, omittedTokens: 0 };
+    }
+    const charBudget = Math.max(1, safeBudget * this.ecoTwoCharsPerTokenEstimate);
+    const trimmed = `${text.slice(0, Math.max(0, charBudget - 1))}…`;
+    const omittedTokens = Math.max(0, estimated - safeBudget);
+    return { value: trimmed, truncated: true, omittedTokens };
   }
 
   private truncateStringFields(value: unknown, maxLength: number, tracker: { truncated: boolean }): unknown {

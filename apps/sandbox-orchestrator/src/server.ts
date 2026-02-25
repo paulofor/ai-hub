@@ -69,6 +69,9 @@ export function createApp(options: AppOptions = {}) {
     if (normalized === 'ECO_1') {
       return 'ECO_1';
     }
+    if (normalized === 'ECO_2') {
+      return 'ECO_2';
+    }
     return 'STANDARD';
   };
 
