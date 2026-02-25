@@ -9,6 +9,7 @@ import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
+import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,7 @@ class CodexRequestServiceTest {
     private final PromptRepository promptRepository = mock(PromptRepository.class);
     private final ResponseRepository responseRepository = mock(ResponseRepository.class);
     private final CodexInteractionRepository codexInteractionRepository = mock(CodexInteractionRepository.class);
+    private final ProblemRepository problemRepository = mock(ProblemRepository.class);
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
@@ -69,6 +71,7 @@ class CodexRequestServiceTest {
             codexInteractionRepository,
             codexHttpRequestRepository,
             environmentRepository,
+            problemRepository,
             sandboxOrchestratorClient,
             tokenCostCalculator,
             transactionManager,

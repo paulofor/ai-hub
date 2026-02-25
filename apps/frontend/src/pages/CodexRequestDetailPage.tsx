@@ -358,6 +358,10 @@ export default function CodexRequestDetailPage() {
                 value={typeof request.interactionCount === 'number' ? request.interactionCount.toLocaleString('pt-BR') : '—'}
               />
               <InfoItem
+                label="Problema vinculado"
+                value={request.problemTitle ? `#${request.problemId} — ${request.problemTitle}` : '—'}
+              />
+              <InfoItem
                 label="Job no sandbox"
                 value={request.externalId ? `ID ${request.externalId}` : '—'}
               />

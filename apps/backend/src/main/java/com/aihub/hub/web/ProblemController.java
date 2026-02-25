@@ -1,6 +1,7 @@
 package com.aihub.hub.web;
 
 import com.aihub.hub.dto.CreateProblemRequest;
+import com.aihub.hub.dto.ProblemSummaryView;
 import com.aihub.hub.dto.ProblemView;
 import com.aihub.hub.dto.UpdateProblemRequest;
 import com.aihub.hub.service.ProblemService;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -28,6 +30,11 @@ public class ProblemController {
     @GetMapping
     public List<ProblemView> list() {
         return problemService.list();
+    }
+
+    @GetMapping("/active")
+    public List<ProblemSummaryView> listActive(@RequestParam Long environmentId) {
+        return problemService.listActiveByEnvironment(environmentId);
     }
 
     @GetMapping("/{id}")
