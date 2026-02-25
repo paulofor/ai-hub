@@ -11,6 +11,7 @@ import CodexRequestDetailPage from './pages/CodexRequestDetailPage';
 import EnvironmentsPage from './pages/EnvironmentsPage';
 import LogInterpreterPage from './pages/LogInterpreterPage';
 import PromptHintsPage from './pages/PromptHintsPage';
+import ProblemsPage from './pages/ProblemsPage';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="/blueprints" element={<BlueprintsPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/prompt-hints" element={<PromptHintsPage />} />
+        <Route path="/problems" element={<ProblemsPage />} />
         <Route path="/environments" element={<EnvironmentsPage />} />
         <Route path="/logs" element={<LogInterpreterPage />} />
         <Route path="/codex" element={<CodexPage />} />
