@@ -6,7 +6,7 @@ Este documento resume os mecanismos já presentes no cliente Codex (e como você
 
 Durante cada turno, o `run_turn` monitora `total_usage_tokens` e, caso o valor ultrapasse `auto_compact_limit` enquanto o modelo ainda precisa continuar respondendo, dispara uma compactação inline antes da próxima iteração. Isso garante que o histórico enviado ao modelo seja reduzido automaticamente.
 
-
+Exemplo:
 ```rust
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
@@ -45,7 +45,7 @@ Durante cada turno, o `run_turn` monitora `total_usage_tokens` e, caso o valor u
 
 Antes de enviar a primeira requisição do turno, o cliente verifica se já passou do limite de tokens e se houve downgrade para um modelo com janela menor. Caso positivo, roda a compactação antes mesmo de o modelo receber entradas adicionais.
 
-
+Exemplo:
 ```rust
 async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
@@ -69,7 +69,7 @@ async fn run_pre_sampling_compact(
     Ok(())
 }
 ```
-
+Exemplo:
 ```rust
 async fn maybe_run_previous_model_inline_compact(
     sess: &Arc<Session>,
@@ -117,7 +117,7 @@ async fn maybe_run_previous_model_inline_compact(
 
 Dependendo do provedor configurado, o Codex decide se usa o compactador embutido ou solicita um resumo ao backend (MCP). Isso permite aproveitar modelos especializados em compressão quando disponíveis, reduzindo o custo por delegar a tarefa a um serviço otimizado.
 
-
+Exemplo:
 ```rust
 async fn run_auto_compact(
     sess: &Arc<Session>,
@@ -149,11 +149,11 @@ async fn run_auto_compact(
 
 O módulo de compactação mantém apenas 20.000 tokens de mensagens de usuário e trunca a última mensagem caso o orçamento restante seja menor. Isso evita enviar todo o backlog e reduz o custo das próximas chamadas.
 
-
+Exemplo:
 ```rust
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
 ```
-
+Exemplo:
 ```rust
 fn build_compacted_history_with_limit(
     mut history: Vec<ResponseItem>,
@@ -188,7 +188,7 @@ fn build_compacted_history_with_limit(
 
 Antes de pedir a outro modelo que compacte o histórico, o Codex remove itens gerados por ele mesmo até que a contagem estimada de tokens caiba na janela do modelo-alvo. Isso impede gastar tokens só para o compactador rejeitar a requisição.
 
-
+Exemplo:
 ```rust
 fn trim_function_call_history_to_fit_context_window(
     history: &mut ContextManager,
@@ -226,7 +226,7 @@ fn trim_function_call_history_to_fit_context_window(
 
 Qualquer saída de função/ferramenta passa por `truncate_function_output_items_with_policy`, que mantém apenas o que cabe no orçamento e adiciona um marcador do que foi omitido.
 
-
+Exemplo:
 ```rust
 pub(crate) fn truncate_function_output_items_with_policy(
     items: &[FunctionCallOutputContentItem],
@@ -293,7 +293,7 @@ pub(crate) fn truncate_function_output_items_with_policy(
 
 Mesmo comandos longos no `unified_exec` respeitam `DEFAULT_MAX_OUTPUT_TOKENS` (10.000) quando nenhum valor customizado é passado, evitando que logs massivos sejam reenviados ao modelo.
 
-
+Exemplo:
 ```rust
 pub(crate) const DEFAULT_MAX_OUTPUT_TOKENS: usize = 10_000;
 ...
@@ -308,7 +308,7 @@ pub(crate) fn resolve_max_tokens(max_tokens: Option<usize>) -> usize {
 
 O módulo `context_manager::updates` só injeta diferenças (mudança de ambiente, permissões, personalidade, etc.) quando algo realmente mudou. Assim, os prompts não são inflados por instruções repetidas em todo turno.
 
-
+Exemplo:
 ```rust
 pub(crate) fn build_settings_update_items(
     previous: Option<&TurnContextItem>,
@@ -350,7 +350,7 @@ pub(crate) fn build_settings_update_items(
 
 Sempre que um turno termina, o processador de eventos imprime o total de tokens usados. Essa visibilidade incentiva o usuário a encurtar prompts ou ajustar o plano quando necessário.
 
-
+Exemplo:
 ```rust
     fn print_final_output(&mut self) {
         self.finish_progress_line();
