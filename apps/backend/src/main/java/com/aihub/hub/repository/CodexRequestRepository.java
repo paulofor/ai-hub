@@ -11,5 +11,6 @@ import java.util.Optional;
 public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long> {
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
     Page<CodexRequest> findAllByOrderByCreatedAtDesc(Pageable pageable);
+    List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
     Optional<CodexRequest> findByExternalId(String externalId);
 }
