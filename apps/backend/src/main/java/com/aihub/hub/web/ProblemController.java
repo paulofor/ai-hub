@@ -1,6 +1,7 @@
 package com.aihub.hub.web;
 
 import com.aihub.hub.dto.CreateProblemRequest;
+import com.aihub.hub.dto.ProblemRequestSummaryView;
 import com.aihub.hub.dto.ProblemSummaryView;
 import com.aihub.hub.dto.ProblemView;
 import com.aihub.hub.dto.UpdateProblemRequest;
@@ -40,6 +41,11 @@ public class ProblemController {
     @GetMapping("/{id}")
     public ProblemView get(@PathVariable Long id) {
         return problemService.get(id);
+    }
+
+    @GetMapping("/{id}/requests")
+    public List<ProblemRequestSummaryView> listRequestHistory(@PathVariable Long id) {
+        return problemService.listRequestHistory(id);
     }
 
     @PostMapping

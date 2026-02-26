@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { formatCost } from '../lib/codex';
 
@@ -422,13 +423,21 @@ export default function ProblemsPage() {
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{problem.title}</h3>
                     <p className="text-xs text-slate-500">Incluído em {formatDate(problem.includedAt)}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(problem)}
-                    className="text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
-                  >
-                    Editar
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <Link
+                      to={`/problems/${problem.id}`}
+                      className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
+                    >
+                      Detalhar
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(problem)}
+                      className="text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                    >
+                      Editar
+                    </button>
+                  </div>
                 </div>
                 <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{problem.description}</p>
 

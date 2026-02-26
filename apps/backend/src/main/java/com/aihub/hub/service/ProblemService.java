@@ -1,15 +1,18 @@
 package com.aihub.hub.service;
 
+import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.EnvironmentRecord;
 import com.aihub.hub.domain.ProblemRecord;
 import com.aihub.hub.domain.ProblemUpdateRecord;
 import com.aihub.hub.domain.Project;
 import com.aihub.hub.dto.CreateProblemRequest;
+import com.aihub.hub.dto.ProblemRequestSummaryView;
 import com.aihub.hub.dto.ProblemUpdatePayload;
 import com.aihub.hub.dto.ProblemUpdateView;
 import com.aihub.hub.dto.ProblemSummaryView;
 import com.aihub.hub.dto.ProblemView;
 import com.aihub.hub.dto.UpdateProblemRequest;
+import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ProjectRepository;
@@ -28,13 +31,16 @@ import java.util.List;
 public class ProblemService {
 
     private final ProblemRepository problemRepository;
+    private final CodexRequestRepository codexRequestRepository;
     private final EnvironmentRepository environmentRepository;
     private final ProjectRepository projectRepository;
 
     public ProblemService(ProblemRepository problemRepository,
+                          CodexRequestRepository codexRequestRepository,
                           EnvironmentRepository environmentRepository,
                           ProjectRepository projectRepository) {
         this.problemRepository = problemRepository;
+        this.codexRequestRepository = codexRequestRepository;
         this.environmentRepository = environmentRepository;
         this.projectRepository = projectRepository;
     }
@@ -70,6 +76,16 @@ public class ProblemService {
                 record.getIncludedAt(),
                 record.getTotalCost()
             ))
+            .toList();
+    }
+
+
+    @Transactional(readOnly = true)
+    public List<ProblemRequestSummaryView> listRequestHistory(Long problemId) {
+        ProblemRecord record = problemRepository.findById(problemId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Problema não encontrado"));
+        return codexRequestRepository.findByProblemIdOrderByCreatedAtDesc(record.getId()).stream()
+            .map(this::toRequestSummaryView)
             .toList();
     }
 
@@ -181,6 +197,22 @@ public class ProblemService {
             record.getFinalizedAt(),
             record.getCreatedAt(),
             record.getUpdatedAt()
+        );
+    }
+
+
+    private ProblemRequestSummaryView toRequestSummaryView(CodexRequest request) {
+        return new ProblemRequestSummaryView(
+            request.getId(),
+            request.getEnvironment(),
+            request.getModel(),
+            request.getStatus() != null ? request.getStatus().name() : null,
+            request.getPrompt(),
+            request.getResponseText(),
+            request.getUserComment(),
+            request.getProblemDescription(),
+            request.getResolutionDifficulty(),
+            request.getCreatedAt()
         );
     }
 

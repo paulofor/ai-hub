@@ -12,6 +12,7 @@ import EnvironmentsPage from './pages/EnvironmentsPage';
 import LogInterpreterPage from './pages/LogInterpreterPage';
 import PromptHintsPage from './pages/PromptHintsPage';
 import ProblemsPage from './pages/ProblemsPage';
+import ProblemDetailPage from './pages/ProblemDetailPage';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/prompt-hints" element={<PromptHintsPage />} />
         <Route path="/problems" element={<ProblemsPage />} />
+        <Route path="/problems/:id" element={<ProblemDetailPage />} />
         <Route path="/environments" element={<EnvironmentsPage />} />
         <Route path="/logs" element={<LogInterpreterPage />} />
         <Route path="/codex" element={<CodexPage />} />
