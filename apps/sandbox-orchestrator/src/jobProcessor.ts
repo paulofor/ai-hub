@@ -62,6 +62,10 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly ecoOneToolOutputStringLimit: number;
   private readonly ecoOneToolOutputSerializedLimit: number;
   private readonly ecoOneHttpToolMaxResponseChars: number;
+  private readonly chatgptCodexMaxTaskDescriptionChars: number;
+  private readonly chatgptCodexToolOutputStringLimit: number;
+  private readonly chatgptCodexToolOutputSerializedLimit: number;
+  private readonly chatgptCodexHttpToolMaxResponseChars: number;
   private readonly ecoTwoAutoCompactTokenLimit: number;
   private readonly ecoTwoHistoryTargetTokens: number;
   private readonly ecoTwoUserMessageTokenLimit: number;
@@ -194,6 +198,42 @@ export class SandboxJobProcessor implements JobProcessor {
       this.httpToolMaxResponseChars,
     );
 
+    const chatgptCodexTaskLimitRaw = this.parsePositiveInteger(
+      process.env.CHATGPT_CODEX_TASK_DESCRIPTION_MAX_CHARS,
+      Math.min(this.maxTaskDescriptionChars, 9_000),
+    );
+    this.chatgptCodexMaxTaskDescriptionChars = Math.min(
+      chatgptCodexTaskLimitRaw,
+      this.maxTaskDescriptionChars,
+    );
+
+    const chatgptCodexToolOutputLimitRaw = this.parsePositiveInteger(
+      process.env.CHATGPT_CODEX_TOOL_OUTPUT_STRING_LIMIT,
+      Math.min(this.toolOutputStringLimit, 9_000),
+    );
+    this.chatgptCodexToolOutputStringLimit = Math.min(
+      chatgptCodexToolOutputLimitRaw,
+      this.toolOutputStringLimit,
+    );
+
+    const chatgptCodexToolOutputSerializedLimitRaw = this.parsePositiveInteger(
+      process.env.CHATGPT_CODEX_TOOL_OUTPUT_SERIALIZED_LIMIT,
+      Math.min(this.toolOutputSerializedLimit, 30_000),
+    );
+    this.chatgptCodexToolOutputSerializedLimit = Math.min(
+      chatgptCodexToolOutputSerializedLimitRaw,
+      this.toolOutputSerializedLimit,
+    );
+
+    const chatgptCodexHttpMaxCharsRaw = this.parsePositiveInteger(
+      process.env.CHATGPT_CODEX_HTTP_TOOL_MAX_RESPONSE_CHARS,
+      Math.min(this.httpToolMaxResponseChars, 14_000),
+    );
+    this.chatgptCodexHttpToolMaxResponseChars = Math.min(
+      chatgptCodexHttpMaxCharsRaw,
+      this.httpToolMaxResponseChars,
+    );
+
     this.ecoTwoAutoCompactTokenLimit = this.parsePositiveInteger(
       process.env.ECO2_AUTO_COMPACT_TOKEN_LIMIT,
       1_000_000,
@@ -308,6 +348,11 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(
           job,
           `modo ECO-2: auto-compact=${this.ecoTwoAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoTwoHistoryTargetTokens}, toolOutput=${this.ecoTwoToolOutputStringLimit}, http_get=${this.ecoTwoHttpToolMaxResponseChars}`,
+        );
+      } else if (this.isChatgptCodex(job)) {
+        this.log(
+          job,
+          `modo ChatGPT Codex: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
         );
       }
 
@@ -561,7 +606,10 @@ Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md �
           : this.isEcoTwo(job)
             ? `
 Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo.`
-            : '';
+            : this.isChatgptCodex(job)
+              ? `
+Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos.`
+              : '';
     const messages: ResponseItem[] = [
       {
         type: 'message',
@@ -2244,7 +2292,7 @@ ${profileInstruction}`,
     if (candidate) {
       return candidate;
     }
-    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job)) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isChatgptCodex(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -2266,6 +2314,10 @@ ${profileInstruction}`,
     return (job.profile ?? 'STANDARD') === 'SMART_ECONOMY';
   }
 
+  private isChatgptCodex(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX';
+  }
+
   private resolveTaskDescriptionLimit(job: SandboxJob): number {
     if (this.isEconomy(job)) {
       return this.economyMaxTaskDescriptionChars;
@@ -2275,6 +2327,9 @@ ${profileInstruction}`,
     }
     if (this.isEcoOne(job)) {
       return this.ecoOneMaxTaskDescriptionChars;
+    }
+    if (this.isChatgptCodex(job)) {
+      return this.chatgptCodexMaxTaskDescriptionChars;
     }
     return this.maxTaskDescriptionChars;
   }
@@ -2292,6 +2347,9 @@ ${profileInstruction}`,
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputStringLimit;
     }
+    if (this.isChatgptCodex(job)) {
+      return this.chatgptCodexToolOutputStringLimit;
+    }
     return this.toolOutputStringLimit;
   }
 
@@ -2308,6 +2366,9 @@ ${profileInstruction}`,
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputSerializedLimit;
     }
+    if (this.isChatgptCodex(job)) {
+      return this.chatgptCodexToolOutputSerializedLimit;
+    }
     return this.toolOutputSerializedLimit;
   }
 
@@ -2323,6 +2384,9 @@ ${profileInstruction}`,
     }
     if (this.isEcoOne(job)) {
       return this.ecoOneHttpToolMaxResponseChars;
+    }
+    if (this.isChatgptCodex(job)) {
+      return this.chatgptCodexHttpToolMaxResponseChars;
     }
     return this.httpToolMaxResponseChars;
   }
