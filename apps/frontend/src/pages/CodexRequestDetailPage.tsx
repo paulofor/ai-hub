@@ -370,6 +370,19 @@ export default function CodexRequestDetailPage() {
               </div>
             )}
 
+            {request.profile === 'CHATGPT_CODEX' && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-900 dark:border-indigo-900/60 dark:bg-indigo-900/20 dark:text-indigo-100">
+                <p className="font-semibold">Modo Codex (ChatGPT)</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Trate o fluxo como o command center multiagente do chatgpt.com/codex, registrando squads, owners e metas paralelas.</li>
+                  <li>Abra worktrees ou diretórios codex/&lt;squad&gt; para dividir iniciativas e sincronize checkpoints curtos entre elas.</li>
+                  <li>Execute verificações rápidas em ambientes em nuvem e compacte logs em relatos objetivos para segurar o custo.</li>
+                  <li>Publique checkpoints com progresso, riscos e o custo estimado de cada frente.</li>
+                </ul>
+                <p className="mt-2 text-xs text-indigo-700 dark:text-indigo-200">Referência: docs/estrategia-token/chatgpt-codex.md</p>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />

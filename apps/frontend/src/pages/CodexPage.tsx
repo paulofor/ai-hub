@@ -610,6 +610,22 @@ export default function CodexPage() {
                 <input
                   type="radio"
                   name="codex-profile"
+                  value="CHATGPT_CODEX"
+                  checked={profile === 'CHATGPT_CODEX'}
+                  onChange={() => setProfile('CHATGPT_CODEX')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Codex (ChatGPT)
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Replica o command center multiagente do chatgpt.com/codex: organize squads paralelos, use worktrees/diretórios temáticos e sincronize checkpoints curtos conforme descrito em docs/estrategia-token/chatgpt-codex.md.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
                   value="ECO_1"
                   checked={profile === 'ECO_1'}
                   onChange={() => setProfile('ECO_1')}

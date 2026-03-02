@@ -72,6 +72,9 @@ export function createApp(options: AppOptions = {}) {
     if (normalized === 'ECO_2') {
       return 'ECO_2';
     }
+    if (normalized === 'CHATGPT_CODEX' || normalized === 'CODEX_UI') {
+      return 'CHATGPT_CODEX';
+    }
     return 'STANDARD';
   };
 
