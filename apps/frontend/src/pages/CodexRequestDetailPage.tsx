@@ -28,6 +28,7 @@ export default function CodexRequestDetailPage() {
   const [feedbackDirty, setFeedbackDirty] = useState(false);
   const [savingComment, setSavingComment] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
+  const [creatingPr, setCreatingPr] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [nextRequestId, setNextRequestId] = useState<number | null>(null);
   const [loadingNext, setLoadingNext] = useState(false);
@@ -254,6 +255,35 @@ export default function CodexRequestDetailPage() {
     navigate(`/codex/requests/${nextRequestId}`);
   }, [navigate, nextRequestId]);
 
+  const handleCreatePullRequest = useCallback(async () => {
+    if (!request) return;
+    setCreatingPr(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await client.post(
+        `/codex/requests/${request.id}/create-pr`,
+        {},
+        {
+          headers: {
+            'X-Role': 'owner',
+            'X-User': 'codex-ui'
+          }
+        }
+      );
+      const url = typeof response.data?.url === 'string' ? response.data.url : undefined;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      setSuccessMessage(url ? 'Pull Request criado com sucesso.' : 'Pull Request criado.');
+      await fetchRequest(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCreatingPr(false);
+    }
+  }, [fetchRequest, request]);
+
   if (!loading && !request) {
     return (
       <div className="space-y-4 rounded-xl border border-slate-200 bg-white/70 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
@@ -465,19 +495,29 @@ export default function CodexRequestDetailPage() {
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-800/40">
                 <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Merge / Pull Request</h4>
-                {request.pullRequestUrl ? (
-                  <a
-                    href={request.pullRequestUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex items-center gap-2 text-emerald-700 underline hover:text-emerald-800"
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  {request.pullRequestUrl ? (
+                    <a
+                      href={request.pullRequestUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 text-emerald-700 underline hover:text-emerald-800"
+                    >
+                      Abrir merge/pull request
+                      <span aria-hidden>↗</span>
+                    </a>
+                  ) : (
+                    <p className="text-sm text-slate-500">Nenhum link de merge disponível.</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCreatePullRequest}
+                    disabled={creatingPr}
+                    className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    Abrir merge/pull request
-                    <span aria-hidden>↗</span>
-                  </a>
-                ) : (
-                  <p className="mt-2 text-sm text-slate-500">Nenhum link de merge disponível.</p>
-                )}
+                    {creatingPr ? 'Criando PR...' : 'Criar novo PR no GitHub'}
+                  </button>
+                </div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 space-y-2 dark:border-slate-700 dark:bg-slate-800/40">
