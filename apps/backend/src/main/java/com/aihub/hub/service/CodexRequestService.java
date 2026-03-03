@@ -17,6 +17,7 @@ import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
+import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
@@ -156,6 +157,42 @@ public class CodexRequestService {
         saved.setInteractionCount(0);
         dispatchToSandbox(saved);
         return saved;
+    }
+
+    public Optional<ResponseRecord> findLatestResponseForEnvironment(String environment) {
+        PromptMetadata metadata = extractMetadata(environment);
+        if (metadata == null || metadata.repo() == null) {
+            return Optional.empty();
+        }
+
+        if (metadata.runId() != null && metadata.prNumber() != null) {
+            Optional<ResponseRecord> record = responseRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(
+                metadata.repo(), metadata.runId(), metadata.prNumber()
+            );
+            if (record.isPresent()) {
+                return record;
+            }
+        }
+
+        if (metadata.runId() != null) {
+            Optional<ResponseRecord> record = responseRepository.findTopByRepoAndRunIdOrderByCreatedAtDesc(
+                metadata.repo(), metadata.runId()
+            );
+            if (record.isPresent()) {
+                return record;
+            }
+        }
+
+        if (metadata.prNumber() != null) {
+            Optional<ResponseRecord> record = responseRepository.findTopByRepoAndPrNumberOrderByCreatedAtDesc(
+                metadata.repo(), metadata.prNumber()
+            );
+            if (record.isPresent()) {
+                return record;
+            }
+        }
+
+        return responseRepository.findTopByRepoOrderByCreatedAtDesc(metadata.repo());
     }
 
     public List<CodexRequest> list() {
