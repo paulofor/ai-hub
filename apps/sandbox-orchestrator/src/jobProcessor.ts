@@ -53,6 +53,12 @@ interface EcoTwoLoopBlockResult {
   logMessage: string;
 }
 
+interface ContextState {
+  summaryLines: string[];
+  objectiveText?: string;
+  summaryTruncationLogged?: boolean;
+}
+
 class JobCancelledError extends Error {
   constructor(message = 'Job cancelado pelo usuário') {
     super(message);
@@ -111,6 +117,15 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly dbPools: Map<string, Pool> = new Map();
   private readonly prCreateMaxAttempts: number;
   private readonly prCreateRetryDelayMs: number;
+  private readonly contextStates: WeakMap<SandboxJob, ContextState> = new WeakMap();
+  private readonly contextRecentMessageLimit: number;
+  private readonly contextWorkingSetMaxPairs: number;
+  private readonly contextWorkingSetMaxChars: number;
+  private readonly contextRollingSummaryMaxLines: number;
+  private readonly contextRollingSummaryMinLines: number;
+  private readonly contextObjectiveMaxLines: number;
+  private readonly contextObjectiveMinLines: number;
+  private readonly contextPromptGcTokenLimit: number;
 
   constructor(
     apiKey?: string,
@@ -380,6 +395,23 @@ export class SandboxJobProcessor implements JobProcessor {
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
+    this.contextRecentMessageLimit = Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_LIMIT, 6));
+    this.contextWorkingSetMaxPairs = Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_MAX_PAIRS, 3));
+    this.contextWorkingSetMaxChars = Math.max(200, this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_MAX_CHARS, 4_000));
+    this.contextRollingSummaryMaxLines = Math.max(20, this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_MAX_LINES, 60));
+    this.contextRollingSummaryMinLines = Math.min(
+      this.contextRollingSummaryMaxLines,
+      Math.max(5, this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_MIN_LINES, 20)),
+    );
+    this.contextObjectiveMaxLines = Math.max(5, this.parsePositiveInteger(process.env.CONTEXT_OBJECTIVE_MAX_LINES, 10));
+    this.contextObjectiveMinLines = Math.min(
+      this.contextObjectiveMaxLines,
+      Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_OBJECTIVE_MIN_LINES, 5)),
+    );
+    this.contextPromptGcTokenLimit = Math.max(
+      0,
+      this.parsePositiveInteger(process.env.CONTEXT_PROMPT_GC_TOKEN_LIMIT, 25_000),
+    );
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -739,6 +771,15 @@ ${profileInstruction}`,
       },
     ];
 
+    const initialContextMessages = messages.filter((item) => {
+      if (item.type !== 'message') {
+        return false;
+      }
+      const role = ((item as { role?: string }).role ?? 'assistant');
+      return role !== 'system';
+    });
+    this.captureContextFromItems(job, initialContextMessages);
+
     let summary = '';
     let turnCount = 0;
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
@@ -748,16 +789,23 @@ ${profileInstruction}`,
       turnCount++;
       this.enforceEcoThreeGuardrails(job, turnCount);
       this.applyEcoPreSamplingCompaction(job, messages);
-      this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
+      this.applyContextGarbageCollector(job, messages);
+      const layeredMessages = this.buildLayeredPrompt(job, messages);
+      const payload = layeredMessages.length > 0 ? layeredMessages : messages;
+      const promptEstimate = this.estimateMessagesTokenFootprint(payload);
+      this.log(
+        job,
+        `enviando contexto em camadas (histórico=${messages.length}, camadas=${payload.length}, prompt_est=${promptEstimate} tokens, tools=${tools.length})`,
+      );
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
         job,
         'OUTBOUND',
-        this.formatMessagesForRecording(messages),
+        this.formatMessagesForRecording(payload),
       );
       const response = await this.openai!.responses.create({
         model,
-        input: messages,
+        input: payload,
         tools,
       });
       this.log(
@@ -783,6 +831,10 @@ ${profileInstruction}`,
       const toolCallDetails =
         toolCalls
           .map((call, idx) => {
+            const callId = call.call_id ?? this.extractCallId(call, idx);
+            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
+          })
+          .join(', ') || 'nenhum';
       const inboundInteraction = this.recordInteraction(
         job,
         'INBOUND',
@@ -796,10 +848,6 @@ ${profileInstruction}`,
         inboundInteraction.tokenCount = usageMetrics.completionTokens;
       }
 
-            const callId = call.call_id ?? this.extractCallId(call, idx);
-            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
-          })
-          .join(', ') || 'nenhum';
       const assistantTextPreview = this.truncate(this.extractOutputText(assistantMessage?.content) ?? '', 240);
       this.log(
         job,
@@ -813,6 +861,7 @@ ${profileInstruction}`,
         summary = text ?? summary;
         if (assistantMessage) {
           messages.push(assistantMessage);
+          this.captureContextFromItems(job, [assistantMessage]);
         }
         this.log(job, `resumo final do modelo: "${this.truncate(summary, 240)}"`);
         this.log(job, 'modelo concluiu sem novas tool calls');
@@ -820,6 +869,7 @@ ${profileInstruction}`,
       }
 
       messages.push(...normalizedOutput);
+      this.captureContextFromItems(job, normalizedOutput);
 
       const toolMessages: ResponseFunctionToolCallOutputItem[] = [];
       for (const [index, call] of toolCalls.entries()) {
@@ -876,6 +926,7 @@ ${profileInstruction}`,
       }
 
       messages.push(...toolMessages);
+      this.captureContextFromItems(job, toolMessages);
       this.enforceEcoAutoCompaction(job, messages);
     }
   }
@@ -2804,6 +2855,381 @@ ${profileInstruction}`,
       };
     }
     return undefined;
+  }
+
+  private applyContextGarbageCollector(job: SandboxJob, messages: ResponseItem[]): void {
+    if (this.contextPromptGcTokenLimit <= 0 || !Array.isArray(messages) || messages.length === 0) {
+      return;
+    }
+    let estimate = this.estimateMessagesTokenFootprint(messages);
+    if (estimate <= this.contextPromptGcTokenLimit) {
+      return;
+    }
+    const protectedCallIds = this.collectProtectedWorkingSetCallIds(messages);
+    let removed = 0;
+    for (let index = 0; index < messages.length && estimate > this.contextPromptGcTokenLimit; index++) {
+      const item = messages[index];
+      if (!item || item.type !== 'function_call_output') {
+        continue;
+      }
+      const output = item as ResponseFunctionToolCallOutputItem;
+      const callId = output.call_id ?? `call_${index}`;
+      if (protectedCallIds.has(callId)) {
+        continue;
+      }
+      const footprint = this.estimateItemTokenFootprint(item);
+      messages.splice(index, 1);
+      estimate = Math.max(0, estimate - footprint);
+      removed++;
+      index--;
+    }
+    if (removed > 0) {
+      this.log(
+        job,
+        `Context GC removeu ${removed} resultado(s) de tool para manter o prompt estimado em ${estimate}/${this.contextPromptGcTokenLimit} tokens.`,
+      );
+    }
+  }
+
+  private buildLayeredPrompt(job: SandboxJob, history: ResponseItem[]): ResponseItem[] {
+    if (!Array.isArray(history) || history.length === 0) {
+      return [];
+    }
+    const layered: ResponseItem[] = [];
+    const baseSystem = this.extractBaseSystemMessage(history);
+    if (baseSystem) {
+      layered.push(baseSystem);
+    }
+    const objective = this.buildObjectiveLayer(job);
+    if (objective) {
+      layered.push(objective);
+    }
+    const summaryLayer = this.buildRollingSummaryLayer(job);
+    if (summaryLayer) {
+      layered.push(summaryLayer);
+    }
+    const workingSetItems = this.buildWorkingSetLayer(job, history);
+    if (workingSetItems.length > 0) {
+      layered.push(...workingSetItems);
+    }
+    const recentMessages = this.buildRecentMessagesLayer(history);
+    layered.push(...recentMessages);
+    return layered;
+  }
+
+  private extractBaseSystemMessage(history: ResponseItem[]): ResponseOutputMessage | undefined {
+    if (!Array.isArray(history)) {
+      return undefined;
+    }
+    for (const item of history) {
+      if (!item || item.type !== 'message') {
+        continue;
+      }
+      const message = item as ResponseOutputMessage;
+      const role = (message as { role?: string }).role ?? 'assistant';
+      if (role === 'system') {
+        return message;
+      }
+    }
+    return undefined;
+  }
+
+  private buildObjectiveLayer(job: SandboxJob): ResponseItem | undefined {
+    const state = this.getContextState(job);
+    if (!state.objectiveText) {
+      state.objectiveText = this.buildObjectiveText(job.taskDescription);
+    }
+    if (!state.objectiveText) {
+      return undefined;
+    }
+    return {
+      type: 'message',
+      id: this.sanitizeId('msg_objective'),
+      role: 'system',
+      content: [{ type: 'input_text', text: state.objectiveText }],
+    };
+  }
+
+  private buildObjectiveText(description: string): string {
+    const normalized = (description ?? '').trim();
+    if (!normalized) {
+      return '';
+    }
+    const rawLines = normalized.split(/\r?\n/);
+    const expanded: string[] = [];
+    for (const raw of rawLines) {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        if (expanded.length === 0 || expanded[expanded.length - 1] === '') {
+          continue;
+        }
+        expanded.push('');
+        continue;
+      }
+      expanded.push(...this.splitLineByLength(trimmed, 180));
+    }
+    const filtered = expanded.filter((line, index) => line !== '' || (index > 0 && expanded[index - 1] !== ''));
+    let lines = filtered.length > 0 ? filtered : this.splitLineByLength(normalized.replace(/\s+/g, ' ').trim(), 180);
+    if (lines.length > this.contextObjectiveMaxLines) {
+      const omitted = lines.length - this.contextObjectiveMaxLines;
+      lines = [...lines.slice(0, this.contextObjectiveMaxLines), `[... ${omitted} linha(s) omitidas para caber no contexto]`];
+    } else if (lines.length < this.contextObjectiveMinLines) {
+      const extra = this.splitLineByLength(normalized.replace(/\s+/g, ' ').trim(), 160);
+      for (const segment of extra) {
+        if (lines.length >= this.contextObjectiveMinLines) {
+          break;
+        }
+        lines.push(segment);
+      }
+    }
+    return `Objetivo atual:
+${lines.join('\n')}`;
+  }
+
+  private splitLineByLength(value: string, maxLength: number): string[] {
+    const normalized = value.trim();
+    if (!normalized) {
+      return [];
+    }
+    if (normalized.length <= maxLength) {
+      return [normalized];
+    }
+    const chunks: string[] = [];
+    let remaining = normalized;
+    while (remaining.length > maxLength) {
+      chunks.push(remaining.slice(0, maxLength));
+      remaining = remaining.slice(maxLength);
+    }
+    if (remaining) {
+      chunks.push(remaining);
+    }
+    return chunks;
+  }
+
+  private getContextState(job: SandboxJob): ContextState {
+    let state = this.contextStates.get(job);
+    if (!state) {
+      state = { summaryLines: [] };
+      this.contextStates.set(job, state);
+    }
+    return state;
+  }
+
+  private appendRollingSummary(job: SandboxJob, lines: string[]): void {
+    if (!lines.length) {
+      return;
+    }
+    const state = this.getContextState(job);
+    state.summaryLines.push(...lines);
+    const maxLines = this.contextRollingSummaryMaxLines;
+    if (state.summaryLines.length > maxLines) {
+      const removed = state.summaryLines.length - maxLines;
+      state.summaryLines.splice(0, removed);
+      if (!state.summaryTruncationLogged) {
+        this.log(job, `Resumo rolante descartou ${removed} linha(s) para manter o limite de ${maxLines}.`);
+        state.summaryTruncationLogged = true;
+      }
+    }
+  }
+
+  private captureContextFromItems(job: SandboxJob, items: ResponseItem[] | undefined): void {
+    if (!items || items.length === 0) {
+      return;
+    }
+    const summaryLines = this.buildSummaryLinesFromItems(items);
+    if (summaryLines.length > 0) {
+      this.appendRollingSummary(job, summaryLines);
+    }
+  }
+
+  private buildSummaryLinesFromItems(items: ResponseItem[]): string[] {
+    const lines: string[] = [];
+    for (const item of items) {
+      if (!item) {
+        continue;
+      }
+      if (item.type === 'message') {
+        const message = item as ResponseOutputMessage;
+        const role = (message as { role?: string }).role ?? 'assistant';
+        if (role === 'system') {
+          continue;
+        }
+        const textContent = this.collectMessageTexts(message.content).trim();
+        if (!textContent) {
+          continue;
+        }
+        const normalized = textContent.replace(/\s+/g, ' ');
+        const prefix = role === 'user' ? 'Usuário' : 'Assistente';
+        lines.push(`${prefix}: ${this.truncate(normalized, 320)}`);
+        continue;
+      }
+      if (item.type === 'function_call') {
+        const call = item as ResponseFunctionToolCallItem;
+        const args =
+          typeof call.arguments === 'string'
+            ? call.arguments
+            : this.safeStringify(call.arguments ?? {});
+        const normalized = args.replace(/\s+/g, ' ');
+        const label = call.name ? `Tool ${call.name}` : 'Tool';
+        lines.push(`${label}: ${this.truncate(normalized, 320)}`);
+        continue;
+      }
+      if (item.type === 'function_call_output') {
+        const output = item as ResponseFunctionToolCallOutputItem;
+        const rendered =
+          typeof output.output === 'string'
+            ? output.output
+            : this.safeStringify(output.output ?? {});
+        const normalized = rendered.replace(/\s+/g, ' ');
+        const identifier = output.call_id ?? output.id ?? 'tool';
+        lines.push(`Resultado ${identifier}: ${this.truncate(normalized, 320)}`);
+      }
+    }
+    return lines;
+  }
+
+  private buildRollingSummaryLayer(job: SandboxJob): ResponseItem | undefined {
+    const state = this.contextStates.get(job);
+    if (!state || state.summaryLines.length === 0) {
+      return undefined;
+    }
+    const lines = state.summaryLines.slice(-this.contextRollingSummaryMaxLines);
+    if (lines.length === 0) {
+      return undefined;
+    }
+    const bulletLines = lines.map((line) => (line.startsWith('-') ? line : `- ${line}`));
+    const textBlock = `Resumo rolante (${lines.length}/${this.contextRollingSummaryMinLines}-${this.contextRollingSummaryMaxLines} linhas alvo):
+${bulletLines.join('\n')}`;
+    return {
+      type: 'message',
+      id: this.sanitizeId('msg_summary'),
+      role: 'system',
+      content: [{ type: 'input_text', text: textBlock }],
+    };
+  }
+
+  private buildWorkingSetLayer(job: SandboxJob, history: ResponseItem[]): ResponseItem[] {
+    if (!Array.isArray(history) || history.length === 0 || this.contextWorkingSetMaxPairs <= 0) {
+      return [];
+    }
+    const pairs: { call?: ResponseFunctionToolCallItem; output: ResponseFunctionToolCallOutputItem }[] = [];
+    const seen = new Set<string>();
+    for (let index = history.length - 1; index >= 0 && pairs.length < this.contextWorkingSetMaxPairs; index--) {
+      const item = history[index];
+      if (!item || item.type !== 'function_call_output') {
+        continue;
+      }
+      const output = item as ResponseFunctionToolCallOutputItem;
+      const callId = output.call_id ?? `call_${index}`;
+      if (seen.has(callId)) {
+        continue;
+      }
+      seen.add(callId);
+      const call = this.findFunctionCallById(history, callId);
+      pairs.unshift({ call, output });
+    }
+    if (pairs.length === 0) {
+      return [];
+    }
+    const workingSet: ResponseItem[] = [
+      {
+        type: 'message',
+        id: this.sanitizeId('msg_working_set'),
+        role: 'system',
+        content: [
+          {
+            type: 'input_text',
+            text: `Working set (${pairs.length} chamada(s)): mantenha apenas esses resultados no foco imediato e salve artefatos extensos em arquivos.`,
+          },
+        ],
+      },
+    ];
+    for (const pair of pairs) {
+      if (pair.call) {
+        workingSet.push(this.cloneResponseItem(pair.call));
+      }
+      workingSet.push(this.cloneFunctionCallOutput(pair.output));
+    }
+    return workingSet;
+  }
+
+  private collectProtectedWorkingSetCallIds(history: ResponseItem[]): Set<string> {
+    const protectedIds = new Set<string>();
+    if (!Array.isArray(history) || history.length === 0 || this.contextWorkingSetMaxPairs <= 0) {
+      return protectedIds;
+    }
+    for (let index = history.length - 1; index >= 0 && protectedIds.size < this.contextWorkingSetMaxPairs; index--) {
+      const item = history[index];
+      if (!item || item.type !== 'function_call_output') {
+        continue;
+      }
+      const output = item as ResponseFunctionToolCallOutputItem;
+      const callId = output.call_id ?? `call_${index}`;
+      protectedIds.add(callId);
+    }
+    return protectedIds;
+  }
+
+  private findFunctionCallById(history: ResponseItem[], callId: string): ResponseFunctionToolCallItem | undefined {
+    if (!Array.isArray(history) || history.length === 0) {
+      return undefined;
+    }
+    for (let index = history.length - 1; index >= 0; index--) {
+      const item = history[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      const candidateId = call.call_id ?? call.id;
+      if (candidateId === callId) {
+        return call;
+      }
+    }
+    return undefined;
+  }
+
+  private cloneResponseItem<T extends ResponseItem>(item: T): T {
+    return JSON.parse(JSON.stringify(item)) as T;
+  }
+
+  private cloneFunctionCallOutput(output: ResponseFunctionToolCallOutputItem): ResponseFunctionToolCallOutputItem {
+    const cloned = this.cloneResponseItem(output);
+    if (typeof cloned.output === 'string' && cloned.output.length > this.contextWorkingSetMaxChars) {
+      const omitted = cloned.output.length - this.contextWorkingSetMaxChars;
+      cloned.output = `${cloned.output.slice(0, this.contextWorkingSetMaxChars)}... [working set truncou ${omitted} chars]`;
+    }
+    return cloned;
+  }
+
+  private buildRecentMessagesLayer(history: ResponseItem[]): ResponseItem[] {
+    if (!Array.isArray(history) || history.length === 0) {
+      return [];
+    }
+    const selected: ResponseItem[] = [];
+    for (let index = history.length - 1; index >= 0 && selected.length < this.contextRecentMessageLimit; index--) {
+      const item = history[index];
+      if (!item || item.type !== 'message') {
+        continue;
+      }
+      const message = item as ResponseOutputMessage;
+      const role = (message as { role?: string }).role ?? 'assistant';
+      if (role === 'system') {
+        continue;
+      }
+      selected.unshift(this.cloneResponseItem(message));
+    }
+    if (selected.length === 0) {
+      const fallback = history.find(
+        (entry) =>
+          entry &&
+          entry.type === 'message' &&
+          (((entry as { role?: string }).role ?? 'assistant') === 'user'),
+      );
+      if (fallback) {
+        selected.push(this.cloneResponseItem(fallback));
+      }
+    }
+    return selected;
   }
 
   private enforceEcoThreeGuardrails(job: SandboxJob, turnCount: number): void {
