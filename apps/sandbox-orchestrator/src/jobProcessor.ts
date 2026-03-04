@@ -2856,6 +2856,7 @@ ${profileInstruction}`,
     const keepIndexes = new Set<number>();
     const keepCallIds = new Set<string>();
     const keepReasoningIds = new Set<string>();
+    const reasoningIndexesById = new Map<string, number[]>();
     for (const item of tail) {
       if (item.type !== 'function_call_output') {
         if (item.type === 'function_call') {
@@ -2874,6 +2875,14 @@ ${profileInstruction}`,
     let keptOutputs = 0;
     for (let index = middle.length - 1; index >= 0; index--) {
       const item = middle[index];
+      if (this.isReasoningItem(item)) {
+        const itemId = this.extractResponseItemId(item);
+        if (itemId) {
+          const positions = reasoningIndexesById.get(itemId) ?? [];
+          positions.push(index);
+          reasoningIndexesById.set(itemId, positions);
+        }
+      }
       if (item.type === 'function_call_output') {
         if (keptOutputs >= workingSetWindow) {
           continue;
@@ -2902,6 +2911,10 @@ ${profileInstruction}`,
         const reasoningId = this.extractRequiredReasoningId(call);
         if (reasoningId) {
           keepReasoningIds.add(reasoningId);
+          const reasoningIndexes = reasoningIndexesById.get(reasoningId) ?? [];
+          for (const reasoningIndex of reasoningIndexes) {
+            keepIndexes.add(reasoningIndex);
+          }
         }
       }
     }
