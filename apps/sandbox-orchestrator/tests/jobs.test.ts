@@ -895,6 +895,96 @@ test('detects reasoning refs embedded in raw function_call payload and removes o
 });
 
 
+test('retries after API missing reasoning error by dropping orphan function_call pair', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-reasoning-retry-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'reasoning-retry');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  let secondTurnAttempts = 0;
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        const turn = fakeOpenAI.calls.length;
+        if (turn === 1) {
+          return {
+            id: 'resp-reasoning-1',
+            output: [
+              {
+                type: 'reasoning',
+                id: 'rs_required_retry_1',
+                summary: [],
+                status: 'completed',
+              },
+              {
+                type: 'function_call',
+                id: 'fc_required_retry_1',
+                call_id: 'call-reasoning-retry-1',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+            ],
+          };
+        }
+
+        secondTurnAttempts++;
+        if (secondTurnAttempts === 1) {
+          throw new Error("400 Item 'fc_required_retry_1' of type 'function_call' was provided without its required 'reasoning' item: 'rs_required_retry_1'.");
+        }
+
+        return {
+          id: 'resp-reasoning-2',
+          output: [
+            {
+              type: 'message',
+              id: 'msg-reasoning-retry-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+    const job: SandboxJob = {
+      jobId: 'job-reasoning-retry',
+      repoUrl: tempRepo,
+      branch: 'main',
+      taskDescription: 'trigger missing reasoning retry path',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    assert.equal(secondTurnAttempts, 2, 'deve haver nova tentativa após o erro da API');
+    const retryCall = fakeOpenAI.calls[2];
+    const functionCall = retryCall.input.find((msg: any) => msg.type === 'function_call' && msg.call_id === 'call-reasoning-retry-1');
+    const functionOutput = retryCall.input.find((msg: any) => msg.type === 'function_call_output' && msg.call_id === 'call-reasoning-retry-1');
+    assert.equal(functionCall, undefined, 'function_call órfão deve ser removido no retry');
+    assert.equal(functionOutput, undefined, 'function_call_output órfão também deve ser removido no retry');
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+
+
 test('collects patch and changed files even when the model commits changes', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-job-commit-'));
   execSync('git init', { cwd: tempRepo });

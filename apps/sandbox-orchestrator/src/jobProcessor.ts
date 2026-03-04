@@ -947,6 +947,11 @@ ${profileInstruction}`,
             `refs ausentes no momento da falha: ${failedSnapshot.missingReasoningRefs.join(' | ')}`,
           );
         }
+        const repaired = this.repairReasoningDependenciesFromApiError(job, messages, error);
+        if (repaired) {
+          this.log(job, 'histórico ajustado após erro de reasoning da API; nova tentativa será realizada.');
+          continue;
+        }
         throw error;
       }
       this.log(
@@ -3267,6 +3272,69 @@ ${profileInstruction}`,
       return `correlação de erro de reasoning: ids detectados no erro fc=[${functionCallIds.join(',')}], rs=[${reasoningIds.join(',')}], mas nenhum item correspondente foi encontrado no histórico atual.`;
     }
     return `correlação de erro de reasoning: ids detectados fc=[${functionCallIds.join(',')}], rs=[${reasoningIds.join(',')}] :: ${correlations.join(' | ')}`;
+  }
+
+  private repairReasoningDependenciesFromApiError(job: SandboxJob, messages: ResponseItem[], error: unknown): boolean {
+    const rawError = this.formatError(error);
+    if (!/without\s+its\s+required\s+'reasoning'\s+item/i.test(rawError)) {
+      return false;
+    }
+
+    const functionCallIds = new Set(rawError.match(/\bfc_[A-Za-z0-9_-]+\b/g) ?? []);
+    const reasoningIds = new Set(rawError.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? []);
+
+    const orphanedCallIds = new Set<string>();
+    const orphanedDetails: string[] = [];
+
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      const itemId = typeof call.id === 'string' ? call.id : '';
+      const refs = this.extractReasoningRefs(call);
+      const hasMatchingFunctionCallId = functionCallIds.has(itemId) || functionCallIds.has(callId);
+      const hasMatchingReasoningId = refs.some((ref) => reasoningIds.has(ref));
+      if (!hasMatchingFunctionCallId && !hasMatchingReasoningId) {
+        continue;
+      }
+      orphanedCallIds.add(callId);
+      orphanedDetails.push(`callId=${callId}, itemId=${itemId || 'n/d'}, reasoning=[${refs.join(',')}]`);
+    }
+
+    if (orphanedCallIds.size === 0) {
+      return false;
+    }
+
+    const filtered = messages.filter((item, index) => {
+      if (!item) {
+        return false;
+      }
+      if (item.type === 'function_call') {
+        const call = item as ResponseFunctionToolCallItem;
+        const callId = call.call_id ?? this.extractCallId(call, index);
+        return !orphanedCallIds.has(callId);
+      }
+      if (item.type === 'function_call_output') {
+        const output = item as ResponseFunctionToolCallOutputItem;
+        return !orphanedCallIds.has(output.call_id ?? '');
+      }
+      return true;
+    });
+
+    const removed = messages.length - filtered.length;
+    if (removed <= 0) {
+      return false;
+    }
+
+    messages.splice(0, messages.length, ...filtered);
+    this.log(
+      job,
+      `reparo pós-erro de reasoning aplicado: removidas ${removed} mensagem(ns) vinculadas às function_calls [${Array.from(orphanedCallIds).join(',')}]. detalhes=${orphanedDetails.join(' | ')}`,
+    );
+    return true;
   }
 
   private buildRollingSummary(messages: ResponseItem[]): string {
