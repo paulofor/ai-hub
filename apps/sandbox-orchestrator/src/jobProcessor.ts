@@ -761,10 +761,10 @@ export class SandboxJobProcessor implements JobProcessor {
           type: 'object',
           properties: {
             url: { type: 'string' },
-            regex: { type: 'string' },
-            max_bytes: { type: 'integer' },
+            regex: { type: ['string', 'null'] },
+            max_bytes: { type: ['integer', 'null'] },
           },
-          required: ['url'],
+          required: ['url', 'regex', 'max_bytes'],
           additionalProperties: false,
         },
         strict: true,
