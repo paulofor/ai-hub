@@ -965,9 +965,16 @@ ${profileInstruction}`,
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
-          const callId = this.extractCallId(item, index);
-          const messageId = this.sanitizeId(item.id ?? callId);
-          return { ...item, id: messageId, call_id: callId } as ResponseItem;
+          // IMPORTANTE: mantemos a mesma referência do objeto retornado pelo SDK.
+          // Alguns provedores anexam metadados de reasoning em campos não-enumeráveis;
+          // clonar via spread (`{ ...item }`) pode descartar esses vínculos e causar
+          // erro 400 "function_call without required reasoning item" no turno seguinte.
+          const call = item as ResponseFunctionToolCallItem & { id?: string; call_id?: string };
+          const callId = this.extractCallId(call, index);
+          const messageId = this.sanitizeId(call.id ?? callId);
+          call.id = messageId;
+          call.call_id = callId;
+          return call as ResponseItem;
         }
         return item as ResponseItem;
       });
