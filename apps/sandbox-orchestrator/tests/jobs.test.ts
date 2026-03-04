@@ -515,6 +515,105 @@ test('truncates tool outputs before sending them back to the model', async () =>
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
 
+test('preserves function_call pair when context GC keeps function_call_output', async () => {
+  const originalPromptLimit = process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT;
+  const originalRecentWindow = process.env.CONTEXT_RECENT_MESSAGE_WINDOW;
+  const originalWorkingSetWindow = process.env.CONTEXT_WORKING_SET_WINDOW;
+  process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT = '1';
+  process.env.CONTEXT_RECENT_MESSAGE_WINDOW = '2';
+  process.env.CONTEXT_WORKING_SET_WINDOW = '1';
+
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-context-gc-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'context-gc');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-gc-1',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              {
+                type: 'message',
+                id: 'msg-gc-1',
+                role: 'assistant',
+                status: 'completed',
+                content: [{ type: 'output_text', text: 'x'.repeat(200), annotations: [] }],
+              },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-gc-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+    const job: SandboxJob = {
+      jobId: 'job-context-gc',
+      repoUrl: tempRepo,
+      branch: 'main',
+      taskDescription: 'read file with forced context gc',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    const secondCall = fakeOpenAI.calls[1];
+    const functionCall = secondCall.input.find((msg: any) => msg.type === 'function_call' && msg.call_id === 'call-gc-1');
+    const functionOutput = secondCall.input.find((msg: any) => msg.type === 'function_call_output' && msg.call_id === 'call-gc-1');
+    assert.ok(functionCall, 'function_call pareado deve permanecer após GC de contexto');
+    assert.ok(functionOutput, 'function_call_output deve permanecer após GC de contexto');
+  } finally {
+    if (originalPromptLimit === undefined) {
+      delete process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT;
+    } else {
+      process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT = originalPromptLimit;
+    }
+    if (originalRecentWindow === undefined) {
+      delete process.env.CONTEXT_RECENT_MESSAGE_WINDOW;
+    } else {
+      process.env.CONTEXT_RECENT_MESSAGE_WINDOW = originalRecentWindow;
+    }
+    if (originalWorkingSetWindow === undefined) {
+      delete process.env.CONTEXT_WORKING_SET_WINDOW;
+    } else {
+      process.env.CONTEXT_WORKING_SET_WINDOW = originalWorkingSetWindow;
+    }
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
 test('collects patch and changed files even when the model commits changes', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-job-commit-'));
   execSync('git init', { cwd: tempRepo });

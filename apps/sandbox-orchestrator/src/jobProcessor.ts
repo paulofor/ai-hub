@@ -912,6 +912,10 @@ ${profileInstruction}`,
       const toolCallDetails =
         toolCalls
           .map((call, idx) => {
+            const callId = call.call_id ?? this.extractCallId(call, idx);
+            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
+          })
+          .join(', ') || 'nenhum';
       const inboundInteraction = this.recordInteraction(
         job,
         'INBOUND',
@@ -924,11 +928,6 @@ ${profileInstruction}`,
       if (usageMetrics?.completionTokens !== undefined) {
         inboundInteraction.tokenCount = usageMetrics.completionTokens;
       }
-
-            const callId = call.call_id ?? this.extractCallId(call, idx);
-            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
-          })
-          .join(', ') || 'nenhum';
       const assistantTextPreview = this.truncate(this.extractOutputText(assistantMessage?.content) ?? '', 240);
       this.log(
         job,
@@ -2853,7 +2852,42 @@ ${profileInstruction}`,
     const workingSetWindow = Math.max(1, this.contextWorkingSetWindow);
     const tail = messages.slice(Math.max(2, messages.length - recentWindow));
     const middle = messages.slice(2, Math.max(2, messages.length - recentWindow));
-    const workingSet = middle.filter((item) => item.type === 'function_call_output').slice(-workingSetWindow);
+    const keepIndexes = new Set<number>();
+    const keepCallIds = new Set<string>();
+    for (const item of tail) {
+      if (item.type !== 'function_call_output') {
+        continue;
+      }
+      const output = item as ResponseFunctionToolCallOutputItem;
+      if (typeof output.call_id === 'string' && output.call_id.length > 0) {
+        keepCallIds.add(output.call_id);
+      }
+    }
+    let keptOutputs = 0;
+    for (let index = middle.length - 1; index >= 0; index--) {
+      const item = middle[index];
+      if (item.type === 'function_call_output') {
+        if (keptOutputs >= workingSetWindow) {
+          continue;
+        }
+        keepIndexes.add(index);
+        keptOutputs++;
+        const output = item as ResponseFunctionToolCallOutputItem;
+        if (typeof output.call_id === 'string' && output.call_id.length > 0) {
+          keepCallIds.add(output.call_id);
+        }
+        continue;
+      }
+      if (item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      if (keepCallIds.has(callId)) {
+        keepIndexes.add(index);
+      }
+    }
+    const workingSet = middle.filter((_, index) => keepIndexes.has(index));
     const rollingSummary = this.buildRollingSummary(messages);
     const compacted: ResponseItem[] = [
       ...protectedMessages,
