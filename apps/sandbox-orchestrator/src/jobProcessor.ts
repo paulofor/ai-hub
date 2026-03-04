@@ -907,18 +907,45 @@ ${profileInstruction}`,
       this.applyContextGc(job, messages);
       this.applyEcoPreSamplingCompaction(job, messages);
       this.repairReasoningDependencies(job, messages);
+      const reasoningSnapshot = this.summarizeReasoningDependencies(messages);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
+      this.log(
+        job,
+        `snapshot pré-envio: reasoning_items=${reasoningSnapshot.reasoningItemCount}, function_calls=${reasoningSnapshot.functionCallCount}, function_calls_com_reasoning=${reasoningSnapshot.functionCallsWithReasoning}, refs_ausentes=${reasoningSnapshot.missingReasoningRefs.length}`,
+      );
+      if (reasoningSnapshot.missingReasoningRefs.length > 0) {
+        this.log(
+          job,
+          `refs de reasoning ausentes detectadas no snapshot pré-envio: ${reasoningSnapshot.missingReasoningRefs.join(' | ')}`,
+        );
+      }
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
         job,
         'OUTBOUND',
         this.formatMessagesForRecording(messages),
       );
-      const response = await this.openai!.responses.create({
-        model,
-        input: messages,
-        tools,
-      });
+      let response;
+      try {
+        response = await this.openai!.responses.create({
+          model,
+          input: messages,
+          tools,
+        });
+      } catch (error) {
+        const failedSnapshot = this.summarizeReasoningDependencies(messages);
+        this.log(
+          job,
+          `falha ao chamar responses.create: ${this.formatError(error)} (reasoning_items=${failedSnapshot.reasoningItemCount}, function_calls=${failedSnapshot.functionCallCount}, function_calls_com_reasoning=${failedSnapshot.functionCallsWithReasoning}, refs_ausentes=${failedSnapshot.missingReasoningRefs.length})`,
+        );
+        if (failedSnapshot.missingReasoningRefs.length > 0) {
+          this.log(
+            job,
+            `refs ausentes no momento da falha: ${failedSnapshot.missingReasoningRefs.join(' | ')}`,
+          );
+        }
+        throw error;
+      }
       this.log(
         job,
         `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,
@@ -3089,6 +3116,52 @@ ${profileInstruction}`,
     return id;
   }
 
+  private summarizeReasoningDependencies(messages: ResponseItem[]): {
+    reasoningItemCount: number;
+    functionCallCount: number;
+    functionCallsWithReasoning: number;
+    missingReasoningRefs: string[];
+  } {
+    const reasoningIds = new Set<string>();
+    let functionCallCount = 0;
+    let functionCallsWithReasoning = 0;
+    const missingReasoningRefs = new Set<string>();
+
+    for (const item of messages) {
+      if (this.isReasoningItem(item)) {
+        const id = this.extractResponseItemId(item);
+        if (id) {
+          reasoningIds.add(id);
+        }
+      }
+    }
+
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      functionCallCount++;
+      const call = item as ResponseFunctionToolCallItem;
+      const reasoningId = this.extractRequiredReasoningId(call);
+      if (!reasoningId) {
+        continue;
+      }
+      functionCallsWithReasoning++;
+      if (!reasoningIds.has(reasoningId)) {
+        const callId = call.call_id ?? this.extractCallId(call, index);
+        missingReasoningRefs.add(`${callId}->${reasoningId}`);
+      }
+    }
+
+    return {
+      reasoningItemCount: reasoningIds.size,
+      functionCallCount,
+      functionCallsWithReasoning,
+      missingReasoningRefs: Array.from(missingReasoningRefs),
+    };
+  }
+
   private buildRollingSummary(messages: ResponseItem[]): string {
     const relevant = messages
       .slice(2)
@@ -3257,79 +3330,86 @@ ${profileInstruction}`,
     }
   }
 
-private repairReasoningDependencies(job: SandboxJob, messages: ResponseItem[]): void {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return;
-  }
+  private repairReasoningDependencies(job: SandboxJob, messages: ResponseItem[]): void {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return;
+    }
 
-  // Alguns modelos exigem que itens function_call tragam junto o item "reasoning" referenciado.
-  // Caso o histórico tenha sido compactado e o item de reasoning tenha sido descartado, devemos
-  // remover o function_call (e seu function_call_output) para evitar erro 400 no próximo turno.
-  const reasoningIds = new Set<string>();
-  for (const item of messages) {
-    if (!this.isReasoningItem(item)) {
-      continue;
+    // Alguns modelos exigem que itens function_call tragam junto o item "reasoning" referenciado.
+    // Caso o histórico tenha sido compactado e o item de reasoning tenha sido descartado, devemos
+    // remover o function_call (e seu function_call_output) para evitar erro 400 no próximo turno.
+    const reasoningIds = new Set<string>();
+    for (const item of messages) {
+      if (!this.isReasoningItem(item)) {
+        continue;
+      }
+      const id = this.extractResponseItemId(item);
+      if (id) {
+        reasoningIds.add(id);
+      }
     }
-    const id = this.extractResponseItemId(item);
-    if (id) {
-      reasoningIds.add(id);
-    }
-  }
 
-  const orphanedCallIds = new Set<string>();
-  let orphanedCalls = 0;
-  for (let index = 0; index < messages.length; index++) {
-    const item = messages[index];
-    if (!item || item.type !== 'function_call') {
-      continue;
-    }
-    const call = item as ResponseFunctionToolCallItem;
-    const reasoningId = this.extractRequiredReasoningId(call);
-    if (!reasoningId) {
-      continue;
-    }
-    if (reasoningIds.has(reasoningId)) {
-      continue;
-    }
-    orphanedCalls++;
-    orphanedCallIds.add(call.call_id ?? this.extractCallId(call, index));
-  }
-
-  if (orphanedCalls === 0) {
-    return;
-  }
-
-  const filtered = messages.filter((item) => {
-    if (!item) {
-      return false;
-    }
-    if (item.type === 'function_call') {
+    const orphanedCallIds = new Set<string>();
+    const orphanedDetails: string[] = [];
+    let orphanedCalls = 0;
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
       const call = item as ResponseFunctionToolCallItem;
       const reasoningId = this.extractRequiredReasoningId(call);
       if (!reasoningId) {
-        return true;
+        continue;
       }
-      return reasoningIds.has(reasoningId);
-    }
-    if (item.type === 'function_call_output') {
-      const output = item as ResponseFunctionToolCallOutputItem;
-      const callId = output.call_id;
-      if (!callId) {
-        return true;
+      if (reasoningIds.has(reasoningId)) {
+        continue;
       }
-      return !orphanedCallIds.has(callId);
+      orphanedCalls++;
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      orphanedCallIds.add(callId);
+      orphanedDetails.push(`callId=${callId}, reasoning=${reasoningId}, tool=${call.name ?? 'sem_nome'}`);
     }
-    return true;
-  });
 
-  const removed = messages.length - filtered.length;
-  messages.splice(0, messages.length, ...filtered);
-  this.log(
-    job,
-    `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente).`,
-  );
-}
+    if (orphanedCalls === 0) {
+      return;
+    }
 
+    this.log(
+      job,
+      `detectadas dependências órfãs de reasoning antes do envio ao modelo: ${orphanedDetails.join(' | ')}`,
+    );
+
+    const filtered = messages.filter((item) => {
+      if (!item) {
+        return false;
+      }
+      if (item.type === 'function_call') {
+        const call = item as ResponseFunctionToolCallItem;
+        const reasoningId = this.extractRequiredReasoningId(call);
+        if (!reasoningId) {
+          return true;
+        }
+        return reasoningIds.has(reasoningId);
+      }
+      if (item.type === 'function_call_output') {
+        const output = item as ResponseFunctionToolCallOutputItem;
+        const callId = output.call_id;
+        if (!callId) {
+          return true;
+        }
+        return !orphanedCallIds.has(callId);
+      }
+      return true;
+    });
+
+    const removed = messages.length - filtered.length;
+    messages.splice(0, messages.length, ...filtered);
+    this.log(
+      job,
+      `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente).`,
+    );
+  }
 
   private enforceEcoUserMessageBudget(
     job: SandboxJob,
