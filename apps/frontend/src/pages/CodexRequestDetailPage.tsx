@@ -400,6 +400,20 @@ export default function CodexRequestDetailPage() {
               </div>
             )}
 
+            {request.profile === 'ECO_3' && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-100">
+                <p className="font-semibold">Modo ECO-3</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Converta logs extensos em resumos antes de adicioná-los ao histórico pago.</li>
+                  <li>Respeite o teto automático de 120 iterações por tarefa e interrompa loops repetitivos.</li>
+                  <li>Acompanhe o contador total de tokens e finalize o fluxo ao se aproximar de 800 mil tokens.</li>
+                  <li>Documente sempre que arquivos, comandos ou trechos forem truncados para manter rastreabilidade.</li>
+                  <li>Prefira salvar artefatos volumosos em arquivos auxiliares (docs/ ou codex/) e compartilhe apenas os resumos.</li>
+                </ul>
+                <p className="mt-2 text-xs text-rose-700 dark:text-rose-200">Referência: docs/estrategia-token/modo-eco3.md</p>
+              </div>
+            )}
+
             {request.profile === 'CHATGPT_CODEX' && (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-900 dark:border-indigo-900/60 dark:bg-indigo-900/20 dark:text-indigo-100">
                 <p className="font-semibold">Modo Codex (ChatGPT)</p>

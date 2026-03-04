@@ -654,6 +654,22 @@ export default function CodexPage() {
                   </span>
                 </span>
               </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
+                  value="ECO_3"
+                  checked={profile === 'ECO_3'}
+                  onChange={() => setProfile('ECO_3')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  ECO-3
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Regras extras do docs/estrategia-token/modo-eco3.md: resuma logs longos antes de reenviá-los, respeite o teto de 120 iterações/800k tokens e registre tudo que for descartado para manter rastreabilidade.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
 

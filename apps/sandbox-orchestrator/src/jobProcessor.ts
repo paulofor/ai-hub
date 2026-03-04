@@ -73,6 +73,14 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly ecoTwoToolOutputSerializedLimit: number;
   private readonly ecoTwoHttpToolMaxResponseChars: number;
   private readonly ecoTwoCharsPerTokenEstimate: number;
+  private readonly ecoThreeAutoCompactTokenLimit: number;
+  private readonly ecoThreeHistoryTargetTokens: number;
+  private readonly ecoThreeUserMessageTokenLimit: number;
+  private readonly ecoThreeToolOutputStringLimit: number;
+  private readonly ecoThreeToolOutputSerializedLimit: number;
+  private readonly ecoThreeHttpToolMaxResponseChars: number;
+  private readonly ecoThreeMaxTurns: number;
+  private readonly ecoThreeMaxTotalTokens: number;
   private readonly dbQueryTimeoutMs: number;
   private readonly dbMaxRows: number;
   private readonly dbConfigFromEnv?: SandboxDatabaseConfig;
@@ -285,6 +293,53 @@ export class SandboxJobProcessor implements JobProcessor {
       4,
     );
 
+    this.ecoThreeAutoCompactTokenLimit = this.parsePositiveInteger(
+      process.env.ECO3_AUTO_COMPACT_TOKEN_LIMIT,
+      600_000,
+    );
+    const ecoThreeHistoryTargetRaw = this.parsePositiveInteger(
+      process.env.ECO3_HISTORY_TARGET_TOKENS,
+      Math.min(this.ecoThreeAutoCompactTokenLimit, 450_000),
+    );
+    this.ecoThreeHistoryTargetTokens = Math.min(
+      ecoThreeHistoryTargetRaw,
+      this.ecoThreeAutoCompactTokenLimit,
+    );
+    const ecoThreeUserLimitRaw = this.parsePositiveInteger(
+      process.env.ECO3_USER_MESSAGE_TOKEN_LIMIT,
+      10_000,
+    );
+    this.ecoThreeUserMessageTokenLimit = Math.min(ecoThreeUserLimitRaw, 30_000);
+    const ecoThreeToolOutputLimitRaw = this.parsePositiveInteger(
+      process.env.ECO3_TOOL_OUTPUT_STRING_LIMIT,
+      Math.min(this.toolOutputStringLimit, 3_000),
+    );
+    this.ecoThreeToolOutputStringLimit = Math.min(
+      ecoThreeToolOutputLimitRaw,
+      this.toolOutputStringLimit,
+    );
+    const ecoThreeToolOutputSerializedLimitRaw = this.parsePositiveInteger(
+      process.env.ECO3_TOOL_OUTPUT_SERIALIZED_LIMIT,
+      Math.min(this.toolOutputSerializedLimit, 12_000),
+    );
+    this.ecoThreeToolOutputSerializedLimit = Math.min(
+      ecoThreeToolOutputSerializedLimitRaw,
+      this.toolOutputSerializedLimit,
+    );
+    const ecoThreeHttpMaxCharsRaw = this.parsePositiveInteger(
+      process.env.ECO3_HTTP_TOOL_MAX_RESPONSE_CHARS,
+      Math.min(this.httpToolMaxResponseChars, 8_000),
+    );
+    this.ecoThreeHttpToolMaxResponseChars = Math.min(
+      ecoThreeHttpMaxCharsRaw,
+      this.httpToolMaxResponseChars,
+    );
+    this.ecoThreeMaxTurns = this.parsePositiveInteger(process.env.ECO3_MAX_TURNS, 120);
+    this.ecoThreeMaxTotalTokens = this.parsePositiveInteger(
+      process.env.ECO3_MAX_TOTAL_TOKENS,
+      800_000,
+    );
+
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
@@ -348,6 +403,11 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(
           job,
           `modo ECO-2: auto-compact=${this.ecoTwoAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoTwoHistoryTargetTokens}, toolOutput=${this.ecoTwoToolOutputStringLimit}, http_get=${this.ecoTwoHttpToolMaxResponseChars}`,
+        );
+      } else if (this.isEcoThree(job)) {
+        this.log(
+          job,
+          `modo ECO-3: auto-compact=${this.ecoThreeAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoThreeHistoryTargetTokens}, toolOutput=${this.ecoThreeToolOutputStringLimit}, http_get=${this.ecoThreeHttpToolMaxResponseChars}, turns=${this.ecoThreeMaxTurns}, tokens_max=${this.ecoThreeMaxTotalTokens}`,
         );
       } else if (this.isChatgptCodex(job)) {
         this.log(
@@ -606,7 +666,10 @@ Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md �
           : this.isEcoTwo(job)
             ? `
 Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo.`
-            : this.isChatgptCodex(job)
+            : this.isEcoThree(job)
+              ? `
+Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
+              : this.isChatgptCodex(job)
               ? `
 Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos.`
               : '';
@@ -641,11 +704,14 @@ ${profileInstruction}`,
     ];
 
     let summary = '';
+    let turnCount = 0;
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
       this.ensureNotCancelled(job);
-      this.applyEcoTwoPreSamplingCompaction(job, messages);
+      turnCount++;
+      this.enforceEcoThreeGuardrails(job, turnCount);
+      this.applyEcoPreSamplingCompaction(job, messages);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
@@ -664,6 +730,7 @@ ${profileInstruction}`,
       );
 
       const usageMetrics = this.addUsageMetrics(job, (response as any).usage);
+      this.enforceEcoThreeGuardrails(job, turnCount);
 
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
@@ -755,7 +822,7 @@ ${profileInstruction}`,
       }
 
       messages.push(...toolMessages);
-      this.enforceEcoTwoAutoCompaction(job, messages);
+      this.enforceEcoAutoCompaction(job, messages);
     }
   }
 
@@ -2292,7 +2359,7 @@ ${profileInstruction}`,
     if (candidate) {
       return candidate;
     }
-    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isChatgptCodex(job)) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isEcoThree(job) || this.isChatgptCodex(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -2308,6 +2375,10 @@ ${profileInstruction}`,
 
   private isEcoTwo(job: SandboxJob): boolean {
     return (job.profile ?? 'STANDARD') === 'ECO_2';
+  }
+
+  private isEcoThree(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'ECO_3';
   }
 
   private isSmartEconomy(job: SandboxJob): boolean {
@@ -2344,6 +2415,9 @@ ${profileInstruction}`,
     if (this.isEcoTwo(job)) {
       return this.ecoTwoToolOutputStringLimit;
     }
+    if (this.isEcoThree(job)) {
+      return this.ecoThreeToolOutputStringLimit;
+    }
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputStringLimit;
     }
@@ -2362,6 +2436,9 @@ ${profileInstruction}`,
     }
     if (this.isEcoTwo(job)) {
       return this.ecoTwoToolOutputSerializedLimit;
+    }
+    if (this.isEcoThree(job)) {
+      return this.ecoThreeToolOutputSerializedLimit;
     }
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputSerializedLimit;
@@ -2382,6 +2459,9 @@ ${profileInstruction}`,
     if (this.isEcoTwo(job)) {
       return this.ecoTwoHttpToolMaxResponseChars;
     }
+    if (this.isEcoThree(job)) {
+      return this.ecoThreeHttpToolMaxResponseChars;
+    }
     if (this.isEcoOne(job)) {
       return this.ecoOneHttpToolMaxResponseChars;
     }
@@ -2391,25 +2471,37 @@ ${profileInstruction}`,
     return this.httpToolMaxResponseChars;
   }
 
-  private applyEcoTwoPreSamplingCompaction(job: SandboxJob, messages: ResponseItem[]): void {
-    if (!this.isEcoTwo(job)) {
+  private applyEcoPreSamplingCompaction(job: SandboxJob, messages: ResponseItem[]): void {
+    const profile = this.resolveEcoProfile(job);
+    if (!profile) {
       return;
     }
-    const trimmedHistory = this.pruneEcoTwoHistory(job, messages, this.ecoTwoHistoryTargetTokens);
-    const trimmedUsers = this.enforceEcoTwoUserMessageBudget(job, messages);
+    const trimmedHistory = this.pruneEcoHistory(job, messages, profile.historyTargetTokens, profile.label);
+    const trimmedUsers = this.enforceEcoUserMessageBudget(
+      job,
+      messages,
+      profile.userMessageTokenLimit,
+      profile.label,
+    );
     if (trimmedHistory || trimmedUsers) {
-      this.log(job, 'Modo ECO-2: histórico compactado preventivamente antes da próxima iteração.');
+      this.log(
+        job,
+        `Modo ${profile.label}: histórico compactado preventivamente antes da próxima iteração.`,
+      );
     }
   }
 
-  private enforceEcoTwoUserMessageBudget(job: SandboxJob, messages: ResponseItem[]): boolean {
-    if (!this.isEcoTwo(job)) {
-      return false;
-    }
+  private enforceEcoUserMessageBudget(
+    job: SandboxJob,
+    messages: ResponseItem[],
+    limit: number,
+    label: string,
+  ): boolean {
     if (!Array.isArray(messages) || messages.length === 0) {
       return false;
     }
-    let remaining = Math.max(0, this.ecoTwoUserMessageTokenLimit);
+    const normalizedLimit = Math.max(0, limit);
+    let remaining = normalizedLimit;
     let preservedUserMessages = 0;
     let changed = false;
 
@@ -2424,8 +2516,8 @@ ${profileInstruction}`,
         continue;
       }
 
-      const text = this.collectMessageTexts(message.content);
-      const tokens = this.approximateTokensFromText(text);
+      const textValue = this.collectMessageTexts(message.content);
+      const tokens = this.approximateTokensFromText(textValue);
       if (tokens <= remaining) {
         remaining = Math.max(0, remaining - tokens);
         preservedUserMessages++;
@@ -2433,61 +2525,65 @@ ${profileInstruction}`,
       }
 
       if (remaining > 0) {
-        const truncated = this.truncateTextByTokenBudget(text, remaining);
-        const note = `\n\n[Modo ECO-2: ${truncated.omittedTokens} tokens omitidos do histórico do usuário]`;
+        const truncated = this.truncateTextByTokenBudget(textValue, remaining);
+        const note = `\n\n[Modo ${label}: ${truncated.omittedTokens} tokens omitidos do histórico do usuário]`;
         message.content = [{ type: 'output_text', text: `${truncated.value}${note}` }] as ResponseOutputMessage['content'];
         remaining = 0;
         preservedUserMessages++;
         changed = true;
-        this.log(job, 'Modo ECO-2: mensagem de usuário truncada para manter o limite de 20k tokens.');
+        this.log(job, `Modo ${label}: mensagem de usuário truncada para manter o limite configurado.`);
         continue;
       }
 
-      if (preservedUserMessages === 0) {
-        const fallbackTokens = Math.max(1, Math.floor(this.ecoTwoUserMessageTokenLimit * 0.1));
-        const truncated = this.truncateTextByTokenBudget(text, fallbackTokens);
-        const note = `\n\n[Modo ECO-2: ${truncated.omittedTokens} tokens omitidos para preservar contexto do usuário]`;
+      if (preservedUserMessages === 0 && normalizedLimit > 0) {
+        const fallbackTokens = Math.max(1, Math.floor(normalizedLimit * 0.1));
+        const truncated = this.truncateTextByTokenBudget(textValue, fallbackTokens);
+        const note = `\n\n[Modo ${label}: ${truncated.omittedTokens} tokens omitidos para preservar contexto do usuário]`;
         message.content = [{ type: 'output_text', text: `${truncated.value}${note}` }] as ResponseOutputMessage['content'];
         preservedUserMessages++;
         changed = true;
-        this.log(job, 'Modo ECO-2: mensagem de usuário preservada com resumo mínimo.');
+        this.log(job, `Modo ${label}: mensagem de usuário preservada com resumo mínimo.`);
       } else {
         messages.splice(index, 1);
         changed = true;
-        this.log(job, 'Modo ECO-2: mensagem de usuário antiga removida para respeitar o limite do histórico.');
+        this.log(job, `Modo ${label}: mensagem de usuário antiga removida para respeitar o limite do histórico.`);
       }
     }
 
     return changed;
   }
 
-  private enforceEcoTwoAutoCompaction(job: SandboxJob, messages: ResponseItem[]): void {
-    if (!this.isEcoTwo(job)) {
+  private enforceEcoAutoCompaction(job: SandboxJob, messages: ResponseItem[]): void {
+    const profile = this.resolveEcoProfile(job);
+    if (!profile) {
       return;
     }
     const totalTokens = job.totalTokens ?? 0;
-    if (totalTokens <= 0 || totalTokens < this.ecoTwoAutoCompactTokenLimit) {
+    if (totalTokens <= 0) {
       return;
     }
-    const target = Math.min(
-      this.ecoTwoHistoryTargetTokens,
-      Math.floor(this.ecoTwoAutoCompactTokenLimit * 0.9),
-    );
+    const autoCompactLimit = Math.max(0, profile.autoCompactTokenLimit);
+    if (autoCompactLimit === 0 || totalTokens < autoCompactLimit) {
+      return;
+    }
+    const target = Math.min(profile.historyTargetTokens, Math.floor(autoCompactLimit * 0.9));
     if (target <= 0) {
       return;
     }
-    if (this.pruneEcoTwoHistory(job, messages, target)) {
+    if (this.pruneEcoHistory(job, messages, target, profile.label)) {
       this.log(
         job,
-        `Modo ECO-2: auto-compactação executada após atingir ${totalTokens} tokens (alvo ${target}).`,
+        `Modo ${profile.label}: auto-compactação executada após atingir ${totalTokens} tokens (alvo ${target}).`,
       );
     }
   }
 
-  private pruneEcoTwoHistory(job: SandboxJob, messages: ResponseItem[], targetTokens: number): boolean {
-    if (!this.isEcoTwo(job)) {
-      return false;
-    }
+  private pruneEcoHistory(
+    job: SandboxJob,
+    messages: ResponseItem[],
+    targetTokens: number,
+    label: string,
+  ): boolean {
     if (!Array.isArray(messages) || messages.length === 0 || !Number.isFinite(targetTokens) || targetTokens <= 0) {
       return false;
     }
@@ -2499,7 +2595,7 @@ ${profileInstruction}`,
 
     for (let index = messages.length - 1; index >= 0 && estimated > targetTokens; index--) {
       const item = messages[index];
-      if (!this.isEcoTwoRemovableHistoryItem(item)) {
+      if (!this.isEcoRemovableHistoryItem(item)) {
         break;
       }
       const footprint = this.estimateItemTokenFootprint(item);
@@ -2509,13 +2605,55 @@ ${profileInstruction}`,
     }
 
     if (removed > 0) {
-      this.log(job, `Modo ECO-2: removidos ${removed} item(ns) do histórico para manter ${targetTokens} tokens.`);
+      this.log(job, `Modo ${label}: removidos ${removed} item(ns) do histórico para manter ${targetTokens} tokens.`);
       return true;
     }
     return false;
   }
 
-  private isEcoTwoRemovableHistoryItem(item: ResponseItem | undefined): boolean {
+  private resolveEcoProfile(job: SandboxJob): {
+    label: string;
+    autoCompactTokenLimit: number;
+    historyTargetTokens: number;
+    userMessageTokenLimit: number;
+  } | undefined {
+    if (this.isEcoTwo(job)) {
+      return {
+        label: 'ECO-2',
+        autoCompactTokenLimit: this.ecoTwoAutoCompactTokenLimit,
+        historyTargetTokens: this.ecoTwoHistoryTargetTokens,
+        userMessageTokenLimit: this.ecoTwoUserMessageTokenLimit,
+      };
+    }
+    if (this.isEcoThree(job)) {
+      return {
+        label: 'ECO-3',
+        autoCompactTokenLimit: this.ecoThreeAutoCompactTokenLimit,
+        historyTargetTokens: this.ecoThreeHistoryTargetTokens,
+        userMessageTokenLimit: this.ecoThreeUserMessageTokenLimit,
+      };
+    }
+    return undefined;
+  }
+
+  private enforceEcoThreeGuardrails(job: SandboxJob, turnCount: number): void {
+    if (!this.isEcoThree(job)) {
+      return;
+    }
+    if (this.ecoThreeMaxTurns > 0 && turnCount > this.ecoThreeMaxTurns) {
+      throw new Error(
+        `Modo ECO-3 interrompeu a execução após ${turnCount} iterações para evitar ultrapassar o limite de ${this.ecoThreeMaxTurns} turnos. Resuma o estado atual e encerre a tarefa manualmente.`,
+      );
+    }
+    const totalTokens = job.totalTokens ?? 0;
+    if (this.ecoThreeMaxTotalTokens > 0 && totalTokens >= this.ecoThreeMaxTotalTokens) {
+      throw new Error(
+        `Modo ECO-3 atingiu ${totalTokens} tokens (limite ${this.ecoThreeMaxTotalTokens}) e encerrou automaticamente para conter custos. Gere um resumo e finalize o fluxo manualmente.`,
+      );
+    }
+  }
+
+  private isEcoRemovableHistoryItem(item: ResponseItem | undefined): boolean {
     if (!item) {
       return false;
     }

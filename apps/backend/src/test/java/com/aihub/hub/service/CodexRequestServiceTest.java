@@ -276,6 +276,22 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void ecoThreeAlwaysUsesEconomyModelWhenAvailable() {
+        CodexRequestService service = buildService();
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("modo eco-3");
+        payload.setProfile(CodexIntegrationProfile.ECO_3);
+
+        CodexRequest created = service.create(payload);
+        assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
+    }
+
+    @Test
     void chatgptCodexUsesEconomyModelWhenAvailable() {
         CodexRequestService service = buildService();
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
