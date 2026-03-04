@@ -3257,81 +3257,79 @@ ${profileInstruction}`,
     }
   }
 
-  private repairReasoningDependencies(job: SandboxJob, messages: ResponseItem[]): void {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return;
-    }
+private repairReasoningDependencies(job: SandboxJob, messages: ResponseItem[]): void {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return;
+  }
 
-    const reasoningIds = new Set<string>();
-    for (const item of messages) {
-      if (!this.isReasoningItem(item)) {
-        continue;
-      }
-      const id = this.extractResponseItemId(item);
-      if (id) {
-        reasoningIds.add(id);
-      }
+  // Alguns modelos exigem que itens function_call tragam junto o item "reasoning" referenciado.
+  // Caso o histórico tenha sido compactado e o item de reasoning tenha sido descartado, devemos
+  // remover o function_call (e seu function_call_output) para evitar erro 400 no próximo turno.
+  const reasoningIds = new Set<string>();
+  for (const item of messages) {
+    if (!this.isReasoningItem(item)) {
+      continue;
     }
+    const id = this.extractResponseItemId(item);
+    if (id) {
+      reasoningIds.add(id);
+    }
+  }
 
-    const orphanedCallIds = new Set<string>();
-    let orphanedCalls = 0;
-    let strippedReasoningRefs = 0;
-    for (let index = 0; index < messages.length; index++) {
-      const item = messages[index];
-      if (!item || item.type !== 'function_call') {
-        continue;
-      }
+  const orphanedCallIds = new Set<string>();
+  let orphanedCalls = 0;
+  for (let index = 0; index < messages.length; index++) {
+    const item = messages[index];
+    if (!item || item.type !== 'function_call') {
+      continue;
+    }
+    const call = item as ResponseFunctionToolCallItem;
+    const reasoningId = this.extractRequiredReasoningId(call);
+    if (!reasoningId) {
+      continue;
+    }
+    if (reasoningIds.has(reasoningId)) {
+      continue;
+    }
+    orphanedCalls++;
+    orphanedCallIds.add(call.call_id ?? this.extractCallId(call, index));
+  }
+
+  if (orphanedCalls === 0) {
+    return;
+  }
+
+  const filtered = messages.filter((item) => {
+    if (!item) {
+      return false;
+    }
+    if (item.type === 'function_call') {
       const call = item as ResponseFunctionToolCallItem;
       const reasoningId = this.extractRequiredReasoningId(call);
-      if (!reasoningId || reasoningIds.has(reasoningId)) {
-        continue;
+      if (!reasoningId) {
+        return true;
       }
-      // Algumas versões do Responses API adicionam um ponteiro de "reasoning" no item.
-      // Se o histórico foi podado/compactado, esse ponteiro pode ficar órfão e causar 400.
-      // Preferimos remover apenas a referência ao reasoning (mantendo o tool call no histórico);
-      // se não for possível, removemos o tool call e sua saída correspondente.
-      if (this.stripReasoningReference(call)) {
-        strippedReasoningRefs++;
-        continue;
-      }
-      orphanedCalls++;
-      orphanedCallIds.add(call.call_id ?? this.extractCallId(call, index));
+      return reasoningIds.has(reasoningId);
     }
-
-    if (orphanedCalls === 0 && strippedReasoningRefs === 0) {
-      return;
+    if (item.type === 'function_call_output') {
+      const output = item as ResponseFunctionToolCallOutputItem;
+      const callId = output.call_id;
+      if (!callId) {
+        return true;
+      }
+      return !orphanedCallIds.has(callId);
     }
+    return true;
+  });
 
-    const filtered = messages.filter((item, index) => {
-      if (!item) {
-        return false;
-      }
-      if (item.type === 'function_call') {
-        const call = item as ResponseFunctionToolCallItem;
-        const reasoningId = this.extractRequiredReasoningId(call);
-        if (!reasoningId) {
-          return true;
-        }
-        return reasoningIds.has(reasoningId);
-      }
-      if (item.type === 'function_call_output') {
-        const output = item as ResponseFunctionToolCallOutputItem;
-        const callId = output.call_id;
-        if (!callId) {
-          return true;
-        }
-        return !orphanedCallIds.has(callId);
-      }
-      return true;
-    });
+  const removed = messages.length - filtered.length;
+  messages.splice(0, messages.length, ...filtered);
+  this.log(
+    job,
+    `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente).`,
+  );
+}
 
-    const removed = messages.length - filtered.length;
-    messages.splice(0, messages.length, ...filtered);
-    this.log(
-      job,
-      `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente) e removidas ${strippedReasoningRefs} referência(s) de reasoning órfã(s) para evitar erro 400.`,
-    );
-  }
 
   private enforceEcoUserMessageBudget(
     job: SandboxJob,
