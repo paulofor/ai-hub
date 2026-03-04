@@ -673,10 +673,10 @@ export class SandboxJobProcessor implements JobProcessor {
                 type: 'object',
                 properties: {
                   path: { type: 'string' },
-                  startLine: { type: 'integer' },
-                  endLine: { type: 'integer' },
+                  startLine: { type: ['integer', 'null'] },
+                  endLine: { type: ['integer', 'null'] },
                 },
-                required: ['path'],
+                required: ['path', 'startLine', 'endLine'],
                 additionalProperties: false,
               },
             },
