@@ -2939,8 +2939,8 @@ ${profileInstruction}`,
     for (const item of tail) {
       if (item.type !== 'function_call_output') {
         if (item.type === 'function_call') {
-          const reasoningId = this.extractRequiredReasoningId(item);
-          if (reasoningId) {
+          const reasoningRefs = this.extractReasoningRefs(item);
+          for (const reasoningId of reasoningRefs) {
             keepReasoningIds.add(reasoningId);
           }
         }
@@ -2987,8 +2987,8 @@ ${profileInstruction}`,
       const callId = call.call_id ?? this.extractCallId(call, index);
       if (keepCallIds.has(callId)) {
         keepIndexes.add(index);
-        const reasoningId = this.extractRequiredReasoningId(call);
-        if (reasoningId) {
+        const reasoningRefs = this.extractReasoningRefs(call);
+        for (const reasoningId of reasoningRefs) {
           keepReasoningIds.add(reasoningId);
           const reasoningIndexes = reasoningIndexesById.get(reasoningId) ?? [];
           for (const reasoningIndex of reasoningIndexes) {
@@ -3017,6 +3017,25 @@ ${profileInstruction}`,
 
   private isReasoningItem(item: unknown): boolean {
     return Boolean(item && typeof item === 'object' && (item as { type?: unknown }).type === 'reasoning');
+  }
+
+  private extractReasoningRefs(item: unknown): string[] {
+    const refs = new Set<string>();
+    const primary = this.extractRequiredReasoningId(item);
+    if (primary) {
+      refs.add(primary);
+    }
+
+    // Fallback defensivo: alguns payloads retornam o vínculo de reasoning
+    // em formatos não tipados no SDK. Capturamos ids "rs_*" diretamente.
+    const serialized = this.safeStringify(item);
+    const matches = serialized.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? [];
+    for (const match of matches) {
+      if (match.length > 0) {
+        refs.add(match);
+      }
+    }
+    return Array.from(refs);
   }
 
   private extractRequiredReasoningId(item: unknown): string | undefined {
@@ -3143,14 +3162,16 @@ ${profileInstruction}`,
       }
       functionCallCount++;
       const call = item as ResponseFunctionToolCallItem;
-      const reasoningId = this.extractRequiredReasoningId(call);
-      if (!reasoningId) {
+      const reasoningRefs = this.extractReasoningRefs(call);
+      if (reasoningRefs.length === 0) {
         continue;
       }
       functionCallsWithReasoning++;
-      if (!reasoningIds.has(reasoningId)) {
-        const callId = call.call_id ?? this.extractCallId(call, index);
-        missingReasoningRefs.add(`${callId}->${reasoningId}`);
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      for (const reasoningId of reasoningRefs) {
+        if (!reasoningIds.has(reasoningId)) {
+          missingReasoningRefs.add(`${callId}->${reasoningId}`);
+        }
       }
     }
 
@@ -3358,17 +3379,18 @@ ${profileInstruction}`,
         continue;
       }
       const call = item as ResponseFunctionToolCallItem;
-      const reasoningId = this.extractRequiredReasoningId(call);
-      if (!reasoningId) {
+      const reasoningRefs = this.extractReasoningRefs(call);
+      if (reasoningRefs.length === 0) {
         continue;
       }
-      if (reasoningIds.has(reasoningId)) {
+      const missingRefs = reasoningRefs.filter((reasoningId) => !reasoningIds.has(reasoningId));
+      if (missingRefs.length === 0) {
         continue;
       }
       orphanedCalls++;
       const callId = call.call_id ?? this.extractCallId(call, index);
       orphanedCallIds.add(callId);
-      orphanedDetails.push(`callId=${callId}, reasoning=${reasoningId}, tool=${call.name ?? 'sem_nome'}`);
+      orphanedDetails.push(`callId=${callId}, reasoning=${missingRefs.join(',')}, tool=${call.name ?? 'sem_nome'}`);
     }
 
     if (orphanedCalls === 0) {
@@ -3386,11 +3408,11 @@ ${profileInstruction}`,
       }
       if (item.type === 'function_call') {
         const call = item as ResponseFunctionToolCallItem;
-        const reasoningId = this.extractRequiredReasoningId(call);
-        if (!reasoningId) {
+        const reasoningRefs = this.extractReasoningRefs(call);
+        if (reasoningRefs.length === 0) {
           return true;
         }
-        return reasoningIds.has(reasoningId);
+        return reasoningRefs.every((reasoningId) => reasoningIds.has(reasoningId));
       }
       if (item.type === 'function_call_output') {
         const output = item as ResponseFunctionToolCallOutputItem;
