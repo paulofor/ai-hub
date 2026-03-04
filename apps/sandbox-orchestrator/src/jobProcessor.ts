@@ -1,4 +1,5 @@
 import { exec as execCallback, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -19,6 +20,8 @@ import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHt
 
 const exec = promisify(execCallback);
 
+const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
+
 interface ToolCall {
   id: string;
   name: string;
@@ -30,6 +33,24 @@ interface TokenUsage {
   completionTokens?: number;
   totalTokens?: number;
   cost?: number;
+}
+
+interface EcoTwoLoopAttempt {
+  signature: string;
+  outputHash: string;
+  toolName: string;
+  timestamp: number;
+}
+
+interface EcoTwoLoopState {
+  attempts: EcoTwoLoopAttempt[];
+  blockedSignature?: string;
+  blockedCount: number;
+}
+
+interface EcoTwoLoopBlockResult {
+  payload: Record<string, unknown>;
+  logMessage: string;
 }
 
 class JobCancelledError extends Error {
@@ -73,6 +94,9 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly ecoTwoToolOutputSerializedLimit: number;
   private readonly ecoTwoHttpToolMaxResponseChars: number;
   private readonly ecoTwoCharsPerTokenEstimate: number;
+  private readonly ecoTwoMaxIdenticalToolAttempts: number;
+  private readonly ecoTwoLoopHistorySize: number;
+  private readonly ecoTwoLoopStates: WeakMap<SandboxJob, EcoTwoLoopState> = new WeakMap();
   private readonly ecoThreeAutoCompactTokenLimit: number;
   private readonly ecoThreeHistoryTargetTokens: number;
   private readonly ecoThreeUserMessageTokenLimit: number;
@@ -291,6 +315,18 @@ export class SandboxJobProcessor implements JobProcessor {
     this.ecoTwoCharsPerTokenEstimate = this.parsePositiveInteger(
       process.env.ECO2_APPROX_CHARS_PER_TOKEN,
       4,
+    );
+
+    this.ecoTwoMaxIdenticalToolAttempts = Math.max(
+      2,
+      this.parsePositiveInteger(process.env.ECO2_MAX_IDENTICAL_TOOL_ATTEMPTS, 3),
+    );
+    this.ecoTwoLoopHistorySize = Math.max(
+      this.ecoTwoMaxIdenticalToolAttempts,
+      this.parsePositiveInteger(
+        process.env.ECO2_LOOP_HISTORY_SIZE,
+        this.ecoTwoMaxIdenticalToolAttempts * 3,
+      ),
     );
 
     this.ecoThreeAutoCompactTokenLimit = this.parsePositiveInteger(
@@ -665,7 +701,7 @@ Modo econômico inteligente ativo: aproveite estratégias enxutas (reutilizar re
 Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md — limite o carregamento de instruções fixas (project_doc_max_bytes), corte e resuma outputs de tools antes de salvá-los, force compaction sempre que o histórico se aproximar do limite do modelo, trate imagens inline como estimativas fixas e aceite automaticamente o nudge para modelos econômicos ao atingir 90% do orçamento. Registre todas as truncagens para que o time saiba o que ficou de fora.`
           : this.isEcoTwo(job)
             ? `
-Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo.`
+Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo e abandone loops detectados: se precisar repetir a mesma tool explique o que mudou, caso contrário o sandbox bloqueará tentativas idênticas para poupar tokens.`
             : this.isEcoThree(job)
               ? `
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
@@ -796,6 +832,19 @@ ${profileInstruction}`,
           name: call.name ?? '',
           arguments: parsedArgs ?? {},
         };
+        const toolSignature = this.buildToolSignature(toolCall);
+        const loopBlock = this.evaluateEcoTwoLoopBlock(job, toolSignature, toolCall.name ?? '');
+        if (loopBlock) {
+          this.log(job, loopBlock.logMessage);
+          const blockOutput = this.prepareToolOutput(loopBlock.payload, job);
+          toolMessages.push({
+            id: outputId,
+            call_id: callId,
+            output: blockOutput,
+            type: 'function_call_output',
+          });
+          continue;
+        }
         this.log(
           job,
           `executando tool ${toolCall.name} (callId=${callId}, args=${JSON.stringify(toolCall.arguments)})`,
@@ -803,21 +852,26 @@ ${profileInstruction}`,
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
           this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
+          const preparedOutput = this.prepareToolOutput(result, job);
           toolMessages.push({
             id: outputId,
             call_id: callId,
-            output: this.prepareToolOutput(result, job),
+            output: preparedOutput,
             type: 'function_call_output',
           });
+          this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
+          const errorPayload = { error: message };
+          const preparedOutput = this.prepareToolOutput(errorPayload, job);
           toolMessages.push({
             id: outputId,
             call_id: callId,
-            output: this.prepareToolOutput({ error: message }, job),
+            output: preparedOutput,
             type: 'function_call_output',
           });
+          this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
         }
       }
 
@@ -901,6 +955,121 @@ ${profileInstruction}`,
       return JSON.stringify(value);
     } catch (err) {
       return String(value);
+    }
+  }
+
+  private stableStringify(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+    const entries = Object.entries(value as Record<string, unknown>)
+      .map(([key, val]) => [key, this.stableStringify(val)] as const)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, val]) => `${JSON.stringify(key)}:${val}`);
+    return `{${entries.join(',')}}`;
+  }
+
+  private buildToolSignature(call: ToolCall): string {
+    const argsKey = this.stableStringify(call.arguments ?? {});
+    const toolName = call.name?.trim() || 'desconhecida';
+    return `${toolName}::${argsKey}`;
+  }
+
+  private hashString(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+  }
+
+  private isEcoTwoLoopGuardedTool(toolName?: string): boolean {
+    if (!toolName) {
+      return false;
+    }
+    return ECO_TWO_LOOP_GUARDED_TOOLS.has(toolName);
+  }
+
+  private getEcoTwoLoopState(job: SandboxJob): EcoTwoLoopState {
+    let state = this.ecoTwoLoopStates.get(job);
+    if (!state) {
+      state = { attempts: [], blockedCount: 0 };
+      this.ecoTwoLoopStates.set(job, state);
+    }
+    return state;
+  }
+
+  private evaluateEcoTwoLoopBlock(
+    job: SandboxJob,
+    signature: string,
+    toolName: string,
+  ): EcoTwoLoopBlockResult | undefined {
+    if (!this.isEcoTwo(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
+      return undefined;
+    }
+    if (this.ecoTwoMaxIdenticalToolAttempts <= 1) {
+      return undefined;
+    }
+    const state = this.getEcoTwoLoopState(job);
+    const recent = state.attempts.slice(-this.ecoTwoMaxIdenticalToolAttempts);
+    if (recent.length < this.ecoTwoMaxIdenticalToolAttempts) {
+      return undefined;
+    }
+    if (!recent.every((attempt) => attempt.signature === signature)) {
+      return undefined;
+    }
+    const uniqueOutputs = new Set(recent.map((attempt) => attempt.outputHash));
+    if (uniqueOutputs.size !== 1) {
+      return undefined;
+    }
+    state.blockedSignature = signature;
+    state.blockedCount += 1;
+    const attempts = this.ecoTwoMaxIdenticalToolAttempts;
+    return {
+      payload: {
+        error: 'Modo ECO-2 bloqueou a execução repetida desta tool.',
+        tool: toolName || 'desconhecida',
+        attemptsConsidered: attempts,
+        guidance:
+          'Revise o plano, edite os arquivos necessários ou explique o que mudou antes de repetir o mesmo comando.',
+      },
+      logMessage: `Modo ECO-2: loop bloqueado para ${toolName || 'tool'} após ${attempts} respostas idênticas.`,
+    };
+  }
+
+  private recordEcoTwoLoopAttempt(
+    job: SandboxJob,
+    signature: string,
+    toolName: string,
+    preparedOutput: string,
+  ): void {
+    if (!this.isEcoTwo(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
+      return;
+    }
+    const state = this.getEcoTwoLoopState(job);
+    const attempt: EcoTwoLoopAttempt = {
+      signature,
+      toolName,
+      outputHash: this.hashString(preparedOutput),
+      timestamp: Date.now(),
+    };
+    state.attempts.push(attempt);
+    if (state.attempts.length > this.ecoTwoLoopHistorySize) {
+      state.attempts.splice(0, state.attempts.length - this.ecoTwoLoopHistorySize);
+    }
+  }
+
+  private resetEcoTwoLoopAttempts(job: SandboxJob, reason?: string): void {
+    if (!this.isEcoTwo(job)) {
+      return;
+    }
+    const state = this.ecoTwoLoopStates.get(job);
+    if (!state || state.attempts.length === 0) {
+      return;
+    }
+    state.attempts.length = 0;
+    state.blockedSignature = undefined;
+    if (reason) {
+      this.log(job, `Modo ECO-2: histórico de tentativas idênticas redefinido (${reason}).`);
     }
   }
 
@@ -1822,6 +1991,7 @@ ${profileInstruction}`,
     await fs.mkdir(path.dirname(absolute), { recursive: true });
     await fs.writeFile(absolute, content, 'utf8');
     this.log(job, `write_file: ${absolute}`);
+    this.resetEcoTwoLoopAttempts(job, 'write_file executada');
     return { status: 'ok', path: relative, content };
   }
 

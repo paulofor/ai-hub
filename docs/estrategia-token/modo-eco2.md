@@ -376,6 +376,66 @@ Exemplo:
 
 **Como aplicar:** exponha sempre o total de tokens (inclusive em automações/CI) para que equipes consigam auditar sessões caras rapidamente.
 
+## 10. Bloqueio automático de tentativas idênticas de tool
+
+Para evitar que o ECO-2 desperdice tokens executando infinitamente o mesmo comando, o orquestrador monitora as últimas chamadas de `run_shell`, `http_get`/`WebSearch` e `db_query`. Quando as *N* chamadas mais recentes (padrão 3, configurável via `ECO2_MAX_IDENTICAL_TOOL_ATTEMPTS`) têm a mesma assinatura e retornam a mesma saída, a próxima tentativa é interceptada com um aviso em vez de reexecutar o comando.
+
+```ts
+        const toolSignature = this.buildToolSignature(toolCall);
+        const loopBlock = this.evaluateEcoTwoLoopBlock(job, toolSignature, toolCall.name ?? '');
+        if (loopBlock) {
+          this.log(job, loopBlock.logMessage);
+          const blockOutput = this.prepareToolOutput(loopBlock.payload, job);
+          toolMessages.push({
+            id: outputId,
+            call_id: callId,
+            output: blockOutput,
+            type: 'function_call_output',
+          });
+          continue;
+        }
+```
+
+```ts
+  private evaluateEcoTwoLoopBlock(
+    job: SandboxJob,
+    signature: string,
+    toolName: string,
+  ): EcoTwoLoopBlockResult | undefined {
+    if (!this.isEcoTwo(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
+      return undefined;
+    }
+    const state = this.getEcoTwoLoopState(job);
+    const recent = state.attempts.slice(-this.ecoTwoMaxIdenticalToolAttempts);
+    if (!recent.every((attempt) => attempt.signature === signature)) {
+      return undefined;
+    }
+    const uniqueOutputs = new Set(recent.map((attempt) => attempt.outputHash));
+    if (uniqueOutputs.size !== 1) {
+      return undefined;
+    }
+    state.blockedSignature = signature;
+    state.blockedCount += 1;
+    const attempts = this.ecoTwoMaxIdenticalToolAttempts;
+    return {
+      payload: {
+        error: 'Modo ECO-2 bloqueou a execução repetida desta tool.',
+        tool: toolName || 'desconhecida',
+        attemptsConsidered: attempts,
+        guidance:
+          'Revise o plano, edite os arquivos necessários ou explique o que mudou antes de repetir o mesmo comando.',
+      },
+      logMessage: `Modo ECO-2: loop bloqueado para ${toolName || 'tool'} após ${attempts} respostas idênticas.`,
+    };
+  }
+```
+
+**Como aplicar:**
+
+- Use `ECO2_MAX_IDENTICAL_TOOL_ATTEMPTS` para escolher quantas repetições consecutivas são toleradas (padrão 3) e `ECO2_LOOP_HISTORY_SIZE` para definir o tamanho da janela monitorada.
+- Quando o sandbox retornar o aviso acima, explique explicitamente o que mudou ou altere a estratégia antes de chamar novamente a mesma ferramenta; uma simples repetição continuará bloqueada.
+- Sempre que o agente fizer alterações em disco (`write_file`, scripts de patch, etc.), limpe o histórico correspondente para liberar novas tentativas — o próprio orchestrator já reseta o estado ao usar `write_file`.
+
 ## Checklist de atuação
 
 1. **Configure limites realistas** (`auto_compact_token_limit`, `max_output_tokens`, políticas de truncamento) para cada modo de trabalho.
