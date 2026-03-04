@@ -14,6 +14,8 @@ public interface CodexInteractionRepository extends JpaRepository<CodexInteracti
 
     int countByCodexRequestId(Long codexRequestId);
 
+    List<CodexInteractionRecord> findAllByCodexRequestIdOrderBySequenceAscIdAsc(Long codexRequestId);
+
     @Query("SELECT i.codexRequest.id, COUNT(i) FROM CodexInteractionRecord i WHERE i.codexRequest.id IN :requestIds GROUP BY i.codexRequest.id")
     List<Object[]> countByCodexRequestIds(@Param("requestIds") Collection<Long> requestIds);
 }

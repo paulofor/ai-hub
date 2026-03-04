@@ -1,5 +1,6 @@
 package com.aihub.hub.web;
 
+import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
@@ -8,9 +9,14 @@ import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,10 +27,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api/codex/requests")
@@ -32,10 +44,12 @@ public class CodexController {
 
     private final CodexRequestService codexRequestService;
     private final PullRequestService pullRequestService;
+    private final ObjectMapper objectMapper;
 
-    public CodexController(CodexRequestService codexRequestService, PullRequestService pullRequestService) {
+    public CodexController(CodexRequestService codexRequestService, PullRequestService pullRequestService, ObjectMapper objectMapper) {
         this.codexRequestService = codexRequestService;
         this.pullRequestService = pullRequestService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -58,6 +72,50 @@ public class CodexController {
     @PostMapping
     public CodexRequest create(@Valid @RequestBody CreateCodexRequest request) {
         return codexRequestService.create(request);
+    }
+
+    @GetMapping(value = "/{id}/interactions/download", produces = "application/zip")
+    public ResponseEntity<byte[]> downloadInteractions(@PathVariable Long id) {
+        List<CodexInteractionRecord> interactions = codexRequestService.listInteractions(id);
+        CodexRequest request = codexRequestService.find(id);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("requestId", request.getId());
+        payload.put("environment", request.getEnvironment());
+        payload.put("model", request.getModel());
+        payload.put("createdAt", request.getCreatedAt());
+        payload.put("interactionCount", interactions.size());
+        payload.put("interactions", interactions.stream().map(interaction -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", interaction.getId());
+            item.put("sandboxInteractionId", interaction.getSandboxInteractionId());
+            item.put("direction", interaction.getDirection());
+            item.put("content", interaction.getContent());
+            item.put("tokenCount", interaction.getTokenCount());
+            item.put("sequence", interaction.getSequence());
+            item.put("createdAt", interaction.getCreatedAt());
+            return item;
+        }).toList());
+
+        byte[] jsonBytes;
+        try {
+            jsonBytes = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(payload);
+        } catch (IOException ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível gerar o JSON das interações", ex);
+        }
+
+        String jsonFileName = "solicitacao-" + id + "-interacoes.json";
+        String zipFileName = "solicitacao-" + id + "-interacoes.zip";
+        byte[] zipBytes = zipSingleEntry(jsonFileName, jsonBytes);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("application/zip"));
+        headers.setContentDisposition(ContentDisposition.attachment()
+            .filename(zipFileName, StandardCharsets.UTF_8)
+            .build());
+        headers.setContentLength(zipBytes.length);
+
+        return new ResponseEntity<>(zipBytes, headers, HttpStatus.OK);
     }
 
     @PostMapping("/{id}/comment")
@@ -108,6 +166,19 @@ public class CodexController {
         payload.put("title", title);
         payload.put("createdAt", Instant.now().toString());
         return payload;
+    }
+
+    private byte[] zipSingleEntry(String entryName, byte[] data) {
+        try (ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+             ZipOutputStream zipOutputStream = new ZipOutputStream(byteArrayOutputStream, StandardCharsets.UTF_8)) {
+            zipOutputStream.putNextEntry(new ZipEntry(entryName));
+            zipOutputStream.write(data);
+            zipOutputStream.closeEntry();
+            zipOutputStream.finish();
+            return byteArrayOutputStream.toByteArray();
+        } catch (IOException ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível compactar as interações", ex);
+        }
     }
 
     private void assertOwner(String role) {

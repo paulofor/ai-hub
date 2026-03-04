@@ -261,6 +261,12 @@ public class CodexRequestService {
     }
 
     @Transactional(readOnly = true)
+    public List<CodexInteractionRecord> listInteractions(Long requestId) {
+        find(requestId);
+        return codexInteractionRepository.findAllByCodexRequestIdOrderBySequenceAscIdAsc(requestId);
+    }
+
+    @Transactional(readOnly = true)
     public CodexRequest find(Long id) {
         CodexRequest request = codexRequestRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));

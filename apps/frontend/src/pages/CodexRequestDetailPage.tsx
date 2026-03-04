@@ -29,6 +29,7 @@ export default function CodexRequestDetailPage() {
   const [savingComment, setSavingComment] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
   const [creatingPr, setCreatingPr] = useState(false);
+  const [downloadingInteractions, setDownloadingInteractions] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [nextRequestId, setNextRequestId] = useState<number | null>(null);
   const [loadingNext, setLoadingNext] = useState(false);
@@ -254,6 +255,37 @@ export default function CodexRequestDetailPage() {
     if (!nextRequestId) return;
     navigate(`/codex/requests/${nextRequestId}`);
   }, [navigate, nextRequestId]);
+
+
+  const handleDownloadInteractions = useCallback(async () => {
+    if (!request) return;
+    setDownloadingInteractions(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await client.get(`/codex/requests/${request.id}/interactions/download`, {
+        responseType: 'blob'
+      });
+      const contentDisposition = response.headers['content-disposition'];
+      const fallbackName = `solicitacao-${request.id}-interacoes.zip`;
+      const fileNameMatch = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(contentDisposition ?? '');
+      const fileName = fileNameMatch?.[1] ? decodeURIComponent(fileNameMatch[1].replace(/"/g, '')) : fallbackName;
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccessMessage('Download das interações iniciado.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDownloadingInteractions(false);
+    }
+  }, [request]);
 
   const handleCreatePullRequest = useCallback(async () => {
     if (!request) return;
@@ -523,6 +555,14 @@ export default function CodexRequestDetailPage() {
                   ) : (
                     <p className="text-sm text-slate-500">Nenhum link de merge disponível.</p>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleDownloadInteractions}
+                    disabled={downloadingInteractions}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    {downloadingInteractions ? 'Gerando ZIP...' : 'Baixar interações (.zip)'}
+                  </button>
                   <button
                     type="button"
                     onClick={handleCreatePullRequest}
