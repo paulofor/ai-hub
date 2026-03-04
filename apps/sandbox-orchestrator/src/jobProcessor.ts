@@ -53,15 +53,6 @@ interface EcoTwoLoopBlockResult {
   logMessage: string;
 }
 
-interface StoredToolOutput {
-  handle: string;
-  storedAt: string;
-  chars: number;
-  lines: number;
-  content: string;
-  summary: string;
-}
-
 class JobCancelledError extends Error {
   constructor(message = 'Job cancelado pelo usuário') {
     super(message);
@@ -120,18 +111,6 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly dbPools: Map<string, Pool> = new Map();
   private readonly prCreateMaxAttempts: number;
   private readonly prCreateRetryDelayMs: number;
-  private readonly cloneMaxAttempts: number;
-  private readonly cloneRetryDelayMs: number;
-  private readonly contextPromptEstimateLimit: number;
-  private readonly contextRecentMessageWindow: number;
-  private readonly contextWorkingSetWindow: number;
-  private readonly emergencyToolCallLimit: number;
-  private readonly emergencyPromptEstimateLimit: number;
-  private readonly largeToolOutputCharsThreshold: number;
-  private readonly largeToolOutputLinesThreshold: number;
-  private readonly largeToolOutputEdgeLineCount: number;
-  private readonly toolOutputStore: WeakMap<SandboxJob, Map<string, StoredToolOutput>> = new WeakMap();
-  private readonly toolOutputHandleCounter: WeakMap<SandboxJob, number> = new WeakMap();
 
   constructor(
     apiKey?: string,
@@ -401,16 +380,6 @@ export class SandboxJobProcessor implements JobProcessor {
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
-    this.cloneMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.CLONE_RETRY_ATTEMPTS, 3));
-    this.cloneRetryDelayMs = this.parsePositiveInteger(process.env.CLONE_RETRY_DELAY_MS, 1_500);
-    this.contextPromptEstimateLimit = this.parsePositiveInteger(process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT, 24_000);
-    this.contextRecentMessageWindow = this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_WINDOW, 8);
-    this.contextWorkingSetWindow = this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_WINDOW, 6);
-    this.emergencyToolCallLimit = this.parsePositiveInteger(process.env.EMERGENCY_TOOL_CALL_LIMIT, 80);
-    this.emergencyPromptEstimateLimit = this.parsePositiveInteger(process.env.EMERGENCY_PROMPT_ESTIMATE_LIMIT, 30_000);
-    this.largeToolOutputCharsThreshold = this.parsePositiveInteger(process.env.TOOL_OUTPUT_LARGE_CHARS_THRESHOLD, 8_000);
-    this.largeToolOutputLinesThreshold = this.parsePositiveInteger(process.env.TOOL_OUTPUT_LARGE_LINES_THRESHOLD, 200);
-    this.largeToolOutputEdgeLineCount = this.parsePositiveInteger(process.env.TOOL_OUTPUT_LARGE_EDGE_LINES, 30);
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -602,33 +571,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async cloneRepository(job: SandboxJob, repoPath: string, cloneUrl: string): Promise<void> {
-    const maxAttempts = Math.max(1, this.cloneMaxAttempts);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const shouldForceHttp11 = attempt > 1;
-      const cloneCommand = shouldForceHttp11
-        ? `git -c http.version=HTTP/1.1 clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`
-        : `git clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`;
-
-      try {
-        await exec(cloneCommand);
-        break;
-      } catch (error) {
-        if (this.isRetryableGitCloneError(error) && attempt < maxAttempts) {
-          const delayMs = this.calculateCloneRetryDelay(attempt);
-          const protocolHint = shouldForceHttp11 ? 'HTTP/1.1' : 'padrão';
-          this.log(
-            job,
-            `tentativa ${attempt}/${maxAttempts} do git clone falhou (${protocolHint}): ${this.formatError(error)}; ` +
-              `aguardando ${delayMs}ms para nova tentativa`,
-          );
-          await this.sleep(delayMs);
-          continue;
-        }
-        throw error instanceof Error ? error : new Error(String(error));
-      }
-    }
-
+    await exec(`git clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`);
     if (job.commitHash) {
       this.log(job, `checando commit ${job.commitHash}`);
       await exec(`git checkout ${job.commitHash}`, { cwd: repoPath });
@@ -654,31 +597,6 @@ export class SandboxJobProcessor implements JobProcessor {
       },
       {
         type: 'function' as const,
-        name: 'run_shell_batch',
-        parameters: {
-          type: 'object',
-          properties: {
-            commands: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  command: { type: 'array', items: { type: 'string' } },
-                  cwd: { type: 'string', description: 'Diretório relativo ao repo' },
-                },
-                required: ['command', 'cwd'],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ['commands'],
-          additionalProperties: false,
-        },
-        strict: true,
-        description: 'Executa até 5 comandos de shell em lote para reduzir número de turnos',
-      },
-      {
-        type: 'function' as const,
         name: 'read_file',
         parameters: {
           type: 'object',
@@ -690,64 +608,6 @@ export class SandboxJobProcessor implements JobProcessor {
         },
         strict: true,
         description: 'Lê um arquivo do repositório clonado',
-      },
-      {
-        type: 'function' as const,
-        name: 'read_files_batch',
-        parameters: {
-          type: 'object',
-          properties: {
-            files: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  path: { type: 'string' },
-                  startLine: { type: ['integer', 'null'] },
-                  endLine: { type: ['integer', 'null'] },
-                },
-                required: ['path', 'startLine', 'endLine'],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ['files'],
-          additionalProperties: false,
-        },
-        strict: true,
-        description: 'Lê até 10 arquivos (ou faixas de linha) em lote',
-      },
-      {
-        type: 'function' as const,
-        name: 'search_repo',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: { type: 'string' },
-            max_hits: { type: 'integer' },
-            context_lines: { type: 'integer' },
-          },
-          required: ['query', 'max_hits', 'context_lines'],
-          additionalProperties: false,
-        },
-        strict: true,
-        description: 'Busca no repositório com ripgrep e retorna apenas os trechos necessários',
-      },
-      {
-        type: 'function' as const,
-        name: 'read_file_range',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string' },
-            start_line: { type: 'integer' },
-            end_line: { type: 'integer' },
-          },
-          required: ['path', 'start_line', 'end_line'],
-          additionalProperties: false,
-        },
-        strict: true,
-        description: 'Lê apenas um intervalo de linhas de um arquivo',
       },
       {
         type: 'function' as const,
@@ -783,22 +643,6 @@ export class SandboxJobProcessor implements JobProcessor {
         strict: true,
         description:
           'Busca um recurso público via HTTP GET (bloqueia hosts internos e localhost); consulte documentação oficial de APIs externas antes de integrá-las',
-      },
-      {
-        type: 'function' as const,
-        name: 'http_get_extract',
-        parameters: {
-          type: 'object',
-          properties: {
-            url: { type: 'string' },
-            regex: { type: ['string', 'null'] },
-            max_bytes: { type: ['integer', 'null'] },
-          },
-          required: ['url', 'regex', 'max_bytes'],
-          additionalProperties: false,
-        },
-        strict: true,
-        description: 'Faz GET e retorna recorte por regex com limite de bytes para evitar HTML cru no contexto',
       },
       {
         type: 'function' as const,
@@ -897,63 +741,25 @@ ${profileInstruction}`,
 
     let summary = '';
     let turnCount = 0;
-    let totalToolCalls = 0;
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
       this.ensureNotCancelled(job);
       turnCount++;
       this.enforceEcoThreeGuardrails(job, turnCount);
-      this.applyContextGc(job, messages);
       this.applyEcoPreSamplingCompaction(job, messages);
-      this.repairReasoningDependencies(job, messages);
-      const reasoningSnapshot = this.summarizeReasoningDependencies(messages);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
-      this.log(
-        job,
-        `snapshot pré-envio: reasoning_items=${reasoningSnapshot.reasoningItemCount}, function_calls=${reasoningSnapshot.functionCallCount}, function_calls_com_reasoning=${reasoningSnapshot.functionCallsWithReasoning}, refs_ausentes=${reasoningSnapshot.missingReasoningRefs.length}`,
-      );
-      this.log(job, this.buildReasoningDependencyDiagnostics(messages, 8));
-      if (reasoningSnapshot.missingReasoningRefs.length > 0) {
-        this.log(
-          job,
-          `refs de reasoning ausentes detectadas no snapshot pré-envio: ${reasoningSnapshot.missingReasoningRefs.join(' | ')}`,
-        );
-      }
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
         job,
         'OUTBOUND',
         this.formatMessagesForRecording(messages),
       );
-      let response;
-      try {
-        response = await this.openai!.responses.create({
-          model,
-          input: messages,
-          tools,
-        });
-      } catch (error) {
-        const failedSnapshot = this.summarizeReasoningDependencies(messages);
-        this.log(
-          job,
-          `falha ao chamar responses.create: ${this.formatError(error)} (reasoning_items=${failedSnapshot.reasoningItemCount}, function_calls=${failedSnapshot.functionCallCount}, function_calls_com_reasoning=${failedSnapshot.functionCallsWithReasoning}, refs_ausentes=${failedSnapshot.missingReasoningRefs.length})`,
-        );
-        this.log(job, this.buildReasoningDependencyDiagnostics(messages, 20));
-        this.log(job, this.buildReasoningErrorCorrelationDiagnostics(messages, error));
-        if (failedSnapshot.missingReasoningRefs.length > 0) {
-          this.log(
-            job,
-            `refs ausentes no momento da falha: ${failedSnapshot.missingReasoningRefs.join(' | ')}`,
-          );
-        }
-        const repaired = this.repairReasoningDependenciesFromApiError(job, messages, error);
-        if (repaired) {
-          this.log(job, 'histórico ajustado após erro de reasoning da API; nova tentativa será realizada.');
-          continue;
-        }
-        throw error;
-      }
+      const response = await this.openai!.responses.create({
+        model,
+        input: messages,
+        tools,
+      });
       this.log(
         job,
         `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,
@@ -965,30 +771,18 @@ ${profileInstruction}`,
       const output = response.output ?? [];
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
-          // IMPORTANTE: mantemos a mesma referência do objeto retornado pelo SDK.
-          // Alguns provedores anexam metadados de reasoning em campos não-enumeráveis;
-          // clonar via spread (`{ ...item }`) pode descartar esses vínculos e causar
-          // erro 400 "function_call without required reasoning item" no turno seguinte.
-          const call = item as ResponseFunctionToolCallItem & { id?: string; call_id?: string };
-          const callId = this.extractCallId(call, index);
-          const messageId = this.sanitizeId(call.id ?? callId);
-          call.id = messageId;
-          call.call_id = callId;
-          return call as ResponseItem;
+          const callId = this.extractCallId(item, index);
+          const messageId = this.sanitizeId(item.id ?? callId);
+          return { ...item, id: messageId, call_id: callId } as ResponseItem;
         }
         return item as ResponseItem;
       });
       const assistantMessage = normalizedOutput.find((item) => item.type === 'message') as ResponseOutputMessage | undefined;
       const toolCalls = normalizedOutput.filter((item) => item.type === 'function_call') as ResponseFunctionToolCallItem[];
-      totalToolCalls += toolCalls.length;
 
       const toolCallDetails =
         toolCalls
           .map((call, idx) => {
-            const callId = call.call_id ?? this.extractCallId(call, idx);
-            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
-          })
-          .join(', ') || 'nenhum';
       const inboundInteraction = this.recordInteraction(
         job,
         'INBOUND',
@@ -1001,6 +795,11 @@ ${profileInstruction}`,
       if (usageMetrics?.completionTokens !== undefined) {
         inboundInteraction.tokenCount = usageMetrics.completionTokens;
       }
+
+            const callId = call.call_id ?? this.extractCallId(call, idx);
+            return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
+          })
+          .join(', ') || 'nenhum';
       const assistantTextPreview = this.truncate(this.extractOutputText(assistantMessage?.content) ?? '', 240);
       this.log(
         job,
@@ -1018,16 +817,6 @@ ${profileInstruction}`,
         this.log(job, `resumo final do modelo: "${this.truncate(summary, 240)}"`);
         this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
-      }
-
-      const emergencyStop = this.shouldForceEarlyFinish(job, totalToolCalls, messages);
-      if (emergencyStop.shouldStop) {
-        this.log(job, emergencyStop.reason);
-        if (assistantMessage) {
-          summary = text ?? summary;
-          messages.push(assistantMessage);
-        }
-        return summary || 'Execução encerrada em modo de emergência para conter custo/contexto; revisar logs e continuar em novo job.';
       }
 
       messages.push(...normalizedOutput);
@@ -1431,23 +1220,13 @@ ${profileInstruction}`,
     switch (call.name) {
       case 'run_shell':
         return this.handleRunShell(call.arguments, repoPath, job);
-      case 'run_shell_batch':
-        return this.handleRunShellBatch(call.arguments, repoPath, job);
       case 'read_file':
         return this.handleReadFile(call.arguments, repoPath);
-      case 'read_files_batch':
-        return this.handleReadFilesBatch(call.arguments, repoPath);
-      case 'search_repo':
-        return this.handleSearchRepo(call.arguments, repoPath, job);
-      case 'read_file_range':
-        return this.handleReadFileRange(call.arguments, repoPath);
       case 'write_file':
         return this.handleWriteFile(call.arguments, repoPath, job);
       case 'http_get':
       case 'WebSearch':
         return this.handleHttpGet(call, job);
-      case 'http_get_extract':
-        return this.handleHttpGetExtract(call, job);
       case 'db_query':
         return this.handleDbQuery(call.arguments, job);
       default:
@@ -2203,86 +1982,6 @@ ${profileInstruction}`,
     return { path: relative, content };
   }
 
-  private async handleReadFileRange(args: Record<string, unknown>, repoPath: string) {
-    const startLine = Number(args.start_line);
-    const endLine = Number(args.end_line);
-    if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine <= 0 || endLine < startLine) {
-      throw new Error('start_line/end_line inválidos para read_file_range');
-    }
-    const { absolute, relative } = this.normalizeRepoPath(
-      repoPath,
-      typeof args.path === 'string' ? args.path : undefined,
-    );
-    const content = await fs.readFile(absolute, 'utf8');
-    const lines = content.split('\n');
-    const slice = lines.slice(startLine - 1, endLine);
-    return {
-      path: relative,
-      startLine,
-      endLine,
-      content: slice.join('\n'),
-      totalLines: lines.length,
-    };
-  }
-
-  private async handleReadFilesBatch(args: Record<string, unknown>, repoPath: string) {
-    const files = Array.isArray(args.files) ? args.files.slice(0, 10) : [];
-    const results: Array<Record<string, unknown>> = [];
-    for (const file of files) {
-      const item = (file ?? {}) as Record<string, unknown>;
-      if (typeof item.path !== 'string') {
-        continue;
-      }
-      if (Number.isFinite(Number(item.startLine)) && Number.isFinite(Number(item.endLine))) {
-        results.push(
-          await this.handleReadFileRange(
-            {
-              path: item.path,
-              start_line: Number(item.startLine),
-              end_line: Number(item.endLine),
-            },
-            repoPath,
-          ),
-        );
-        continue;
-      }
-      results.push(await this.handleReadFile({ path: item.path }, repoPath));
-    }
-    return { count: results.length, results };
-  }
-
-  private async handleRunShellBatch(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
-    const commands = Array.isArray(args.commands) ? args.commands.slice(0, 5) : [];
-    const results: Array<Record<string, unknown>> = [];
-    for (const item of commands) {
-      const payload = (item ?? {}) as Record<string, unknown>;
-      const command = Array.isArray(payload.command) ? payload.command : undefined;
-      const cwd = typeof payload.cwd === 'string' ? payload.cwd : '.';
-      if (!command || command.length === 0) {
-        results.push({ error: 'command ausente' });
-        continue;
-      }
-      try {
-        const result = await this.handleRunShell({ command, cwd }, repoPath, job);
-        results.push(result as Record<string, unknown>);
-      } catch (err) {
-        results.push({ error: err instanceof Error ? err.message : String(err), command, cwd });
-      }
-    }
-    return { count: results.length, results };
-  }
-
-  private async handleSearchRepo(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
-    const query = typeof args.query === 'string' ? args.query.trim() : '';
-    if (!query) {
-      throw new Error('query é obrigatório para search_repo');
-    }
-    const maxHits = Math.max(1, Math.min(200, Number(args.max_hits) || 50));
-    const contextLines = Math.max(0, Math.min(5, Number(args.context_lines) || 1));
-    const rgArgs = ['rg', '--line-number', '--hidden', '--no-heading', '-m', String(maxHits), '-C', String(contextLines), query, '.'];
-    return this.handleRunShell({ command: rgArgs, cwd: '.' }, repoPath, job);
-  }
-
   private async handleWriteFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
     const { absolute, relative } = this.normalizeRepoPath(
       repoPath,
@@ -2294,31 +1993,6 @@ ${profileInstruction}`,
     this.log(job, `write_file: ${absolute}`);
     this.resetEcoTwoLoopAttempts(job, 'write_file executada');
     return { status: 'ok', path: relative, content };
-  }
-
-  private async handleHttpGetExtract(call: ToolCall, job: SandboxJob): Promise<Record<string, unknown>> {
-    const base = await this.handleHttpGet(call, job);
-    if (!base || typeof base !== 'object') {
-      return { result: base };
-    }
-    const payload = base as Record<string, unknown>;
-    const content = typeof payload.body === 'string' ? payload.body : '';
-    const maxBytes = Math.max(256, Math.min(200_000, Number(call.arguments.max_bytes) || 12_000));
-    const clipped = content.slice(0, maxBytes);
-    const regexRaw = typeof call.arguments.regex === 'string' ? call.arguments.regex : '';
-    if (!regexRaw) {
-      return { ...payload, body: clipped, clipped: content.length > clipped.length };
-    }
-    let matches: string[] = [];
-    try {
-      const regex = new RegExp(regexRaw, 'g');
-      matches = Array.from(clipped.matchAll(regex))
-        .slice(0, 20)
-        .map((entry) => entry[0]);
-    } catch (err) {
-      return { ...payload, body: clipped, regexError: err instanceof Error ? err.message : String(err) };
-    }
-    return { ...payload, body: undefined, extractMatches: matches, extractCount: matches.length, clipped: content.length > clipped.length };
   }
 
   private async listUntrackedFiles(repoPath: string, job?: SandboxJob): Promise<string[]> {
@@ -2624,28 +2298,6 @@ ${profileInstruction}`,
     return base * Math.max(1, attempt);
   }
 
-  private isRetryableGitCloneError(error: unknown): boolean {
-    if (!(error instanceof Error)) {
-      return false;
-    }
-    const message = (error.message ?? '').toLowerCase();
-    return (
-      message.includes('rpc failed') ||
-      message.includes('http/2 stream') ||
-      message.includes('early eof') ||
-      message.includes('unexpected disconnect while reading sideband packet') ||
-      message.includes('fetch-pack: invalid index-pack output') ||
-      message.includes('connection reset by peer') ||
-      message.includes('operation timed out') ||
-      message.includes('timed out')
-    );
-  }
-
-  private calculateCloneRetryDelay(attempt: number): number {
-    const base = Math.max(0, this.cloneRetryDelayMs);
-    return base * Math.max(1, attempt);
-  }
-
   private async sleep(ms: number): Promise<void> {
     if (ms <= 0) {
       return;
@@ -2843,10 +2495,6 @@ ${profileInstruction}`,
   }
 
   private prepareToolOutput(result: unknown, job: SandboxJob): string {
-    const stored = this.maybeStoreLargeToolOutput(result, job);
-    if (stored) {
-      return JSON.stringify(stored);
-    }
     const stringLimit = this.resolveToolOutputStringLimit(job);
     const serializedLimit = this.resolveToolOutputSerializedLimit(job);
     const truncation = { truncated: false };
@@ -2874,505 +2522,6 @@ ${profileInstruction}`,
       );
     }
     return value;
-  }
-
-  private maybeStoreLargeToolOutput(result: unknown, job: SandboxJob): Record<string, unknown> | undefined {
-    const serialized = this.safeStringify(result);
-    const lineCount = serialized.split('\n').length;
-    if (serialized.length <= this.largeToolOutputCharsThreshold && lineCount <= this.largeToolOutputLinesThreshold) {
-      return undefined;
-    }
-
-    const handle = this.nextToolOutputHandle(job);
-    const edge = Math.max(1, this.largeToolOutputEdgeLineCount);
-    const lines = serialized.split('\n');
-    const head = lines.slice(0, edge).join('\n');
-    const tail = lines.slice(Math.max(0, lines.length - edge)).join('\n');
-    const summary = this.summarizeToolOutput(serialized);
-    const record: StoredToolOutput = {
-      handle,
-      storedAt: new Date().toISOString(),
-      chars: serialized.length,
-      lines: lineCount,
-      content: serialized,
-      summary,
-    };
-    const store = this.getToolOutputStore(job);
-    store.set(handle, record);
-    this.log(job, `output grande de tool movido para store (handle=${handle}, chars=${record.chars}, lines=${record.lines})`);
-    return {
-      handle,
-      stored: true,
-      chars: record.chars,
-      lines: record.lines,
-      summary: record.summary,
-      excerptTop: head,
-      excerptBottom: tail,
-    };
-  }
-
-  private summarizeToolOutput(content: string): string {
-    const lines = content.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
-    const picked = lines.slice(0, 8);
-    if (picked.length === 0) {
-      return 'Output grande sem linhas textuais relevantes.';
-    }
-    return picked.join('\n');
-  }
-
-  private getToolOutputStore(job: SandboxJob): Map<string, StoredToolOutput> {
-    const existing = this.toolOutputStore.get(job);
-    if (existing) {
-      return existing;
-    }
-    const created = new Map<string, StoredToolOutput>();
-    this.toolOutputStore.set(job, created);
-    return created;
-  }
-
-  private nextToolOutputHandle(job: SandboxJob): string {
-    const current = this.toolOutputHandleCounter.get(job) ?? 0;
-    const next = current + 1;
-    this.toolOutputHandleCounter.set(job, next);
-    return `tool_output_${next}`;
-  }
-
-  private applyContextGc(job: SandboxJob, messages: ResponseItem[]): void {
-    const estimated = this.estimateMessagesTokenFootprint(messages);
-    if (estimated <= this.contextPromptEstimateLimit) {
-      return;
-    }
-    const protectedMessages = messages.slice(0, 2);
-    const recentWindow = Math.max(2, this.contextRecentMessageWindow);
-    const workingSetWindow = Math.max(1, this.contextWorkingSetWindow);
-    const tail = messages.slice(Math.max(2, messages.length - recentWindow));
-    const middle = messages.slice(2, Math.max(2, messages.length - recentWindow));
-    const keepIndexes = new Set<number>();
-    const keepCallIds = new Set<string>();
-    const keepReasoningIds = new Set<string>();
-    const reasoningIndexesById = new Map<string, number[]>();
-    for (const item of tail) {
-      if (item.type !== 'function_call_output') {
-        if (item.type === 'function_call') {
-          const reasoningRefs = this.extractReasoningRefs(item);
-          for (const reasoningId of reasoningRefs) {
-            keepReasoningIds.add(reasoningId);
-          }
-        }
-        continue;
-      }
-      const output = item as ResponseFunctionToolCallOutputItem;
-      if (typeof output.call_id === 'string' && output.call_id.length > 0) {
-        keepCallIds.add(output.call_id);
-      }
-    }
-    let keptOutputs = 0;
-    for (let index = middle.length - 1; index >= 0; index--) {
-      const item = middle[index];
-      if (this.isReasoningItem(item)) {
-        const itemId = this.extractResponseItemId(item);
-        if (itemId) {
-          const positions = reasoningIndexesById.get(itemId) ?? [];
-          positions.push(index);
-          reasoningIndexesById.set(itemId, positions);
-        }
-      }
-      if (item.type === 'function_call_output') {
-        if (keptOutputs >= workingSetWindow) {
-          continue;
-        }
-        keepIndexes.add(index);
-        keptOutputs++;
-        const output = item as ResponseFunctionToolCallOutputItem;
-        if (typeof output.call_id === 'string' && output.call_id.length > 0) {
-          keepCallIds.add(output.call_id);
-        }
-        continue;
-      }
-      if (item.type !== 'function_call') {
-        if (this.isReasoningItem(item)) {
-          const itemId = this.extractResponseItemId(item);
-          if (itemId && keepReasoningIds.has(itemId)) {
-            keepIndexes.add(index);
-          }
-        }
-        continue;
-      }
-      const call = item as ResponseFunctionToolCallItem;
-      const callId = call.call_id ?? this.extractCallId(call, index);
-      if (keepCallIds.has(callId)) {
-        keepIndexes.add(index);
-        const reasoningRefs = this.extractReasoningRefs(call);
-        for (const reasoningId of reasoningRefs) {
-          keepReasoningIds.add(reasoningId);
-          const reasoningIndexes = reasoningIndexesById.get(reasoningId) ?? [];
-          for (const reasoningIndex of reasoningIndexes) {
-            keepIndexes.add(reasoningIndex);
-          }
-        }
-      }
-    }
-    const workingSet = middle.filter((_, index) => keepIndexes.has(index));
-    const rollingSummary = this.buildRollingSummary(messages);
-    const compacted: ResponseItem[] = [
-      ...protectedMessages,
-      {
-        type: 'message',
-        id: this.sanitizeId(`msg_summary_${Date.now()}`),
-        role: 'assistant',
-        content: [{ type: 'output_text', text: rollingSummary }],
-      } as ResponseOutputMessage,
-      ...workingSet,
-      ...tail,
-    ];
-    messages.splice(0, messages.length, ...compacted);
-    this.log(job, `GC de contexto aplicado: estimativa ${estimated} tokens > ${this.contextPromptEstimateLimit}; histórico reduzido para ${messages.length} mensagens.`);
-  }
-
-
-  private isReasoningItem(item: unknown): boolean {
-    return Boolean(item && typeof item === 'object' && (item as { type?: unknown }).type === 'reasoning');
-  }
-
-  private extractReasoningRefs(item: unknown): string[] {
-    const refs = new Set<string>();
-    const primary = this.extractRequiredReasoningId(item);
-    if (primary) {
-      refs.add(primary);
-    }
-
-    // Fallback defensivo: alguns payloads retornam o vínculo de reasoning
-    // em formatos não tipados no SDK. Capturamos ids "rs_*" diretamente.
-    const serialized = this.safeStringify(item);
-    const matches = serialized.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? [];
-    for (const match of matches) {
-      if (match.length > 0) {
-        refs.add(match);
-      }
-    }
-    return Array.from(refs);
-  }
-
-  private extractRequiredReasoningId(item: unknown): string | undefined {
-    if (!item || typeof item !== 'object') {
-      return undefined;
-    }
-    const candidate = item as {
-      reasoning?: unknown;
-      reasoning_id?: unknown;
-      reasoningId?: unknown;
-      required_reasoning?: unknown;
-    };
-    if (typeof candidate.reasoning_id === 'string' && candidate.reasoning_id.length > 0) {
-      return candidate.reasoning_id;
-    }
-    if (typeof candidate.reasoningId === 'string' && candidate.reasoningId.length > 0) {
-      return candidate.reasoningId;
-    }
-    if (typeof candidate.reasoning === 'string' && candidate.reasoning.length > 0) {
-      return candidate.reasoning;
-    }
-    if (typeof candidate.required_reasoning === 'string' && candidate.required_reasoning.length > 0) {
-      return candidate.required_reasoning;
-    }
-    if (
-      candidate.reasoning &&
-      typeof candidate.reasoning === 'object' &&
-      typeof (candidate.reasoning as { id?: unknown; ref?: unknown; reasoning_id?: unknown; reasoningId?: unknown }).id ===
-        'string' &&
-      ((candidate.reasoning as { id?: string }).id?.length ?? 0) > 0
-    ) {
-      return (candidate.reasoning as { id: string }).id;
-    }
-
-    if (candidate.reasoning && typeof candidate.reasoning === 'object') {
-      const obj = candidate.reasoning as {
-        id?: unknown;
-        ref?: unknown;
-        reasoning_id?: unknown;
-        reasoningId?: unknown;
-        required_reasoning?: unknown;
-      };
-      const fallback =
-        (typeof obj.ref === 'string' && obj.ref.length > 0 ? obj.ref : undefined) ??
-        (typeof obj.reasoning_id === 'string' && obj.reasoning_id.length > 0 ? obj.reasoning_id : undefined) ??
-        (typeof obj.reasoningId === 'string' && obj.reasoningId.length > 0 ? obj.reasoningId : undefined) ??
-        (typeof obj.required_reasoning === 'string' && obj.required_reasoning.length > 0
-          ? obj.required_reasoning
-          : undefined);
-      if (fallback) {
-        return fallback;
-      }
-    }
-
-    if (Array.isArray(candidate.reasoning) && candidate.reasoning.length > 0) {
-      const first = candidate.reasoning[0] as unknown;
-      if (typeof first === 'string' && first.length > 0) {
-        return first;
-      }
-      if (first && typeof first === 'object') {
-        const id = (first as { id?: unknown }).id;
-        const ref = (first as { ref?: unknown }).ref;
-        if (typeof id === 'string' && id.length > 0) {
-          return id;
-        }
-        if (typeof ref === 'string' && ref.length > 0) {
-          return ref;
-        }
-      }
-    }
-    return undefined;
-  }
-
-  private stripReasoningReference(item: unknown): boolean {
-    if (!item || typeof item !== 'object') {
-      return false;
-    }
-    const obj = item as Record<string, unknown>;
-    let changed = false;
-    for (const key of ['reasoning', 'reasoning_id', 'reasoningId', 'required_reasoning']) {
-      if (key in obj) {
-        delete obj[key];
-        changed = true;
-      }
-    }
-    return changed;
-  }
-
-  private extractResponseItemId(item: unknown): string | undefined {
-    if (!item || typeof item !== 'object') {
-      return undefined;
-    }
-    const id = (item as { id?: unknown }).id;
-    if (typeof id !== 'string' || id.length === 0) {
-      return undefined;
-    }
-    return id;
-  }
-
-  private summarizeReasoningDependencies(messages: ResponseItem[]): {
-    reasoningItemCount: number;
-    functionCallCount: number;
-    functionCallsWithReasoning: number;
-    missingReasoningRefs: string[];
-  } {
-    const reasoningIds = new Set<string>();
-    let functionCallCount = 0;
-    let functionCallsWithReasoning = 0;
-    const missingReasoningRefs = new Set<string>();
-
-    for (const item of messages) {
-      if (this.isReasoningItem(item)) {
-        const id = this.extractResponseItemId(item);
-        if (id) {
-          reasoningIds.add(id);
-        }
-      }
-    }
-
-    for (let index = 0; index < messages.length; index++) {
-      const item = messages[index];
-      if (!item || item.type !== 'function_call') {
-        continue;
-      }
-      functionCallCount++;
-      const call = item as ResponseFunctionToolCallItem;
-      const reasoningRefs = this.extractReasoningRefs(call);
-      if (reasoningRefs.length === 0) {
-        continue;
-      }
-      functionCallsWithReasoning++;
-      const callId = call.call_id ?? this.extractCallId(call, index);
-      for (const reasoningId of reasoningRefs) {
-        if (!reasoningIds.has(reasoningId)) {
-          missingReasoningRefs.add(`${callId}->${reasoningId}`);
-        }
-      }
-    }
-
-    return {
-      reasoningItemCount: reasoningIds.size,
-      functionCallCount,
-      functionCallsWithReasoning,
-      missingReasoningRefs: Array.from(missingReasoningRefs),
-    };
-  }
-
-  private buildReasoningDependencyDiagnostics(messages: ResponseItem[], maxEntries: number): string {
-    const reasoningIds = new Set<string>();
-    for (const item of messages) {
-      if (!this.isReasoningItem(item)) {
-        continue;
-      }
-      const reasoningId = this.extractResponseItemId(item);
-      if (reasoningId) {
-        reasoningIds.add(reasoningId);
-      }
-    }
-
-    const details: string[] = [];
-    const max = Math.max(1, maxEntries);
-    for (let index = Math.max(0, messages.length - max); index < messages.length; index++) {
-      const item = messages[index];
-      if (!item || item.type !== 'function_call') {
-        continue;
-      }
-      const call = item as ResponseFunctionToolCallItem;
-      const callId = call.call_id ?? this.extractCallId(call, index);
-      const reasoningRefs = this.extractReasoningRefs(call);
-      const status =
-        reasoningRefs.length === 0
-          ? 'sem_ref'
-          : reasoningRefs.every((reasoningId) => reasoningIds.has(reasoningId))
-            ? 'ok'
-            : `faltando=[${reasoningRefs.filter((reasoningId) => !reasoningIds.has(reasoningId)).join(',')}]`;
-      details.push(
-        `idx=${index};call_id=${callId};item_id=${call.id ?? 'n/d'};tool=${call.name ?? 'sem_nome'};reasoning=[${reasoningRefs.join(',')}];status=${status}`,
-      );
-    }
-
-    if (details.length === 0) {
-      return `diagnóstico reasoning: nenhum function_call nos últimos ${Math.max(1, maxEntries)} itens (mensagens=${messages.length}, reasoning_ids=${reasoningIds.size})`;
-    }
-    return `diagnóstico reasoning: mensagens=${messages.length}, reasoning_ids=${reasoningIds.size}, function_calls_analisados=${details.length} :: ${details.join(' | ')}`;
-  }
-
-  private buildReasoningErrorCorrelationDiagnostics(messages: ResponseItem[], error: unknown): string {
-    const rawError = this.formatError(error);
-    const functionCallIds = Array.from(new Set(rawError.match(/\bfc_[A-Za-z0-9_-]+\b/g) ?? []));
-    const reasoningIds = Array.from(new Set(rawError.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? []));
-    if (functionCallIds.length === 0 && reasoningIds.length === 0) {
-      return 'correlação de erro de reasoning: sem ids fc_/rs_ extraíveis da mensagem de erro.';
-    }
-
-    const correlations: string[] = [];
-    for (let index = 0; index < messages.length; index++) {
-      const item = messages[index] as ResponseItem | undefined;
-      if (!item || item.type !== 'function_call') {
-        continue;
-      }
-      const call = item as ResponseFunctionToolCallItem;
-      const callId = call.call_id ?? this.extractCallId(call, index);
-      const itemId = typeof call.id === 'string' ? call.id : '';
-      if (!functionCallIds.includes(itemId) && !functionCallIds.includes(callId)) {
-        continue;
-      }
-      const refs = this.extractReasoningRefs(call);
-      correlations.push(
-        `function_call_encontrado idx=${index}, call_id=${callId}, item_id=${itemId || 'n/d'}, refs=[${refs.join(',')}], tool=${call.name ?? 'sem_nome'}`,
-      );
-    }
-
-    for (let index = 0; index < messages.length; index++) {
-      const item = messages[index] as ResponseItem | undefined;
-      if (!item || !this.isReasoningItem(item)) {
-        continue;
-      }
-      const itemId = this.extractResponseItemId(item);
-      if (!itemId || !reasoningIds.includes(itemId)) {
-        continue;
-      }
-      correlations.push(`reasoning_encontrado idx=${index}, item_id=${itemId}`);
-    }
-
-    if (correlations.length === 0) {
-      return `correlação de erro de reasoning: ids detectados no erro fc=[${functionCallIds.join(',')}], rs=[${reasoningIds.join(',')}], mas nenhum item correspondente foi encontrado no histórico atual.`;
-    }
-    return `correlação de erro de reasoning: ids detectados fc=[${functionCallIds.join(',')}], rs=[${reasoningIds.join(',')}] :: ${correlations.join(' | ')}`;
-  }
-
-  private repairReasoningDependenciesFromApiError(job: SandboxJob, messages: ResponseItem[], error: unknown): boolean {
-    const rawError = this.formatError(error);
-    if (!/without\s+its\s+required\s+'reasoning'\s+item/i.test(rawError)) {
-      return false;
-    }
-
-    const functionCallIds = new Set(rawError.match(/\bfc_[A-Za-z0-9_-]+\b/g) ?? []);
-    const reasoningIds = new Set(rawError.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? []);
-
-    const orphanedCallIds = new Set<string>();
-    const orphanedDetails: string[] = [];
-
-    for (let index = 0; index < messages.length; index++) {
-      const item = messages[index];
-      if (!item || item.type !== 'function_call') {
-        continue;
-      }
-      const call = item as ResponseFunctionToolCallItem;
-      const callId = call.call_id ?? this.extractCallId(call, index);
-      const itemId = typeof call.id === 'string' ? call.id : '';
-      const refs = this.extractReasoningRefs(call);
-      const hasMatchingFunctionCallId = functionCallIds.has(itemId) || functionCallIds.has(callId);
-      const hasMatchingReasoningId = refs.some((ref) => reasoningIds.has(ref));
-      if (!hasMatchingFunctionCallId && !hasMatchingReasoningId) {
-        continue;
-      }
-      orphanedCallIds.add(callId);
-      orphanedDetails.push(`callId=${callId}, itemId=${itemId || 'n/d'}, reasoning=[${refs.join(',')}]`);
-    }
-
-    if (orphanedCallIds.size === 0) {
-      return false;
-    }
-
-    const filtered = messages.filter((item, index) => {
-      if (!item) {
-        return false;
-      }
-      if (item.type === 'function_call') {
-        const call = item as ResponseFunctionToolCallItem;
-        const callId = call.call_id ?? this.extractCallId(call, index);
-        return !orphanedCallIds.has(callId);
-      }
-      if (item.type === 'function_call_output') {
-        const output = item as ResponseFunctionToolCallOutputItem;
-        return !orphanedCallIds.has(output.call_id ?? '');
-      }
-      return true;
-    });
-
-    const removed = messages.length - filtered.length;
-    if (removed <= 0) {
-      return false;
-    }
-
-    messages.splice(0, messages.length, ...filtered);
-    this.log(
-      job,
-      `reparo pós-erro de reasoning aplicado: removidas ${removed} mensagem(ns) vinculadas às function_calls [${Array.from(orphanedCallIds).join(',')}]. detalhes=${orphanedDetails.join(' | ')}`,
-    );
-    return true;
-  }
-
-  private buildRollingSummary(messages: ResponseItem[]): string {
-    const relevant = messages
-      .slice(2)
-      .map((item, index) => this.formatSingleResponseItem(item, index))
-      .filter((text) => text.trim().length > 0)
-      .slice(-40);
-    const lines = relevant.slice(-20);
-    return ['Resumo rolante do contexto anterior:', ...lines].join('\n');
-  }
-
-  private shouldForceEarlyFinish(
-    job: SandboxJob,
-    totalToolCalls: number,
-    messages: ResponseItem[],
-  ): { shouldStop: boolean; reason: string } {
-    const estimated = this.estimateMessagesTokenFootprint(messages);
-    if (totalToolCalls > this.emergencyToolCallLimit) {
-      return {
-        shouldStop: true,
-        reason: `modo de emergência ativado: tool_calls=${totalToolCalls} excedeu limite ${this.emergencyToolCallLimit}`,
-      };
-    }
-    if (estimated > this.emergencyPromptEstimateLimit) {
-      return {
-        shouldStop: true,
-        reason: `modo de emergência ativado: prompt_est=${estimated} excedeu limite ${this.emergencyPromptEstimateLimit}`,
-      };
-    }
-    return { shouldStop: false, reason: '' };
   }
 
   private resolveModel(job: SandboxJob): string {
@@ -3510,88 +2659,6 @@ ${profileInstruction}`,
         `Modo ${profile.label}: histórico compactado preventivamente antes da próxima iteração.`,
       );
     }
-  }
-
-  private repairReasoningDependencies(job: SandboxJob, messages: ResponseItem[]): void {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return;
-    }
-
-    // Alguns modelos exigem que itens function_call tragam junto o item "reasoning" referenciado.
-    // Caso o histórico tenha sido compactado e o item de reasoning tenha sido descartado, devemos
-    // remover o function_call (e seu function_call_output) para evitar erro 400 no próximo turno.
-    const reasoningIds = new Set<string>();
-    for (const item of messages) {
-      if (!this.isReasoningItem(item)) {
-        continue;
-      }
-      const id = this.extractResponseItemId(item);
-      if (id) {
-        reasoningIds.add(id);
-      }
-    }
-
-    const orphanedCallIds = new Set<string>();
-    const orphanedDetails: string[] = [];
-    let orphanedCalls = 0;
-    for (let index = 0; index < messages.length; index++) {
-      const item = messages[index];
-      if (!item || item.type !== 'function_call') {
-        continue;
-      }
-      const call = item as ResponseFunctionToolCallItem;
-      const reasoningRefs = this.extractReasoningRefs(call);
-      if (reasoningRefs.length === 0) {
-        continue;
-      }
-      const missingRefs = reasoningRefs.filter((reasoningId) => !reasoningIds.has(reasoningId));
-      if (missingRefs.length === 0) {
-        continue;
-      }
-      orphanedCalls++;
-      const callId = call.call_id ?? this.extractCallId(call, index);
-      orphanedCallIds.add(callId);
-      orphanedDetails.push(`callId=${callId}, reasoning=${missingRefs.join(',')}, tool=${call.name ?? 'sem_nome'}`);
-    }
-
-    if (orphanedCalls === 0) {
-      return;
-    }
-
-    this.log(
-      job,
-      `detectadas dependências órfãs de reasoning antes do envio ao modelo: ${orphanedDetails.join(' | ')}`,
-    );
-
-    const filtered = messages.filter((item) => {
-      if (!item) {
-        return false;
-      }
-      if (item.type === 'function_call') {
-        const call = item as ResponseFunctionToolCallItem;
-        const reasoningRefs = this.extractReasoningRefs(call);
-        if (reasoningRefs.length === 0) {
-          return true;
-        }
-        return reasoningRefs.every((reasoningId) => reasoningIds.has(reasoningId));
-      }
-      if (item.type === 'function_call_output') {
-        const output = item as ResponseFunctionToolCallOutputItem;
-        const callId = output.call_id;
-        if (!callId) {
-          return true;
-        }
-        return !orphanedCallIds.has(callId);
-      }
-      return true;
-    });
-
-    const removed = messages.length - filtered.length;
-    messages.splice(0, messages.length, ...filtered);
-    this.log(
-      job,
-      `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente).`,
-    );
   }
 
   private enforceEcoUserMessageBudget(

@@ -2,7 +2,6 @@ package com.aihub.hub.web;
 
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
-import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
@@ -86,14 +85,6 @@ public class CodexController {
         payload.put("model", request.getModel());
         payload.put("createdAt", request.getCreatedAt());
         payload.put("interactionCount", interactions.size());
-        payload.put("status", request.getStatus());
-        if (request.getStatus() == CodexRequestStatus.FAILED) {
-            String errorMessage = Optional.ofNullable(request.getResponseText())
-                .map(String::trim)
-                .filter(value -> !value.isBlank())
-                .orElse("Falha na execução da solicitação");
-            payload.put("error", errorMessage);
-        }
         payload.put("interactions", interactions.stream().map(interaction -> {
             Map<String, Object> item = new HashMap<>();
             item.put("id", interaction.getId());

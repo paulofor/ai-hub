@@ -268,20 +268,8 @@ export default function CodexRequestDetailPage() {
       });
       const contentDisposition = response.headers['content-disposition'];
       const fallbackName = `solicitacao-${request.id}-interacoes.zip`;
-      const decodeMimeEncodedWord = (value: string) => {
-        const match = /^=\?([^?]+)\?([bBqQ])\?([^?]+)\?=$/.exec(value);
-        if (!match) return value;
-        const [, , encoding, encodedText] = match;
-        if (encoding.toUpperCase() === 'B') {
-          return window.atob(encodedText);
-        }
-        return encodedText
-          .replace(/_/g, ' ')
-          .replace(/=([0-9A-F]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
-      };
-      const fileNameMatch = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(contentDisposition ?? '');
-      const rawName = fileNameMatch?.[1] ?? fileNameMatch?.[2];
-      const fileName = rawName ? decodeMimeEncodedWord(decodeURIComponent(rawName.trim())) : fallbackName;
+      const fileNameMatch = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(contentDisposition ?? '');
+      const fileName = fileNameMatch?.[1] ? decodeURIComponent(fileNameMatch[1].replace(/"/g, '')) : fallbackName;
       const blob = new Blob([response.data], { type: 'application/zip' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
