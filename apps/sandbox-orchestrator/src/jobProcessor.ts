@@ -947,7 +947,16 @@ ${profileInstruction}`,
             `refs ausentes no momento da falha: ${failedSnapshot.missingReasoningRefs.join(' | ')}`,
           );
         }
-        throw error;
+        const recovered = this.repairReasoningDependenciesFromProviderError(job, messages, error);
+        if (!recovered) {
+          throw error;
+        }
+        this.log(job, 'nova tentativa de responses.create após reparo de dependências de reasoning sinalizadas pelo provedor');
+        response = await this.openai!.responses.create({
+          model,
+          input: messages,
+          tools,
+        });
       }
       this.log(
         job,
@@ -3517,6 +3526,70 @@ ${profileInstruction}`,
       job,
       `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente).`,
     );
+  }
+
+  private repairReasoningDependenciesFromProviderError(
+    job: SandboxJob,
+    messages: ResponseItem[],
+    error: unknown,
+  ): boolean {
+    const rawError = this.formatError(error);
+    const functionCallIds = Array.from(new Set(rawError.match(/\bfc_[A-Za-z0-9_-]+\b/g) ?? []));
+    const reasoningIds = Array.from(new Set(rawError.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? []));
+    if (functionCallIds.length === 0 || reasoningIds.length === 0) {
+      return false;
+    }
+
+    const orphanedCallIds = new Set<string>();
+    const orphanedDetails: string[] = [];
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      if (!call.id || !functionCallIds.includes(call.id)) {
+        continue;
+      }
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      orphanedCallIds.add(callId);
+      orphanedDetails.push(`item_id=${call.id}, call_id=${callId}, tool=${call.name ?? 'sem_nome'}`);
+    }
+
+    if (orphanedCallIds.size === 0) {
+      return false;
+    }
+
+    const filtered = messages.filter((item) => {
+      if (!item) {
+        return false;
+      }
+      if (item.type === 'function_call') {
+        const call = item as ResponseFunctionToolCallItem;
+        if (call.id && functionCallIds.includes(call.id)) {
+          return false;
+        }
+        const callId = call.call_id;
+        return !(callId && orphanedCallIds.has(callId));
+      }
+      if (item.type === 'function_call_output') {
+        const output = item as ResponseFunctionToolCallOutputItem;
+        const callId = output.call_id;
+        return !(callId && orphanedCallIds.has(callId));
+      }
+      return true;
+    });
+
+    const removed = messages.length - filtered.length;
+    if (removed <= 0) {
+      return false;
+    }
+    messages.splice(0, messages.length, ...filtered);
+    this.log(
+      job,
+      `reparo baseado em erro do provedor aplicado: removidas ${removed} mensagem(ns) para function_calls órfãos (${orphanedDetails.join(' | ')}) com reasoning requerido [${reasoningIds.join(',')}].`,
+    );
+    return true;
   }
 
   private enforceEcoUserMessageBudget(

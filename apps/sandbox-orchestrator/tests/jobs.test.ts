@@ -894,6 +894,83 @@ test('detects reasoning refs embedded in raw function_call payload and removes o
   }
 });
 
+test('retries request when provider reports missing reasoning dependency for function_call id', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-provider-missing-reasoning-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'provider-missing-reasoning');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                id: 'fc_missing_reasoning_1',
+                call_id: 'call-missing-reasoning-1',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+            ],
+          };
+        }
+        if (fakeOpenAI.calls.length === 2) {
+          throw new Error(
+            "400 Item 'fc_missing_reasoning_1' of type 'function_call' was provided without its required 'reasoning' item: 'rs_missing_reasoning_1'.",
+          );
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-provider-retry-1',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+    const job: SandboxJob = {
+      jobId: 'job-provider-missing-reasoning',
+      repoUrl: tempRepo,
+      branch: 'main',
+      taskDescription: 'trigger provider-side reasoning error and recover',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    assert.equal(fakeOpenAI.calls.length, 3, 'deve reenviar a requisição após o reparo');
+    const retriedCall = fakeOpenAI.calls[2];
+    const functionCall = retriedCall.input.find((msg: any) => msg.type === 'function_call' && msg.call_id === 'call-missing-reasoning-1');
+    const functionOutput = retriedCall.input.find((msg: any) => msg.type === 'function_call_output' && msg.call_id === 'call-missing-reasoning-1');
+    assert.equal(functionCall, undefined, 'function_call referenciado no erro deve ser removido no retry');
+    assert.equal(functionOutput, undefined, 'function_call_output pareado também deve ser removido no retry');
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
 
 test('collects patch and changed files even when the model commits changes', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-job-commit-'));
