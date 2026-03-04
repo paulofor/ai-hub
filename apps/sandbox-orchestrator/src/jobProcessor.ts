@@ -2997,24 +2997,85 @@ ${profileInstruction}`,
       return undefined;
     }
     const candidate = item as {
-      reasoning?: string | { id?: unknown };
+      reasoning?: unknown;
       reasoning_id?: unknown;
+      reasoningId?: unknown;
+      required_reasoning?: unknown;
     };
     if (typeof candidate.reasoning_id === 'string' && candidate.reasoning_id.length > 0) {
       return candidate.reasoning_id;
     }
+    if (typeof candidate.reasoningId === 'string' && candidate.reasoningId.length > 0) {
+      return candidate.reasoningId;
+    }
     if (typeof candidate.reasoning === 'string' && candidate.reasoning.length > 0) {
       return candidate.reasoning;
+    }
+    if (typeof candidate.required_reasoning === 'string' && candidate.required_reasoning.length > 0) {
+      return candidate.required_reasoning;
     }
     if (
       candidate.reasoning &&
       typeof candidate.reasoning === 'object' &&
-      typeof (candidate.reasoning as { id?: unknown }).id === 'string' &&
+      typeof (candidate.reasoning as { id?: unknown; ref?: unknown; reasoning_id?: unknown; reasoningId?: unknown }).id ===
+        'string' &&
       ((candidate.reasoning as { id?: string }).id?.length ?? 0) > 0
     ) {
       return (candidate.reasoning as { id: string }).id;
     }
+
+    if (candidate.reasoning && typeof candidate.reasoning === 'object') {
+      const obj = candidate.reasoning as {
+        id?: unknown;
+        ref?: unknown;
+        reasoning_id?: unknown;
+        reasoningId?: unknown;
+        required_reasoning?: unknown;
+      };
+      const fallback =
+        (typeof obj.ref === 'string' && obj.ref.length > 0 ? obj.ref : undefined) ??
+        (typeof obj.reasoning_id === 'string' && obj.reasoning_id.length > 0 ? obj.reasoning_id : undefined) ??
+        (typeof obj.reasoningId === 'string' && obj.reasoningId.length > 0 ? obj.reasoningId : undefined) ??
+        (typeof obj.required_reasoning === 'string' && obj.required_reasoning.length > 0
+          ? obj.required_reasoning
+          : undefined);
+      if (fallback) {
+        return fallback;
+      }
+    }
+
+    if (Array.isArray(candidate.reasoning) && candidate.reasoning.length > 0) {
+      const first = candidate.reasoning[0] as unknown;
+      if (typeof first === 'string' && first.length > 0) {
+        return first;
+      }
+      if (first && typeof first === 'object') {
+        const id = (first as { id?: unknown }).id;
+        const ref = (first as { ref?: unknown }).ref;
+        if (typeof id === 'string' && id.length > 0) {
+          return id;
+        }
+        if (typeof ref === 'string' && ref.length > 0) {
+          return ref;
+        }
+      }
+    }
     return undefined;
+  }
+
+  private stripReasoningReference(item: unknown): boolean {
+    if (!item || typeof item !== 'object') {
+      return false;
+    }
+    const obj = item as Record<string, unknown>;
+    let changed = false;
+    for (const key of ['reasoning', 'reasoning_id', 'reasoningId', 'required_reasoning']) {
+      if (key in obj) {
+        delete obj[key];
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   private extractResponseItemId(item: unknown): string | undefined {
@@ -3214,6 +3275,7 @@ ${profileInstruction}`,
 
     const orphanedCallIds = new Set<string>();
     let orphanedCalls = 0;
+    let strippedReasoningRefs = 0;
     for (let index = 0; index < messages.length; index++) {
       const item = messages[index];
       if (!item || item.type !== 'function_call') {
@@ -3224,11 +3286,19 @@ ${profileInstruction}`,
       if (!reasoningId || reasoningIds.has(reasoningId)) {
         continue;
       }
+      // Algumas versões do Responses API adicionam um ponteiro de "reasoning" no item.
+      // Se o histórico foi podado/compactado, esse ponteiro pode ficar órfão e causar 400.
+      // Preferimos remover apenas a referência ao reasoning (mantendo o tool call no histórico);
+      // se não for possível, removemos o tool call e sua saída correspondente.
+      if (this.stripReasoningReference(call)) {
+        strippedReasoningRefs++;
+        continue;
+      }
       orphanedCalls++;
       orphanedCallIds.add(call.call_id ?? this.extractCallId(call, index));
     }
 
-    if (orphanedCalls === 0) {
+    if (orphanedCalls === 0 && strippedReasoningRefs === 0) {
       return;
     }
 
@@ -3259,7 +3329,7 @@ ${profileInstruction}`,
     messages.splice(0, messages.length, ...filtered);
     this.log(
       job,
-      `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente).`,
+      `dependências de reasoning reparadas: removidas ${removed} mensagem(ns) órfãs (function_calls sem reasoning correspondente) e removidas ${strippedReasoningRefs} referência(s) de reasoning órfã(s) para evitar erro 400.`,
     );
   }
 
