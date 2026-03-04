@@ -388,7 +388,19 @@ test('processes tool calls inside a sandbox', async () => {
   assert.ok(firstCall.tools, 'tools ausente na chamada inicial');
   assert.deepEqual(
     firstCall.tools.map((tool: any) => tool.name ?? tool.function?.name).filter(Boolean),
-    ['run_shell', 'read_file', 'write_file', 'http_get', 'WebSearch', 'db_query']
+    [
+      'run_shell',
+      'run_shell_batch',
+      'read_file',
+      'read_files_batch',
+      'search_repo',
+      'read_file_range',
+      'write_file',
+      'http_get',
+      'http_get_extract',
+      'WebSearch',
+      'db_query',
+    ]
   );
 
   assert.equal(job.status, 'COMPLETED', job.error);
