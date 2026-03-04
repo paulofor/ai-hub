@@ -2162,3 +2162,35 @@ test('marca o job como falho quando o testCommand retorna erro', async () => {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
 });
+
+test('identifica erros de clone transitórios para retry', () => {
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', {
+    responses: { create: async () => ({ output: [] }) },
+  } as any);
+
+  const retryable = new Error('error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)');
+  const notRetryable = new Error('fatal: repository not found');
+
+  assert.equal((processor as any).isRetryableGitCloneError(retryable), true);
+  assert.equal((processor as any).isRetryableGitCloneError(notRetryable), false);
+});
+
+test('calcula backoff de retry de clone com base no delay configurado', () => {
+  const originalDelay = process.env.CLONE_RETRY_DELAY_MS;
+  process.env.CLONE_RETRY_DELAY_MS = '200';
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', {
+      responses: { create: async () => ({ output: [] }) },
+    } as any);
+
+    assert.equal((processor as any).calculateCloneRetryDelay(1), 200);
+    assert.equal((processor as any).calculateCloneRetryDelay(3), 600);
+  } finally {
+    if (originalDelay === undefined) {
+      delete process.env.CLONE_RETRY_DELAY_MS;
+    } else {
+      process.env.CLONE_RETRY_DELAY_MS = originalDelay;
+    }
+  }
+});

@@ -120,6 +120,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly dbPools: Map<string, Pool> = new Map();
   private readonly prCreateMaxAttempts: number;
   private readonly prCreateRetryDelayMs: number;
+  private readonly cloneMaxAttempts: number;
+  private readonly cloneRetryDelayMs: number;
   private readonly contextPromptEstimateLimit: number;
   private readonly contextRecentMessageWindow: number;
   private readonly contextWorkingSetWindow: number;
@@ -399,6 +401,8 @@ export class SandboxJobProcessor implements JobProcessor {
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
+    this.cloneMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.CLONE_RETRY_ATTEMPTS, 3));
+    this.cloneRetryDelayMs = this.parsePositiveInteger(process.env.CLONE_RETRY_DELAY_MS, 1_500);
     this.contextPromptEstimateLimit = this.parsePositiveInteger(process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT, 24_000);
     this.contextRecentMessageWindow = this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_WINDOW, 8);
     this.contextWorkingSetWindow = this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_WINDOW, 6);
@@ -598,7 +602,33 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async cloneRepository(job: SandboxJob, repoPath: string, cloneUrl: string): Promise<void> {
-    await exec(`git clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`);
+    const maxAttempts = Math.max(1, this.cloneMaxAttempts);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const shouldForceHttp11 = attempt > 1;
+      const cloneCommand = shouldForceHttp11
+        ? `git -c http.version=HTTP/1.1 clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`
+        : `git clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`;
+
+      try {
+        await exec(cloneCommand);
+        break;
+      } catch (error) {
+        if (this.isRetryableGitCloneError(error) && attempt < maxAttempts) {
+          const delayMs = this.calculateCloneRetryDelay(attempt);
+          const protocolHint = shouldForceHttp11 ? 'HTTP/1.1' : 'padrão';
+          this.log(
+            job,
+            `tentativa ${attempt}/${maxAttempts} do git clone falhou (${protocolHint}): ${this.formatError(error)}; ` +
+              `aguardando ${delayMs}ms para nova tentativa`,
+          );
+          await this.sleep(delayMs);
+          continue;
+        }
+        throw error instanceof Error ? error : new Error(String(error));
+      }
+    }
+
     if (job.commitHash) {
       this.log(job, `checando commit ${job.commitHash}`);
       await exec(`git checkout ${job.commitHash}`, { cwd: repoPath });
@@ -2549,6 +2579,28 @@ ${profileInstruction}`,
 
   private calculatePrRetryDelay(attempt: number): number {
     const base = Math.max(0, this.prCreateRetryDelayMs);
+    return base * Math.max(1, attempt);
+  }
+
+  private isRetryableGitCloneError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const message = (error.message ?? '').toLowerCase();
+    return (
+      message.includes('rpc failed') ||
+      message.includes('http/2 stream') ||
+      message.includes('early eof') ||
+      message.includes('unexpected disconnect while reading sideband packet') ||
+      message.includes('fetch-pack: invalid index-pack output') ||
+      message.includes('connection reset by peer') ||
+      message.includes('operation timed out') ||
+      message.includes('timed out')
+    );
+  }
+
+  private calculateCloneRetryDelay(attempt: number): number {
+    const base = Math.max(0, this.cloneRetryDelayMs);
     return base * Math.max(1, attempt);
   }
 
