@@ -913,6 +913,7 @@ ${profileInstruction}`,
         job,
         `snapshot pré-envio: reasoning_items=${reasoningSnapshot.reasoningItemCount}, function_calls=${reasoningSnapshot.functionCallCount}, function_calls_com_reasoning=${reasoningSnapshot.functionCallsWithReasoning}, refs_ausentes=${reasoningSnapshot.missingReasoningRefs.length}`,
       );
+      this.log(job, this.buildReasoningDependencyDiagnostics(messages, 8));
       if (reasoningSnapshot.missingReasoningRefs.length > 0) {
         this.log(
           job,
@@ -938,6 +939,8 @@ ${profileInstruction}`,
           job,
           `falha ao chamar responses.create: ${this.formatError(error)} (reasoning_items=${failedSnapshot.reasoningItemCount}, function_calls=${failedSnapshot.functionCallCount}, function_calls_com_reasoning=${failedSnapshot.functionCallsWithReasoning}, refs_ausentes=${failedSnapshot.missingReasoningRefs.length})`,
         );
+        this.log(job, this.buildReasoningDependencyDiagnostics(messages, 20));
+        this.log(job, this.buildReasoningErrorCorrelationDiagnostics(messages, error));
         if (failedSnapshot.missingReasoningRefs.length > 0) {
           this.log(
             job,
@@ -3181,6 +3184,89 @@ ${profileInstruction}`,
       functionCallsWithReasoning,
       missingReasoningRefs: Array.from(missingReasoningRefs),
     };
+  }
+
+  private buildReasoningDependencyDiagnostics(messages: ResponseItem[], maxEntries: number): string {
+    const reasoningIds = new Set<string>();
+    for (const item of messages) {
+      if (!this.isReasoningItem(item)) {
+        continue;
+      }
+      const reasoningId = this.extractResponseItemId(item);
+      if (reasoningId) {
+        reasoningIds.add(reasoningId);
+      }
+    }
+
+    const details: string[] = [];
+    const max = Math.max(1, maxEntries);
+    for (let index = Math.max(0, messages.length - max); index < messages.length; index++) {
+      const item = messages[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      const reasoningRefs = this.extractReasoningRefs(call);
+      const status =
+        reasoningRefs.length === 0
+          ? 'sem_ref'
+          : reasoningRefs.every((reasoningId) => reasoningIds.has(reasoningId))
+            ? 'ok'
+            : `faltando=[${reasoningRefs.filter((reasoningId) => !reasoningIds.has(reasoningId)).join(',')}]`;
+      details.push(
+        `idx=${index};call_id=${callId};item_id=${call.id ?? 'n/d'};tool=${call.name ?? 'sem_nome'};reasoning=[${reasoningRefs.join(',')}];status=${status}`,
+      );
+    }
+
+    if (details.length === 0) {
+      return `diagnóstico reasoning: nenhum function_call nos últimos ${Math.max(1, maxEntries)} itens (mensagens=${messages.length}, reasoning_ids=${reasoningIds.size})`;
+    }
+    return `diagnóstico reasoning: mensagens=${messages.length}, reasoning_ids=${reasoningIds.size}, function_calls_analisados=${details.length} :: ${details.join(' | ')}`;
+  }
+
+  private buildReasoningErrorCorrelationDiagnostics(messages: ResponseItem[], error: unknown): string {
+    const rawError = this.formatError(error);
+    const functionCallIds = Array.from(new Set(rawError.match(/\bfc_[A-Za-z0-9_-]+\b/g) ?? []));
+    const reasoningIds = Array.from(new Set(rawError.match(/\brs_[A-Za-z0-9_-]+\b/g) ?? []));
+    if (functionCallIds.length === 0 && reasoningIds.length === 0) {
+      return 'correlação de erro de reasoning: sem ids fc_/rs_ extraíveis da mensagem de erro.';
+    }
+
+    const correlations: string[] = [];
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index] as ResponseItem | undefined;
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      const callId = call.call_id ?? this.extractCallId(call, index);
+      const itemId = typeof call.id === 'string' ? call.id : '';
+      if (!functionCallIds.includes(itemId) && !functionCallIds.includes(callId)) {
+        continue;
+      }
+      const refs = this.extractReasoningRefs(call);
+      correlations.push(
+        `function_call_encontrado idx=${index}, call_id=${callId}, item_id=${itemId || 'n/d'}, refs=[${refs.join(',')}], tool=${call.name ?? 'sem_nome'}`,
+      );
+    }
+
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index] as ResponseItem | undefined;
+      if (!item || !this.isReasoningItem(item)) {
+        continue;
+      }
+      const itemId = this.extractResponseItemId(item);
+      if (!itemId || !reasoningIds.includes(itemId)) {
+        continue;
+      }
+      correlations.push(`reasoning_encontrado idx=${index}, item_id=${itemId}`);
+    }
+
+    if (correlations.length === 0) {
+      return `correlação de erro de reasoning: ids detectados no erro fc=[${functionCallIds.join(',')}], rs=[${reasoningIds.join(',')}], mas nenhum item correspondente foi encontrado no histórico atual.`;
+    }
+    return `correlação de erro de reasoning: ids detectados fc=[${functionCallIds.join(',')}], rs=[${reasoningIds.join(',')}] :: ${correlations.join(' | ')}`;
   }
 
   private buildRollingSummary(messages: ResponseItem[]): string {
