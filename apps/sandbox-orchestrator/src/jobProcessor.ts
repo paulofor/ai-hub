@@ -2854,8 +2854,15 @@ ${profileInstruction}`,
     const middle = messages.slice(2, Math.max(2, messages.length - recentWindow));
     const keepIndexes = new Set<number>();
     const keepCallIds = new Set<string>();
+    const keepReasoningIds = new Set<string>();
     for (const item of tail) {
       if (item.type !== 'function_call_output') {
+        if (item.type === 'function_call') {
+          const reasoningId = this.extractRequiredReasoningId(item);
+          if (reasoningId) {
+            keepReasoningIds.add(reasoningId);
+          }
+        }
         continue;
       }
       const output = item as ResponseFunctionToolCallOutputItem;
@@ -2879,12 +2886,22 @@ ${profileInstruction}`,
         continue;
       }
       if (item.type !== 'function_call') {
+        if (this.isReasoningItem(item)) {
+          const itemId = this.extractResponseItemId(item);
+          if (itemId && keepReasoningIds.has(itemId)) {
+            keepIndexes.add(index);
+          }
+        }
         continue;
       }
       const call = item as ResponseFunctionToolCallItem;
       const callId = call.call_id ?? this.extractCallId(call, index);
       if (keepCallIds.has(callId)) {
         keepIndexes.add(index);
+        const reasoningId = this.extractRequiredReasoningId(call);
+        if (reasoningId) {
+          keepReasoningIds.add(reasoningId);
+        }
       }
     }
     const workingSet = middle.filter((_, index) => keepIndexes.has(index));
@@ -2902,6 +2919,47 @@ ${profileInstruction}`,
     ];
     messages.splice(0, messages.length, ...compacted);
     this.log(job, `GC de contexto aplicado: estimativa ${estimated} tokens > ${this.contextPromptEstimateLimit}; histórico reduzido para ${messages.length} mensagens.`);
+  }
+
+
+  private isReasoningItem(item: unknown): boolean {
+    return Boolean(item && typeof item === 'object' && (item as { type?: unknown }).type === 'reasoning');
+  }
+
+  private extractRequiredReasoningId(item: unknown): string | undefined {
+    if (!item || typeof item !== 'object') {
+      return undefined;
+    }
+    const candidate = item as {
+      reasoning?: string | { id?: unknown };
+      reasoning_id?: unknown;
+    };
+    if (typeof candidate.reasoning_id === 'string' && candidate.reasoning_id.length > 0) {
+      return candidate.reasoning_id;
+    }
+    if (typeof candidate.reasoning === 'string' && candidate.reasoning.length > 0) {
+      return candidate.reasoning;
+    }
+    if (
+      candidate.reasoning &&
+      typeof candidate.reasoning === 'object' &&
+      typeof (candidate.reasoning as { id?: unknown }).id === 'string' &&
+      ((candidate.reasoning as { id?: string }).id?.length ?? 0) > 0
+    ) {
+      return (candidate.reasoning as { id: string }).id;
+    }
+    return undefined;
+  }
+
+  private extractResponseItemId(item: unknown): string | undefined {
+    if (!item || typeof item !== 'object') {
+      return undefined;
+    }
+    const id = (item as { id?: unknown }).id;
+    if (typeof id !== 'string' || id.length === 0) {
+      return undefined;
+    }
+    return id;
   }
 
   private buildRollingSummary(messages: ResponseItem[]): string {
