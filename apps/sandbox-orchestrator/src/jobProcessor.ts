@@ -53,6 +53,15 @@ interface EcoTwoLoopBlockResult {
   logMessage: string;
 }
 
+interface StoredToolOutput {
+  handle: string;
+  storedAt: string;
+  chars: number;
+  lines: number;
+  content: string;
+  summary: string;
+}
+
 class JobCancelledError extends Error {
   constructor(message = 'Job cancelado pelo usuário') {
     super(message);
@@ -111,6 +120,16 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly dbPools: Map<string, Pool> = new Map();
   private readonly prCreateMaxAttempts: number;
   private readonly prCreateRetryDelayMs: number;
+  private readonly contextPromptEstimateLimit: number;
+  private readonly contextRecentMessageWindow: number;
+  private readonly contextWorkingSetWindow: number;
+  private readonly emergencyToolCallLimit: number;
+  private readonly emergencyPromptEstimateLimit: number;
+  private readonly largeToolOutputCharsThreshold: number;
+  private readonly largeToolOutputLinesThreshold: number;
+  private readonly largeToolOutputEdgeLineCount: number;
+  private readonly toolOutputStore: WeakMap<SandboxJob, Map<string, StoredToolOutput>> = new WeakMap();
+  private readonly toolOutputHandleCounter: WeakMap<SandboxJob, number> = new WeakMap();
 
   constructor(
     apiKey?: string,
@@ -380,6 +399,14 @@ export class SandboxJobProcessor implements JobProcessor {
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
+    this.contextPromptEstimateLimit = this.parsePositiveInteger(process.env.CONTEXT_PROMPT_ESTIMATE_LIMIT, 24_000);
+    this.contextRecentMessageWindow = this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_WINDOW, 8);
+    this.contextWorkingSetWindow = this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_WINDOW, 6);
+    this.emergencyToolCallLimit = this.parsePositiveInteger(process.env.EMERGENCY_TOOL_CALL_LIMIT, 80);
+    this.emergencyPromptEstimateLimit = this.parsePositiveInteger(process.env.EMERGENCY_PROMPT_ESTIMATE_LIMIT, 30_000);
+    this.largeToolOutputCharsThreshold = this.parsePositiveInteger(process.env.TOOL_OUTPUT_LARGE_CHARS_THRESHOLD, 8_000);
+    this.largeToolOutputLinesThreshold = this.parsePositiveInteger(process.env.TOOL_OUTPUT_LARGE_LINES_THRESHOLD, 200);
+    this.largeToolOutputEdgeLineCount = this.parsePositiveInteger(process.env.TOOL_OUTPUT_LARGE_EDGE_LINES, 30);
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -597,6 +624,31 @@ export class SandboxJobProcessor implements JobProcessor {
       },
       {
         type: 'function' as const,
+        name: 'run_shell_batch',
+        parameters: {
+          type: 'object',
+          properties: {
+            commands: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  command: { type: 'array', items: { type: 'string' } },
+                  cwd: { type: 'string', description: 'Diretório relativo ao repo' },
+                },
+                required: ['command', 'cwd'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['commands'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Executa até 5 comandos de shell em lote para reduzir número de turnos',
+      },
+      {
+        type: 'function' as const,
         name: 'read_file',
         parameters: {
           type: 'object',
@@ -608,6 +660,64 @@ export class SandboxJobProcessor implements JobProcessor {
         },
         strict: true,
         description: 'Lê um arquivo do repositório clonado',
+      },
+      {
+        type: 'function' as const,
+        name: 'read_files_batch',
+        parameters: {
+          type: 'object',
+          properties: {
+            files: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  path: { type: 'string' },
+                  startLine: { type: 'integer' },
+                  endLine: { type: 'integer' },
+                },
+                required: ['path'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['files'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Lê até 10 arquivos (ou faixas de linha) em lote',
+      },
+      {
+        type: 'function' as const,
+        name: 'search_repo',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+            max_hits: { type: 'integer' },
+            context_lines: { type: 'integer' },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Busca no repositório com ripgrep e retorna apenas os trechos necessários',
+      },
+      {
+        type: 'function' as const,
+        name: 'read_file_range',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            start_line: { type: 'integer' },
+            end_line: { type: 'integer' },
+          },
+          required: ['path', 'start_line', 'end_line'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Lê apenas um intervalo de linhas de um arquivo',
       },
       {
         type: 'function' as const,
@@ -643,6 +753,22 @@ export class SandboxJobProcessor implements JobProcessor {
         strict: true,
         description:
           'Busca um recurso público via HTTP GET (bloqueia hosts internos e localhost); consulte documentação oficial de APIs externas antes de integrá-las',
+      },
+      {
+        type: 'function' as const,
+        name: 'http_get_extract',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string' },
+            regex: { type: 'string' },
+            max_bytes: { type: 'integer' },
+          },
+          required: ['url'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Faz GET e retorna recorte por regex com limite de bytes para evitar HTML cru no contexto',
       },
       {
         type: 'function' as const,
@@ -741,12 +867,14 @@ ${profileInstruction}`,
 
     let summary = '';
     let turnCount = 0;
+    let totalToolCalls = 0;
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
       this.ensureNotCancelled(job);
       turnCount++;
       this.enforceEcoThreeGuardrails(job, turnCount);
+      this.applyContextGc(job, messages);
       this.applyEcoPreSamplingCompaction(job, messages);
       this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
       this.ensureNotCancelled(job);
@@ -779,6 +907,7 @@ ${profileInstruction}`,
       });
       const assistantMessage = normalizedOutput.find((item) => item.type === 'message') as ResponseOutputMessage | undefined;
       const toolCalls = normalizedOutput.filter((item) => item.type === 'function_call') as ResponseFunctionToolCallItem[];
+      totalToolCalls += toolCalls.length;
 
       const toolCallDetails =
         toolCalls
@@ -817,6 +946,16 @@ ${profileInstruction}`,
         this.log(job, `resumo final do modelo: "${this.truncate(summary, 240)}"`);
         this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
+      }
+
+      const emergencyStop = this.shouldForceEarlyFinish(job, totalToolCalls, messages);
+      if (emergencyStop.shouldStop) {
+        this.log(job, emergencyStop.reason);
+        if (assistantMessage) {
+          summary = text ?? summary;
+          messages.push(assistantMessage);
+        }
+        return summary || 'Execução encerrada em modo de emergência para conter custo/contexto; revisar logs e continuar em novo job.';
       }
 
       messages.push(...normalizedOutput);
@@ -1220,13 +1359,23 @@ ${profileInstruction}`,
     switch (call.name) {
       case 'run_shell':
         return this.handleRunShell(call.arguments, repoPath, job);
+      case 'run_shell_batch':
+        return this.handleRunShellBatch(call.arguments, repoPath, job);
       case 'read_file':
         return this.handleReadFile(call.arguments, repoPath);
+      case 'read_files_batch':
+        return this.handleReadFilesBatch(call.arguments, repoPath);
+      case 'search_repo':
+        return this.handleSearchRepo(call.arguments, repoPath, job);
+      case 'read_file_range':
+        return this.handleReadFileRange(call.arguments, repoPath);
       case 'write_file':
         return this.handleWriteFile(call.arguments, repoPath, job);
       case 'http_get':
       case 'WebSearch':
         return this.handleHttpGet(call, job);
+      case 'http_get_extract':
+        return this.handleHttpGetExtract(call, job);
       case 'db_query':
         return this.handleDbQuery(call.arguments, job);
       default:
@@ -1982,6 +2131,86 @@ ${profileInstruction}`,
     return { path: relative, content };
   }
 
+  private async handleReadFileRange(args: Record<string, unknown>, repoPath: string) {
+    const startLine = Number(args.start_line);
+    const endLine = Number(args.end_line);
+    if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine <= 0 || endLine < startLine) {
+      throw new Error('start_line/end_line inválidos para read_file_range');
+    }
+    const { absolute, relative } = this.normalizeRepoPath(
+      repoPath,
+      typeof args.path === 'string' ? args.path : undefined,
+    );
+    const content = await fs.readFile(absolute, 'utf8');
+    const lines = content.split('\n');
+    const slice = lines.slice(startLine - 1, endLine);
+    return {
+      path: relative,
+      startLine,
+      endLine,
+      content: slice.join('\n'),
+      totalLines: lines.length,
+    };
+  }
+
+  private async handleReadFilesBatch(args: Record<string, unknown>, repoPath: string) {
+    const files = Array.isArray(args.files) ? args.files.slice(0, 10) : [];
+    const results: Array<Record<string, unknown>> = [];
+    for (const file of files) {
+      const item = (file ?? {}) as Record<string, unknown>;
+      if (typeof item.path !== 'string') {
+        continue;
+      }
+      if (Number.isFinite(Number(item.startLine)) && Number.isFinite(Number(item.endLine))) {
+        results.push(
+          await this.handleReadFileRange(
+            {
+              path: item.path,
+              start_line: Number(item.startLine),
+              end_line: Number(item.endLine),
+            },
+            repoPath,
+          ),
+        );
+        continue;
+      }
+      results.push(await this.handleReadFile({ path: item.path }, repoPath));
+    }
+    return { count: results.length, results };
+  }
+
+  private async handleRunShellBatch(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
+    const commands = Array.isArray(args.commands) ? args.commands.slice(0, 5) : [];
+    const results: Array<Record<string, unknown>> = [];
+    for (const item of commands) {
+      const payload = (item ?? {}) as Record<string, unknown>;
+      const command = Array.isArray(payload.command) ? payload.command : undefined;
+      const cwd = typeof payload.cwd === 'string' ? payload.cwd : '.';
+      if (!command || command.length === 0) {
+        results.push({ error: 'command ausente' });
+        continue;
+      }
+      try {
+        const result = await this.handleRunShell({ command, cwd }, repoPath, job);
+        results.push(result as Record<string, unknown>);
+      } catch (err) {
+        results.push({ error: err instanceof Error ? err.message : String(err), command, cwd });
+      }
+    }
+    return { count: results.length, results };
+  }
+
+  private async handleSearchRepo(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
+    const query = typeof args.query === 'string' ? args.query.trim() : '';
+    if (!query) {
+      throw new Error('query é obrigatório para search_repo');
+    }
+    const maxHits = Math.max(1, Math.min(200, Number(args.max_hits) || 50));
+    const contextLines = Math.max(0, Math.min(5, Number(args.context_lines) || 1));
+    const rgArgs = ['rg', '--line-number', '--hidden', '--no-heading', '-m', String(maxHits), '-C', String(contextLines), query, '.'];
+    return this.handleRunShell({ command: rgArgs, cwd: '.' }, repoPath, job);
+  }
+
   private async handleWriteFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
     const { absolute, relative } = this.normalizeRepoPath(
       repoPath,
@@ -1993,6 +2222,31 @@ ${profileInstruction}`,
     this.log(job, `write_file: ${absolute}`);
     this.resetEcoTwoLoopAttempts(job, 'write_file executada');
     return { status: 'ok', path: relative, content };
+  }
+
+  private async handleHttpGetExtract(call: ToolCall, job: SandboxJob): Promise<Record<string, unknown>> {
+    const base = await this.handleHttpGet(call, job);
+    if (!base || typeof base !== 'object') {
+      return { result: base };
+    }
+    const payload = base as Record<string, unknown>;
+    const content = typeof payload.body === 'string' ? payload.body : '';
+    const maxBytes = Math.max(256, Math.min(200_000, Number(call.arguments.max_bytes) || 12_000));
+    const clipped = content.slice(0, maxBytes);
+    const regexRaw = typeof call.arguments.regex === 'string' ? call.arguments.regex : '';
+    if (!regexRaw) {
+      return { ...payload, body: clipped, clipped: content.length > clipped.length };
+    }
+    let matches: string[] = [];
+    try {
+      const regex = new RegExp(regexRaw, 'g');
+      matches = Array.from(clipped.matchAll(regex))
+        .slice(0, 20)
+        .map((entry) => entry[0]);
+    } catch (err) {
+      return { ...payload, body: clipped, regexError: err instanceof Error ? err.message : String(err) };
+    }
+    return { ...payload, body: undefined, extractMatches: matches, extractCount: matches.length, clipped: content.length > clipped.length };
   }
 
   private async listUntrackedFiles(repoPath: string, job?: SandboxJob): Promise<string[]> {
@@ -2495,6 +2749,10 @@ ${profileInstruction}`,
   }
 
   private prepareToolOutput(result: unknown, job: SandboxJob): string {
+    const stored = this.maybeStoreLargeToolOutput(result, job);
+    if (stored) {
+      return JSON.stringify(stored);
+    }
     const stringLimit = this.resolveToolOutputStringLimit(job);
     const serializedLimit = this.resolveToolOutputSerializedLimit(job);
     const truncation = { truncated: false };
@@ -2522,6 +2780,125 @@ ${profileInstruction}`,
       );
     }
     return value;
+  }
+
+  private maybeStoreLargeToolOutput(result: unknown, job: SandboxJob): Record<string, unknown> | undefined {
+    const serialized = this.safeStringify(result);
+    const lineCount = serialized.split('\n').length;
+    if (serialized.length <= this.largeToolOutputCharsThreshold && lineCount <= this.largeToolOutputLinesThreshold) {
+      return undefined;
+    }
+
+    const handle = this.nextToolOutputHandle(job);
+    const edge = Math.max(1, this.largeToolOutputEdgeLineCount);
+    const lines = serialized.split('\n');
+    const head = lines.slice(0, edge).join('\n');
+    const tail = lines.slice(Math.max(0, lines.length - edge)).join('\n');
+    const summary = this.summarizeToolOutput(serialized);
+    const record: StoredToolOutput = {
+      handle,
+      storedAt: new Date().toISOString(),
+      chars: serialized.length,
+      lines: lineCount,
+      content: serialized,
+      summary,
+    };
+    const store = this.getToolOutputStore(job);
+    store.set(handle, record);
+    this.log(job, `output grande de tool movido para store (handle=${handle}, chars=${record.chars}, lines=${record.lines})`);
+    return {
+      handle,
+      stored: true,
+      chars: record.chars,
+      lines: record.lines,
+      summary: record.summary,
+      excerptTop: head,
+      excerptBottom: tail,
+    };
+  }
+
+  private summarizeToolOutput(content: string): string {
+    const lines = content.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
+    const picked = lines.slice(0, 8);
+    if (picked.length === 0) {
+      return 'Output grande sem linhas textuais relevantes.';
+    }
+    return picked.join('\n');
+  }
+
+  private getToolOutputStore(job: SandboxJob): Map<string, StoredToolOutput> {
+    const existing = this.toolOutputStore.get(job);
+    if (existing) {
+      return existing;
+    }
+    const created = new Map<string, StoredToolOutput>();
+    this.toolOutputStore.set(job, created);
+    return created;
+  }
+
+  private nextToolOutputHandle(job: SandboxJob): string {
+    const current = this.toolOutputHandleCounter.get(job) ?? 0;
+    const next = current + 1;
+    this.toolOutputHandleCounter.set(job, next);
+    return `tool_output_${next}`;
+  }
+
+  private applyContextGc(job: SandboxJob, messages: ResponseItem[]): void {
+    const estimated = this.estimateMessagesTokenFootprint(messages);
+    if (estimated <= this.contextPromptEstimateLimit) {
+      return;
+    }
+    const protectedMessages = messages.slice(0, 2);
+    const recentWindow = Math.max(2, this.contextRecentMessageWindow);
+    const workingSetWindow = Math.max(1, this.contextWorkingSetWindow);
+    const tail = messages.slice(Math.max(2, messages.length - recentWindow));
+    const middle = messages.slice(2, Math.max(2, messages.length - recentWindow));
+    const workingSet = middle.filter((item) => item.type === 'function_call_output').slice(-workingSetWindow);
+    const rollingSummary = this.buildRollingSummary(messages);
+    const compacted: ResponseItem[] = [
+      ...protectedMessages,
+      {
+        type: 'message',
+        id: this.sanitizeId(`msg_summary_${Date.now()}`),
+        role: 'assistant',
+        content: [{ type: 'output_text', text: rollingSummary }],
+      } as ResponseOutputMessage,
+      ...workingSet,
+      ...tail,
+    ];
+    messages.splice(0, messages.length, ...compacted);
+    this.log(job, `GC de contexto aplicado: estimativa ${estimated} tokens > ${this.contextPromptEstimateLimit}; histórico reduzido para ${messages.length} mensagens.`);
+  }
+
+  private buildRollingSummary(messages: ResponseItem[]): string {
+    const relevant = messages
+      .slice(2)
+      .map((item, index) => this.formatSingleResponseItem(item, index))
+      .filter((text) => text.trim().length > 0)
+      .slice(-40);
+    const lines = relevant.slice(-20);
+    return ['Resumo rolante do contexto anterior:', ...lines].join('\n');
+  }
+
+  private shouldForceEarlyFinish(
+    job: SandboxJob,
+    totalToolCalls: number,
+    messages: ResponseItem[],
+  ): { shouldStop: boolean; reason: string } {
+    const estimated = this.estimateMessagesTokenFootprint(messages);
+    if (totalToolCalls > this.emergencyToolCallLimit) {
+      return {
+        shouldStop: true,
+        reason: `modo de emergência ativado: tool_calls=${totalToolCalls} excedeu limite ${this.emergencyToolCallLimit}`,
+      };
+    }
+    if (estimated > this.emergencyPromptEstimateLimit) {
+      return {
+        shouldStop: true,
+        reason: `modo de emergência ativado: prompt_est=${estimated} excedeu limite ${this.emergencyPromptEstimateLimit}`,
+      };
+    }
+    return { shouldStop: false, reason: '' };
   }
 
   private resolveModel(job: SandboxJob): string {
