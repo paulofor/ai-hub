@@ -697,7 +697,7 @@ export class SandboxJobProcessor implements JobProcessor {
             max_hits: { type: 'integer' },
             context_lines: { type: 'integer' },
           },
-          required: ['query'],
+          required: ['query', 'max_hits', 'context_lines'],
           additionalProperties: false,
         },
         strict: true,
