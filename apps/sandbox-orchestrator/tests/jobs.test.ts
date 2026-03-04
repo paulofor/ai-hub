@@ -423,6 +423,83 @@ test('processes tool calls inside a sandbox', async () => {
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
 
+test('preserves non-enumerable function_call id metadata from model output', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-hidden-fc-id-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          const functionCall: any = {
+            type: 'function_call',
+            call_id: 'call-hidden-fc-id-1',
+            name: 'read_file',
+            arguments: JSON.stringify({ path: 'README.md' }),
+          };
+          Object.defineProperty(functionCall, 'id', {
+            value: 'fc_hidden_1',
+            enumerable: false,
+            configurable: true,
+            writable: true,
+          });
+          return {
+            output: [
+              functionCall,
+              { type: 'message', id: 'msg-hidden-id-1', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+
+        const functionCall = payload.input.find((msg: any) => msg.type === 'function_call');
+        assert.equal(functionCall?.id, 'fc_hidden_1');
+        assert.equal(functionCall?.call_id, 'call-hidden-fc-id-1');
+
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-hidden-id-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-hidden-fc-id',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'read file',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  await processor.process(job);
+  assert.equal(job.status, 'COMPLETED', job.error);
+  assert.equal(job.summary, 'done');
+
+  await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
 test('truncates tool outputs before sending them back to the model', async () => {
   const originalStringLimit = process.env.TOOL_OUTPUT_STRING_LIMIT;
   const originalSerializedLimit = process.env.TOOL_OUTPUT_SERIALIZED_LIMIT;
