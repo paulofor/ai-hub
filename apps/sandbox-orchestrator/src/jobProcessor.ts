@@ -108,6 +108,7 @@ interface RunnerEnvironmentState {
   branch: string;
   permissionProfile: 'read-write-execute';
   essentialTools: string[];
+  supplementalBinPath?: string;
   validatedAt: string;
   repeatedErrorBySignature: Map<string, { errorSignature: string; count: number }>;
 }
@@ -2831,7 +2832,16 @@ ${stderr}`);
     let timedOut = false;
 
     const forceCi = this.shouldForceCiEnv(command);
-    const env = forceCi ? { ...process.env, CI: '1', NODE_ENV: 'test' } : process.env;
+    const state = this.getOrThrowRunnerEnvironmentState(job, repoPath);
+    const baseEnv = { ...process.env };
+    if (state.supplementalBinPath) {
+      const pathEnv = process.platform === 'win32' ? 'Path' : 'PATH';
+      const currentPath = baseEnv[pathEnv] ?? '';
+      baseEnv[pathEnv] = currentPath
+        ? `${state.supplementalBinPath}${path.delimiter}${currentPath}`
+        : state.supplementalBinPath;
+    }
+    const env = forceCi ? { ...baseEnv, CI: '1', NODE_ENV: 'test' } : baseEnv;
     if (forceCi) {
       this.log(job, `run_shell: CI=1 aplicado para evitar modo watch`);
       this.log(job, `run_shell: NODE_ENV=test aplicado para evitar React em modo produção durante testes`);
@@ -2905,11 +2915,22 @@ ${stderr}`);
     await fs.access(realRepoPath, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
 
     const essentialTools = ['bash', 'git', 'rg'];
-    for (const tool of essentialTools) {
+    const hardRequirements = ['bash', 'git'];
+    for (const tool of hardRequirements) {
       const available = await this.isCommandAvailable(tool);
       if (!available) {
         throw new Error(`preflight falhou: tool essencial indisponível (${tool})`);
       }
+    }
+
+    let supplementalBinPath: string | undefined;
+    const rgAvailable = await this.isCommandAvailable('rg');
+    if (!rgAvailable) {
+      supplementalBinPath = await this.ensureRipgrepFallback(realRepoPath);
+      this.log(
+        job,
+        `tool rg não encontrada no runner; fallback compatível foi provisionado em ${supplementalBinPath}`,
+      );
     }
 
     const state: RunnerEnvironmentState = {
@@ -2918,6 +2939,7 @@ ${stderr}`);
       branch: job.branch,
       permissionProfile: 'read-write-execute',
       essentialTools,
+      supplementalBinPath,
       validatedAt: new Date().toISOString(),
       repeatedErrorBySignature: new Map(),
     };
@@ -3028,6 +3050,24 @@ ${stderr}`);
     } catch {
       return false;
     }
+  }
+
+
+  private async ensureRipgrepFallback(repoPath: string): Promise<string> {
+    const binDir = path.join(repoPath, '.ai-hub-bin');
+    await fs.mkdir(binDir, { recursive: true });
+    const rgPath = path.join(binDir, 'rg');
+    const shim = `#!/usr/bin/env bash
+set -euo pipefail
+if [ "$#" -eq 0 ]; then
+  echo "usage: rg <pattern> <path>" >&2
+  exit 2
+fi
+grep -R -n -- "$@"
+`;
+    await fs.writeFile(rgPath, shim, { mode: 0o755 });
+    await fs.chmod(rgPath, 0o755).catch(() => undefined);
+    return binDir;
   }
 
   private async runGitCommand(
