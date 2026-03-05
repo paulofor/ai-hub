@@ -1,6 +1,7 @@
 import { exec as execCallback, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -83,6 +84,16 @@ interface InvestigationProgressState {
   blockedObjectives: string[];
 }
 
+interface RunnerEnvironmentState {
+  repoPath: string;
+  validatedCwd: string;
+  branch: string;
+  permissionProfile: 'read-write-execute';
+  essentialTools: string[];
+  validatedAt: string;
+  repeatedErrorBySignature: Map<string, { errorSignature: string; count: number }>;
+}
+
 class JobCancelledError extends Error {
   constructor(message = 'Job cancelado pelo usuário') {
     super(message);
@@ -158,6 +169,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
   private readonly stagnationMaxAttempts: number;
   private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
+  private readonly runnerEnvironmentStates: WeakMap<SandboxJob, RunnerEnvironmentState> = new WeakMap();
 
   constructor(
     apiKey?: string,
@@ -550,6 +562,8 @@ export class SandboxJobProcessor implements JobProcessor {
       this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
       await this.cloneRepository(job, repoPath!, cloneUrl);
       this.ensureNotCancelled(job);
+      await this.runRunnerPreflight(job, repoPath!);
+      this.ensureNotCancelled(job);
       const baseCommit = await this.getHeadCommit(repoPath!);
       if (!this.openai) {
         throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
@@ -774,6 +788,9 @@ export class SandboxJobProcessor implements JobProcessor {
     this.ensureNotCancelled(job);
     job.taskDescription = this.sanitizeTaskDescription(job.taskDescription, job);
 
+    const environmentState = this.getOrThrowRunnerEnvironmentState(job, repoPath);
+    const checklist = this.buildEnvironmentChecklist(environmentState);
+
     const tools = this.buildTools(repoPath);
     const profileInstruction = this.isEconomy(job)
       ? `
@@ -805,6 +822,9 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
             }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+
+Checklist inicial obrigatório de auditoria do runner (ambiente OK):
+${checklist}
 
 Se a tarefa envolver criação ou alteração de migrations Liquibase, consulte docs/database/liquibase-mysql57.md e siga estas regras:
 - Gere arquivos YAML com raiz 'databaseChangeLog' e inclua-os em apps/backend/src/main/resources/db/changelog/changelog-master.yaml quando necessário.
@@ -962,6 +982,19 @@ ${profileInstruction}`,
           });
           continue;
         }
+        const repeatedErrorBlock = this.evaluateRepeatedToolErrorBlock(job, toolSignature, toolCall.name ?? '');
+        if (repeatedErrorBlock) {
+          this.log(job, repeatedErrorBlock.logMessage);
+          this.captureContextFromTool(job, toolCall, repeatedErrorBlock.payload, { blocked: true });
+          const blockOutput = this.prepareToolOutput(repeatedErrorBlock.payload, job);
+          toolMessages.push({
+            id: outputId,
+            call_id: callId,
+            output: blockOutput,
+            type: 'function_call_output',
+          });
+          continue;
+        }
         this.log(
           job,
           `executando tool ${toolCall.name} (callId=${callId}, args=${JSON.stringify(toolCall.arguments)})`,
@@ -980,6 +1013,7 @@ ${profileInstruction}`,
           });
           this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
           this.recordObjectiveAttempt(job, toolSignature, preparedOutput);
+          this.resetRepeatedErrorState(job, toolSignature);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
@@ -994,6 +1028,7 @@ ${profileInstruction}`,
           });
           this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
           this.recordObjectiveAttempt(job, toolSignature, preparedOutput);
+          this.recordRepeatedErrorAttempt(job, toolSignature, message);
         }
       }
 
@@ -2509,7 +2544,7 @@ ${stderr}`);
       throw new Error('command é obrigatório para run_shell');
     }
     const cwdArg = typeof args.cwd === 'string' ? args.cwd : undefined;
-    const cwd = cwdArg ? this.resolvePath(repoPath, cwdArg, job) : repoPath;
+    const cwd = await this.resolveCwdWithAutocorrect(job, repoPath, cwdArg);
     await this.assertDirectoryExists(cwd);
 
     command = command.map((part) => part.trim());
@@ -2615,6 +2650,142 @@ ${stderr}`);
       stdoutTruncated,
       stderrTruncated,
     };
+  }
+
+  private async runRunnerPreflight(job: SandboxJob, repoPath: string): Promise<void> {
+    const resolvedRepoPath = path.resolve(repoPath);
+    const realRepoPath = await fs.realpath(resolvedRepoPath).catch(() => resolvedRepoPath);
+    const repoExists = await this.isGitRepository(realRepoPath);
+    if (!repoExists) {
+      throw new Error(`preflight falhou: repositório git não encontrado em ${realRepoPath}`);
+    }
+
+    await fs.access(realRepoPath, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
+
+    const essentialTools = ['bash', 'git', 'rg'];
+    for (const tool of essentialTools) {
+      const available = await this.isCommandAvailable(tool);
+      if (!available) {
+        throw new Error(`preflight falhou: tool essencial indisponível (${tool})`);
+      }
+    }
+
+    const state: RunnerEnvironmentState = {
+      repoPath: realRepoPath,
+      validatedCwd: realRepoPath,
+      branch: job.branch,
+      permissionProfile: 'read-write-execute',
+      essentialTools,
+      validatedAt: new Date().toISOString(),
+      repeatedErrorBySignature: new Map(),
+    };
+    this.runnerEnvironmentStates.set(job, state);
+    this.log(job, `preflight do runner concluído com sucesso (cwd=${realRepoPath}, branch=${job.branch})`);
+  }
+
+  private getOrThrowRunnerEnvironmentState(job: SandboxJob, repoPath: string): RunnerEnvironmentState {
+    const state = this.runnerEnvironmentStates.get(job);
+    if (!state) {
+      throw new Error('estado de ambiente do runner ausente; execute o preflight antes do loop');
+    }
+    if (state.repoPath !== path.resolve(repoPath) && state.repoPath !== repoPath) {
+      throw new Error('estado de ambiente inválido para o repositório atual');
+    }
+    return state;
+  }
+
+  private buildEnvironmentChecklist(state: RunnerEnvironmentState): string {
+    return [
+      '- [x] cwd real validado',
+      `- [x] repositório git acessível em ${state.validatedCwd}`,
+      `- [x] branch validada: ${state.branch}`,
+      `- [x] permissões: ${state.permissionProfile}`,
+      `- [x] tools essenciais: ${state.essentialTools.join(', ')}`,
+      `- [x] estado validado em: ${state.validatedAt}`,
+    ].join('\n');
+  }
+
+  private async resolveCwdWithAutocorrect(job: SandboxJob, repoPath: string, cwdArg?: string): Promise<string> {
+    const state = this.getOrThrowRunnerEnvironmentState(job, repoPath);
+    if (!cwdArg) {
+      return state.validatedCwd;
+    }
+    try {
+      const resolved = this.resolvePath(repoPath, cwdArg, job);
+      await this.assertDirectoryExists(resolved);
+      return resolved;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.log(
+        job,
+        `cwd inválido detectado (${cwdArg}); aplicando autocorreção imediata para ${state.validatedCwd}. Motivo: ${reason}`,
+      );
+      return state.validatedCwd;
+    }
+  }
+
+  private evaluateRepeatedToolErrorBlock(
+    job: SandboxJob,
+    toolSignature: string,
+    toolName: string,
+  ): EcoTwoLoopBlockResult | undefined {
+    const state = this.runnerEnvironmentStates.get(job);
+    const repeated = state?.repeatedErrorBySignature.get(toolSignature);
+    if (!repeated || repeated.count < 2) {
+      return undefined;
+    }
+    return {
+      payload: {
+        error:
+          'Runner bloqueou retry cego: mesma assinatura de erro repetida. Altere a estratégia antes de tentar novamente.',
+        tool: toolName || 'desconhecida',
+        attempts: repeated.count,
+      },
+      logMessage: `retry cego bloqueado para ${toolName || 'tool'} após ${repeated.count} erros idênticos`,
+    };
+  }
+
+  private recordRepeatedErrorAttempt(job: SandboxJob, toolSignature: string, message: string): void {
+    const state = this.runnerEnvironmentStates.get(job);
+    if (!state) {
+      return;
+    }
+    const normalized = this.normalizeErrorSignature(message);
+    const previous = state.repeatedErrorBySignature.get(toolSignature);
+    if (!previous || previous.errorSignature !== normalized) {
+      state.repeatedErrorBySignature.set(toolSignature, { errorSignature: normalized, count: 1 });
+      return;
+    }
+    state.repeatedErrorBySignature.set(toolSignature, {
+      errorSignature: normalized,
+      count: previous.count + 1,
+    });
+  }
+
+  private resetRepeatedErrorState(job: SandboxJob, toolSignature: string): void {
+    this.runnerEnvironmentStates.get(job)?.repeatedErrorBySignature.delete(toolSignature);
+  }
+
+  private normalizeErrorSignature(message: string): string {
+    return message
+      .toLowerCase()
+      .replace(/\d+/g, '#')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private async isCommandAvailable(command: string): Promise<boolean> {
+    try {
+      const { shell, args } = this.getShellCommand(`command -v ${command}`);
+      const result = await new Promise<number>((resolve, reject) => {
+        const child = spawn(shell, args);
+        child.on('error', reject);
+        child.on('close', (code) => resolve(code ?? 1));
+      });
+      return result === 0;
+    } catch {
+      return false;
+    }
   }
 
   private async runGitCommand(
