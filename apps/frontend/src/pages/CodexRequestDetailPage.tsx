@@ -424,7 +424,7 @@ export default function CodexRequestDetailPage() {
                   <li>Dispara compactações automáticas quando o total_usage_tokens ultrapassa o limite configurado.</li>
                   <li>Executa uma compactação preventiva antes de cada turno e após trocas para modelos com janela menor.</li>
                   <li>Alterna entre compactação local e remota conforme o provedor suportado.</li>
-                  <li>Mantém no máximo 20 000 tokens de mensagens de usuário, truncando e registrando excedentes.</li>
+                  <li>Mantém no máximo 35 000 tokens de mensagens de usuário, truncando e registrando excedentes.</li>
                   <li>Poda chamadas de função/tool mais recentes antes de reenviar o histórico resumido.</li>
                   <li>Trunca outputs de ferramentas antes de devolvê-los ao modelo para evitar desperdício.</li>
                 </ul>

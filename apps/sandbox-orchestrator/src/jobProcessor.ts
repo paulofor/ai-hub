@@ -399,7 +399,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     const ecoTwoUserLimitRaw = this.parsePositiveInteger(
       process.env.ECO2_USER_MESSAGE_TOKEN_LIMIT,
-      20_000,
+      35_000,
     );
     this.ecoTwoUserMessageTokenLimit = Math.min(ecoTwoUserLimitRaw, 50_000);
 
@@ -465,7 +465,7 @@ export class SandboxJobProcessor implements JobProcessor {
     );
     const ecoThreeUserLimitRaw = this.parsePositiveInteger(
       process.env.ECO3_USER_MESSAGE_TOKEN_LIMIT,
-      10_000,
+      18_000,
     );
     this.ecoThreeUserMessageTokenLimit = Math.min(ecoThreeUserLimitRaw, 30_000);
     const ecoThreeToolOutputLimitRaw = this.parsePositiveInteger(
@@ -502,20 +502,20 @@ export class SandboxJobProcessor implements JobProcessor {
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
-    this.contextRecentMessageLimit = Math.max(4, this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_LIMIT, 8));
-    this.contextSummaryLineLimit = Math.max(20, this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_LINE_LIMIT, 50));
-    this.contextWorkingSetLimit = Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_LIMIT, 6));
+    this.contextRecentMessageLimit = Math.max(4, this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_LIMIT, 14));
+    this.contextSummaryLineLimit = Math.max(20, this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_LINE_LIMIT, 90));
+    this.contextWorkingSetLimit = Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_LIMIT, 10));
     this.contextWorkingSetItemCharLimit = this.parsePositiveInteger(
       process.env.CONTEXT_WORKING_SET_ITEM_CHAR_LIMIT,
       1_200,
     );
     this.contextPromptGcTokenThreshold = this.parsePositiveInteger(
       process.env.CONTEXT_PROMPT_GC_TOKEN_THRESHOLD,
-      24_000,
+      40_000,
     );
     const defaultPromptTarget = Math.max(
       1,
-      Math.min(this.contextPromptGcTokenThreshold - 2_000, 16_000),
+      Math.min(this.contextPromptGcTokenThreshold - 2_000, 30_000),
     );
     const parsedPromptTarget = this.parsePositiveInteger(
       process.env.CONTEXT_PROMPT_GC_TARGET_TOKENS,
@@ -540,7 +540,7 @@ export class SandboxJobProcessor implements JobProcessor {
     );
     this.contextSimilarityHistoryLimit = Math.max(
       3,
-      this.parsePositiveInteger(process.env.CONTEXT_SIMILARITY_HISTORY_LIMIT, 12),
+      this.parsePositiveInteger(process.env.CONTEXT_SIMILARITY_HISTORY_LIMIT, 20),
     );
     this.shellShortTermCacheTtlMs = Math.max(
       1_000,
@@ -887,7 +887,7 @@ Modo econômico inteligente ativo: aproveite estratégias enxutas (reutilizar re
 Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md — limite o carregamento de instruções fixas (project_doc_max_bytes), corte e resuma outputs de tools antes de salvá-los, force compaction sempre que o histórico se aproximar do limite do modelo, trate imagens inline como estimativas fixas e aceite automaticamente o nudge para modelos econômicos ao atingir 90% do orçamento. Registre todas as truncagens para que o time saiba o que ficou de fora.`
           : this.isEcoTwo(job)
             ? `
-Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo e abandone loops detectados: se precisar repetir a mesma tool explique o que mudou, caso contrário o sandbox bloqueará tentativas idênticas para poupar tokens.`
+Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 35k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo e abandone loops detectados: se precisar repetir a mesma tool explique o que mudou, caso contrário o sandbox bloqueará tentativas idênticas para poupar tokens.`
             : this.isEcoThree(job)
               ? `
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
