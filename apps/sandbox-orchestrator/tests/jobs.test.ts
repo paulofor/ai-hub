@@ -772,7 +772,7 @@ test('processes tool calls inside a sandbox', async () => {
 
 
 
-test('bloqueia hipótese estagnada após N ciclos sem evolução', async () => {
+test('bloqueia LOCALIZAR_CAUSA após N ciclos sem nova evidência', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-stagnation-'));
   execSync('git init', { cwd: tempRepo });
   execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
@@ -836,7 +836,7 @@ test('bloqueia hipótese estagnada após N ciclos sem evolução', async () => {
   try {
     await processor.process(job);
     assert.equal(job.status, 'COMPLETED', job.error);
-    assert.ok(job.logs.some((entry) => entry.includes('bloqueio de hipótese')));
+    assert.ok(job.logs.some((entry) => entry.includes('bloqueio por falta de nova evidência')));
 
     const fifthCall = fakeOpenAI.calls[4];
     const blockedOutput = fifthCall.input
@@ -848,9 +848,9 @@ test('bloqueia hipótese estagnada após N ciclos sem evolução', async () => {
           return {};
         }
       })
-      .find((payload: any) => payload?.error === 'Hipótese estagnada sem evolução.');
+      .find((payload: any) => payload?.error === 'LOCALIZAR_CAUSA sem nova evidência.');
     assert.ok(blockedOutput, 'esperava function_call_output com bloqueio');
-    assert.match(String(blockedOutput.requiredAction), /nova hipótese|diagnóstico parcial/i);
+    assert.match(String(blockedOutput.requiredAction), /nova hipótese|diagnóstico/i);
   } finally {
     if (originalAttempts === undefined) {
       delete process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;

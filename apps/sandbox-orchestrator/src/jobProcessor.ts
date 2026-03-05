@@ -100,6 +100,8 @@ interface InvestigationProgressState {
   completedStages: InvestigationStage[];
   objectiveAttempts: Map<string, ObjectiveAttemptState>;
   blockedObjectives: string[];
+  localizarCausaNoEvidenceCycles: number;
+  localizarCausaLastEvidenceHash?: string;
 }
 
 interface RunnerEnvironmentState {
@@ -874,7 +876,7 @@ Se a tarefa envolver criação ou alteração de migrations Liquibase, consulte 
 - Use os exemplos existentes em db/changelog/changeset-001-create-users.yaml como referência para formatação, nomenclatura e estruturas adicionais.
 
 Siga obrigatoriamente as etapas fixas de progresso da investigação, nesta ordem: reproduzir -> localizar causa -> aplicar correção -> validar -> encerrar.
-Regra obrigatória de estagnação de hipótese: se a mesma hipótese não evoluir após N iterações, registre o bloqueio e então escolha uma nova hipótese com próximo comando diferente ou encerre com diagnóstico parcial + próximos passos.
+Regra obrigatória de estagnação em LOCALIZAR_CAUSA: se ficar N ciclos sem nova evidência, registre o bloqueio e então escolha uma nova hipótese com próximo comando diferente ou encerre com diagnóstico + próximos passos.
 ${profileInstruction}`,
           },
         ],
@@ -1056,6 +1058,7 @@ ${profileInstruction}`,
           });
           this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
           this.recordObjectiveAttempt(job, toolSignature, preparedOutput);
+          this.recordLocalizarCausaEvidence(job, preparedOutput);
           this.resetRepeatedErrorState(job, toolSignature);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -1071,6 +1074,7 @@ ${profileInstruction}`,
           });
           this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
           this.recordObjectiveAttempt(job, toolSignature, preparedOutput);
+          this.recordLocalizarCausaEvidence(job, preparedOutput);
           this.recordRepeatedErrorAttempt(job, toolSignature, message);
         }
       }
@@ -1443,6 +1447,7 @@ ${profileInstruction}`,
         completedStages: [],
         objectiveAttempts: new Map(),
         blockedObjectives: [],
+        localizarCausaNoEvidenceCycles: 0,
       };
       this.investigationStates.set(job, state);
       this.log(job, `progresso inicial da investigação: etapa ${state.stage}`);
@@ -1478,6 +1483,8 @@ ${profileInstruction}`,
     this.appendSummaryLine(job, `Etapa atual da investigação: ${nextStage}. Motivo: ${reason}.`);
     this.log(job, `progresso da investigação atualizado para ${nextStage} (${reason})`);
     state.objectiveAttempts.clear();
+    state.localizarCausaNoEvidenceCycles = 0;
+    state.localizarCausaLastEvidenceHash = undefined;
   }
 
   private buildObjectiveKey(stage: InvestigationStage, signature: string): string {
@@ -1490,6 +1497,23 @@ ${profileInstruction}`,
     toolName: string,
   ): EcoTwoLoopBlockResult | undefined {
     const state = this.getInvestigationState(job);
+    if (state.stage === 'LOCALIZAR_CAUSA' && state.localizarCausaNoEvidenceCycles >= this.stagnationMaxAttempts) {
+      const logMessage = `bloqueio por falta de nova evidência: etapa LOCALIZAR_CAUSA sem evolução após ${state.localizarCausaNoEvidenceCycles} ciclos.`;
+      this.appendSummaryLine(
+        job,
+        `Bloqueio registrado: etapa LOCALIZAR_CAUSA ficou ${state.localizarCausaNoEvidenceCycles} ciclos sem nova evidência. Escolha nova hipótese ou encerre com diagnóstico e próximos passos.`,
+      );
+      return {
+        payload: {
+          error: 'LOCALIZAR_CAUSA sem nova evidência.',
+          stage: state.stage,
+          attempts: state.localizarCausaNoEvidenceCycles,
+          requiredAction:
+            'Etapa LOCALIZAR_CAUSA estagnada: escolha nova hipótese com próximo comando diferente ou encerre com diagnóstico e próximos passos.',
+        },
+        logMessage,
+      };
+    }
     const objectiveKey = this.buildObjectiveKey(state.stage, signature);
     const objectiveState = state.objectiveAttempts.get(objectiveKey);
     if (!objectiveState || objectiveState.attempts < this.stagnationMaxAttempts) {
@@ -1530,6 +1554,25 @@ ${profileInstruction}`,
       blocked: false,
       updatedAt: Date.now(),
     });
+  }
+
+  private recordLocalizarCausaEvidence(job: SandboxJob, toolOutput: string): void {
+    const state = this.getInvestigationState(job);
+    if (state.stage !== 'LOCALIZAR_CAUSA') {
+      return;
+    }
+    const outputHash = this.hashString(toolOutput);
+    if (!state.localizarCausaLastEvidenceHash) {
+      state.localizarCausaLastEvidenceHash = outputHash;
+      state.localizarCausaNoEvidenceCycles = 1;
+      return;
+    }
+    if (state.localizarCausaLastEvidenceHash === outputHash) {
+      state.localizarCausaNoEvidenceCycles += 1;
+      return;
+    }
+    state.localizarCausaLastEvidenceHash = outputHash;
+    state.localizarCausaNoEvidenceCycles = 0;
   }
 
   private updateInvestigationStageFromTool(job: SandboxJob, toolCall: ToolCall): void {
