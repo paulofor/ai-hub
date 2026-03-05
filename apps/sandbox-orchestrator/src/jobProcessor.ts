@@ -3224,6 +3224,11 @@ grep -R -n -- "$@"
     return Array.from(new Set(paths));
   }
 
+  private isInternalWorkspacePath(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+    return normalized === '.ai-hub-bin' || normalized.startsWith('.ai-hub-bin/');
+  }
+
   private async collectChangedFiles(repoPath: string, baseCommit?: string, job?: SandboxJob): Promise<string[]> {
     if (!(await this.isGitRepository(repoPath))) {
       return [];
@@ -3232,8 +3237,11 @@ grep -R -n -- "$@"
     const tracked = stdout
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    const untracked = await this.listUntrackedFiles(repoPath, job);
+      .filter((line) => line.length > 0)
+      .filter((line) => !this.isInternalWorkspacePath(line));
+    const untracked = (await this.listUntrackedFiles(repoPath, job)).filter(
+      (file) => !this.isInternalWorkspacePath(file),
+    );
     return this.uniquePaths([...tracked, ...untracked]);
   }
 
@@ -3242,7 +3250,9 @@ grep -R -n -- "$@"
       return '';
     }
     const { stdout: trackedDiff } = await this.runGitCommand(`git diff ${baseCommit ?? 'HEAD'}`, repoPath, job);
-    const untracked = await this.listUntrackedFiles(repoPath, job);
+    const untracked = (await this.listUntrackedFiles(repoPath, job)).filter(
+      (file) => !this.isInternalWorkspacePath(file),
+    );
 
     const untrackedDiffs: string[] = [];
     for (const file of untracked) {
