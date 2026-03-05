@@ -666,7 +666,7 @@ export default function CodexPage() {
                 <span>
                   ECO-3
                   <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Regras extras do docs/estrategia-token/modo-eco3.md: resuma logs longos antes de reenviá-los, respeite o teto de 600 iterações/800k tokens e registre tudo que for descartado para manter rastreabilidade.
+                    Regras extras do docs/estrategia-token/modo-eco3.md: resuma logs longos antes de reenviá-los, respeite o teto de 600 iterações/1600k tokens e registre tudo que for descartado para manter rastreabilidade.
                   </span>
                 </span>
               </label>

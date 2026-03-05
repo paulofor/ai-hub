@@ -495,7 +495,7 @@ export class SandboxJobProcessor implements JobProcessor {
     this.ecoThreeMaxTurns = this.parsePositiveInteger(process.env.ECO3_MAX_TURNS, 600);
     this.ecoThreeMaxTotalTokens = this.parsePositiveInteger(
       process.env.ECO3_MAX_TOTAL_TOKENS,
-      800_000,
+      1_600_000,
     );
 
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
