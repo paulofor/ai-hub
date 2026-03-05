@@ -97,7 +97,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `ECO3_TOOL_OUTPUT_STRING_LIMIT` | Limite por string de saída de tool no ECO-3. | `min(TOOL_OUTPUT_STRING_LIMIT, 3000)` | Forte contenção de verbosidade de tools para jobs longos. | `1000` a `5000` |
 | `ECO3_TOOL_OUTPUT_SERIALIZED_LIMIT` | Limite serializado de saída de tools no ECO-3. | `min(TOOL_OUTPUT_SERIALIZED_LIMIT, 12000)` | Evita crescimento explosivo do contexto por logs extensos. | `6000` a `18000` |
 | `ECO3_HTTP_TOOL_MAX_RESPONSE_CHARS` | Máximo de resposta de `http_get` no ECO-3. | `min(HTTP_TOOL_MAX_RESPONSE_CHARS, 8000)` | Reduz ingestão de HTML/texto em cenários de economia agressiva. | `2000` a `10000` |
-| `ECO3_MAX_TURNS` | Quantidade máxima de turnos do loop no ECO-3. | `120` | Impõe limite duro de execução para evitar sessões intermináveis. | `60` a `200` |
+| `ECO3_MAX_TURNS` | Quantidade máxima de turnos do loop no ECO-3. | `600` | Impõe limite duro de execução para evitar sessões intermináveis. | `120` a `800` |
 | `ECO3_MAX_TOTAL_TOKENS` | Orçamento máximo total de tokens consumidos no ECO-3. | `800000` | Atua como fusível de custo total do job no perfil. | `300000` a `1200000` |
 
 ### Limites de saída de tools (`TOOL_OUTPUT_*`)

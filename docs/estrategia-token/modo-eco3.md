@@ -4,7 +4,7 @@ O **Modo ECO-3** complementa as rotinas de economia do ECO-2 adicionando limites
 
 ## 1. Limites automáticos de iterações e tokens
 
-- O sandbox encerra a execução automaticamente quando o modelo ultrapassa **120 iterações** em um único pedido. Isso evita que loops de ferramenta/reasoning sejam repetidos por horas.
+- O sandbox encerra a execução automaticamente quando o modelo ultrapassa **600 iterações** em um único pedido. Isso evita que loops de ferramenta/reasoning sejam repetidos por horas.
 - Também há um teto rígido de **800 mil tokens pagos**. Ao atingir esse limite, o job é encerrado com uma mensagem clara para que o usuário consolide o resumo manualmente.
 - Ambos os limites podem ser ajustados via variáveis `ECO3_MAX_TURNS` e `ECO3_MAX_TOTAL_TOKENS`, mas os valores padrão são suficientes para conter os picos observados.
 

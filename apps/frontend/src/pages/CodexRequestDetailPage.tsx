@@ -437,7 +437,7 @@ export default function CodexRequestDetailPage() {
                 <p className="font-semibold">Modo ECO-3</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   <li>Converta logs extensos em resumos antes de adicioná-los ao histórico pago.</li>
-                  <li>Respeite o teto automático de 120 iterações por tarefa e interrompa loops repetitivos.</li>
+                  <li>Respeite o teto automático de 600 iterações por tarefa e interrompa loops repetitivos.</li>
                   <li>Acompanhe o contador total de tokens e finalize o fluxo ao se aproximar de 800 mil tokens.</li>
                   <li>Documente sempre que arquivos, comandos ou trechos forem truncados para manter rastreabilidade.</li>
                   <li>Prefira salvar artefatos volumosos em arquivos auxiliares (docs/ ou codex/) e compartilhe apenas os resumos.</li>

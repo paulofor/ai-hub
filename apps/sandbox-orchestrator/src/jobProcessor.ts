@@ -456,7 +456,7 @@ export class SandboxJobProcessor implements JobProcessor {
       ecoThreeHttpMaxCharsRaw,
       this.httpToolMaxResponseChars,
     );
-    this.ecoThreeMaxTurns = this.parsePositiveInteger(process.env.ECO3_MAX_TURNS, 120);
+    this.ecoThreeMaxTurns = this.parsePositiveInteger(process.env.ECO3_MAX_TURNS, 600);
     this.ecoThreeMaxTotalTokens = this.parsePositiveInteger(
       process.env.ECO3_MAX_TOTAL_TOKENS,
       800_000,
