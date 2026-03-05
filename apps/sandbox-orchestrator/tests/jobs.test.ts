@@ -587,6 +587,97 @@ test('processes tool calls inside a sandbox', async () => {
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
 
+
+
+test('bloqueia hipótese estagnada após N ciclos sem evolução', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-stagnation-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'same content');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const originalAttempts = process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;
+  process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS = '3';
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length <= 4) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: `call-stall-${fakeOpenAI.calls.length}`,
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              { type: 'message', id: `msg-stall-${fakeOpenAI.calls.length}`, role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-stall-final',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'diagnóstico parcial', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-stagnation',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'investigue e corrija',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    assert.ok(job.logs.some((entry) => entry.includes('bloqueio de hipótese')));
+
+    const fifthCall = fakeOpenAI.calls[4];
+    const blockedOutput = fifthCall.input
+      .filter((item: any) => item.type === 'function_call_output')
+      .map((item: any) => {
+        try {
+          return JSON.parse(item.output);
+        } catch (_err) {
+          return {};
+        }
+      })
+      .find((payload: any) => payload?.error === 'Hipótese estagnada sem evolução.');
+    assert.ok(blockedOutput, 'esperava function_call_output com bloqueio');
+    assert.match(String(blockedOutput.requiredAction), /nova hipótese|diagnóstico parcial/i);
+  } finally {
+    if (originalAttempts === undefined) {
+      delete process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;
+    } else {
+      process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS = originalAttempts;
+    }
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
 test('truncates tool outputs before sending them back to the model', async () => {
   const originalStringLimit = process.env.TOOL_OUTPUT_STRING_LIMIT;
   const originalSerializedLimit = process.env.TOOL_OUTPUT_SERIALIZED_LIMIT;

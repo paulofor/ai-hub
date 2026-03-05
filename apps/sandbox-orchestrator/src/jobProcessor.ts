@@ -67,6 +67,22 @@ interface LayeredContextState {
   workingSet: ContextWorkingSetItem[];
 }
 
+type InvestigationStage = 'REPRODUZIR' | 'LOCALIZAR_CAUSA' | 'APLICAR_CORRECAO' | 'VALIDAR' | 'ENCERRAR';
+
+interface ObjectiveAttemptState {
+  attempts: number;
+  lastOutputHash?: string;
+  blocked: boolean;
+  updatedAt: number;
+}
+
+interface InvestigationProgressState {
+  stage: InvestigationStage;
+  completedStages: InvestigationStage[];
+  objectiveAttempts: Map<string, ObjectiveAttemptState>;
+  blockedObjectives: string[];
+}
+
 class JobCancelledError extends Error {
   constructor(message = 'Job cancelado pelo usuário') {
     super(message);
@@ -75,6 +91,14 @@ class JobCancelledError extends Error {
 }
 
 export class SandboxJobProcessor implements JobProcessor {
+  private static readonly INVESTIGATION_STAGES: InvestigationStage[] = [
+    'REPRODUZIR',
+    'LOCALIZAR_CAUSA',
+    'APLICAR_CORRECAO',
+    'VALIDAR',
+    'ENCERRAR',
+  ];
+
   private readonly openai?: OpenAI;
   private readonly model: string;
   private readonly fetchImpl?: (input: string | URL, init?: any) => Promise<any>;
@@ -132,6 +156,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly contextPromptGcTokenThreshold: number;
   private readonly contextPromptGcTargetTokens: number;
   private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
+  private readonly stagnationMaxAttempts: number;
+  private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
 
   constructor(
     apiKey?: string,
@@ -349,6 +375,10 @@ export class SandboxJobProcessor implements JobProcessor {
         this.ecoTwoMaxIdenticalToolAttempts * 3,
       ),
     );
+    this.stagnationMaxAttempts = Math.max(
+      2,
+      this.parsePositiveInteger(process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS, 3),
+    );
 
     this.ecoThreeAutoCompactTokenLimit = this.parsePositiveInteger(
       process.env.ECO3_AUTO_COMPACT_TOKEN_LIMIT,
@@ -535,8 +565,10 @@ export class SandboxJobProcessor implements JobProcessor {
       job.patch = await this.generatePatch(repoPath!, baseCommit, job);
       this.ensureNotCancelled(job);
       await this.runConfiguredTestCommand(job, repoPath!);
+      this.advanceInvestigationStage(job, 'VALIDAR', 'testes configurados executados');
       this.ensureNotCancelled(job);
       await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
+      this.advanceInvestigationStage(job, 'ENCERRAR', 'fluxo finalizado após validação');
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
       job.finishedAt = new Date().toISOString();
@@ -780,6 +812,9 @@ Se a tarefa envolver criação ou alteração de migrations Liquibase, consulte 
 - O alvo padrão é MySQL 5.7: evite recursos não suportados (CTE/'WITH', window functions, CHECK constraints) e, quando precisar de workarounds, descreva-os.
 - Prefira splitStatements: true, stripComments: true, ENGINE=InnoDB e valide o SQL mentalmente como se fosse executado via 'liquibase updateSQL' antes de finalizar.
 - Use os exemplos existentes em db/changelog/changeset-001-create-users.yaml como referência para formatação, nomenclatura e estruturas adicionais.
+
+Siga obrigatoriamente as etapas fixas de progresso da investigação, nesta ordem: reproduzir -> localizar causa -> aplicar correção -> validar -> encerrar.
+Regra obrigatória de estagnação de hipótese: se a mesma hipótese não evoluir após N iterações, registre o bloqueio e então escolha uma nova hipótese com próximo comando diferente ou encerre com diagnóstico parcial + próximos passos.
 ${profileInstruction}`,
           },
         ],
@@ -881,6 +916,7 @@ ${profileInstruction}`,
         if (assistantMessage) {
           messages.push(assistantMessage);
         }
+        this.advanceInvestigationStage(job, 'ENCERRAR', 'modelo concluiu sem novas tool calls');
         this.log(job, `resumo final do modelo: "${this.truncate(summary, 240)}"`);
         this.log(job, 'modelo concluiu sem novas tool calls');
         return summary;
@@ -900,6 +936,19 @@ ${profileInstruction}`,
           arguments: parsedArgs ?? {},
         };
         const toolSignature = this.buildToolSignature(toolCall);
+        const stagnationBlock = this.evaluateHypothesisStagnationBlock(job, toolSignature, toolCall.name ?? '');
+        if (stagnationBlock) {
+          this.log(job, stagnationBlock.logMessage);
+          this.captureContextFromTool(job, toolCall, stagnationBlock.payload, { blocked: true });
+          const blockOutput = this.prepareToolOutput(stagnationBlock.payload, job);
+          toolMessages.push({
+            id: outputId,
+            call_id: callId,
+            output: blockOutput,
+            type: 'function_call_output',
+          });
+          continue;
+        }
         const loopBlock = this.evaluateEcoTwoLoopBlock(job, toolSignature, toolCall.name ?? '');
         if (loopBlock) {
           this.log(job, loopBlock.logMessage);
@@ -917,6 +966,7 @@ ${profileInstruction}`,
           job,
           `executando tool ${toolCall.name} (callId=${callId}, args=${JSON.stringify(toolCall.arguments)})`,
         );
+        this.updateInvestigationStageFromTool(job, toolCall);
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
           this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
@@ -929,6 +979,7 @@ ${profileInstruction}`,
             type: 'function_call_output',
           });
           this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
+          this.recordObjectiveAttempt(job, toolSignature, preparedOutput);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
@@ -942,6 +993,7 @@ ${profileInstruction}`,
             type: 'function_call_output',
           });
           this.recordEcoTwoLoopAttempt(job, toolSignature, toolCall.name ?? '', preparedOutput);
+          this.recordObjectiveAttempt(job, toolSignature, preparedOutput);
         }
       }
 
@@ -1227,6 +1279,7 @@ ${profileInstruction}`,
       job.model ? `- Modelo: ${job.model}` : undefined,
       job.testCommand ? `- Testes esperados: ${job.testCommand}` : undefined,
       job.taskDescription ? `- Tarefa: ${this.truncate(job.taskDescription, 500)}` : undefined,
+      this.buildInvestigationStatusLine(job),
     ].filter((entry): entry is string => Boolean(entry));
     if (lines.length === 0) {
       return undefined;
@@ -1237,6 +1290,119 @@ ${profileInstruction}`,
       role: 'system',
       content: [{ type: 'input_text', text: lines.join('\n') }],
     } as ResponseItem;
+  }
+
+  private getInvestigationState(job: SandboxJob): InvestigationProgressState {
+    let state = this.investigationStates.get(job);
+    if (!state) {
+      state = {
+        stage: 'REPRODUZIR',
+        completedStages: [],
+        objectiveAttempts: new Map(),
+        blockedObjectives: [],
+      };
+      this.investigationStates.set(job, state);
+      this.log(job, `progresso inicial da investigação: etapa ${state.stage}`);
+    }
+    return state;
+  }
+
+  private buildInvestigationStatusLine(job: SandboxJob): string {
+    const state = this.getInvestigationState(job);
+    const completed = state.completedStages.length
+      ? state.completedStages.join(' -> ')
+      : 'nenhuma';
+    return `- Progresso obrigatório: etapa atual ${state.stage}; concluídas: ${completed}; limite de estagnação por hipótese: ${this.stagnationMaxAttempts}`;
+  }
+
+  private advanceInvestigationStage(job: SandboxJob, nextStage: InvestigationStage, reason: string): void {
+    const state = this.getInvestigationState(job);
+    if (state.stage === nextStage) {
+      return;
+    }
+    const currentIndex = SandboxJobProcessor.INVESTIGATION_STAGES.indexOf(state.stage);
+    const nextIndex = SandboxJobProcessor.INVESTIGATION_STAGES.indexOf(nextStage);
+    if (nextIndex < 0 || currentIndex < 0 || nextIndex <= currentIndex) {
+      return;
+    }
+    const completed = SandboxJobProcessor.INVESTIGATION_STAGES.slice(currentIndex, nextIndex);
+    for (const stage of completed) {
+      if (!state.completedStages.includes(stage)) {
+        state.completedStages.push(stage);
+      }
+    }
+    state.stage = nextStage;
+    this.appendSummaryLine(job, `Etapa atual da investigação: ${nextStage}. Motivo: ${reason}.`);
+    this.log(job, `progresso da investigação atualizado para ${nextStage} (${reason})`);
+    state.objectiveAttempts.clear();
+  }
+
+  private buildObjectiveKey(stage: InvestigationStage, signature: string): string {
+    return `${stage}::${signature}`;
+  }
+
+  private evaluateHypothesisStagnationBlock(
+    job: SandboxJob,
+    signature: string,
+    toolName: string,
+  ): EcoTwoLoopBlockResult | undefined {
+    const state = this.getInvestigationState(job);
+    const objectiveKey = this.buildObjectiveKey(state.stage, signature);
+    const objectiveState = state.objectiveAttempts.get(objectiveKey);
+    if (!objectiveState || objectiveState.attempts < this.stagnationMaxAttempts) {
+      return undefined;
+    }
+    if (objectiveState.blocked) {
+      return undefined;
+    }
+    objectiveState.blocked = true;
+    state.blockedObjectives.push(objectiveKey);
+    const logMessage = `bloqueio de hipótese: objetivo ${objectiveKey} sem evolução após ${objectiveState.attempts} tentativas.`;
+    this.appendSummaryLine(
+      job,
+      `Bloqueio registrado: hipótese '${toolName || 'desconhecida'}' na etapa ${state.stage} ficou sem evolução após ${objectiveState.attempts} ciclos. Escolha nova hipótese ou encerre com diagnóstico parcial e próximos passos.`,
+    );
+    return {
+      payload: {
+        error: 'Hipótese estagnada sem evolução.',
+        stage: state.stage,
+        objective: objectiveKey,
+        attempts: objectiveState.attempts,
+        requiredAction:
+          'Registre o bloqueio e siga uma das opções obrigatórias: (1) nova hipótese com próximo comando diferente; (2) encerrar com diagnóstico parcial e próximos passos.',
+      },
+      logMessage,
+    };
+  }
+
+  private recordObjectiveAttempt(job: SandboxJob, signature: string, toolOutput: string): void {
+    const state = this.getInvestigationState(job);
+    const objectiveKey = this.buildObjectiveKey(state.stage, signature);
+    const outputHash = this.hashString(toolOutput);
+    const previous = state.objectiveAttempts.get(objectiveKey);
+    const attempts = previous && previous.lastOutputHash === outputHash ? previous.attempts + 1 : 1;
+    state.objectiveAttempts.set(objectiveKey, {
+      attempts,
+      lastOutputHash: outputHash,
+      blocked: false,
+      updatedAt: Date.now(),
+    });
+  }
+
+  private updateInvestigationStageFromTool(job: SandboxJob, toolCall: ToolCall): void {
+    const toolName = toolCall.name ?? '';
+    const command = String(toolCall.arguments?.command ?? '').toLowerCase();
+    if (toolName === 'write_file') {
+      this.advanceInvestigationStage(job, 'APLICAR_CORRECAO', 'alteração em arquivo detectada');
+      return;
+    }
+    if (toolName === 'read_file' || toolName === 'db_query' || (toolName === 'run_shell' && command.includes('rg '))) {
+      this.advanceInvestigationStage(job, 'LOCALIZAR_CAUSA', `análise via ${toolName}`);
+      return;
+    }
+    if (toolName === 'run_shell' && /(test|pytest|jest|vitest|mvn test|gradle test|npm test|pnpm test|yarn test)/.test(command)) {
+      this.advanceInvestigationStage(job, 'VALIDAR', 'execução de comando de validação');
+    }
   }
 
   private buildSummaryLayer(job: SandboxJob): ResponseItem | undefined {
