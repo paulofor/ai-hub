@@ -660,7 +660,7 @@ export default function CodexPage() {
                 <span>
                   ECO-2
                   <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Ativa as rotinas do docs/estrategia-token/modo-eco2.md: compactações automáticas, histórico de usuário limitado a 20k tokens e truncamento agressivo de outputs/remotes.
+                    Ativa as rotinas do docs/estrategia-token/modo-eco2.md: compactações automáticas, histórico de usuário limitado a 35k tokens e truncamento agressivo de outputs/remotes.
                   </span>
                 </span>
               </label>

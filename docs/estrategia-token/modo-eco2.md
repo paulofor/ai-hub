@@ -149,11 +149,11 @@ async fn run_auto_compact(
 
 ## 4. Históricos resumidos com limite explícito de tokens
 
-O módulo de compactação mantém apenas 20.000 tokens de mensagens de usuário e trunca a última mensagem caso o orçamento restante seja menor. Isso evita enviar todo o backlog e reduz o custo das próximas chamadas.
+O módulo de compactação mantém apenas 35.000 tokens de mensagens de usuário e trunca a última mensagem caso o orçamento restante seja menor. Isso evita enviar todo o backlog e reduz o custo das próximas chamadas.
 
 Exemplo:
 ```rust
-const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
+const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 35_000;
 ```
 Exemplo:
 ```rust
@@ -184,7 +184,7 @@ fn build_compacted_history_with_limit(
     }
 ```
 
-**Como aplicar:** mantenha o histórico de usuário na faixa dos 20k tokens (ou ajuste) para garantir que apenas o contexto relevante seja enviado a cada reconstrução de prompt.
+**Como aplicar:** mantenha o histórico de usuário na faixa dos 35k tokens (ou ajuste) para garantir que apenas o contexto relevante seja enviado a cada reconstrução de prompt.
 
 ## 5. Poda de chamadas de função antes de compactar remotamente
 

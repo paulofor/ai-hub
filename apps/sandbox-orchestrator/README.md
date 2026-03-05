@@ -79,7 +79,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | --- | --- | --- | --- | --- |
 | `ECO2_AUTO_COMPACT_TOKEN_LIMIT` | Limiar de tokens para auto-compactação no ECO-2. | `1000000` | Define teto de crescimento de contexto antes de forçar redução. | `400000` a `1200000` |
 | `ECO2_HISTORY_TARGET_TOKENS` | Meta de histórico após compactação no ECO-2. | `min(ECO2_AUTO_COMPACT_TOKEN_LIMIT, 800000)` | Controla o “ponto de equilíbrio” entre memória e custo no perfil. | `50%` a `85%` do `ECO2_AUTO_COMPACT_TOKEN_LIMIT` |
-| `ECO2_USER_MESSAGE_TOKEN_LIMIT` | Limite de tokens para mensagem do usuário no ECO-2. | `20000` (teto efetivo: `50000`) | Evita entrada excessiva por turno; valores altos podem aumentar latência e custo por request. | `8000` a `30000` |
+| `ECO2_USER_MESSAGE_TOKEN_LIMIT` | Limite de tokens para mensagem do usuário no ECO-2. | `35000` (teto efetivo: `50000`) | Evita entrada excessiva por turno; valores altos podem aumentar latência e custo por request. | `8000` a `45000` |
 | `ECO2_TOOL_OUTPUT_STRING_LIMIT` | Limite por string de saída de tool no ECO-2. | `min(TOOL_OUTPUT_STRING_LIMIT, 5000)` | Balanceia qualidade de diagnóstico e custo de contexto em loops longos. | `2000` a `7000` |
 | `ECO2_TOOL_OUTPUT_SERIALIZED_LIMIT` | Limite serializado de saída de tools no ECO-2. | `min(TOOL_OUTPUT_SERIALIZED_LIMIT, 18000)` | Mantém payload controlado em iterações repetidas de análise. | `10000` a `30000` |
 | `ECO2_HTTP_TOOL_MAX_RESPONSE_CHARS` | Máximo de resposta de `http_get` no ECO-2. | `min(HTTP_TOOL_MAX_RESPONSE_CHARS, 10000)` | Evita expansão excessiva do prompt com conteúdo HTTP. | `3000` a `15000` |
@@ -93,7 +93,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | --- | --- | --- | --- | --- |
 | `ECO3_AUTO_COMPACT_TOKEN_LIMIT` | Limiar de tokens para auto-compactação no ECO-3. | `600000` | ECO-3 compacta mais cedo que ECO-2 por padrão, priorizando custo previsível. | `250000` a `900000` |
 | `ECO3_HISTORY_TARGET_TOKENS` | Meta de histórico após compactação no ECO-3. | `min(ECO3_AUTO_COMPACT_TOKEN_LIMIT, 450000)` | Define quanto contexto histórico permanece após GC em ECO-3. | `50%` a `85%` do `ECO3_AUTO_COMPACT_TOKEN_LIMIT` |
-| `ECO3_USER_MESSAGE_TOKEN_LIMIT` | Limite de tokens para mensagem do usuário no ECO-3. | `10000` (teto efetivo: `30000`) | Limite menor força prompts mais objetivos e ciclos mais baratos. | `5000` a `20000` |
+| `ECO3_USER_MESSAGE_TOKEN_LIMIT` | Limite de tokens para mensagem do usuário no ECO-3. | `18000` (teto efetivo: `30000`) | Limite menor força prompts mais objetivos e ciclos mais baratos. | `5000` a `20000` |
 | `ECO3_TOOL_OUTPUT_STRING_LIMIT` | Limite por string de saída de tool no ECO-3. | `min(TOOL_OUTPUT_STRING_LIMIT, 3000)` | Forte contenção de verbosidade de tools para jobs longos. | `1000` a `5000` |
 | `ECO3_TOOL_OUTPUT_SERIALIZED_LIMIT` | Limite serializado de saída de tools no ECO-3. | `min(TOOL_OUTPUT_SERIALIZED_LIMIT, 12000)` | Evita crescimento explosivo do contexto por logs extensos. | `6000` a `18000` |
 | `ECO3_HTTP_TOOL_MAX_RESPONSE_CHARS` | Máximo de resposta de `http_get` no ECO-3. | `min(HTTP_TOOL_MAX_RESPONSE_CHARS, 8000)` | Reduz ingestão de HTML/texto em cenários de economia agressiva. | `2000` a `10000` |
