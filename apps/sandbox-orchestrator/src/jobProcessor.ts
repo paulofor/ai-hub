@@ -186,6 +186,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly contextPromptGcTargetTokens: number;
   private readonly contextSummaryCompactionInterval: number;
   private readonly contextSimilarityHistoryLimit: number;
+  private readonly promptCacheRetention?: string;
+  private readonly promptCacheKeyPrefix?: string;
   private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
   private readonly stagnationMaxAttempts: number;
   private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
@@ -503,6 +505,14 @@ export class SandboxJobProcessor implements JobProcessor {
       3,
       this.parsePositiveInteger(process.env.CONTEXT_SIMILARITY_HISTORY_LIMIT, 12),
     );
+    const configuredPromptCacheRetention = process.env.OPENAI_PROMPT_CACHE_RETENTION?.trim();
+    this.promptCacheRetention = configuredPromptCacheRetention && configuredPromptCacheRetention.length > 0
+      ? configuredPromptCacheRetention
+      : '24h';
+    const configuredPromptCacheKeyPrefix = process.env.OPENAI_PROMPT_CACHE_KEY_PREFIX?.trim();
+    this.promptCacheKeyPrefix = configuredPromptCacheKeyPrefix && configuredPromptCacheKeyPrefix.length > 0
+      ? configuredPromptCacheKeyPrefix
+      : undefined;
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -903,11 +913,14 @@ ${profileInstruction}`,
         'OUTBOUND',
         this.formatMessagesForRecording(layeredMessages),
       );
+      const promptCacheKey = this.buildPromptCacheKey(job, model);
       const response = await this.openai!.responses.create({
         model,
         input: layeredMessages,
         tools,
-      });
+        ...(this.promptCacheRetention ? { prompt_cache_retention: this.promptCacheRetention } : {}),
+        ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
+      } as any);
       this.log(
         job,
         `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,
@@ -4096,6 +4109,27 @@ ${stderr}`);
     const truncatedValue = `${value.slice(0, available)}${suffix}`;
 
     return { value: truncatedValue, truncated: true, omitted };
+  }
+
+  private buildPromptCacheKey(job: SandboxJob, model: string): string | undefined {
+    const repo = (job.repoSlug ?? this.extractRepoName(job.repoUrl) ?? 'unknown').toLowerCase();
+    const branch = (job.branch || 'unknown').toLowerCase();
+    const profile = (job.profile ?? 'STANDARD').toUpperCase();
+    const basePrefix = this.promptCacheKeyPrefix ? this.promptCacheKeyPrefix : 'ai-hub';
+    const key = `${basePrefix}:${repo}:${branch}:${profile}:${model}`;
+    return key.slice(0, 200);
+  }
+
+  private extractRepoName(repoUrl: string | undefined): string | undefined {
+    if (!repoUrl) {
+      return undefined;
+    }
+    const normalized = repoUrl.replace(/\/$/, '');
+    const lastSegment = normalized.split('/').pop();
+    if (!lastSegment) {
+      return undefined;
+    }
+    return lastSegment.replace(/\.git$/i, '');
   }
 
   private parsePositiveInteger(raw: string | undefined, defaultValue: number): number {

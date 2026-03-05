@@ -34,6 +34,8 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `SANDBOX_BASE_PORT` | Porta base usada para simular a atribuição incremental de portas | `3000` |
 | `PR_CREATE_RETRY_ATTEMPTS` | Número máximo de tentativas para abrir um PR antes de desistir | `3` |
 | `PR_CREATE_RETRY_DELAY_MS` | Tempo base (ms) aguardado entre tentativas consecutivas de criação de PR | `1500` |
+| `OPENAI_PROMPT_CACHE_RETENTION` | Valor enviado em `prompt_cache_retention` na Responses API para reaproveitar prefixos estáveis do prompt | `24h` |
+| `OPENAI_PROMPT_CACHE_KEY_PREFIX` | Prefixo opcional de `prompt_cache_key` para aumentar hit rate de cache entre jobs semelhantes | `ai-hub` (interno) |
 | `GITHUB_CLONE_TOKEN` | Token utilizado para todas as operações no GitHub (clone, push e criação de PR). Se ausente, o serviço tenta `GITHUB_TOKEN`, `GITHUB_PR_TOKEN` ou um token embutido em `repoUrl`. | *(vazio)* |
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
