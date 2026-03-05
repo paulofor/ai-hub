@@ -1913,6 +1913,208 @@ test('retries pull request creation after transient errors', async () => {
   await fs.rm(bareRepo, { recursive: true, force: true });
   await fs.rm(seedRepo, { recursive: true, force: true });
 });
+
+
+test('inclui checklist de ambiente OK no prompt inicial do runner', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-preflight-checklist-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-checklist',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'ok', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-preflight-checklist',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'noop',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    const firstSystem = fakeOpenAI.calls[0].input.find((item: any) => item.type === 'message' && item.role === 'system');
+    const promptText = firstSystem?.content?.[0]?.text ?? '';
+    assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
+    assert.match(promptText, /tools essenciais: bash, git, rg/i);
+    assert.ok(job.logs.some((entry) => entry.includes('preflight do runner concluído com sucesso')));
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test('autocorrige cwd inválido em run_shell para o diretório validado do repositório', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-cwd-autocorrect-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-cwd-autocorrect',
+                name: 'run_shell',
+                arguments: JSON.stringify({ command: ['pwd'], cwd: '../fora-do-repo' }),
+              },
+              { type: 'message', id: 'msg-cwd-autocorrect', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-cwd-autocorrect-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-cwd-autocorrect',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'teste cwd',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    assert.ok(job.logs.some((entry) => entry.includes('aplicando autocorreção imediata')));
+
+    const toolOutput = fakeOpenAI.calls[1].input.find((item: any) => item.type === 'function_call_output');
+    const parsed = JSON.parse(toolOutput.output);
+    assert.equal(parsed.exitCode, 0);
+    assert.equal(String(parsed.stdout).trim(), path.join(job.sandboxPath!, 'repo'));
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test('bloqueia retry cego após erros idênticos de tool com mesma assinatura', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-error-dedup-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length <= 3) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: `call-repeat-${fakeOpenAI.calls.length}`,
+                name: 'run_shell',
+                arguments: JSON.stringify({ command: ['comando-inexistente'], cwd: '.' }),
+              },
+              { type: 'message', id: `msg-repeat-${fakeOpenAI.calls.length}`, role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-repeat-final',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-error-dedup',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'teste dedup erro',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    const thirdTurnOutputs = fakeOpenAI.calls[3].input.filter((item: any) => item.type === 'function_call_output');
+    const parsed = JSON.parse(thirdTurnOutputs[thirdTurnOutputs.length - 1].output);
+    assert.match(parsed.error, /Runner bloqueou retry cego/i);
+    assert.ok(job.logs.some((entry) => entry.includes('retry cego bloqueado')));
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
 test('db_query executa SELECT e contabiliza chamadas', async () => {
   const processor = new SandboxJobProcessor();
   const job: SandboxJob = {
