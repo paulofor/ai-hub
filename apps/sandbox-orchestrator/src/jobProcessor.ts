@@ -74,9 +74,41 @@ interface LayeredContextState {
     missCount: number;
     redundantAvoided: number;
   };
+  shellCommandCache: Map<string, ShellCommandCacheEntry>;
+  shellMetrics: ShellCommandMetrics;
   firstPatchAtTurn?: number;
   firstPatchLatencyMs?: number;
   turnCounter: number;
+}
+
+interface ShellCommandCacheEntry {
+  key: string;
+  cwd: string;
+  command: string;
+  result: {
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+    timedOut: boolean;
+    stdoutTruncated: boolean;
+    stderrTruncated: boolean;
+  };
+  createdAt: number;
+  window?: FileWindowRequest;
+}
+
+interface FileWindowRequest {
+  file: string;
+  startLine: number;
+  endLine: number;
+}
+
+interface ShellCommandMetrics {
+  totalCommands: number;
+  duplicateCommands: number;
+  uniqueBySignature: Map<string, number>;
+  alertThreshold: number;
 }
 
 interface SimilarityCallSnapshot {
@@ -189,6 +221,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly contextPromptGcTargetTokens: number;
   private readonly contextSummaryCompactionInterval: number;
   private readonly contextSimilarityHistoryLimit: number;
+  private readonly shellShortTermCacheTtlMs: number;
+  private readonly shellDuplicateAlertThreshold: number;
   private readonly promptCacheRetention?: string;
   private readonly promptCacheKeyPrefix?: string;
   private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
@@ -507,6 +541,14 @@ export class SandboxJobProcessor implements JobProcessor {
     this.contextSimilarityHistoryLimit = Math.max(
       3,
       this.parsePositiveInteger(process.env.CONTEXT_SIMILARITY_HISTORY_LIMIT, 12),
+    );
+    this.shellShortTermCacheTtlMs = Math.max(
+      1_000,
+      this.parsePositiveInteger(process.env.RUN_SHELL_SHORT_CACHE_TTL_MS, 10_000),
+    );
+    this.shellDuplicateAlertThreshold = this.parsePercentage(
+      process.env.RUN_SHELL_DUPLICATE_ALERT_THRESHOLD,
+      0.1,
     );
     const configuredPromptCacheRetention = process.env.OPENAI_PROMPT_CACHE_RETENTION?.trim();
     this.promptCacheRetention = configuredPromptCacheRetention && configuredPromptCacheRetention.length > 0
@@ -1315,6 +1357,13 @@ ${profileInstruction}`,
       evidenceCache: new Map(),
       recentToolCalls: [],
       cacheStats: { hitCount: 0, missCount: 0, redundantAvoided: 0 },
+      shellCommandCache: new Map(),
+      shellMetrics: {
+        totalCommands: 0,
+        duplicateCommands: 0,
+        uniqueBySignature: new Map(),
+        alertThreshold: this.shellDuplicateAlertThreshold,
+      },
       turnCounter: 0,
     });
   }
@@ -1329,6 +1378,13 @@ ${profileInstruction}`,
         evidenceCache: new Map(),
         recentToolCalls: [],
         cacheStats: { hitCount: 0, missCount: 0, redundantAvoided: 0 },
+        shellCommandCache: new Map(),
+        shellMetrics: {
+          totalCommands: 0,
+          duplicateCommands: 0,
+          uniqueBySignature: new Map(),
+          alertThreshold: this.shellDuplicateAlertThreshold,
+        },
         turnCounter: 0,
       };
       this.layeredContexts.set(job, state);
@@ -2305,9 +2361,13 @@ ${stderr}`);
     const firstPatchMetric = state.firstPatchLatencyMs !== undefined
       ? `${state.firstPatchLatencyMs}ms (turno=${state.firstPatchAtTurn ?? 'n/d'})`
       : 'n/d';
+    const shellMetrics = state.shellMetrics;
+    const shellRepetitionRate = shellMetrics.totalCommands > 0
+      ? (shellMetrics.duplicateCommands / shellMetrics.totalCommands) * 100
+      : 0;
     this.log(
       job,
-      `KPI contexto: redução de chamadas redundantes=${reductionPercent}% (evitadas=${state.cacheStats.redundantAvoided}/${attempts}); tempo até primeiro patch=${firstPatchMetric}.`,
+      `KPI contexto: redução de chamadas redundantes=${reductionPercent}% (evitadas=${state.cacheStats.redundantAvoided}/${attempts}); tempo até primeiro patch=${firstPatchMetric}; run_shell total=${shellMetrics.totalCommands}, únicos=${shellMetrics.uniqueBySignature.size}, repetição=${shellRepetitionRate.toFixed(1)}%.`,
     );
   }
 
@@ -2825,6 +2885,7 @@ ${stderr}`);
   }
 
   private async handleRunShell(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
+    const now = Date.now();
     let command = Array.isArray(args.command) ? (args.command as string[]) : undefined;
     if (!command || command.length === 0) {
       throw new Error('command é obrigatório para run_shell');
@@ -2853,6 +2914,10 @@ ${stderr}`);
     }
 
     const joined = command.join(' ');
+    const cachedResult = this.tryReuseShortTermShellCache(job, cwd, joined, now);
+    if (cachedResult) {
+      return cachedResult;
+    }
     const timeoutEnv = Number(process.env.RUN_SHELL_TIMEOUT_MS);
     const defaultTimeoutMs = Number.isFinite(timeoutEnv) && timeoutEnv > 0 ? timeoutEnv : 300_000;
     const isMavenCommand = path.basename(command[0]) === 'mvn';
@@ -2936,7 +3001,7 @@ ${stderr}`);
       job.timeoutCount = (job.timeoutCount ?? 0) + 1;
     }
 
-    return {
+    const result = {
       stdout,
       stderr,
       exitCode: exitResult.code,
@@ -2944,6 +3009,195 @@ ${stderr}`);
       timedOut,
       stdoutTruncated,
       stderrTruncated,
+    };
+    this.storeShortTermShellCache(job, cwd, joined, result, now);
+
+    return result;
+  }
+
+
+  private tryReuseShortTermShellCache(
+    job: SandboxJob,
+    cwd: string,
+    command: string,
+    now: number,
+  ):
+    | {
+        stdout: string;
+        stderr: string;
+        exitCode: number | null;
+        signal: NodeJS.Signals | null;
+        timedOut: boolean;
+        stdoutTruncated: boolean;
+        stderrTruncated: boolean;
+      }
+    | undefined {
+    const state = this.getLayeredContextState(job);
+    this.pruneExpiredShellCache(state, now);
+    const commandKey = this.buildShellCommandKey(cwd, command);
+    const existing = state.shellCommandCache.get(commandKey);
+    const trackedCommand = this.trackShellCommandMetric(job, state.shellMetrics, commandKey);
+    const window = this.parseSedFileWindow(command);
+
+    if (existing && now - existing.createdAt <= this.shellShortTermCacheTtlMs) {
+      this.log(job, `run_shell cache hit: reutilizando resultado recente para ${command} (cwd=${cwd})`);
+      if (trackedCommand.isDuplicate) {
+        this.logShellDuplicateAlert(job, state.shellMetrics);
+      }
+      return existing.result;
+    }
+
+    if (window) {
+      const overlapped = this.findOverlappingShellWindow(state, cwd, window, now);
+      if (overlapped) {
+        this.log(
+          job,
+          `run_shell cache hit (janela de arquivo): reutilizando ${command} com base em leitura sobreposta recente`,
+        );
+        if (trackedCommand.isDuplicate) {
+          this.logShellDuplicateAlert(job, state.shellMetrics);
+        }
+        return overlapped.result;
+      }
+    }
+
+    if (trackedCommand.isDuplicate) {
+      this.logShellDuplicateAlert(job, state.shellMetrics);
+    }
+    return undefined;
+  }
+
+  private storeShortTermShellCache(
+    job: SandboxJob,
+    cwd: string,
+    command: string,
+    result: {
+      stdout: string;
+      stderr: string;
+      exitCode: number | null;
+      signal: NodeJS.Signals | null;
+      timedOut: boolean;
+      stdoutTruncated: boolean;
+      stderrTruncated: boolean;
+    },
+    now: number,
+  ): void {
+    if (!this.isIdempotentReadCommand(command)) {
+      return;
+    }
+    const state = this.getLayeredContextState(job);
+    const key = this.buildShellCommandKey(cwd, command);
+    const window = this.parseSedFileWindow(command);
+    state.shellCommandCache.set(key, {
+      key,
+      cwd,
+      command,
+      result,
+      createdAt: now,
+      window,
+    });
+    this.pruneExpiredShellCache(state, now);
+  }
+
+  private pruneExpiredShellCache(state: LayeredContextState, now: number): void {
+    for (const [key, entry] of state.shellCommandCache.entries()) {
+      if (now - entry.createdAt > this.shellShortTermCacheTtlMs) {
+        state.shellCommandCache.delete(key);
+      }
+    }
+  }
+
+  private findOverlappingShellWindow(
+    state: LayeredContextState,
+    cwd: string,
+    requestedWindow: FileWindowRequest,
+    now: number,
+  ): ShellCommandCacheEntry | undefined {
+    for (const entry of state.shellCommandCache.values()) {
+      if (!entry.window || entry.cwd !== cwd) {
+        continue;
+      }
+      if (now - entry.createdAt > this.shellShortTermCacheTtlMs) {
+        continue;
+      }
+      if (entry.window.file !== requestedWindow.file) {
+        continue;
+      }
+      if (entry.result.exitCode !== 0 || entry.result.timedOut) {
+        continue;
+      }
+      const overlapStart = Math.max(entry.window.startLine, requestedWindow.startLine);
+      const overlapEnd = Math.min(entry.window.endLine, requestedWindow.endLine);
+      if (overlapStart <= overlapEnd) {
+        return entry;
+      }
+    }
+    return undefined;
+  }
+
+  private trackShellCommandMetric(
+    job: SandboxJob,
+    metrics: ShellCommandMetrics,
+    signature: string,
+  ): { isDuplicate: boolean; repetitionRate: number } {
+    metrics.totalCommands += 1;
+    const seen = metrics.uniqueBySignature.get(signature) ?? 0;
+    metrics.uniqueBySignature.set(signature, seen + 1);
+    const isDuplicate = seen > 0;
+    if (isDuplicate) {
+      metrics.duplicateCommands += 1;
+    }
+    const repetitionRate = metrics.totalCommands > 0 ? metrics.duplicateCommands / metrics.totalCommands : 0;
+    this.log(
+      job,
+      `run_shell métricas: total=${metrics.totalCommands}, únicos=${metrics.uniqueBySignature.size}, repetição=${(
+        repetitionRate * 100
+      ).toFixed(1)}%`,
+    );
+    return { isDuplicate, repetitionRate };
+  }
+
+  private logShellDuplicateAlert(job: SandboxJob, metrics: ShellCommandMetrics): void {
+    if (metrics.totalCommands <= 0) {
+      return;
+    }
+    const repetitionRate = metrics.duplicateCommands / metrics.totalCommands;
+    if (repetitionRate <= metrics.alertThreshold) {
+      return;
+    }
+    this.log(
+      job,
+      `ALERTA run_shell: taxa de repetição ${(repetitionRate * 100).toFixed(1)}% acima do limite ${(metrics.alertThreshold * 100).toFixed(1)}%.`,
+    );
+  }
+
+  private buildShellCommandKey(cwd: string, command: string): string {
+    return `${cwd}::${command.trim()}`;
+  }
+
+  private isIdempotentReadCommand(command: string): boolean {
+    const trimmed = command.trim();
+    if (!trimmed) {
+      return false;
+    }
+    return /^(sed|cat|rg|ls)(\s|$)/.test(trimmed);
+  }
+
+  private parseSedFileWindow(command: string): FileWindowRequest | undefined {
+    const trimmed = command.trim();
+    const match = trimmed.match(/^sed\s+-n\s+['"]?(\d+),(\d+)p['"]?\s+(.+)$/);
+    if (!match) {
+      return undefined;
+    }
+    const startLine = Number(match[1]);
+    const endLine = Number(match[2]);
+    if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || endLine < startLine) {
+      return undefined;
+    }
+    return {
+      file: match[3].trim(),
+      startLine,
+      endLine,
     };
   }
 
@@ -4228,5 +4482,18 @@ grep -R -n -- "$@"
   private parsePositiveInteger(raw: string | undefined, defaultValue: number): number {
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
+  }
+  private parsePercentage(raw: string | undefined, fallback: number): number {
+    const parsed = typeof raw === 'string' ? Number(raw) : Number.NaN;
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    if (parsed <= 0) {
+      return 0.01;
+    }
+    if (parsed >= 1) {
+      return 1;
+    }
+    return parsed;
   }
 }
