@@ -66,6 +66,24 @@ interface ContextWorkingSetItem {
 interface LayeredContextState {
   summaryLines: string[];
   workingSet: ContextWorkingSetItem[];
+  turnsSinceCompaction: number;
+  evidenceCache: Map<string, unknown>;
+  recentToolCalls: SimilarityCallSnapshot[];
+  cacheStats: {
+    hitCount: number;
+    missCount: number;
+    redundantAvoided: number;
+  };
+  firstPatchAtTurn?: number;
+  firstPatchLatencyMs?: number;
+  turnCounter: number;
+}
+
+interface SimilarityCallSnapshot {
+  signature: string;
+  similarityKey: string;
+  toolName: string;
+  timestamp: number;
 }
 
 type InvestigationStage = 'REPRODUZIR' | 'LOCALIZAR_CAUSA' | 'APLICAR_CORRECAO' | 'VALIDAR' | 'ENCERRAR';
@@ -166,6 +184,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly contextWorkingSetItemCharLimit: number;
   private readonly contextPromptGcTokenThreshold: number;
   private readonly contextPromptGcTargetTokens: number;
+  private readonly contextSummaryCompactionInterval: number;
+  private readonly contextSimilarityHistoryLimit: number;
   private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
   private readonly stagnationMaxAttempts: number;
   private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
@@ -475,6 +495,14 @@ export class SandboxJobProcessor implements JobProcessor {
         Math.floor(this.contextPromptGcTokenThreshold * 0.8),
       );
     }
+    this.contextSummaryCompactionInterval = Math.max(
+      1,
+      this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_COMPACTION_INTERVAL, 4),
+    );
+    this.contextSimilarityHistoryLimit = Math.max(
+      3,
+      this.parsePositiveInteger(process.env.CONTEXT_SIMILARITY_HISTORY_LIMIT, 12),
+    );
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -597,6 +625,7 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(job, `falha ao processar job: ${job.error}`);
       }
     } finally {
+      this.logContextKpis(job);
       if (workspace) {
         this.log(job, `limpando workspace ${workspace}`);
         await this.cleanup(workspace);
@@ -1261,16 +1290,81 @@ ${profileInstruction}`,
   }
 
   private resetLayeredContext(job: SandboxJob): void {
-    this.layeredContexts.set(job, { summaryLines: [], workingSet: [] });
+    this.layeredContexts.set(job, {
+      summaryLines: [],
+      workingSet: [],
+      turnsSinceCompaction: 0,
+      evidenceCache: new Map(),
+      recentToolCalls: [],
+      cacheStats: { hitCount: 0, missCount: 0, redundantAvoided: 0 },
+      turnCounter: 0,
+    });
   }
 
   private getLayeredContextState(job: SandboxJob): LayeredContextState {
     let state = this.layeredContexts.get(job);
     if (!state) {
-      state = { summaryLines: [], workingSet: [] };
+      state = {
+        summaryLines: [],
+        workingSet: [],
+        turnsSinceCompaction: 0,
+        evidenceCache: new Map(),
+        recentToolCalls: [],
+        cacheStats: { hitCount: 0, missCount: 0, redundantAvoided: 0 },
+        turnCounter: 0,
+      };
       this.layeredContexts.set(job, state);
     }
     return state;
+  }
+
+  private registerContextTurn(job: SandboxJob): void {
+    const state = this.getLayeredContextState(job);
+    state.turnCounter += 1;
+    state.turnsSinceCompaction += 1;
+    if (state.turnsSinceCompaction < this.contextSummaryCompactionInterval) {
+      return;
+    }
+    if (state.summaryLines.length <= 1) {
+      state.turnsSinceCompaction = 0;
+      return;
+    }
+    const compacted = this.compactSummaryLines(state.summaryLines);
+    state.summaryLines = compacted;
+    state.turnsSinceCompaction = 0;
+    this.log(job, `contexto: resumo técnico compactado após ${this.contextSummaryCompactionInterval} interações.`);
+  }
+
+  private compactSummaryLines(lines: string[]): string[] {
+    const kept = lines.slice(-Math.max(1, Math.floor(this.contextSummaryLineLimit / 2)));
+    const confirmedFacts: string[] = [];
+    const refutedHypotheses: string[] = [];
+    const pendingItems: string[] = [];
+    for (const line of lines) {
+      const normalized = line.toLowerCase();
+      if (/(erro|falha|bloqueio|refutad|hipótese estagnada)/.test(normalized)) {
+        refutedHypotheses.push(line);
+      } else if (/(pendente|próximo|proxima|validar|todo)/.test(normalized)) {
+        pendingItems.push(line);
+      } else {
+        confirmedFacts.push(line);
+      }
+    }
+    const compacted = [
+      `Resumo técnico compactado (${new Date().toISOString()}):`,
+      `- Fatos confirmados: ${this.joinCompactBucket(confirmedFacts)}`,
+      `- Hipóteses refutadas: ${this.joinCompactBucket(refutedHypotheses)}`,
+      `- Pendências: ${this.joinCompactBucket(pendingItems)}`,
+      ...kept,
+    ];
+    return compacted.slice(-this.contextSummaryLineLimit);
+  }
+
+  private joinCompactBucket(lines: string[]): string {
+    if (!lines.length) {
+      return 'nenhum registro';
+    }
+    return lines.slice(-3).map((entry) => this.truncate(entry, 140)).join(' | ');
   }
 
   private appendSummaryLine(job: SandboxJob, line?: string): void {
@@ -1480,6 +1574,7 @@ ${entry.content}`;
     rootSystemId?: string,
     rootUserId?: string,
   ): ResponseItem[] {
+    this.registerContextTurn(job);
     const layered: ResponseItem[] = [];
     const baseSystem = history.find(
       (item) =>
@@ -1743,6 +1838,23 @@ ${entry.content}`;
     const workingItem = this.buildWorkingSetSnapshot(call, result);
     if (workingItem) {
       this.upsertWorkingSetItem(job, workingItem);
+    }
+    if (call.name === 'write_file') {
+      this.registerFirstPatchMetric(job);
+    }
+  }
+
+  private registerFirstPatchMetric(job: SandboxJob): void {
+    const state = this.getLayeredContextState(job);
+    if (state.firstPatchAtTurn !== undefined) {
+      return;
+    }
+    state.firstPatchAtTurn = state.turnCounter;
+    if (job.startedAt) {
+      const startMs = Date.parse(job.startedAt);
+      if (Number.isFinite(startMs)) {
+        state.firstPatchLatencyMs = Math.max(0, Date.now() - startMs);
+      }
     }
   }
 
@@ -2008,21 +2120,138 @@ ${stderr}`);
 
   private async dispatchTool(call: ToolCall, repoPath: string, job: SandboxJob): Promise<unknown> {
     this.ensureNotCancelled(job);
+    const reuse = this.maybeReuseCachedToolResult(job, call);
+    if (reuse.reused) {
+      if (reuse.logMessage) {
+        this.log(job, reuse.logMessage);
+      }
+      return reuse.payload;
+    }
+    if (reuse.logMessage) {
+      this.log(job, reuse.logMessage);
+    }
+    let result: unknown;
     switch (call.name) {
       case 'run_shell':
-        return this.handleRunShell(call.arguments, repoPath, job);
+        result = await this.handleRunShell(call.arguments, repoPath, job);
+        break;
       case 'read_file':
-        return this.handleReadFile(call.arguments, repoPath);
+        result = await this.handleReadFile(call.arguments, repoPath);
+        break;
       case 'write_file':
-        return this.handleWriteFile(call.arguments, repoPath, job);
+        result = await this.handleWriteFile(call.arguments, repoPath, job);
+        break;
       case 'http_get':
       case 'WebSearch':
-        return this.handleHttpGet(call, job);
+        result = await this.handleHttpGet(call, job);
+        break;
       case 'db_query':
-        return this.handleDbQuery(call.arguments, job);
+        result = await this.handleDbQuery(call.arguments, job);
+        break;
       default:
-        return { error: `Ferramenta desconhecida: ${call.name}` };
+        result = { error: `Ferramenta desconhecida: ${call.name}` };
     }
+    this.storeToolEvidence(job, call, result);
+    return result;
+  }
+
+  private maybeReuseCachedToolResult(
+    job: SandboxJob,
+    call: ToolCall,
+  ): { reused: boolean; payload: unknown; logMessage?: string } {
+    const state = this.getLayeredContextState(job);
+    const evidenceKey = this.buildToolEvidenceKey(call);
+    const similarityKey = this.buildToolSimilarityKey(call);
+    const recentEquivalent = state.recentToolCalls.find((entry) => entry.similarityKey === similarityKey);
+    if (recentEquivalent) {
+      const existing = state.evidenceCache.get(evidenceKey);
+      if (existing !== undefined) {
+        state.cacheStats.hitCount += 1;
+        state.cacheStats.redundantAvoided += 1;
+        this.registerToolCallSnapshot(job, call, evidenceKey, similarityKey);
+        return {
+          reused: true,
+          payload: existing,
+          logMessage: `contexto: reutilizando evidência para ${call.name} (equivalente à chamada recente ${recentEquivalent.signature}).`,
+        };
+      }
+      return {
+        reused: false,
+        payload: undefined,
+        logMessage: `contexto: chamada ${call.name} similar detectada, mas sem evidência em cache; executando novamente.`,
+      };
+    }
+    state.cacheStats.missCount += 1;
+    return { reused: false, payload: undefined };
+  }
+
+  private storeToolEvidence(job: SandboxJob, call: ToolCall, result: unknown): void {
+    const state = this.getLayeredContextState(job);
+    const evidenceKey = this.buildToolEvidenceKey(call);
+    const similarityKey = this.buildToolSimilarityKey(call);
+    state.evidenceCache.set(evidenceKey, result);
+    if (call.name === 'write_file') {
+      const args = (call.arguments ?? {}) as Record<string, unknown>;
+      const pathValue = typeof args.path === 'string' ? args.path : '';
+      if (pathValue) {
+        const readKey = `read_file:${this.hashString(this.safeStringify({ path: pathValue }))}`;
+        state.evidenceCache.delete(readKey);
+      }
+    }
+    this.registerToolCallSnapshot(job, call, evidenceKey, similarityKey);
+  }
+
+  private registerToolCallSnapshot(job: SandboxJob, call: ToolCall, signature: string, similarityKey: string): void {
+    const state = this.getLayeredContextState(job);
+    state.recentToolCalls.push({
+      signature,
+      similarityKey,
+      toolName: call.name,
+      timestamp: Date.now(),
+    });
+    if (state.recentToolCalls.length > this.contextSimilarityHistoryLimit) {
+      state.recentToolCalls.splice(0, state.recentToolCalls.length - this.contextSimilarityHistoryLimit);
+    }
+  }
+
+  private buildToolEvidenceKey(call: ToolCall): string {
+    const normalizedArgs = this.safeStringify(call.arguments ?? {});
+    return `${call.name}:${this.hashString(normalizedArgs)}`;
+  }
+
+  private buildToolSimilarityKey(call: ToolCall): string {
+    const args = (call.arguments ?? {}) as Record<string, unknown>;
+    if (call.name === 'read_file' || call.name === 'write_file') {
+      return `${call.name}:${String(args.path ?? '')}`;
+    }
+    if (call.name === 'run_shell') {
+      return `${call.name}:${String(args.command ?? '')}:${String(args.cwd ?? '')}`;
+    }
+    if (call.name === 'http_get' || call.name === 'WebSearch') {
+      return `${call.name}:${String(args.url ?? '')}`;
+    }
+    if (call.name === 'db_query') {
+      return `${call.name}:${String(args.query ?? '')}`;
+    }
+    return this.buildToolEvidenceKey(call);
+  }
+
+  private logContextKpis(job: SandboxJob): void {
+    const state = this.layeredContexts.get(job);
+    if (!state) {
+      return;
+    }
+    const attempts = state.cacheStats.hitCount + state.cacheStats.missCount;
+    const reductionPercent = attempts > 0
+      ? ((state.cacheStats.redundantAvoided / attempts) * 100).toFixed(1)
+      : '0.0';
+    const firstPatchMetric = state.firstPatchLatencyMs !== undefined
+      ? `${state.firstPatchLatencyMs}ms (turno=${state.firstPatchAtTurn ?? 'n/d'})`
+      : 'n/d';
+    this.log(
+      job,
+      `KPI contexto: redução de chamadas redundantes=${reductionPercent}% (evitadas=${state.cacheStats.redundantAvoided}/${attempts}); tempo até primeiro patch=${firstPatchMetric}.`,
+    );
   }
 
   private normalizeDatabaseConfig(config?: SandboxDatabaseConfig): SandboxDatabaseConfig | undefined {
