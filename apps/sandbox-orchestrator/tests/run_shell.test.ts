@@ -187,3 +187,60 @@ test('incrementa timeoutCount quando run_shell atinge timeout', async () => {
     await fs.rm(repoPath, { recursive: true, force: true });
   }
 });
+
+
+test('reutiliza cache de curto prazo para comandos idempotentes por cwd+comando', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-short-cache-'));
+  const filePath = path.join(repoPath, 'arquivo.txt');
+  await fs.writeFile(filePath, 'linha original\n');
+
+  const processor = new SandboxJobProcessor();
+  const job = createJob();
+
+  const first = await (processor as any).handleRunShell(
+    { command: ['cat', 'arquivo.txt'], cwd: '.' },
+    repoPath,
+    job,
+  );
+  await fs.writeFile(filePath, 'linha alterada\n');
+  const second = await (processor as any).handleRunShell(
+    { command: ['cat', 'arquivo.txt'], cwd: '.' },
+    repoPath,
+    job,
+  );
+
+  assert.equal(first.exitCode, 0);
+  assert.equal(second.exitCode, 0);
+  assert.equal(second.stdout, first.stdout, 'resultado deveria vir do cache de curto prazo');
+  const cacheHitLog = job.logs.find((entry) => entry.includes('run_shell cache hit: reutilizando resultado recente'));
+  assert.ok(cacheHitLog, 'log de cache hit para run_shell não encontrado');
+
+  await fs.rm(repoPath, { recursive: true, force: true });
+});
+
+test('reutiliza janela de arquivo para sed -n em faixas sobrepostas', async () => {
+  const repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-sed-window-'));
+  const lines = Array.from({ length: 40 }, (_, idx) => `linha-${idx + 1}`);
+  await fs.writeFile(path.join(repoPath, 'janela.txt'), `${lines.join('\n')}\n`);
+
+  const processor = new SandboxJobProcessor();
+  const job = createJob();
+
+  const first = await (processor as any).handleRunShell(
+    { command: ['sed', '-n', '10,20p', 'janela.txt'], cwd: '.' },
+    repoPath,
+    job,
+  );
+  const second = await (processor as any).handleRunShell(
+    { command: ['sed', '-n', '15,25p', 'janela.txt'], cwd: '.' },
+    repoPath,
+    job,
+  );
+
+  assert.equal(first.exitCode, 0);
+  assert.equal(second.stdout, first.stdout, 'janela sobreposta deve reutilizar resultado recente');
+  const windowLog = job.logs.find((entry) => entry.includes('run_shell cache hit (janela de arquivo)'));
+  assert.ok(windowLog, 'log de cache hit por janela de arquivo não encontrado');
+
+  await fs.rm(repoPath, { recursive: true, force: true });
+});
