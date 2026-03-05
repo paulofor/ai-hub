@@ -13,6 +13,7 @@ import {
   ResponseItem,
   ResponseOutputMessage,
   ResponseOutputText,
+  ResponseReasoningItem,
 } from 'openai/resources/responses/responses.js';
 
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
@@ -51,6 +52,19 @@ interface EcoTwoLoopState {
 interface EcoTwoLoopBlockResult {
   payload: Record<string, unknown>;
   logMessage: string;
+}
+
+interface ContextWorkingSetItem {
+  key: string;
+  title: string;
+  content: string;
+  source: string;
+  createdAt: number;
+}
+
+interface LayeredContextState {
+  summaryLines: string[];
+  workingSet: ContextWorkingSetItem[];
 }
 
 class JobCancelledError extends Error {
@@ -111,6 +125,13 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly dbPools: Map<string, Pool> = new Map();
   private readonly prCreateMaxAttempts: number;
   private readonly prCreateRetryDelayMs: number;
+  private readonly contextRecentMessageLimit: number;
+  private readonly contextSummaryLineLimit: number;
+  private readonly contextWorkingSetLimit: number;
+  private readonly contextWorkingSetItemCharLimit: number;
+  private readonly contextPromptGcTokenThreshold: number;
+  private readonly contextPromptGcTargetTokens: number;
+  private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
 
   constructor(
     apiKey?: string,
@@ -380,6 +401,38 @@ export class SandboxJobProcessor implements JobProcessor {
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
+    this.contextRecentMessageLimit = Math.max(4, this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_LIMIT, 8));
+    this.contextSummaryLineLimit = Math.max(20, this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_LINE_LIMIT, 50));
+    this.contextWorkingSetLimit = Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_LIMIT, 6));
+    this.contextWorkingSetItemCharLimit = this.parsePositiveInteger(
+      process.env.CONTEXT_WORKING_SET_ITEM_CHAR_LIMIT,
+      1_200,
+    );
+    this.contextPromptGcTokenThreshold = this.parsePositiveInteger(
+      process.env.CONTEXT_PROMPT_GC_TOKEN_THRESHOLD,
+      24_000,
+    );
+    const defaultPromptTarget = Math.max(
+      1,
+      Math.min(this.contextPromptGcTokenThreshold - 2_000, 16_000),
+    );
+    const parsedPromptTarget = this.parsePositiveInteger(
+      process.env.CONTEXT_PROMPT_GC_TARGET_TOKENS,
+      defaultPromptTarget,
+    );
+    this.contextPromptGcTargetTokens = Math.min(
+      Math.max(1, this.contextPromptGcTokenThreshold - 1_000),
+      parsedPromptTarget,
+    );
+    if (
+      this.contextPromptGcTargetTokens <= 0
+      || this.contextPromptGcTargetTokens >= this.contextPromptGcTokenThreshold
+    ) {
+      this.contextPromptGcTargetTokens = Math.max(
+        1,
+        Math.floor(this.contextPromptGcTokenThreshold * 0.8),
+      );
+    }
     this.dbConfigFromEnv = this.loadDatabaseConfig();
   }
 
@@ -739,6 +792,12 @@ ${profileInstruction}`,
       },
     ];
 
+    this.resetLayeredContext(job);
+    const rootSystemEntry = messages[0] as { id?: string } | undefined;
+    const rootUserEntry = messages[1] as { id?: string } | undefined;
+    const rootSystemId = typeof rootSystemEntry?.id === 'string' ? rootSystemEntry.id : undefined;
+    const rootUserId = typeof rootUserEntry?.id === 'string' ? rootUserEntry.id : undefined;
+
     let summary = '';
     let turnCount = 0;
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
@@ -748,16 +807,21 @@ ${profileInstruction}`,
       turnCount++;
       this.enforceEcoThreeGuardrails(job, turnCount);
       this.applyEcoPreSamplingCompaction(job, messages);
-      this.log(job, `enviando mensagens para o modelo (mensagens=${messages.length}, tools=${tools.length})`);
+      this.runPromptGarbageCollector(job, messages, rootSystemId, rootUserId);
+      const layeredMessages = this.buildLayeredContext(job, messages, rootSystemId, rootUserId);
+      this.log(
+        job,
+        `enviando mensagens para o modelo (historico=${messages.length}, prompt=${layeredMessages.length}, tools=${tools.length})`,
+      );
       this.ensureNotCancelled(job);
       const outboundInteraction = this.recordInteraction(
         job,
         'OUTBOUND',
-        this.formatMessagesForRecording(messages),
+        this.formatMessagesForRecording(layeredMessages),
       );
       const response = await this.openai!.responses.create({
         model,
-        input: messages,
+        input: layeredMessages,
         tools,
       });
       this.log(
@@ -811,6 +875,9 @@ ${profileInstruction}`,
       const text = this.extractOutputText(assistantMessage?.content);
       if (toolCalls.length === 0) {
         summary = text ?? summary;
+        if (text) {
+          this.appendSummaryLine(job, `Resumo do modelo: ${this.truncate(text, 240)}`);
+        }
         if (assistantMessage) {
           messages.push(assistantMessage);
         }
@@ -836,6 +903,7 @@ ${profileInstruction}`,
         const loopBlock = this.evaluateEcoTwoLoopBlock(job, toolSignature, toolCall.name ?? '');
         if (loopBlock) {
           this.log(job, loopBlock.logMessage);
+          this.captureContextFromTool(job, toolCall, loopBlock.payload, { blocked: true });
           const blockOutput = this.prepareToolOutput(loopBlock.payload, job);
           toolMessages.push({
             id: outputId,
@@ -852,6 +920,7 @@ ${profileInstruction}`,
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
           this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
+          this.captureContextFromTool(job, toolCall, result);
           const preparedOutput = this.prepareToolOutput(result, job);
           toolMessages.push({
             id: outputId,
@@ -864,6 +933,7 @@ ${profileInstruction}`,
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
           const errorPayload = { error: message };
+          this.captureContextFromTool(job, toolCall, errorPayload, { error: true });
           const preparedOutput = this.prepareToolOutput(errorPayload, job);
           toolMessages.push({
             id: outputId,
@@ -915,6 +985,13 @@ ${profileInstruction}`,
         return `[tool_result:${callId}]\n${rendered}`;
       }
       default: {
+        if (this.isReasoningItem(item)) {
+          const reasoning = item as unknown as ResponseReasoningItem;
+          const reasoningText = Array.isArray(reasoning.summary)
+            ? reasoning.summary.map((entry) => entry.text).join('\n')
+            : '';
+          return `[reasoning]\n${reasoningText}`;
+        }
         return `[${item.type}] ${this.safeStringify(item)}`;
       }
     }
@@ -1094,6 +1171,519 @@ ${profileInstruction}`,
     };
     job.interactions.push(interaction);
     return interaction;
+  }
+
+  private resetLayeredContext(job: SandboxJob): void {
+    this.layeredContexts.set(job, { summaryLines: [], workingSet: [] });
+  }
+
+  private getLayeredContextState(job: SandboxJob): LayeredContextState {
+    let state = this.layeredContexts.get(job);
+    if (!state) {
+      state = { summaryLines: [], workingSet: [] };
+      this.layeredContexts.set(job, state);
+    }
+    return state;
+  }
+
+  private appendSummaryLine(job: SandboxJob, line?: string): void {
+    if (!line) {
+      return;
+    }
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+    const state = this.getLayeredContextState(job);
+    state.summaryLines.push(trimmed);
+    while (state.summaryLines.length > this.contextSummaryLineLimit) {
+      state.summaryLines.shift();
+    }
+  }
+
+  private upsertWorkingSetItem(job: SandboxJob, item: ContextWorkingSetItem): void {
+    if (!item || !item.key) {
+      return;
+    }
+    const state = this.getLayeredContextState(job);
+    const existingIndex = state.workingSet.findIndex((entry) => entry.key === item.key);
+    const cappedContent = this.truncate(item.content ?? '', this.contextWorkingSetItemCharLimit);
+    if (existingIndex >= 0) {
+      state.workingSet[existingIndex] = { ...item, content: cappedContent };
+    } else {
+      state.workingSet.push({ ...item, content: cappedContent });
+    }
+    while (state.workingSet.length > this.contextWorkingSetLimit) {
+      state.workingSet.shift();
+    }
+  }
+
+  private buildObjectiveLayer(job: SandboxJob): ResponseItem | undefined {
+    const lines = [
+      'Objetivo atual (resumo fixo):',
+      `- Job: ${job.jobId}`,
+      `- Branch: ${job.branch}`,
+      job.profile ? `- Perfil: ${job.profile}` : undefined,
+      job.model ? `- Modelo: ${job.model}` : undefined,
+      job.testCommand ? `- Testes esperados: ${job.testCommand}` : undefined,
+      job.taskDescription ? `- Tarefa: ${this.truncate(job.taskDescription, 500)}` : undefined,
+    ].filter((entry): entry is string => Boolean(entry));
+    if (lines.length === 0) {
+      return undefined;
+    }
+    return {
+      type: 'message',
+      id: this.sanitizeId('msg_objective'),
+      role: 'system',
+      content: [{ type: 'input_text', text: lines.join('\n') }],
+    } as ResponseItem;
+  }
+
+  private buildSummaryLayer(job: SandboxJob): ResponseItem | undefined {
+    const state = this.getLayeredContextState(job);
+    if (!state.summaryLines.length) {
+      return undefined;
+    }
+    const header = `Resumo rolante (máx. ${this.contextSummaryLineLimit} linhas, mais recente por último):`;
+    const text = [header, ...state.summaryLines].join('\n');
+    return {
+      type: 'message',
+      id: this.sanitizeId('msg_summary'),
+      role: 'system',
+      content: [{ type: 'input_text', text }],
+    } as ResponseItem;
+  }
+
+  private buildWorkingSetLayer(job: SandboxJob): ResponseItem | undefined {
+    const state = this.getLayeredContextState(job);
+    if (!state.workingSet.length) {
+      return undefined;
+    }
+    const entries = state.workingSet.map((entry, index) => {
+      const title = entry.title ?? `Item ${index + 1}`;
+      return `${index + 1}. ${title}
+${entry.content}`;
+    });
+    const text = [`Working set ativo (máx. ${this.contextWorkingSetLimit} itens):`, ...entries].join('\n\n');
+    return {
+      type: 'message',
+      id: this.sanitizeId('msg_working_set'),
+      role: 'system',
+      content: [{ type: 'input_text', text }],
+    } as ResponseItem;
+  }
+
+  private buildLayeredContext(
+    job: SandboxJob,
+    history: ResponseItem[],
+    rootSystemId?: string,
+    rootUserId?: string,
+  ): ResponseItem[] {
+    const layered: ResponseItem[] = [];
+    const baseSystem = history.find(
+      (item) =>
+        item?.type === 'message'
+        && (((item as ResponseOutputMessage).role ?? '').toString().toLowerCase() === 'system'),
+    );
+    if (baseSystem) {
+      layered.push(baseSystem);
+    }
+    const objective = this.buildObjectiveLayer(job);
+    if (objective) {
+      layered.push(objective);
+    }
+    const summary = this.buildSummaryLayer(job);
+    if (summary) {
+      layered.push(summary);
+    }
+    const workingSet = this.buildWorkingSetLayer(job);
+    if (workingSet) {
+      layered.push(workingSet);
+    }
+    const recent = this.collectRecentHistory(history, rootSystemId, rootUserId);
+    layered.push(...recent);
+    return layered;
+  }
+
+  private collectRecentHistory(
+    history: ResponseItem[],
+    rootSystemId?: string,
+    rootUserId?: string,
+  ): ResponseItem[] {
+    if (!Array.isArray(history) || history.length === 0) {
+      return [];
+    }
+    const selectedIndices = new Set<number>();
+    for (let index = history.length - 1; index >= 0 && selectedIndices.size < this.contextRecentMessageLimit; index--) {
+      if (this.isProtectedHistoryItem(history[index], rootSystemId, rootUserId)) {
+        continue;
+      }
+      selectedIndices.add(index);
+    }
+
+    const addIndex = (idx: number) => {
+      if (idx <= 0 || idx >= history.length) {
+        return;
+      }
+      if (this.isProtectedHistoryItem(history[idx], rootSystemId, rootUserId)) {
+        return;
+      }
+      selectedIndices.add(idx);
+    };
+
+    for (const index of Array.from(selectedIndices)) {
+      const item = history[index];
+      if (!item) {
+        continue;
+      }
+      if (item.type === 'function_call_output') {
+        const output = item as ResponseFunctionToolCallOutputItem;
+        const callIndex = this.findFunctionCallIndex(history, output.call_id);
+        if (callIndex >= 0) {
+          addIndex(callIndex);
+          this.includeAdjacentReasoning(history, callIndex, selectedIndices, rootSystemId, rootUserId);
+        }
+      } else if (item.type === 'function_call') {
+        this.includeAdjacentReasoning(history, index, selectedIndices, rootSystemId, rootUserId);
+      } else if (this.isReasoningItem(item)) {
+        if (index + 1 < history.length && history[index + 1]?.type === 'function_call') {
+          addIndex(index + 1);
+        }
+      }
+    }
+
+    return Array.from(selectedIndices)
+      .sort((a, b) => a - b)
+      .map((idx) => history[idx])
+      .filter(Boolean);
+  }
+
+  private includeAdjacentReasoning(
+    history: ResponseItem[],
+    callIndex: number,
+    selectedIndices: Set<number>,
+    rootSystemId?: string,
+    rootUserId?: string,
+  ): void {
+    let pointer = callIndex - 1;
+    while (pointer >= 0 && this.isReasoningItem(history[pointer])) {
+      if (!this.isProtectedHistoryItem(history[pointer], rootSystemId, rootUserId)) {
+        selectedIndices.add(pointer);
+      }
+      pointer--;
+    }
+    pointer = callIndex + 1;
+    while (pointer < history.length && this.isReasoningItem(history[pointer])) {
+      if (!this.isProtectedHistoryItem(history[pointer], rootSystemId, rootUserId)) {
+        selectedIndices.add(pointer);
+      }
+      pointer++;
+    }
+  }
+
+  private findFunctionCallIndex(history: ResponseItem[], callId?: string): number {
+    if (!Array.isArray(history) || history.length === 0) {
+      return -1;
+    }
+    for (let index = history.length - 1; index >= 0; index--) {
+      const item = history[index];
+      if (!item || item.type !== 'function_call') {
+        continue;
+      }
+      const call = item as ResponseFunctionToolCallItem;
+      if (!callId || call.call_id === callId || call.id === callId) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  private isProtectedHistoryItem(
+    item: ResponseItem | undefined,
+    rootSystemId?: string,
+    rootUserId?: string,
+  ): boolean {
+    if (!item) {
+      return true;
+    }
+    const identifier = (item as { id?: string }).id;
+    if (identifier && rootSystemId && identifier === rootSystemId) {
+      return true;
+    }
+    if (identifier && rootUserId && identifier === rootUserId) {
+      return true;
+    }
+    return false;
+  }
+
+  private isReasoningItem(item: ResponseItem | undefined): boolean {
+    return Boolean(item && (item as { type?: string }).type === 'reasoning');
+  }
+
+  private runPromptGarbageCollector(
+    job: SandboxJob,
+    messages: ResponseItem[],
+    rootSystemId?: string,
+    rootUserId?: string,
+  ): void {
+    if (this.contextPromptGcTokenThreshold <= 0 || !Array.isArray(messages) || messages.length === 0) {
+      return;
+    }
+    let estimate = this.estimateMessagesTokenFootprint(messages);
+    if (estimate <= this.contextPromptGcTokenThreshold) {
+      return;
+    }
+    let removed = 0;
+    let iterations = 0;
+    while (estimate > this.contextPromptGcTargetTokens && iterations < 500) {
+      const deleted = this.trimOldestHistoryBlock(messages, rootSystemId, rootUserId);
+      if (deleted === 0) {
+        break;
+      }
+      removed += deleted;
+      iterations++;
+      estimate = this.estimateMessagesTokenFootprint(messages);
+    }
+    if (removed > 0) {
+      this.log(
+        job,
+        `Context manager removeu ${removed} item(ns) antigos para manter o prompt estimado em ${estimate} tokens`,
+      );
+    }
+  }
+
+  private trimOldestHistoryBlock(
+    messages: ResponseItem[],
+    rootSystemId?: string,
+    rootUserId?: string,
+  ): number {
+    for (let index = 0; index < messages.length; index++) {
+      const item = messages[index];
+      if (this.isProtectedHistoryItem(item, rootSystemId, rootUserId)) {
+        continue;
+      }
+      if (!this.isRemovableHistoryItem(item)) {
+        continue;
+      }
+      return this.removeHistoryItemWithDependencies(messages, index);
+    }
+    return 0;
+  }
+
+  private removeHistoryItemWithDependencies(messages: ResponseItem[], index: number): number {
+    const item = messages[index];
+    if (!item) {
+      return 0;
+    }
+    if (item.type === 'function_call') {
+      return this.removeFunctionCallFamily(messages, index);
+    }
+    if (item.type === 'function_call_output') {
+      const output = item as ResponseFunctionToolCallOutputItem;
+      const callIndex = this.findFunctionCallIndex(messages, output.call_id);
+      if (callIndex >= 0 && callIndex <= index) {
+        return this.removeFunctionCallFamily(messages, callIndex);
+      }
+    }
+    if (this.isReasoningItem(item)) {
+      if (index + 1 < messages.length && messages[index + 1]?.type === 'function_call') {
+        return this.removeFunctionCallFamily(messages, index + 1);
+      }
+    }
+    messages.splice(index, 1);
+    return 1;
+  }
+
+  private removeFunctionCallFamily(messages: ResponseItem[], callIndex: number): number {
+    if (callIndex < 0 || callIndex >= messages.length) {
+      return 0;
+    }
+    let start = callIndex;
+    while (start - 1 >= 0 && this.isReasoningItem(messages[start - 1])) {
+      start--;
+    }
+    const call = messages[callIndex] as ResponseFunctionToolCallItem;
+    const callId = call.call_id ?? call.id ?? '';
+    let end = callIndex;
+    for (let idx = callIndex + 1; idx < messages.length; idx++) {
+      const candidate = messages[idx];
+      if (!candidate) {
+        break;
+      }
+      if (candidate.type === 'function_call_output') {
+        const output = candidate as ResponseFunctionToolCallOutputItem;
+        if (!callId || output.call_id === callId) {
+          end = idx;
+          continue;
+        }
+        break;
+      }
+      if (this.isReasoningItem(candidate)) {
+        end = idx;
+        continue;
+      }
+      break;
+    }
+    const deleteCount = end - start + 1;
+    messages.splice(start, deleteCount);
+    return deleteCount;
+  }
+
+  private captureContextFromTool(
+    job: SandboxJob,
+    call: ToolCall,
+    result: unknown,
+    options?: { blocked?: boolean; error?: boolean },
+  ): void {
+    const summaryLine = this.buildToolSummaryLine(call, result, options);
+    if (summaryLine) {
+      this.appendSummaryLine(job, summaryLine);
+    }
+    const workingItem = this.buildWorkingSetSnapshot(call, result);
+    if (workingItem) {
+      this.upsertWorkingSetItem(job, workingItem);
+    }
+  }
+
+  private buildToolSummaryLine(
+    call: ToolCall,
+    result: unknown,
+    options?: { blocked?: boolean; error?: boolean },
+  ): string | undefined {
+    const name = call.name || 'tool';
+    const status = options?.blocked
+      ? 'bloqueada'
+      : options?.error
+        ? 'erro'
+        : 'ok';
+    const argsPreview = this.truncate(this.safeStringify(call.arguments ?? {}), 160);
+    const outcome = this.extractResultPreview(result);
+    const parts = [`${name}: ${status}`, `args=${argsPreview}`];
+    if (outcome) {
+      parts.push(`resultado=${outcome}`);
+    }
+    return parts.join(' | ');
+  }
+
+  private buildWorkingSetSnapshot(call: ToolCall, result: unknown): ContextWorkingSetItem | undefined {
+    if (!result || typeof result !== 'object') {
+      return undefined;
+    }
+    const args = (call.arguments ?? {}) as Record<string, unknown>;
+    const now = Date.now();
+    if (call.name === 'read_file') {
+      const pathValue = args.path;
+      const pathArg = typeof pathValue === 'string' ? pathValue : undefined;
+      const path = (result as any).path ?? pathArg ?? 'arquivo desconhecido';
+      const content = typeof (result as any).content === 'string' ? (result as any).content : '';
+      if (!content) {
+        return undefined;
+      }
+      return {
+        key: `file:${path}`,
+        title: `Trecho de ${path}`,
+        content,
+        source: 'read_file',
+        createdAt: now,
+      };
+    }
+    if (call.name === 'write_file') {
+      const pathValue = args.path;
+      const pathArg = typeof pathValue === 'string' ? pathValue : undefined;
+      const path = (result as any).path ?? pathArg ?? 'arquivo desconhecido';
+      const content = typeof (result as any).content === 'string' ? (result as any).content : '';
+      if (!content) {
+        return undefined;
+      }
+      return {
+        key: `file:${path}`,
+        title: `Conteúdo atualizado de ${path}`,
+        content,
+        source: 'write_file',
+        createdAt: now,
+      };
+    }
+    if (call.name === 'run_shell') {
+      const commandParts = Array.isArray(args.command)
+        ? (args.command as unknown[]).map((part) => String(part))
+        : undefined;
+      const command = commandParts && commandParts.length ? commandParts.join(' ') : 'comando desconhecido';
+      const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout.trim() : '';
+      const stderr = typeof (result as any).stderr === 'string' ? (result as any).stderr.trim() : '';
+      if (!stdout && !stderr) {
+        return undefined;
+      }
+      const sections: string[] = [];
+      if (stdout) {
+        sections.push(`stdout:
+${stdout}`);
+      }
+      if (stderr) {
+        sections.push(`stderr:
+${stderr}`);
+      }
+      return {
+        key: `shell:${this.hashString(command).slice(0, 16)}`,
+        title: `Resultado de ${command}`,
+        content: sections.join('\n\n'),
+        source: 'run_shell',
+        createdAt: now,
+      };
+    }
+    if (call.name === 'http_get' || call.name === 'WebSearch') {
+      const urlValue = args.url;
+      const urlArg = typeof urlValue === 'string' ? urlValue : undefined;
+      const body = typeof (result as any).body === 'string' ? (result as any).body : '';
+      if (!body) {
+        return undefined;
+      }
+      const url = urlArg ?? 'URL não informada';
+      return {
+        key: `http:${this.hashString(url).slice(0, 16)}`,
+        title: `Resposta HTTP ${url}`,
+        content: body,
+        source: call.name ?? 'http_get',
+        createdAt: now,
+      };
+    }
+    if (call.name === 'db_query') {
+      const rows = Array.isArray((result as any).rows) ? (result as any).rows : [];
+      if (!rows.length) {
+        return undefined;
+      }
+      const queryValue = args.query;
+      const queryArg = typeof queryValue === 'string' ? queryValue : 'query';
+      return {
+        key: `db:${this.hashString(queryArg).slice(0, 16)}`,
+        title: `Resultado SQL (${rows.length} linhas)`,
+        content: JSON.stringify(rows.slice(0, 5)),
+        source: 'db_query',
+        createdAt: now,
+      };
+    }
+    return undefined;
+  }
+
+  private extractResultPreview(result: unknown): string {
+    if (typeof result === 'string') {
+      return this.truncate(result, 160);
+    }
+    if (!result || typeof result !== 'object') {
+      return '';
+    }
+    if (typeof (result as any).stdout === 'string') {
+      return this.truncate((result as any).stdout, 120);
+    }
+    if (typeof (result as any).content === 'string') {
+      return this.truncate((result as any).content, 120);
+    }
+    if (typeof (result as any).body === 'string') {
+      return this.truncate((result as any).body, 120);
+    }
+    if (Array.isArray((result as any).rows)) {
+      return `rows=${(result as any).rows.length}`;
+    }
+    return this.truncate(this.safeStringify(result), 160);
   }
 
   private extractOutputText(content: ResponseOutputMessage['content'] | undefined): string | undefined {
@@ -2765,7 +3355,7 @@ ${profileInstruction}`,
 
     for (let index = messages.length - 1; index >= 0 && estimated > targetTokens; index--) {
       const item = messages[index];
-      if (!this.isEcoRemovableHistoryItem(item)) {
+      if (!this.isRemovableHistoryItem(item)) {
         break;
       }
       const footprint = this.estimateItemTokenFootprint(item);
@@ -2823,11 +3413,14 @@ ${profileInstruction}`,
     }
   }
 
-  private isEcoRemovableHistoryItem(item: ResponseItem | undefined): boolean {
+  private isRemovableHistoryItem(item: ResponseItem | undefined): boolean {
     if (!item) {
       return false;
     }
     if (item.type === 'function_call' || item.type === 'function_call_output') {
+      return true;
+    }
+    if (this.isReasoningItem(item)) {
       return true;
     }
     if (item.type === 'message') {
@@ -2865,6 +3458,13 @@ ${profileInstruction}`,
       return this.approximateTokensFromText(
         typeof output.output === 'string' ? output.output : this.safeStringify(output.output ?? {}),
       );
+    }
+    if (this.isReasoningItem(item)) {
+      const reasoning = item as unknown as ResponseReasoningItem;
+      const summaryText = Array.isArray(reasoning.summary)
+        ? reasoning.summary.map((part) => part.text).join('\n')
+        : '';
+      return this.approximateTokensFromText(summaryText);
     }
     return this.approximateTokensFromText(this.safeStringify(item));
   }

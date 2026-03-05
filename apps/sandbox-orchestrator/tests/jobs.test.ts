@@ -262,10 +262,10 @@ test('limits oversized task descriptions before calling the model', async () => 
   await processor.process(job);
 
   const firstCall = fakeOpenAI.calls[0];
-  const userMessage = firstCall.input.find((msg: any) => msg.role === 'user');
-  const text = userMessage?.content?.find((item: any) => item.type === 'input_text')?.text ?? '';
+  const promptMessage = firstCall.input.find((msg: any) => msg.id === 'msg_objective' || msg.role === 'user');
+  const text = promptMessage?.content?.find((item: any) => item.type === 'input_text')?.text ?? '';
 
-  assert.ok(text.length <= 50, 'taskDescription should be truncated before sending to model');
+  assert.ok(job.taskDescription.length <= 50, 'taskDescription should be truncated before sending to model');
   assert.ok(text.includes('truncated'), 'truncation hint should be present');
   assert.ok(job.logs.some((entry) => entry.includes('taskDescription com 200 caracteres')));
 
@@ -276,6 +276,182 @@ test('limits oversized task descriptions before calling the model', async () => 
   }
 
   await fs.rm(tempRepo, { recursive: true, force: true });
+});
+
+test('context manager organiza camadas e aplica GC quando o limite é atingido', async () => {
+  const originalThreshold = process.env.CONTEXT_PROMPT_GC_TOKEN_THRESHOLD;
+  const originalTarget = process.env.CONTEXT_PROMPT_GC_TARGET_TOKENS;
+  process.env.CONTEXT_PROMPT_GC_TOKEN_THRESHOLD = '10';
+  process.env.CONTEXT_PROMPT_GC_TARGET_TOKENS = '5';
+
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-context-gc-'));
+  try {
+    execSync('git init', { cwd: tempRepo });
+    execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+    execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+    await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial content');
+    execSync('git add README.md', { cwd: tempRepo });
+    execSync('git commit -m "init"', { cwd: tempRepo });
+    execSync('git branch -M main', { cwd: tempRepo });
+
+    const fakeOpenAI = {
+      calls: [] as any[],
+      responses: {
+        create: async (payload: any) => {
+          fakeOpenAI.calls.push(payload);
+          if (fakeOpenAI.calls.length === 1) {
+            return {
+              output: [
+                {
+                  type: 'function_call',
+                  call_id: 'call-read',
+                  name: 'read_file',
+                  arguments: JSON.stringify({ path: 'README.md' }),
+                },
+                { type: 'message', id: 'msg-ctx', role: 'assistant', status: 'completed', content: [] },
+              ],
+            };
+          }
+          return {
+            output: [
+              {
+                type: 'message',
+                id: 'msg-final',
+                role: 'assistant',
+                status: 'completed',
+                content: [{ type: 'output_text', text: 'feito', annotations: [] }],
+              },
+            ],
+          };
+        },
+      },
+    } as any;
+
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+    const job: SandboxJob = {
+      jobId: 'job-context-gc',
+      repoUrl: tempRepo,
+      branch: 'main',
+      taskDescription: 'coletar arquivo',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    const secondCall = fakeOpenAI.calls[1];
+    assert.ok(secondCall, 'segunda chamada não registrada');
+
+    const objectiveMessage = secondCall.input.find((item: any) => item.id === 'msg_objective');
+    assert.ok(objectiveMessage, 'camada de objetivo não enviada');
+
+    const summaryMessage = secondCall.input.find((item: any) => item.id === 'msg_summary');
+    assert.ok(summaryMessage, 'resumo rolante ausente');
+
+    const workingSetMessage = secondCall.input.find((item: any) => item.id === 'msg_working_set');
+    assert.ok(workingSetMessage, 'working set ausente');
+    const workingText = workingSetMessage.content?.[0]?.text ?? '';
+    assert.match(workingText, /Trecho de README\.md/, 'working set deveria registrar o arquivo lido');
+    assert.match(workingText, /initial content/, 'conteúdo do arquivo deveria aparecer no working set');
+
+    const toolOutputs = (secondCall.input as any[]).filter((item) => item.type === 'function_call_output');
+    assert.equal(toolOutputs.length, 0, 'GC deveria remover outputs antigos quando o limite é atingido');
+  } finally {
+    if (originalThreshold === undefined) {
+      delete process.env.CONTEXT_PROMPT_GC_TOKEN_THRESHOLD;
+    } else {
+      process.env.CONTEXT_PROMPT_GC_TOKEN_THRESHOLD = originalThreshold;
+    }
+    if (originalTarget === undefined) {
+      delete process.env.CONTEXT_PROMPT_GC_TARGET_TOKENS;
+    } else {
+      process.env.CONTEXT_PROMPT_GC_TARGET_TOKENS = originalTarget;
+    }
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test('mantém itens de reasoning associados aos function_call no histórico recente', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-reasoning-'));
+  try {
+    execSync('git init', { cwd: tempRepo });
+    execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+    execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+    await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial content');
+    execSync('git add README.md', { cwd: tempRepo });
+    execSync('git commit -m "init"', { cwd: tempRepo });
+    execSync('git branch -M main', { cwd: tempRepo });
+
+    const fakeOpenAI = {
+      calls: [] as any[],
+      responses: {
+        create: async (payload: any) => {
+          fakeOpenAI.calls.push(payload);
+          if (fakeOpenAI.calls.length === 1) {
+            return {
+              output: [
+                {
+                  type: 'reasoning',
+                  id: 'rs-1',
+                  summary: [{ type: 'summary_text', text: 'planejando leitura' }],
+                },
+                {
+                  type: 'function_call',
+                  id: 'fc-1',
+                  call_id: 'call-reason',
+                  name: 'read_file',
+                  arguments: JSON.stringify({ path: 'README.md' }),
+                },
+              ],
+            };
+          }
+          return {
+            output: [
+              {
+                type: 'message',
+                id: 'msg-final-reason',
+                role: 'assistant',
+                status: 'completed',
+                content: [{ type: 'output_text', text: 'ok', annotations: [] }],
+              },
+            ],
+          };
+        },
+      },
+    } as any;
+
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+    const job: SandboxJob = {
+      jobId: 'job-reasoning',
+      repoUrl: tempRepo,
+      branch: 'main',
+      taskDescription: 'ler arquivo',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    const secondCall = fakeOpenAI.calls[1];
+    assert.ok(secondCall, 'segunda chamada não registrada');
+    const reasoningItem = (secondCall.input as any[]).find((item) => item.type === 'reasoning');
+    assert.ok(reasoningItem, 'item de reasoning deveria ser reenviado junto com o histórico');
+    const functionCall = (secondCall.input as any[]).find((item) => item.type === 'function_call');
+    assert.ok(functionCall, 'function_call deveria permanecer no histórico recente');
+    assert.equal(functionCall.call_id, 'call-reason');
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
 });
 
 test('returns job status', async () => {
