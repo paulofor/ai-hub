@@ -51,6 +51,8 @@ interface ActiveProblemOption {
 
 const REQUESTS_PER_PAGE = 5;
 const ACTIVE_POLL_INTERVAL_MS = 15000;
+const DEFAULT_PROBLEM_DECOMPOSITION_HINT =
+  'Quando chegar uma solicitação nova do cliente, tente dividir o problema maior em problemas menores, sempre que possível.';
 
 export default function CodexPage() {
   const [prompt, setPrompt] = useState('');
@@ -419,8 +421,16 @@ export default function CodexPage() {
       .map((hint) => hint.phrase.trim())
       .filter((value) => value.length > 0);
 
-    const finalPrompt = hintPhrases.length > 0
-      ? `${trimmedPrompt}\n\n${hintPhrases.join('\n')}`
+    const hasDefaultHint = hintPhrases.some(
+      (hint) => hint.toLocaleLowerCase() === DEFAULT_PROBLEM_DECOMPOSITION_HINT.toLocaleLowerCase()
+    );
+
+    const allHintPhrases = hasDefaultHint
+      ? hintPhrases
+      : [...hintPhrases, DEFAULT_PROBLEM_DECOMPOSITION_HINT];
+
+    const finalPrompt = allHintPhrases.length > 0
+      ? `${trimmedPrompt}\n\n${allHintPhrases.join('\n')}`
       : trimmedPrompt;
 
     setLoading(true);
