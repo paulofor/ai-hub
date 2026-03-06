@@ -124,6 +124,7 @@ public class CodexRequestService {
         );
 
         codexRequest.setProfile(profile);
+        codexRequest.setVersion(CodexRequest.DEFAULT_VERSION);
         codexRequest.setStatus(CodexRequestStatus.PENDING);
         codexRequest.setPromptTokens(request.getPromptTokens());
         codexRequest.setCachedPromptTokens(request.getCachedPromptTokens());

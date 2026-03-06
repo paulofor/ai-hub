@@ -223,6 +223,7 @@ class CodexRequestServiceTest {
 
         CodexRequest created = service.create(payload);
         assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
+        assertThat(created.getVersion()).isEqualTo(CodexRequest.DEFAULT_VERSION);
     }
 
     @Test

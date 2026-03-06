@@ -798,6 +798,7 @@ export default function CodexPage() {
                 <th className="px-4 py-3 text-left font-semibold">Problema</th>
                 <th className="px-4 py-3 text-left font-semibold">Perfil</th>
                 <th className="px-4 py-3 text-left font-semibold">Modelo</th>
+                <th className="px-4 py-3 text-left font-semibold">Versão</th>
                 <th className="px-4 py-3 text-left font-semibold">Tokens</th>
                 <th className="px-4 py-3 text-left font-semibold">Custos</th>
                 <th className="px-4 py-3 text-left font-semibold">Prompt</th>
@@ -850,6 +851,9 @@ export default function CodexPage() {
                   </td>
                   <td className="px-4 py-3 font-mono text-xs uppercase text-slate-700 dark:text-slate-300">
                     {item.model || '—'}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-700 dark:text-slate-300">
+                    {item.version || '—'}
                   </td>
                   <td className="px-4 py-3">
                     <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">

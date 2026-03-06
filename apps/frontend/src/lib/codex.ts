@@ -6,6 +6,7 @@ export interface CodexRequest {
   id: number;
   environment: string;
   model: string;
+  version: string;
   profile: CodexProfile;
   prompt: string;
   responseText?: string;
@@ -169,6 +170,8 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const cachedPromptCost = parseNumber(item.cachedPromptCost);
   const completionCost = parseNumber(item.completionCost);
   const cost = parseNumber(item.cost);
+  const versionRaw = typeof item.version === 'string' ? item.version : undefined;
+  const version = versionRaw && versionRaw.trim() ? versionRaw.trim() : 'aihub-4';
   const profile = parseProfile(item.profile ?? item.integrationProfile);
   const status = parseStatus(item.status);
   const rating = parseNumber(item.rating);
@@ -225,6 +228,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     id,
     environment: (item.environment as string) ?? '',
     model: (item.model as string) ?? '',
+    version,
     profile,
     prompt: (item.prompt as string) ?? '',
     status,
