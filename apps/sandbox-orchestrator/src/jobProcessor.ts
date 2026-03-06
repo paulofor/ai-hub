@@ -3971,9 +3971,15 @@ grep -R -n -- "$@"
   }
 
   private log(job: SandboxJob, message: string) {
-    const entry = `[${new Date().toISOString()}] ${message}`;
+    const now = new Date();
+    const isoTimestamp = now.toISOString();
+    const localTimestamp = now.toLocaleString('pt-BR', {
+      hour12: false,
+      timeZone: 'America/Sao_Paulo',
+    });
+    const entry = `[${isoTimestamp}] ${message}`;
     job.logs.push(entry);
-    console.info(`Sandbox job ${job.jobId}: ${message}`);
+    console.info(`[${localTimestamp}] Sandbox job ${job.jobId}: ${message}`);
   }
 
   private async describePathStatus(target: string): Promise<string> {
