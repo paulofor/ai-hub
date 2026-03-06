@@ -68,6 +68,7 @@ export default function CodexPage() {
   const [totalRequests, setTotalRequests] = useState(0);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [ratingFilter, setRatingFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -171,6 +172,8 @@ export default function CodexPage() {
     }
   }, []);
 
+  const selectedRatingFilter = ratingFilter ? Number(ratingFilter) : null;
+
   const fetchRequests = useCallback(async (page = 1, options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setLoadingRequests(true);
@@ -179,7 +182,8 @@ export default function CodexPage() {
       const response = await client.get('/codex/requests', {
         params: {
           page: page - 1,
-          size: REQUESTS_PER_PAGE
+          size: REQUESTS_PER_PAGE,
+          ...(selectedRatingFilter ? { rating: selectedRatingFilter } : {})
         }
       });
       setRequestsByPage((prev) => ({
@@ -190,10 +194,8 @@ export default function CodexPage() {
         ? response.data.totalElements
         : Array.isArray(response.data)
           ? response.data.length
-          : totalRequests;
-      if (Number.isFinite(total)) {
-        setTotalRequests(total);
-      }
+          : null;
+      setTotalRequests((previous) => (Number.isFinite(total) ? Number(total) : previous));
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -202,9 +204,11 @@ export default function CodexPage() {
         setLoadingRequests(false);
       }
     }
-  }, [totalRequests]);
+  }, [selectedRatingFilter]);
 
   useEffect(() => {
+    setRequestsByPage({});
+    setCurrentPage(1);
     fetchRequests(1);
   }, [fetchRequests]);
 
@@ -787,7 +791,25 @@ export default function CodexPage() {
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold">Histórico de solicitações</h3>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold">Histórico de solicitações</h3>
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <span className="font-medium">Filtro por estrelas</span>
+              <select
+                value={ratingFilter}
+                onChange={(event) => setRatingFilter(event.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+              >
+                <option value="">Todas</option>
+                <option value="1">1 estrela</option>
+                <option value="2">2 estrelas</option>
+                <option value="3">3 estrelas</option>
+                <option value="4">4 estrelas</option>
+                <option value="5">5 estrelas</option>
+              </select>
+            </label>
+          </div>
         <div className="space-y-3 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
           {paginatedRequests.map((item) => (
             <article

@@ -228,10 +228,12 @@ public class CodexRequestService {
         return requests;
     }
 
-    public Page<CodexRequest> listPage(int page, int size) {
+    public Page<CodexRequest> listPage(int page, int size, Integer rating) {
         Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         PageRequest pageRequest = PageRequest.of(page, size);
-        Page<CodexRequest> requestPage = codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+        Page<CodexRequest> requestPage = rating == null
+            ? codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest)
+            : codexRequestRepository.findAllByRatingOrderByCreatedAtDesc(rating, pageRequest);
         boolean refreshedAny = false;
 
         for (CodexRequest request : requestPage.getContent()) {
@@ -254,7 +256,9 @@ public class CodexRequestService {
         }
 
         if (refreshedAny) {
-            requestPage = codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+            requestPage = rating == null
+                ? codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest)
+                : codexRequestRepository.findAllByRatingOrderByCreatedAtDesc(rating, pageRequest);
         }
 
         applyInteractionCounts(requestPage.getContent());
