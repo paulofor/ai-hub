@@ -399,6 +399,9 @@ export default function CodexRequestDetailPage() {
                   Modelo: <strong>{request.model}</strong>
                 </div>
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  Versão: <strong>{request.version}</strong>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   Ambiente: <strong>{request.environment}</strong>
                 </div>
               </div>

@@ -27,6 +27,8 @@ import java.util.Objects;
 @Table(name = "codex_requests")
 public class CodexRequest {
 
+    public static final String DEFAULT_VERSION = "aihub-4";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -36,6 +38,9 @@ public class CodexRequest {
 
     @Column(nullable = false)
     private String model;
+
+    @Column(name = "version", nullable = false, length = 45)
+    private String version = DEFAULT_VERSION;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "profile", nullable = false)
@@ -144,6 +149,7 @@ public class CodexRequest {
     public CodexRequest(String environment, String model, CodexIntegrationProfile profile, String prompt) {
         this.environment = environment;
         this.model = model;
+        this.version = DEFAULT_VERSION;
         this.profile = profile;
         this.prompt = prompt;
         this.status = CodexRequestStatus.PENDING;
@@ -167,6 +173,14 @@ public class CodexRequest {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = (version == null || version.isBlank()) ? DEFAULT_VERSION : version;
     }
 
     public CodexIntegrationProfile getProfile() {
