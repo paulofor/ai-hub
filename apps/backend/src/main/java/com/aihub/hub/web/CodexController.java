@@ -31,8 +31,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.zip.ZipEntry;
@@ -83,7 +85,10 @@ public class CodexController {
         payload.put("requestId", request.getId());
         payload.put("environment", request.getEnvironment());
         payload.put("model", request.getModel());
+        payload.put("version", request.getVersion());
+        payload.put("profile", request.getProfile());
         payload.put("createdAt", request.getCreatedAt());
+        payload.put("envParameters", extractEnvParameters());
         payload.put("interactionCount", interactions.size());
         payload.put("interactions", interactions.stream().map(interaction -> {
             Map<String, Object> item = new HashMap<>();
@@ -116,6 +121,68 @@ public class CodexController {
         headers.setContentLength(zipBytes.length);
 
         return new ResponseEntity<>(zipBytes, headers, HttpStatus.OK);
+    }
+
+    private Map<String, String> extractEnvParameters() {
+        List<String> knownKeys = List.of(
+            "CIFIX_MODEL",
+            "CIFIX_MODEL_ECONOMY",
+            "CIFIX_ECONOMY_MODEL",
+            "OPENAI_MODEL",
+            "OPENAI_API_URL",
+            "TASK_DESCRIPTION_MAX_CHARS",
+            "TOOL_OUTPUT_STRING_LIMIT",
+            "TOOL_OUTPUT_SERIALIZED_LIMIT",
+            "HTTP_TOOL_TIMEOUT_MS",
+            "HTTP_TOOL_MAX_RESPONSE_CHARS",
+            "ECONOMY_TASK_DESCRIPTION_MAX_CHARS",
+            "ECONOMY_TOOL_OUTPUT_STRING_LIMIT",
+            "ECONOMY_TOOL_OUTPUT_SERIALIZED_LIMIT",
+            "ECONOMY_HTTP_TOOL_MAX_RESPONSE_CHARS",
+            "SMART_ECONOMY_TASK_DESCRIPTION_MAX_CHARS",
+            "SMART_ECONOMY_TOOL_OUTPUT_STRING_LIMIT",
+            "SMART_ECONOMY_TOOL_OUTPUT_SERIALIZED_LIMIT",
+            "SMART_ECONOMY_HTTP_TOOL_MAX_RESPONSE_CHARS",
+            "ECO1_TASK_DESCRIPTION_MAX_CHARS",
+            "ECO1_TOOL_OUTPUT_STRING_LIMIT",
+            "ECO1_TOOL_OUTPUT_SERIALIZED_LIMIT",
+            "ECO1_HTTP_TOOL_MAX_RESPONSE_CHARS",
+            "ECO2_AUTO_COMPACT_TOKEN_LIMIT",
+            "ECO2_HISTORY_TARGET_TOKENS",
+            "ECO2_USER_MESSAGE_TOKEN_LIMIT",
+            "ECO2_TOOL_OUTPUT_STRING_LIMIT",
+            "ECO2_TOOL_OUTPUT_SERIALIZED_LIMIT",
+            "ECO2_HTTP_TOOL_MAX_RESPONSE_CHARS",
+            "ECO3_AUTO_COMPACT_TOKEN_LIMIT",
+            "ECO3_HISTORY_TARGET_TOKENS",
+            "ECO3_USER_MESSAGE_TOKEN_LIMIT",
+            "ECO3_TOOL_OUTPUT_STRING_LIMIT",
+            "ECO3_TOOL_OUTPUT_SERIALIZED_LIMIT",
+            "ECO3_HTTP_TOOL_MAX_RESPONSE_CHARS",
+            "DB_QUERY_TIMEOUT_MS",
+            "DB_QUERY_MAX_ROWS"
+        );
+
+        Map<String, String> parameters = new LinkedHashMap<>();
+        for (String key : knownKeys) {
+            String value = System.getenv(key);
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            parameters.put(key, maskIfSensitive(key, value));
+        }
+        return parameters;
+    }
+
+    private String maskIfSensitive(String key, String value) {
+        String upperKey = key.toUpperCase(Locale.ROOT);
+        if (upperKey.contains("TOKEN")
+            || upperKey.contains("PASSWORD")
+            || upperKey.contains("SECRET")
+            || upperKey.contains("KEY")) {
+            return "***";
+        }
+        return value;
     }
 
     @PostMapping("/{id}/comment")
