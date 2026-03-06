@@ -788,231 +788,190 @@ export default function CodexPage() {
 
       <div className="space-y-3">
         <h3 className="text-lg font-semibold">Histórico de solicitações</h3>
-        <div className="rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
-          <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
-            <thead className="bg-slate-50 dark:bg-slate-800/60">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold">Criado em</th>
-                <th className="px-4 py-3 text-left font-semibold">Execução</th>
-                <th className="px-4 py-3 text-left font-semibold">Ambiente</th>
-                <th className="px-4 py-3 text-left font-semibold">Problema</th>
-                <th className="px-4 py-3 text-left font-semibold">Perfil</th>
-                <th className="px-4 py-3 text-left font-semibold">Modelo</th>
-                <th className="px-4 py-3 text-left font-semibold">Versão</th>
-                <th className="px-4 py-3 text-left font-semibold">Tokens</th>
-                <th className="px-4 py-3 text-left font-semibold">Custos</th>
-                <th className="px-4 py-3 text-left font-semibold">Prompt</th>
-                <th className="px-4 py-3 text-left font-semibold">Resposta</th>
-                <th className="px-4 py-3 text-left font-semibold">Comentário</th>
-                <th className="px-4 py-3 text-left font-semibold">Avaliação</th>
-                <th className="px-4 py-3 text-left font-semibold">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {paginatedRequests.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-3 text-slate-500">
-                    <Link to={`/codex/requests/${item.id}`} className="text-emerald-700 hover:underline">
-                      {formatDateTime(item.createdAt)}
-                    </Link>
-                    <div className="text-xs text-slate-400">ID #{item.id}</div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
-                    <div className="mb-2">
-                      <span
-                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${codexStatusStyles[item.status]}`}
-                      >
-                        {formatStatus(item.status)}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <div>Início: {formatDateTime(item.startedAt ?? item.createdAt)}</div>
-                      <div>Fim: {formatDateTime(item.finishedAt)}</div>
-                      <div>Tempo total: {formatDuration(item.durationMs)}</div>
-                      <div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div>
-                      <div>HTTP GETs: {(item.httpGetCount ?? 0).toLocaleString('pt-BR')}</div>
-                      <div>Consultas ao banco: {(item.dbQueryCount ?? 0).toLocaleString('pt-BR')}</div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-medium">{item.environment}</td>
-                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          {paginatedRequests.map((item) => (
+            <article
+              key={item.id}
+              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+            >
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <Link to={`/codex/requests/${item.id}`} className="text-sm font-semibold text-emerald-700 hover:underline">
+                    {formatDateTime(item.createdAt)}
+                  </Link>
+                  <p className="text-xs text-slate-500">ID #{item.id}</p>
+                </div>
+                <span
+                  className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${codexStatusStyles[item.status]}`}
+                >
+                  {formatStatus(item.status)}
+                </span>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Execução</p>
+                  <div>Início: {formatDateTime(item.startedAt ?? item.createdAt)}</div>
+                  <div>Fim: {formatDateTime(item.finishedAt)}</div>
+                  <div>Tempo total: {formatDuration(item.durationMs)}</div>
+                  <div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div>
+                  <div>HTTP GETs: {(item.httpGetCount ?? 0).toLocaleString('pt-BR')}</div>
+                  <div>Consultas ao banco: {(item.dbQueryCount ?? 0).toLocaleString('pt-BR')}</div>
+                </div>
+
+                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</p>
+                  <div>Ambiente: <span className="font-medium">{item.environment}</span></div>
+                  <div>
+                    Perfil:{' '}
+                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      {formatProfile(item.profile)}
+                    </span>
+                  </div>
+                  <div>Modelo: <span className="font-mono uppercase">{item.model || '—'}</span></div>
+                  <div>Versão: <span className="font-mono">{item.version || '—'}</span></div>
+                  <div>
+                    Problema:{' '}
                     {item.problemTitle ? (
-                      <div>
-                        <p className="font-semibold text-slate-800 dark:text-slate-100">#{item.problemId} — {item.problemTitle}</p>
-                      </div>
+                      <span className="font-medium text-slate-700 dark:text-slate-100">#{item.problemId} — {item.problemTitle}</span>
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {formatProfile(item.profile)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs uppercase text-slate-700 dark:text-slate-300">
-                    {item.model || '—'}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-700 dark:text-slate-300">
-                    {item.version || '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                      <div className="flex items-center justify-between">
-                        <span>Input</span>
-                        <span>{formatTokens(item.promptTokens)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Input cacheado</span>
-                        <span>{formatTokens(item.cachedPromptTokens)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Output</span>
-                        <span>{formatTokens(item.completionTokens)}</span>
-                      </div>
-                      <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100">
-                        <span>Total</span>
-                        <span>{formatTokens(item.totalTokens)}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                      <div className="flex items-center justify-between">
-                        <span>Input</span>
-                        <span>{formatCost(item.promptCost, 4)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Input cacheado</span>
-                        <span>{formatCost(item.cachedPromptCost, 4)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Output</span>
-                        <span>{formatCost(item.completionCost, 4)}</span>
-                      </div>
-                      <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100">
-                        <span>Total</span>
-                        <span>{formatCost(item.cost)}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tokens</p>
+                    <div className="flex items-center justify-between"><span>Input</span><span>{formatTokens(item.promptTokens)}</span></div>
+                    <div className="flex items-center justify-between"><span>Input cacheado</span><span>{formatTokens(item.cachedPromptTokens)}</span></div>
+                    <div className="flex items-center justify-between"><span>Output</span><span>{formatTokens(item.completionTokens)}</span></div>
+                    <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100"><span>Total</span><span>{formatTokens(item.totalTokens)}</span></div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custos</p>
+                    <div className="flex items-center justify-between"><span>Input</span><span>{formatCost(item.promptCost, 4)}</span></div>
+                    <div className="flex items-center justify-between"><span>Input cacheado</span><span>{formatCost(item.cachedPromptCost, 4)}</span></div>
+                    <div className="flex items-center justify-between"><span>Output</span><span>{formatCost(item.completionCost, 4)}</span></div>
+                    <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100"><span>Total</span><span>{formatCost(item.cost)}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <details>
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-600">Ver prompt</summary>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPrompt(item.prompt)}
+                    className="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                  >
+                    Copiar prompt
+                  </button>
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
+                    {item.prompt}
+                  </pre>
+                </details>
+                <div>
+                  {item.responseText ? (
                     <details>
-                      <summary className="cursor-pointer text-emerald-600">Ver prompt</summary>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyPrompt(item.prompt)}
-                        className="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700"
-                      >
-                        Copiar prompt
-                      </button>
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-600">Ver resposta</summary>
                       <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
-                        {item.prompt}
+                        {item.responseText}
                       </pre>
                     </details>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
-                    {item.responseText ? (
-                      <details>
-                        <summary className="cursor-pointer text-emerald-600">Ver resposta</summary>
-                        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
-                          {item.responseText}
-                        </pre>
-                      </details>
-                    ) : (
-                      <span>—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
-                    {item.userComment ? (
-                      <div className="space-y-2">
-                        <p className="whitespace-pre-line">
-                          {item.userComment.length > 200 ? `${item.userComment.slice(0, 200)}…` : item.userComment}
-                        </p>
-                        <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
-                          Ver detalhes
-                        </Link>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        <span className="text-slate-500">—</span>
-                        <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
-                          Adicionar comentário
-                        </Link>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {(() => {
-                      const currentRating = item.rating ?? 0;
-                      const isInteractive = item.status === 'COMPLETED';
-                      if (!isInteractive && currentRating === 0) {
-                        return <span className="text-slate-500">—</span>;
-                      }
-                      return (
-                        <div className="flex items-center gap-1">
-                          {[1, 2, 3, 4, 5].map((value) => {
-                            const filled = value <= currentRating;
-                            if (!isInteractive) {
-                              return (
-                                <span
-                                  key={`static-${item.id}-${value}`}
-                                  className={`text-lg ${filled ? 'text-amber-500' : 'text-slate-400'}`}
-                                >
-                                  ★
-                                </span>
-                              );
-                            }
-                            return (
-                              <button
-                                key={`rate-${item.id}-${value}`}
-                                type="button"
-                                onClick={() => handleRating(item.id, value)}
-                                disabled={Boolean(loadingActions[item.id])}
-                                className="text-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                                title={`Avaliar como ${value}`}
-                              >
-                                <span className={filled ? 'text-amber-500' : 'text-slate-400'}>★</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3">
-                    {item.status === 'PENDING' || item.status === 'RUNNING' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleCancel(item.id)}
-                        disabled={Boolean(loadingActions[item.id])}
-                        className="rounded-md border border-red-500 px-3 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400 dark:text-red-300 dark:hover:bg-red-400/10"
-                      >
-                        {loadingActions[item.id] ? 'Cancelando...' : 'Cancelar'}
-                      </button>
-                    ) : (
+                  ) : (
+                    <span className="text-xs text-slate-500">Sem resposta.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-700 md:grid-cols-[1fr_auto_auto] md:items-start">
+                <div className="text-xs text-slate-600 dark:text-slate-300">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Comentário</p>
+                  {item.userComment ? (
+                    <div className="space-y-2">
+                      <p className="whitespace-pre-line">
+                        {item.userComment.length > 200 ? `${item.userComment.slice(0, 200)}…` : item.userComment}
+                      </p>
+                      <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
+                        Ver detalhes
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1">
                       <span className="text-slate-500">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                      <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
+                        Adicionar comentário
+                      </Link>
+                    </div>
+                  )}
+                </div>
 
-              {isPageLoading && (
-                <tr>
-                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={12}>
-                    Carregando solicitações...
-                  </td>
-                </tr>
-              )}
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Avaliação</p>
+                  {(() => {
+                    const currentRating = item.rating ?? 0;
+                    const isInteractive = item.status === 'COMPLETED';
+                    if (!isInteractive && currentRating === 0) {
+                      return <span className="text-slate-500">—</span>;
+                    }
+                    return (
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((value) => {
+                          const filled = value <= currentRating;
+                          if (!isInteractive) {
+                            return (
+                              <span
+                                key={`static-${item.id}-${value}`}
+                                className={`text-lg ${filled ? 'text-amber-500' : 'text-slate-400'}`}
+                              >
+                                ★
+                              </span>
+                            );
+                          }
+                          return (
+                            <button
+                              key={`rate-${item.id}-${value}`}
+                              type="button"
+                              onClick={() => handleRating(item.id, value)}
+                              disabled={Boolean(loadingActions[item.id])}
+                              className="text-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                              title={`Avaliar como ${value}`}
+                            >
+                              <span className={filled ? 'text-amber-500' : 'text-slate-400'}>★</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
 
-              {!isPageLoading && totalRequests === 0 && (
-                <tr>
-                  <td className="px-4 py-6 text-center text-sm text-slate-500" colSpan={12}>
-                    Nenhuma solicitação enviada até o momento.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ações</p>
+                  {item.status === 'PENDING' || item.status === 'RUNNING' ? (
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(item.id)}
+                      disabled={Boolean(loadingActions[item.id])}
+                      className="rounded-md border border-red-500 px-3 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400 dark:text-red-300 dark:hover:bg-red-400/10"
+                    >
+                      {loadingActions[item.id] ? 'Cancelando...' : 'Cancelar'}
+                    </button>
+                  ) : (
+                    <span className="text-slate-500">—</span>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+
+          {isPageLoading && <p className="py-6 text-center text-sm text-slate-500">Carregando solicitações...</p>}
+
+          {!isPageLoading && totalRequests === 0 && (
+            <p className="py-6 text-center text-sm text-slate-500">Nenhuma solicitação enviada até o momento.</p>
+          )}
 
           {totalRequests > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
