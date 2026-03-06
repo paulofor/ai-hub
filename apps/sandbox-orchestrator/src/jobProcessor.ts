@@ -932,6 +932,11 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
               job.testCommand ?? 'n/d'
             }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
+Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
+- "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
+- "Conclusão da interação:" descrevendo, em uma frase, o resultado/conclusão do turno (ou conclusão parcial quando ainda houver tool call pendente).
+Essas frases são auditadas e persistidas, então nunca omita esses prefixos.
+
 Checklist inicial obrigatório de auditoria do runner (ambiente OK):
 ${checklist}
 
@@ -1011,9 +1016,6 @@ ${profileInstruction}`,
       const assistantMessage = normalizedOutput.find((item) => item.type === 'message') as ResponseOutputMessage | undefined;
       const toolCalls = normalizedOutput.filter((item) => item.type === 'function_call') as ResponseFunctionToolCallItem[];
 
-      const toolCallDetails =
-        toolCalls
-          .map((call, idx) => {
       const inboundInteraction = this.recordInteraction(
         job,
         'INBOUND',
@@ -1027,6 +1029,9 @@ ${profileInstruction}`,
         inboundInteraction.tokenCount = usageMetrics.completionTokens;
       }
 
+      const toolCallDetails =
+        toolCalls
+          .map((call, idx) => {
             const callId = call.call_id ?? this.extractCallId(call, idx);
             return `${call.name ?? 'sem_nome'}(callId=${callId}, id=${call.id ?? 'n/d'})`;
           })
@@ -1365,13 +1370,61 @@ ${profileInstruction}`,
     const interaction: SandboxInteraction = {
       id: identifier,
       direction,
-      content: typeof content === 'string' ? content : this.safeStringify(content),
+      content: this.decorateInteractionContent(direction, content),
       tokenCount,
       createdAt,
       sequence,
     };
     job.interactions.push(interaction);
     return interaction;
+  }
+
+  private decorateInteractionContent(direction: SandboxInteraction['direction'], content: string): string {
+    const renderedContent = typeof content === 'string' ? content : this.safeStringify(content);
+    const metadata = direction === 'INBOUND'
+      ? this.extractAssistantInteractionMetadata(renderedContent)
+      : undefined;
+
+    if (!metadata && direction === 'OUTBOUND') {
+      return this.safeStringify({
+        format: 'interaction-audit-v1',
+        transcript: renderedContent,
+      });
+    }
+
+    return this.safeStringify({
+      format: 'interaction-audit-v1',
+      transcript: renderedContent,
+      objective: metadata?.objective,
+      conclusion: metadata?.conclusion,
+    });
+  }
+
+  private extractAssistantInteractionMetadata(content: string): { objective?: string; conclusion?: string } | undefined {
+    const objective = this.extractInteractionSentence(content, 'Objetivo da interação');
+    const conclusion = this.extractInteractionSentence(content, 'Conclusão da interação');
+    if (!objective && !conclusion) {
+      return undefined;
+    }
+    return {
+      objective,
+      conclusion,
+    };
+  }
+
+  private extractInteractionSentence(content: string, label: string): string | undefined {
+    if (!content || !label) {
+      return undefined;
+    }
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`${escapedLabel}:\\s*(.+)`, 'gi');
+    const matches = Array.from(content.matchAll(pattern));
+    const match = matches.length > 0 ? matches[matches.length - 1] : undefined;
+    if (!match || match.length < 2) {
+      return undefined;
+    }
+    const line = match[1]?.split('\n')[0]?.trim();
+    return line ? this.truncate(line, 400) : undefined;
   }
 
   private resetLayeredContext(job: SandboxJob): void {
