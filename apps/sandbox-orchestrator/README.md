@@ -126,6 +126,14 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `DB_QUERY_TIMEOUT_MS` | Timeout por consulta SQL na tool de banco. | `10000` | Limita consultas lentas e evita travamentos no loop de tools. | `3000` a `30000` |
 | `DB_QUERY_MAX_ROWS` | Quantidade máxima de linhas retornadas por consulta SQL. | `200` | Controla volume de dados retornado ao modelo e custo de contexto. | `50` a `500` |
 
+### Parâmetros do fluxo de investigação
+
+| Variável | Descrição | Padrão |
+| --- | --- | --- |
+| `INVESTIGATION_STAGNATION_MAX_ATTEMPTS` | Número máximo de tentativas idênticas por hipótese antes do bloqueio geral. | `3` |
+| `INVESTIGATION_INSPECTION_MAX_ATTEMPTS` | Limite específico para ferramentas de inspeção (`read_file` e comandos de shell como `cat`, `sed`, `rg`). | `6` |
+| `INVESTIGATION_STAGNATION_RESET_MS` | Janela (ms) para limpar contadores de estagnação quando o agente fica um tempo sem repetir a mesma hipótese. | `120000` |
+
 ## Docker
 
 O Dockerfile publicado pela pipeline gera uma imagem enxuta baseada em `node:20-alpine`. Para executar localmente:

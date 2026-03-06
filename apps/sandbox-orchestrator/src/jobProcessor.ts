@@ -23,6 +23,20 @@ import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHt
 const exec = promisify(execCallback);
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
+const INSPECTION_SHELL_EXECUTABLES = new Set([
+  'cat',
+  'sed',
+  'rg',
+  'grep',
+  'tail',
+  'head',
+  'less',
+  'more',
+  'stat',
+  'wc',
+  'ls',
+  'find',
+]);
 
 interface ToolCall {
   id: string;
@@ -134,6 +148,7 @@ interface InvestigationProgressState {
   blockedObjectives: string[];
   localizarCausaNoEvidenceCycles: number;
   localizarCausaLastEvidenceHash?: string;
+  localizarCausaLastEvidenceAt?: number;
 }
 
 interface RunnerEnvironmentState {
@@ -227,6 +242,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly promptCacheKeyPrefix?: string;
   private readonly layeredContexts: WeakMap<SandboxJob, LayeredContextState> = new WeakMap();
   private readonly stagnationMaxAttempts: number;
+  private readonly inspectionStagnationMaxAttempts: number;
+  private readonly stagnationResetMs: number;
   private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
   private readonly runnerEnvironmentStates: WeakMap<SandboxJob, RunnerEnvironmentState> = new WeakMap();
 
@@ -449,6 +466,14 @@ export class SandboxJobProcessor implements JobProcessor {
     this.stagnationMaxAttempts = Math.max(
       2,
       this.parsePositiveInteger(process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS, 3),
+    );
+    this.inspectionStagnationMaxAttempts = Math.max(
+      this.stagnationMaxAttempts,
+      this.parsePositiveInteger(process.env.INVESTIGATION_INSPECTION_MAX_ATTEMPTS, 6),
+    );
+    this.stagnationResetMs = Math.max(
+      10_000,
+      this.parsePositiveInteger(process.env.INVESTIGATION_STAGNATION_RESET_MS, 120_000),
     );
 
     this.ecoThreeAutoCompactTokenLimit = this.parsePositiveInteger(
@@ -1043,7 +1068,7 @@ ${profileInstruction}`,
           arguments: parsedArgs ?? {},
         };
         const toolSignature = this.buildToolSignature(toolCall);
-        const stagnationBlock = this.evaluateHypothesisStagnationBlock(job, toolSignature, toolCall.name ?? '');
+        const stagnationBlock = this.evaluateHypothesisStagnationBlock(job, toolCall, toolSignature);
         if (stagnationBlock) {
           this.log(job, stagnationBlock.logMessage);
           this.captureContextFromTool(job, toolCall, stagnationBlock.payload, { blocked: true });
@@ -1504,6 +1529,8 @@ ${profileInstruction}`,
         objectiveAttempts: new Map(),
         blockedObjectives: [],
         localizarCausaNoEvidenceCycles: 0,
+        localizarCausaLastEvidenceHash: undefined,
+        localizarCausaLastEvidenceAt: undefined,
       };
       this.investigationStates.set(job, state);
       this.log(job, `progresso inicial da investigação: etapa ${state.stage}`);
@@ -1541,6 +1568,7 @@ ${profileInstruction}`,
     state.objectiveAttempts.clear();
     state.localizarCausaNoEvidenceCycles = 0;
     state.localizarCausaLastEvidenceHash = undefined;
+    state.localizarCausaLastEvidenceAt = undefined;
   }
 
   private buildObjectiveKey(stage: InvestigationStage, signature: string): string {
@@ -1549,11 +1577,15 @@ ${profileInstruction}`,
 
   private evaluateHypothesisStagnationBlock(
     job: SandboxJob,
+    call: ToolCall,
     signature: string,
-    toolName: string,
   ): EcoTwoLoopBlockResult | undefined {
     const state = this.getInvestigationState(job);
-    if (state.stage === 'LOCALIZAR_CAUSA' && state.localizarCausaNoEvidenceCycles >= this.stagnationMaxAttempts) {
+    this.maybeResetLocalizarCausaStagnation(job);
+    if (
+      state.stage === 'LOCALIZAR_CAUSA'
+      && state.localizarCausaNoEvidenceCycles >= this.stagnationMaxAttempts
+    ) {
       const logMessage = `bloqueio por falta de nova evidência: etapa LOCALIZAR_CAUSA sem evolução após ${state.localizarCausaNoEvidenceCycles} ciclos.`;
       this.appendSummaryLine(
         job,
@@ -1572,7 +1604,15 @@ ${profileInstruction}`,
     }
     const objectiveKey = this.buildObjectiveKey(state.stage, signature);
     const objectiveState = state.objectiveAttempts.get(objectiveKey);
-    if (!objectiveState || objectiveState.attempts < this.stagnationMaxAttempts) {
+    if (!objectiveState) {
+      return undefined;
+    }
+    if (this.shouldResetObjectiveState(objectiveState)) {
+      state.objectiveAttempts.delete(objectiveKey);
+      return undefined;
+    }
+    const effectiveLimit = this.resolveStagnationLimit(call);
+    if (objectiveState.attempts < effectiveLimit) {
       return undefined;
     }
     if (objectiveState.blocked) {
@@ -1580,6 +1620,7 @@ ${profileInstruction}`,
     }
     objectiveState.blocked = true;
     state.blockedObjectives.push(objectiveKey);
+    const toolName = call.name ?? '';
     const logMessage = `bloqueio de hipótese: objetivo ${objectiveKey} sem evolução após ${objectiveState.attempts} tentativas.`;
     this.appendSummaryLine(
       job,
@@ -1596,6 +1637,62 @@ ${profileInstruction}`,
       },
       logMessage,
     };
+  }
+
+  private resolveStagnationLimit(call: ToolCall): number {
+    if (!call?.name) {
+      return this.stagnationMaxAttempts;
+    }
+    if (call.name === 'read_file') {
+      return this.inspectionStagnationMaxAttempts;
+    }
+    if (call.name === 'run_shell') {
+      const executable = this.extractRunShellExecutable(call);
+      if (this.isInspectionShellCommand(executable)) {
+        return this.inspectionStagnationMaxAttempts;
+      }
+    }
+    return this.stagnationMaxAttempts;
+  }
+
+  private extractRunShellExecutable(call: ToolCall): string | undefined {
+    const args = (call.arguments ?? {}) as { command?: unknown };
+    const commandArg = args.command;
+    if (!Array.isArray(commandArg) || commandArg.length === 0) {
+      return undefined;
+    }
+    const firstToken = String(commandArg[0]).trim();
+    if (!firstToken) {
+      return undefined;
+    }
+    return path.basename(firstToken);
+  }
+
+  private isInspectionShellCommand(executable?: string): boolean {
+    if (!executable) {
+      return false;
+    }
+    return INSPECTION_SHELL_EXECUTABLES.has(executable.toLowerCase());
+  }
+
+  private maybeResetLocalizarCausaStagnation(job: SandboxJob): void {
+    const state = this.getInvestigationState(job);
+    if (!state.localizarCausaLastEvidenceAt) {
+      return;
+    }
+    if (Date.now() - state.localizarCausaLastEvidenceAt < this.stagnationResetMs) {
+      return;
+    }
+    state.localizarCausaLastEvidenceAt = undefined;
+    state.localizarCausaLastEvidenceHash = undefined;
+    state.localizarCausaNoEvidenceCycles = 0;
+  }
+
+  private shouldResetObjectiveState(objectiveState: ObjectiveAttemptState): boolean {
+    if (!objectiveState.updatedAt) {
+      return false;
+    }
+    return Date.now() - objectiveState.updatedAt >= this.stagnationResetMs;
   }
 
   private recordObjectiveAttempt(job: SandboxJob, signature: string, toolOutput: string): void {
@@ -1618,6 +1715,7 @@ ${profileInstruction}`,
       return;
     }
     const outputHash = this.hashString(toolOutput);
+    state.localizarCausaLastEvidenceAt = Date.now();
     if (!state.localizarCausaLastEvidenceHash) {
       state.localizarCausaLastEvidenceHash = outputHash;
       state.localizarCausaNoEvidenceCycles = 1;
