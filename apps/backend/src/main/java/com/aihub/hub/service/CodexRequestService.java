@@ -54,6 +54,13 @@ import java.util.regex.Pattern;
 @Service
 public class CodexRequestService {
 
+    private static final String INTERACTION_LOGGING_INSTRUCTION = """
+\n\nInstruções de rastreabilidade das interações com a sandbox:
+- Antes de cada interação com a sandbox/ferramentas, escreva exatamente 1 frase objetiva começando com "Objetivo:" explicando o que você está tentando fazer.
+- Após receber o resultado da interação, escreva exatamente 1 frase objetiva começando com "Conclusão:" resumindo o resultado obtido.
+- Mantenha essas duas frases curtas e diretas.
+""";
+
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
 
@@ -588,7 +595,7 @@ public class CodexRequestService {
             coordinates.owner() + "/" + coordinates.repo(),
             null,
             defaultBranch,
-            request.getPrompt(),
+            enrichPromptForInteractionLogging(request.getPrompt()),
             null,
             null,
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
@@ -1299,6 +1306,14 @@ public class CodexRequestService {
             }
             request.setInteractionCount(counts.getOrDefault(requestId, 0));
         }
+    }
+
+    private String enrichPromptForInteractionLogging(String prompt) {
+        String basePrompt = Optional.ofNullable(prompt).map(String::trim).orElse("");
+        if (basePrompt.contains("Objetivo:") && basePrompt.contains("Conclusão:")) {
+            return basePrompt;
+        }
+        return basePrompt + INTERACTION_LOGGING_INSTRUCTION;
     }
 
 }

@@ -13,6 +13,7 @@ import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class CodexRequestServiceTest {
@@ -306,6 +308,29 @@ class CodexRequestServiceTest {
 
         CodexRequest created = service.create(payload);
         assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
+    }
+
+    @Test
+    void createAppendsInteractionObjectiveAndConclusionInstructionsToSandboxTaskDescription() {
+        CodexRequestService service = buildService();
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("corrigir bug de autenticação");
+
+        service.create(payload);
+
+        ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
+        verifyNoMoreInteractions(sandboxOrchestratorClient);
+
+        String taskDescription = requestCaptor.getValue().taskDescription();
+        assertThat(taskDescription).contains("corrigir bug de autenticação");
+        assertThat(taskDescription).contains("Objetivo:");
+        assertThat(taskDescription).contains("Conclusão:");
     }
 
 }

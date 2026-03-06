@@ -37,12 +37,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api/codex/requests")
 public class CodexController {
+
+    private static final Pattern OBJECTIVE_PATTERN = Pattern.compile("(?im)^\\s*Objetivo:\\s*(.+)$");
+    private static final Pattern CONCLUSION_PATTERN = Pattern.compile("(?im)^\\s*Conclusão:\\s*(.+)$");
 
     private final CodexRequestService codexRequestService;
     private final PullRequestService pullRequestService;
@@ -109,6 +114,8 @@ public class CodexController {
             item.put("tokenCount", interaction.getTokenCount());
             item.put("sequence", interaction.getSequence());
             item.put("createdAt", interaction.getCreatedAt());
+            extractSingleLine(interaction.getContent(), OBJECTIVE_PATTERN).ifPresent(value -> item.put("objective", value));
+            extractSingleLine(interaction.getContent(), CONCLUSION_PATTERN).ifPresent(value -> item.put("conclusion", value));
             return item;
         }).toList());
 
@@ -256,6 +263,21 @@ public class CodexController {
         } catch (IOException ex) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível compactar as interações", ex);
         }
+    }
+
+    private Optional<String> extractSingleLine(String content, Pattern pattern) {
+        if (content == null || content.isBlank()) {
+            return Optional.empty();
+        }
+        Matcher matcher = pattern.matcher(content);
+        if (!matcher.find()) {
+            return Optional.empty();
+        }
+        String value = matcher.group(1);
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(value.trim());
     }
 
     private void assertOwner(String role) {
