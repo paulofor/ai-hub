@@ -2494,3 +2494,221 @@ test('marca o job como falho quando o testCommand retorna erro', async () => {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
 });
+
+test('permite releitura após cooldown de estagnação', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-stagnation-reset-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'stable content');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const originalMax = process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;
+  const originalReset = process.env.INVESTIGATION_STAGNATION_RESET_MS;
+  process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS = '3';
+  process.env.INVESTIGATION_STAGNATION_RESET_MS = '5';
+
+  const originalDateNow = Date.now;
+  let mockNow = 1_000_000;
+  (Date as unknown as { now: () => number }).now = () => mockNow;
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length > 1) {
+          mockNow += 10_000;
+        }
+        if (fakeOpenAI.calls.length <= 4) {
+          const turn = fakeOpenAI.calls.length;
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: `cooldown-${turn}`,
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              { type: 'message', id: `msg-cooldown-${turn}`, role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-cooldown-final',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'sem bloqueio', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-stagnation-reset',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'verifique se o cooldown libera novas hipóteses',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    assert.ok(
+      !job.logs.some((entry) => entry.includes('bloqueio por falta de nova evidência')),
+      'não deveria registrar bloqueio por falta de evidências após o cooldown',
+    );
+    assert.ok(
+      !job.logs.some((entry) => entry.includes('bloqueio de hipótese')),
+      'não deveria bloquear hipóteses após o cooldown',
+    );
+  } finally {
+    if (originalMax === undefined) {
+      delete process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;
+    } else {
+      process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS = originalMax;
+    }
+    if (originalReset === undefined) {
+      delete process.env.INVESTIGATION_STAGNATION_RESET_MS;
+    } else {
+      process.env.INVESTIGATION_STAGNATION_RESET_MS = originalReset;
+    }
+    (Date as unknown as { now: () => number }).now = originalDateNow;
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test('aplica limite ampliado para ferramentas de inspeção', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-inspection-limit-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'conteúdo estável');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const originalMax = process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;
+  const originalInspection = process.env.INVESTIGATION_INSPECTION_MAX_ATTEMPTS;
+  process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS = '3';
+  process.env.INVESTIGATION_INSPECTION_MAX_ATTEMPTS = '6';
+
+  const steps: ('read' | 'shell')[] = [
+    'read',
+    'shell',
+    'read',
+    'shell',
+    'read',
+    'shell',
+    'read',
+    'shell',
+    'read',
+    'shell',
+    'read',
+    'shell',
+    'read',
+  ];
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        const step = steps.shift();
+        if (step === 'read') {
+          const turn = fakeOpenAI.calls.length;
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: `inspection-read-${turn}`,
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              { type: 'message', id: `msg-inspection-${turn}`, role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        if (step === 'shell') {
+          const marker = `marker-${steps.length}`;
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: marker,
+                name: 'run_shell',
+                arguments: JSON.stringify({ command: ['/bin/echo', marker], cwd: '.' }),
+              },
+              { type: 'message', id: `msg-shell-${marker}`, role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-inspection-final',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'pronto', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-inspection-limit',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'garanta que o limite maior só bloqueie após 6 tentativas de leitura',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    const readBlocks = job.logs.filter((entry) => entry.includes('bloqueio de hipótese') && entry.includes('read_file'));
+    assert.ok(readBlocks.length >= 1, 'esperava bloqueio para read_file após exceder o limite ampliado');
+    assert.ok(
+      !job.logs.some((entry) => entry.includes('bloqueio de hipótese') && entry.includes('run_shell')),
+      'o limite ampliado deve afetar apenas ferramentas de inspeção',
+    );
+  } finally {
+    if (originalMax === undefined) {
+      delete process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS;
+    } else {
+      process.env.INVESTIGATION_STAGNATION_MAX_ATTEMPTS = originalMax;
+    }
+    if (originalInspection === undefined) {
+      delete process.env.INVESTIGATION_INSPECTION_MAX_ATTEMPTS;
+    } else {
+      process.env.INVESTIGATION_INSPECTION_MAX_ATTEMPTS = originalInspection;
+    }
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
