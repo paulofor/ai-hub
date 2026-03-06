@@ -56,13 +56,23 @@ public class CodexController {
 
     @GetMapping
     public Object list(@RequestParam(required = false) Integer page,
-                       @RequestParam(required = false) Integer size) {
+                       @RequestParam(required = false) Integer size,
+                       @RequestParam(required = false) Integer rating) {
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rating deve estar entre 1 e 5");
+        }
+
         if (page == null && size == null) {
-            return codexRequestService.list();
+            if (rating == null) {
+                return codexRequestService.list();
+            }
+            return codexRequestService.list().stream()
+                .filter(request -> rating.equals(request.getRating()))
+                .toList();
         }
         int resolvedPage = page != null ? page : 0;
         int resolvedSize = size != null ? size : 5;
-        Page<CodexRequest> result = codexRequestService.listPage(resolvedPage, resolvedSize);
+        Page<CodexRequest> result = codexRequestService.listPage(resolvedPage, resolvedSize, rating);
         return result;
     }
 
