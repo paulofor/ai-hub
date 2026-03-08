@@ -222,7 +222,8 @@ export default function ProblemsPage() {
     }
   };
 
-  const totalOpenProblems = useMemo(() => problems.filter((problem) => !problem.finalizedAt).length, [problems]);
+  const openProblems = useMemo(() => problems.filter((problem) => !problem.finalizedAt), [problems]);
+  const totalOpenProblems = openProblems.length;
 
   return (
     <section className="space-y-6">
@@ -413,10 +414,10 @@ export default function ProblemsPage() {
         <div className="rounded-xl border border-slate-200 bg-white/70 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
           {loading && <p className="text-sm text-slate-500">Carregando problemas...</p>}
           {error && <p className="text-sm text-red-500">{error}</p>}
-          {!loading && !error && problems.length === 0 && <p className="text-sm text-slate-500">Nenhum problema cadastrado.</p>}
+          {!loading && !error && openProblems.length === 0 && <p className="text-sm text-slate-500">Nenhum problema em aberto.</p>}
 
           <div className="space-y-4">
-            {problems.map((problem) => (
+            {openProblems.map((problem) => (
               <article key={problem.id} className="rounded-lg border border-slate-200 p-4 shadow-sm dark:border-slate-800">
                 <div className="flex items-start justify-between gap-4">
                   <div>
