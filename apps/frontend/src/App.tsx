@@ -13,6 +13,7 @@ import LogInterpreterPage from './pages/LogInterpreterPage';
 import PromptHintsPage from './pages/PromptHintsPage';
 import ProblemsPage from './pages/ProblemsPage';
 import ProblemDetailPage from './pages/ProblemDetailPage';
+import VideoProjectsPage from './pages/VideoProjectsPage';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
         <Route path="/codex" element={<CodexPage />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
+        <Route path="/video/projects" element={<VideoProjectsPage />} />
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
