@@ -1,3 +1,5 @@
 databaseChangeLog:
   - include:
       file: db/changelog/changeset-001-create-users.yaml
+  - include:
+      file: db/changelog/changeset-002-video-module.yaml
