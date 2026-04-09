@@ -1,8 +1,8 @@
 {
-  "serviceName": "ai-hub",
+  "serviceName": "ai-hub-6",
   "containers": {
     "backend": {
-      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-backend:latest",
+      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-6-backend:latest",
       "command": ["java", "-jar", "app.jar"],
       "ports": { "8081": "HTTP" },
       "environment": {
@@ -18,14 +18,14 @@
       }
     },
     "frontend": {
-      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-frontend:latest",
+      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-6-frontend:latest",
       "ports": { "80": "HTTP" },
       "environment": {
         "VITE_API_BASE_URL": "/api"
       }
     },
     "sandbox-orchestrator": {
-      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-sandbox:latest",
+      "image": "<aws-account-id>.dkr.ecr.<region>.amazonaws.com/ai-hub-6-sandbox:latest",
       "ports": { "8083": "HTTP" },
       "environment": {
         "PORT": "8083",
