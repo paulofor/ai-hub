@@ -229,6 +229,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly prCreateMaxAttempts: number;
   private readonly prCreateRetryDelayMs: number;
   private readonly contextRecentMessageLimit: number;
+  private readonly ecoThirtyRecentMessageLimit: number;
   private readonly contextSummaryLineLimit: number;
   private readonly contextWorkingSetLimit: number;
   private readonly contextWorkingSetItemCharLimit: number;
@@ -528,6 +529,10 @@ export class SandboxJobProcessor implements JobProcessor {
     this.prCreateMaxAttempts = Math.max(1, this.parsePositiveInteger(process.env.PR_CREATE_RETRY_ATTEMPTS, 3));
     this.prCreateRetryDelayMs = this.parsePositiveInteger(process.env.PR_CREATE_RETRY_DELAY_MS, 1_500);
     this.contextRecentMessageLimit = Math.max(4, this.parsePositiveInteger(process.env.CONTEXT_RECENT_MESSAGE_LIMIT, 14));
+    this.ecoThirtyRecentMessageLimit = Math.max(
+      1,
+      this.parsePositiveInteger(process.env.ECO30_RECENT_MESSAGE_LIMIT, 30),
+    );
     this.contextSummaryLineLimit = Math.max(20, this.parsePositiveInteger(process.env.CONTEXT_SUMMARY_LINE_LIMIT, 90));
     this.contextWorkingSetLimit = Math.max(1, this.parsePositiveInteger(process.env.CONTEXT_WORKING_SET_LIMIT, 10));
     this.contextWorkingSetItemCharLimit = this.parsePositiveInteger(
@@ -642,6 +647,11 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(
           job,
           `modo ECO-2: auto-compact=${this.ecoTwoAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoTwoHistoryTargetTokens}, toolOutput=${this.ecoTwoToolOutputStringLimit}, http_get=${this.ecoTwoHttpToolMaxResponseChars}`,
+        );
+      } else if (this.isEcoThirty(job)) {
+        this.log(
+          job,
+          `modo ECO-30: auto-compact=${this.ecoTwoAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoTwoHistoryTargetTokens}, toolOutput=${this.ecoTwoToolOutputStringLimit}, http_get=${this.ecoTwoHttpToolMaxResponseChars}, últimas 30 interações enviadas ao modelo`,
         );
       } else if (this.isEcoThree(job)) {
         this.log(
@@ -913,6 +923,9 @@ Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md �
           : this.isEcoTwo(job)
             ? `
 Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 35k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo e abandone loops detectados: se precisar repetir a mesma tool explique o que mudou, caso contrário o sandbox bloqueará tentativas idênticas para poupar tokens.`
+            : this.isEcoThirty(job)
+              ? `
+Modo ECO-30 ativo: siga as mesmas diretrizes do docs/estrategia-token/modo-eco2.md, porém limite o histórico enviado ao modelo às respostas das 30 últimas interações. Resuma ou descarte qualquer contexto adicional fora dessa janela e registre explicitamente o que saiu do prompt.`
             : this.isEcoThree(job)
               ? `
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
@@ -1286,7 +1299,7 @@ ${profileInstruction}`,
     signature: string,
     toolName: string,
   ): EcoTwoLoopBlockResult | undefined {
-    if (!this.isEcoTwo(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
+    if (!this.isEcoTwoFamily(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
       return undefined;
     }
     if (this.ecoTwoMaxIdenticalToolAttempts <= 1) {
@@ -1309,13 +1322,13 @@ ${profileInstruction}`,
     const attempts = this.ecoTwoMaxIdenticalToolAttempts;
     return {
       payload: {
-        error: 'Modo ECO-2 bloqueou a execução repetida desta tool.',
+        error: `Modo ${this.resolveEcoTwoLabel(job)} bloqueou a execução repetida desta tool.`,
         tool: toolName || 'desconhecida',
         attemptsConsidered: attempts,
         guidance:
           'Revise o plano, edite os arquivos necessários ou explique o que mudou antes de repetir o mesmo comando.',
       },
-      logMessage: `Modo ECO-2: loop bloqueado para ${toolName || 'tool'} após ${attempts} respostas idênticas.`,
+      logMessage: `Modo ${this.resolveEcoTwoLabel(job)}: loop bloqueado para ${toolName || 'tool'} após ${attempts} respostas idênticas.`,
     };
   }
 
@@ -1325,7 +1338,7 @@ ${profileInstruction}`,
     toolName: string,
     preparedOutput: string,
   ): void {
-    if (!this.isEcoTwo(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
+    if (!this.isEcoTwoFamily(job) || !this.isEcoTwoLoopGuardedTool(toolName)) {
       return;
     }
     const state = this.getEcoTwoLoopState(job);
@@ -1342,7 +1355,7 @@ ${profileInstruction}`,
   }
 
   private resetEcoTwoLoopAttempts(job: SandboxJob, reason?: string): void {
-    if (!this.isEcoTwo(job)) {
+    if (!this.isEcoTwoFamily(job)) {
       return;
     }
     const state = this.ecoTwoLoopStates.get(job);
@@ -1352,7 +1365,7 @@ ${profileInstruction}`,
     state.attempts.length = 0;
     state.blockedSignature = undefined;
     if (reason) {
-      this.log(job, `Modo ECO-2: histórico de tentativas idênticas redefinido (${reason}).`);
+      this.log(job, `Modo ${this.resolveEcoTwoLabel(job)}: histórico de tentativas idênticas redefinido (${reason}).`);
     }
   }
 
@@ -1860,12 +1873,20 @@ ${entry.content}`;
     if (workingSet) {
       layered.push(workingSet);
     }
-    const recent = this.collectRecentHistory(history, rootSystemId, rootUserId);
+    const recent = this.collectRecentHistory(job, history, rootSystemId, rootUserId);
     layered.push(...recent);
     return layered;
   }
 
+  private resolveRecentMessageLimit(job: SandboxJob): number {
+    if (this.isEcoThirty(job)) {
+      return this.ecoThirtyRecentMessageLimit;
+    }
+    return this.contextRecentMessageLimit;
+  }
+
   private collectRecentHistory(
+    job: SandboxJob,
     history: ResponseItem[],
     rootSystemId?: string,
     rootUserId?: string,
@@ -1873,8 +1894,9 @@ ${entry.content}`;
     if (!Array.isArray(history) || history.length === 0) {
       return [];
     }
+    const recentLimit = Math.max(1, this.resolveRecentMessageLimit(job));
     const selectedIndices = new Set<number>();
-    for (let index = history.length - 1; index >= 0 && selectedIndices.size < this.contextRecentMessageLimit; index--) {
+    for (let index = history.length - 1; index >= 0 && selectedIndices.size < recentLimit; index--) {
       if (this.isProtectedHistoryItem(history[index], rootSystemId, rootUserId)) {
         continue;
       }
@@ -4202,7 +4224,7 @@ grep -R -n -- "$@"
     if (candidate) {
       return candidate;
     }
-    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isEcoThree(job) || this.isChatgptCodex(job)) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isEcoThirty(job) || this.isEcoThree(job) || this.isChatgptCodex(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -4218,6 +4240,18 @@ grep -R -n -- "$@"
 
   private isEcoTwo(job: SandboxJob): boolean {
     return (job.profile ?? 'STANDARD') === 'ECO_2';
+  }
+
+  private isEcoThirty(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'ECO_30';
+  }
+
+  private isEcoTwoFamily(job: SandboxJob): boolean {
+    return this.isEcoTwo(job) || this.isEcoThirty(job);
+  }
+
+  private resolveEcoTwoLabel(job: SandboxJob): string {
+    return this.isEcoThirty(job) ? 'ECO-30' : 'ECO-2';
   }
 
   private isEcoThree(job: SandboxJob): boolean {
@@ -4255,7 +4289,7 @@ grep -R -n -- "$@"
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyToolOutputStringLimit;
     }
-    if (this.isEcoTwo(job)) {
+    if (this.isEcoTwoFamily(job)) {
       return this.ecoTwoToolOutputStringLimit;
     }
     if (this.isEcoThree(job)) {
@@ -4277,7 +4311,7 @@ grep -R -n -- "$@"
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyToolOutputSerializedLimit;
     }
-    if (this.isEcoTwo(job)) {
+    if (this.isEcoTwoFamily(job)) {
       return this.ecoTwoToolOutputSerializedLimit;
     }
     if (this.isEcoThree(job)) {
@@ -4299,7 +4333,7 @@ grep -R -n -- "$@"
     if (this.isSmartEconomy(job)) {
       return this.smartEconomyHttpToolMaxResponseChars;
     }
-    if (this.isEcoTwo(job)) {
+    if (this.isEcoTwoFamily(job)) {
       return this.ecoTwoHttpToolMaxResponseChars;
     }
     if (this.isEcoThree(job)) {
@@ -4460,9 +4494,9 @@ grep -R -n -- "$@"
     historyTargetTokens: number;
     userMessageTokenLimit: number;
   } | undefined {
-    if (this.isEcoTwo(job)) {
+    if (this.isEcoTwoFamily(job)) {
       return {
-        label: 'ECO-2',
+        label: this.resolveEcoTwoLabel(job),
         autoCompactTokenLimit: this.ecoTwoAutoCompactTokenLimit,
         historyTargetTokens: this.ecoTwoHistoryTargetTokens,
         userMessageTokenLimit: this.ecoTwoUserMessageTokenLimit,
