@@ -27,7 +27,7 @@ import java.util.Objects;
 @Table(name = "codex_requests")
 public class CodexRequest {
 
-    public static final String DEFAULT_VERSION = "aihub-4";
+    public static final String DEFAULT_VERSION = "aihub-6";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
