@@ -87,12 +87,6 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `ECO2_MAX_IDENTICAL_TOOL_ATTEMPTS` | Máximo de tentativas idênticas de tool antes de marcar estagnação. | `3` (mínimo efetivo: `2`) | Valor menor reduz loops inúteis; valor maior permite insistência em ambientes instáveis. | `2` a `5` |
 | `ECO2_LOOP_HISTORY_SIZE` | Tamanho do histórico para detectar repetição de chamadas no ECO-2. | `ECO2_MAX_IDENTICAL_TOOL_ATTEMPTS * 3` (mínimo efetivo: `>= ECO2_MAX_IDENTICAL_TOOL_ATTEMPTS`) | Janela maior melhora detecção de ciclo, mas custa mais memória/CPU de controle. | `6` a `18` |
 
-#### Perfil `ECO30_*`
-
-| Variável | Descrição | Padrão | Observações | Faixa sugerida |
-| --- | --- | --- | --- | --- |
-| `ECO30_RECENT_MESSAGE_LIMIT` | Número máximo de respostas (com seus tool calls/outputs) que o ECO-30 envia ao modelo. | `30` | Use apenas para ajustar o envelope quando o cliente exigir uma janela diferente; valores altos reduzem o benefício de custo previsível. | `20` a `40` |
-
 #### Perfil `ECO3_*`
 
 | Variável | Descrição | Default em código | Impacto operacional | Faixa sugerida |

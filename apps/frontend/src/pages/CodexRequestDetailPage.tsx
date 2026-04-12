@@ -435,20 +435,6 @@ export default function CodexRequestDetailPage() {
               </div>
             )}
 
-
-            {request.profile === 'ECO_30' && (
-              <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 dark:border-cyan-900/60 dark:bg-cyan-900/20 dark:text-cyan-100">
-                <p className="font-semibold">Modo ECO-30</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  <li>Herda todas as rotinas do ECO-2 (compactações automáticas, truncamento de outputs e registro de cortes).</li>
-                  <li>Resume o histórico sempre que necessário para que apenas as respostas das 30 últimas interações sejam enviadas ao modelo.</li>
-                  <li>Quando precisar citar contexto mais antigo, salve evidências em arquivos auxiliares (docs/ ou codex/) e referencie-os em vez de expandir o prompt.</li>
-                  <li>Mantenha um log das interações descartadas para que a auditoria consiga reconstruir o que ficou fora do modelo.</li>
-                </ul>
-                <p className="mt-2 text-xs text-cyan-700 dark:text-cyan-200">Referência: docs/estrategia-token/modo-eco2.md (variante ECO-30)</p>
-              </div>
-            )}
-
             {request.profile === 'ECO_3' && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-100">
                 <p className="font-semibold">Modo ECO-3</p>

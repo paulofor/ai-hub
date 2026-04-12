@@ -7,7 +7,6 @@ public enum CodexIntegrationProfile {
     ECO_1,
     ECO_2,
     ECO_3,
-    ECO_30,
     CHATGPT_CODEX;
 
     public static CodexIntegrationProfile fromString(String value) {

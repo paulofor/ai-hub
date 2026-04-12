@@ -467,7 +467,6 @@ public class CodexRequestService {
         if ((profile == CodexIntegrationProfile.ECONOMY
             || profile == CodexIntegrationProfile.ECO_1
             || profile == CodexIntegrationProfile.ECO_2
-            || profile == CodexIntegrationProfile.ECO_30
             || profile == CodexIntegrationProfile.ECO_3
             || profile == CodexIntegrationProfile.CHATGPT_CODEX)
             && StringUtils.hasText(economyModel)) {

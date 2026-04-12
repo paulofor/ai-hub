@@ -8,7 +8,7 @@ import request from 'supertest';
 
 import { createApp } from '../src/server.js';
 import { SandboxJobProcessor } from '../src/jobProcessor.js';
-import { JobProcessor, SandboxJob, SandboxProfile } from '../src/types.js';
+import { JobProcessor, SandboxJob } from '../src/types.js';
 
 class StubProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
@@ -636,58 +636,6 @@ test('mantém itens de reasoning associados aos function_call no histórico rece
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
 });
-
-test('ECO-30 mantém apenas as 30 últimas respostas no prompt', async () => {
-  const originalRecentLimit = process.env.CONTEXT_RECENT_MESSAGE_LIMIT;
-  const originalEco30Limit = process.env.ECO30_RECENT_MESSAGE_LIMIT;
-  process.env.CONTEXT_RECENT_MESSAGE_LIMIT = '8';
-  process.env.ECO30_RECENT_MESSAGE_LIMIT = '30';
-
-  try {
-    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex');
-    const job: SandboxJob = {
-      jobId: 'job-eco30-history',
-      repoUrl: 'https://example.com/repo.git',
-      branch: 'main',
-      taskDescription: 'eco30 history check',
-      status: 'PENDING',
-      logs: [],
-      interactions: [],
-      interactionSequence: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      timeoutCount: 0,
-      profile: 'ECO_30' as SandboxProfile,
-    } as SandboxJob;
-    const history: any[] = Array.from({ length: 50 }, (_, index) => ({
-      type: 'message',
-      id: `msg-${index}`,
-      role: index % 2 === 0 ? 'assistant' : 'user',
-      content: [{ type: 'input_text', text: `registro ${index}` }],
-    }));
-
-    const processorAny = processor as any;
-    const recent = processorAny.collectRecentHistory(job, history, undefined, undefined);
-
-    assert.equal(recent.length, 30);
-    assert.deepEqual(
-      recent.map((item: any) => item.id),
-      history.slice(-30).map((item) => item.id),
-    );
-  } finally {
-    if (originalRecentLimit === undefined) {
-      delete process.env.CONTEXT_RECENT_MESSAGE_LIMIT;
-    } else {
-      process.env.CONTEXT_RECENT_MESSAGE_LIMIT = originalRecentLimit;
-    }
-    if (originalEco30Limit === undefined) {
-      delete process.env.ECO30_RECENT_MESSAGE_LIMIT;
-    } else {
-      process.env.ECO30_RECENT_MESSAGE_LIMIT = originalEco30Limit;
-    }
-  }
-});
-
 
 test('returns job status', async () => {
   const registry = new Map<string, SandboxJob>();
