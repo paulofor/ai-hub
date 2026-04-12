@@ -1,13 +1,5 @@
 export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type SandboxProfile =
-  | 'STANDARD'
-  | 'ECONOMY'
-  | 'SMART_ECONOMY'
-  | 'ECO_1'
-  | 'ECO_2'
-  | 'ECO_3'
-  | 'ECO_30'
-  | 'CHATGPT_CODEX';
+export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'CHATGPT_CODEX';
 
 export type InteractionDirection = 'OUTBOUND' | 'INBOUND';
 

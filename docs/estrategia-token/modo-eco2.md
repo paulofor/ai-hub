@@ -4,16 +4,6 @@ Este documento resume os mecanismos já presentes no cliente Codex (e como você
 
 > Este conjunto de práticas alimenta o perfil de integração **ECO-2** no hub. Ao selecionar esse perfil, o sandbox aplica automaticamente as rotinas de compactação, limitação de histórico e truncamento descritas neste documento para conter custos sem exigir novas configurações do usuário.
 
-### Perfil ECO-30 (variante do ECO-2)
-
-O ECO-30 usa exatamente as mesmas políticas do ECO-2, mas restringe o histórico repassado ao modelo às respostas das 30 últimas interações. Para caber nesse envelope, ele exige que cada turno resuma o contexto excedente e registre o que ficou de fora (logs, arquivos auxiliares em `docs/` ou `codex/`, etc.). Na prática isso significa:
-
-- As mesmas rotinas de auto-compaction, truncamento de outputs e bloqueio de loops continuam valendo.
-- Antes de cada chamada ao modelo, o orquestrador aparará o histórico para preservar apenas as 30 respostas mais recentes do assistente (com seus tool calls/outputs associados).
-- Sempre que precisar relembrar algo mais antigo, escreva um resumo curto e cite o arquivo/PR onde o contexto completo foi salvo em vez de reabrir toda a transcrição.
-
-Essa variante é indicada para clientes que desejam previsibilidade total da janela usada a cada interação sem abrir mão das proteções do ECO-2.
-
 ## 1. Compactação automática sempre que o limite de tokens é atingido
 
 Durante cada turno, o `run_turn` monitora `total_usage_tokens` e, caso o valor ultrapasse `auto_compact_limit` enquanto o modelo ainda precisa continuar respondendo, dispara uma compactação inline antes da próxima iteração. Isso garante que o histórico enviado ao modelo seja reduzido automaticamente.
