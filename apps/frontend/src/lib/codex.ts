@@ -171,7 +171,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const completionCost = parseNumber(item.completionCost);
   const cost = parseNumber(item.cost);
   const versionRaw = typeof item.version === 'string' ? item.version : undefined;
-  const version = versionRaw && versionRaw.trim() ? versionRaw.trim() : 'aihub-4';
+  const version = versionRaw && versionRaw.trim() ? versionRaw.trim() : 'aihub-6';
   const profile = parseProfile(item.profile ?? item.integrationProfile);
   const status = parseStatus(item.status);
   const rating = parseNumber(item.rating);
