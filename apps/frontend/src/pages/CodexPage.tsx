@@ -672,6 +672,22 @@ export default function CodexPage() {
                 <input
                   type="radio"
                   name="codex-profile"
+                  value="ECO_30"
+                  checked={profile === 'ECO_30'}
+                  onChange={() => setProfile('ECO_30')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  ECO-30
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Variante do ECO-2 que só envia ao modelo as respostas das 30 últimas interações; resuma qualquer contexto extra antes de prosseguir.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
                   value="ECO_3"
                   checked={profile === 'ECO_3'}
                   onChange={() => setProfile('ECO_3')}
