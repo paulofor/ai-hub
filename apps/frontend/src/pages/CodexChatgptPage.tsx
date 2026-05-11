@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
@@ -89,7 +90,7 @@ export default function CodexChatgptPage() {
       return;
     }
     try {
-      const response = await client.get('/account/read');
+      const response = await axios.get('/account/read');
       const parsed = parseStatus(response.data);
       setAccount(parsed);
       includeKnownAccount(parsed.accountEmail);
@@ -121,7 +122,7 @@ export default function CodexChatgptPage() {
     setLoading(true);
     try {
       const [accountResult, envResponse, modelResponse] = await Promise.all([
-        client.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
+        axios.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
         client.get<EnvironmentOption[]>('/environments'),
         client.get<ModelOption[]>('/codex/models')
       ]);
@@ -189,7 +190,7 @@ export default function CodexChatgptPage() {
         setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
         return;
       }
-      const response = await client.post('/account/login/start', selectedAccount ? { accountHint: selectedAccount } : {});
+      const response = await axios.post('/account/login/start', selectedAccount ? { accountHint: selectedAccount } : {});
       const authUrl = response.data?.url || response.data?.authUrl;
       if (typeof authUrl === 'string' && authUrl.length > 0) {
         window.open(authUrl, '_blank', 'noopener,noreferrer');
@@ -207,7 +208,7 @@ export default function CodexChatgptPage() {
   const handleLogout = useCallback(async () => {
     setActionLoading(true);
     try {
-      await client.post('/account/logout');
+      await axios.post('/account/logout');
       await loadAccount();
       registerTelemetry('logout_success', 'Sessão ChatGPT desconectada com sucesso.');
     } catch (err) {
