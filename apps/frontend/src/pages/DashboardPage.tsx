@@ -41,6 +41,11 @@ export default function DashboardPage() {
             Abrir Codex →
           </Link>
         </DashboardCard>
+        <DashboardCard title="Codex ChatGPT" description="Fluxo managed com autenticação da conta ChatGPT">
+          <Link to="/codex-chatgpt" className="text-sm font-semibold text-emerald-600">
+            Abrir Codex ChatGPT →
+          </Link>
+        </DashboardCard>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
