@@ -30,3 +30,14 @@
 > Nunca crie registro com timestamp futuro em relação ao horário atual de `America/Sao_Paulo`.
 > Em caso de timestamp incorreto já registrado, não apague nem edite o registro antigo; adicione um novo registro de correção explicando o erro.
 > Neste documento segue política de **append-only** (não pode ter nenhuma linha apagada; apenas inserções).
+
+## 2026-05-11 — Fase 1 do plano Codex ChatGPT managed
+- Implementada rota frontend `/codex-chatgpt` com nova página `CodexChatgptPage`.
+- Adicionado acesso no menu lateral e card no dashboard para abertura do novo módulo.
+- MVP da autenticação conectado aos endpoints `POST /account/login/start`, `GET /account/read` e `POST /account/logout`.
+- Bloqueio funcional do uso quando conta não está conectada, conforme fase 1 do plano.
+
+## 2026-05-11 11:26:30 UTC-3
+- Correção de registro: a entrada anterior usou título fora do padrão obrigatório de timestamp UTC-3.
+- Execução da fase 1 do plano `docs/plano-codex-chatgpt-managed.md` no frontend com rota `/codex-chatgpt`, menu/dashboard atualizados e fluxo de autenticação MVP (`/account/login/start`, `/account/read`, `/account/logout`).
+- Bloqueio explícito de uso da área quando a conta não estiver conectada.
