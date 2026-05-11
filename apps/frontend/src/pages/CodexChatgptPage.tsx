@@ -58,6 +58,7 @@ export default function CodexChatgptPage() {
   const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('');
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
+  const [accountApiAvailable, setAccountApiAvailable] = useState(true);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -83,11 +84,27 @@ export default function CodexChatgptPage() {
   }, []);
 
   const loadAccount = useCallback(async () => {
-    const response = await client.get('/account/read');
-    const parsed = parseStatus(response.data);
-    setAccount(parsed);
-    includeKnownAccount(parsed.accountEmail);
-  }, [includeKnownAccount]);
+    if (!accountApiAvailable) {
+      setAccount({ connected: false, status: 'unsupported' });
+      return;
+    }
+    try {
+      const response = await client.get('/account/read');
+      const parsed = parseStatus(response.data);
+      setAccount(parsed);
+      includeKnownAccount(parsed.accountEmail);
+      setAccountApiAvailable(true);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (message.includes('404')) {
+        setAccountApiAvailable(false);
+        setAccount({ connected: false, status: 'unsupported' });
+        registerTelemetry('poll_error', 'API de conta indisponível neste ambiente (/account/* retornou 404).');
+        return;
+      }
+      throw err;
+    }
+  }, [accountApiAvailable, includeKnownAccount, registerTelemetry]);
 
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
@@ -103,12 +120,23 @@ export default function CodexChatgptPage() {
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountResponse, envResponse, modelResponse] = await Promise.all([
-        client.get('/account/read'),
+      const [accountResult, envResponse, modelResponse] = await Promise.all([
+        client.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
         client.get<EnvironmentOption[]>('/environments'),
         client.get<ModelOption[]>('/codex/models')
       ]);
-      setAccount(parseStatus(accountResponse.data));
+      if (accountResult.ok) {
+        const parsedAccount = parseStatus(accountResult.data);
+        setAccount(parsedAccount);
+        includeKnownAccount(parsedAccount.accountEmail);
+        setAccountApiAvailable(true);
+      } else if (accountResult.error.message.includes('404')) {
+        setAccountApiAvailable(false);
+        setAccount({ connected: false, status: 'unsupported' });
+        registerTelemetry('poll_error', 'API de conta indisponível neste ambiente (/account/* retornou 404).');
+      } else {
+        throw accountResult.error;
+      }
       setEnvironments(envResponse.data);
       setModels(modelResponse.data);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
@@ -130,7 +158,7 @@ export default function CodexChatgptPage() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      Promise.all([loadAccount(), loadRequests()])
+      Promise.all([loadRequests(), loadAccount()])
         .then(() => registerTelemetry('poll_success', 'Polling periódico concluído.'))
         .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling periódico: ${err.message}`));
     }, POLL_INTERVAL_MS);
@@ -157,6 +185,10 @@ export default function CodexChatgptPage() {
   const handleConnect = useCallback(async () => {
     setActionLoading(true);
     try {
+      if (!accountApiAvailable) {
+        setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
+        return;
+      }
       const response = await client.post('/account/login/start', selectedAccount ? { accountHint: selectedAccount } : {});
       const authUrl = response.data?.url || response.data?.authUrl;
       if (typeof authUrl === 'string' && authUrl.length > 0) {
@@ -225,7 +257,7 @@ export default function CodexChatgptPage() {
           <p><span className="font-medium">Validade:</span> {account.expiresAt ? formatDateTime(account.expiresAt) : 'não informada'}</p>
         </div> : null}
         <div className="flex gap-3">
-          <button type="button" onClick={handleConnect} disabled={actionLoading} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
+          <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
           <button type="button" onClick={handleLogout} disabled={actionLoading || !account?.connected} className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Desconectar</button>
         </div>
         {knownAccounts.length > 0 ? <div className="space-y-2">
@@ -235,6 +267,7 @@ export default function CodexChatgptPage() {
           </select>
         </div> : null}
         {expiresSoon ? <p className="text-xs text-amber-700 dark:text-amber-300">Sessão próxima da expiração (menos de 5 minutos). Recomendado reconectar para evitar falhas.</p> : null}
+        {!accountApiAvailable ? <p className="text-sm text-amber-700 dark:text-amber-300">Integração de autenticação indisponível: backend não possui rotas <code>/account/*</code> (retorno 404).</p> : null}
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
