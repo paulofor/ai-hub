@@ -21,6 +21,15 @@ interface ModelOption {
 }
 
 const POLL_INTERVAL_MS = 5000;
+const TELEMETRY_WINDOW_SIZE = 30;
+const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
+
+interface TelemetryEvent {
+  id: string;
+  type: 'poll_success' | 'poll_error' | 'login_started' | 'login_failed' | 'logout_success' | 'logout_failed' | 'execution_success' | 'execution_failed';
+  message: string;
+  createdAt: string;
+}
 
 const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   if (!payload || typeof payload !== 'object') {
@@ -46,11 +55,39 @@ export default function CodexChatgptPage() {
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
+  const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState('');
+  const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
+
+  const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
+    setTelemetry((current) => {
+      const next: TelemetryEvent[] = [
+        {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type,
+          message,
+          createdAt: new Date().toISOString()
+        },
+        ...current
+      ];
+      return next.slice(0, TELEMETRY_WINDOW_SIZE);
+    });
+  }, []);
+
+  const includeKnownAccount = useCallback((email?: string | null) => {
+    if (!email) {
+      return;
+    }
+    setKnownAccounts((current) => (current.includes(email) ? current : [...current, email]));
+    setSelectedAccount((current) => current || email);
+  }, []);
 
   const loadAccount = useCallback(async () => {
     const response = await client.get('/account/read');
-    setAccount(parseStatus(response.data));
-  }, []);
+    const parsed = parseStatus(response.data);
+    setAccount(parsed);
+    includeKnownAccount(parsed.accountEmail);
+  }, [includeKnownAccount]);
 
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
@@ -77,13 +114,15 @@ export default function CodexChatgptPage() {
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => current || modelResponse.data[0]?.modelName || '');
       await loadRequests();
+      registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
     } catch (err) {
+      registerTelemetry('poll_error', `Falha no bootstrap/polling: ${(err as Error).message}`);
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [loadRequests]);
+  }, [includeKnownAccount, loadRequests, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -91,10 +130,12 @@ export default function CodexChatgptPage() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      Promise.all([loadAccount(), loadRequests()]).catch(() => undefined);
+      Promise.all([loadAccount(), loadRequests()])
+        .then(() => registerTelemetry('poll_success', 'Polling periódico concluído.'))
+        .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling periódico: ${err.message}`));
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [loadAccount, loadRequests]);
+  }, [loadAccount, loadRequests, registerTelemetry]);
 
   const accountExpired = useMemo(() => {
     if (!account?.expiresAt) {
@@ -105,29 +146,40 @@ export default function CodexChatgptPage() {
   }, [account]);
 
   const isConnected = Boolean(account?.connected) && !accountExpired && account?.status !== 'expired';
+  const expiresSoon = useMemo(() => {
+    if (!account?.expiresAt) {
+      return false;
+    }
+    const delta = new Date(account.expiresAt).getTime() - Date.now();
+    return Number.isFinite(delta) && delta > 0 && delta <= SESSION_WARNING_WINDOW_MS;
+  }, [account]);
 
   const handleConnect = useCallback(async () => {
     setActionLoading(true);
     try {
-      const response = await client.post('/account/login/start');
+      const response = await client.post('/account/login/start', selectedAccount ? { accountHint: selectedAccount } : {});
       const authUrl = response.data?.url || response.data?.authUrl;
       if (typeof authUrl === 'string' && authUrl.length > 0) {
         window.open(authUrl, '_blank', 'noopener,noreferrer');
       }
+      registerTelemetry('login_started', selectedAccount ? `Login iniciado para ${selectedAccount}.` : 'Login iniciado sem conta sugerida.');
       await loadAccount();
     } catch (err) {
+      registerTelemetry('login_failed', `Falha ao iniciar login: ${(err as Error).message}`);
       setError((err as Error).message);
     } finally {
       setActionLoading(false);
     }
-  }, [loadAccount]);
+  }, [loadAccount, registerTelemetry, selectedAccount]);
 
   const handleLogout = useCallback(async () => {
     setActionLoading(true);
     try {
       await client.post('/account/logout');
       await loadAccount();
+      registerTelemetry('logout_success', 'Sessão ChatGPT desconectada com sucesso.');
     } catch (err) {
+      registerTelemetry('logout_failed', `Falha ao desconectar: ${(err as Error).message}`);
       setError((err as Error).message);
     } finally {
       setActionLoading(false);
@@ -150,8 +202,10 @@ export default function CodexChatgptPage() {
       });
       setPrompt('');
       await loadRequests();
+      registerTelemetry('execution_success', 'Execução enviada com profile CHATGPT_CODEX.');
       setError(null);
     } catch (err) {
+      registerTelemetry('execution_failed', `Falha ao executar requisição: ${(err as Error).message}`);
       setError((err as Error).message);
     } finally {
       setActionLoading(false);
@@ -174,6 +228,13 @@ export default function CodexChatgptPage() {
           <button type="button" onClick={handleConnect} disabled={actionLoading} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
           <button type="button" onClick={handleLogout} disabled={actionLoading || !account?.connected} className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Desconectar</button>
         </div>
+        {knownAccounts.length > 0 ? <div className="space-y-2">
+          <p className="text-xs text-slate-500">Multi-conta (opcional): selecione um e-mail para sugerir no próximo login.</p>
+          <select value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
+            {knownAccounts.map((email) => <option key={email} value={email}>{email}</option>)}
+          </select>
+        </div> : null}
+        {expiresSoon ? <p className="text-xs text-amber-700 dark:text-amber-300">Sessão próxima da expiração (menos de 5 minutos). Recomendado reconectar para evitar falhas.</p> : null}
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
@@ -208,6 +269,20 @@ export default function CodexChatgptPage() {
           ))}
         </ul>
         {!requestsLoading && requests.length === 0 ? <p className="text-sm text-slate-500">Nenhuma execução ainda.</p> : null}
+      </div>
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
+        <h3 className="text-lg font-semibold">Troubleshooting & telemetria (Fase 3)</h3>
+        <p className="text-sm text-slate-500">Eventos recentes de autenticação, polling e execução para acelerar diagnóstico.</p>
+        <ul className="space-y-2">
+          {telemetry.map((event) => (
+            <li key={event.id} className="rounded-md border px-3 py-2 text-xs">
+              <p className="font-medium">{event.type}</p>
+              <p>{event.message}</p>
+              <p className="text-slate-500">{formatDateTime(event.createdAt)}</p>
+            </li>
+          ))}
+        </ul>
+        {telemetry.length === 0 ? <p className="text-sm text-slate-500">Sem eventos registrados nesta sessão.</p> : null}
       </div>
       {requests.some((item) => !isTerminalStatus(item.status)) ? <p className="text-xs text-slate-500">Monitoramento ativo a cada 5 segundos.</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
