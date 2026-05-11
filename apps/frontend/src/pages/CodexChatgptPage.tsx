@@ -31,6 +31,11 @@ interface TelemetryEvent {
   createdAt: string;
 }
 
+const is404Error = (err: unknown): boolean => {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('404');
+};
+
 const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   if (!payload || typeof payload !== 'object') {
     return { connected: false, status: 'disconnected' };
@@ -95,8 +100,7 @@ export default function CodexChatgptPage() {
       includeKnownAccount(parsed.accountEmail);
       setAccountApiAvailable(true);
     } catch (err) {
-      const message = (err as Error).message;
-      if (message.includes('404')) {
+      if (is404Error(err)) {
         setAccountApiAvailable(false);
         setAccount({ connected: false, status: 'unsupported' });
         registerTelemetry('poll_error', 'API de conta indisponível neste ambiente (/account/* retornou 404).');
@@ -130,7 +134,7 @@ export default function CodexChatgptPage() {
         setAccount(parsedAccount);
         includeKnownAccount(parsedAccount.accountEmail);
         setAccountApiAvailable(true);
-      } else if (accountResult.error.message.includes('404')) {
+      } else if (is404Error(accountResult.error)) {
         setAccountApiAvailable(false);
         setAccount({ connected: false, status: 'unsupported' });
         registerTelemetry('poll_error', 'API de conta indisponível neste ambiente (/account/* retornou 404).');
@@ -197,6 +201,13 @@ export default function CodexChatgptPage() {
       registerTelemetry('login_started', selectedAccount ? `Login iniciado para ${selectedAccount}.` : 'Login iniciado sem conta sugerida.');
       await loadAccount();
     } catch (err) {
+      if (is404Error(err)) {
+        setAccountApiAvailable(false);
+        setAccount({ connected: false, status: 'unsupported' });
+        registerTelemetry('login_failed', 'Endpoint de login indisponível: /account/login/start retornou 404.');
+        setError('Este ambiente não expõe login de conta (/account/login/start). Contate o administrador para habilitar a integração.');
+        return;
+      }
       registerTelemetry('login_failed', `Falha ao iniciar login: ${(err as Error).message}`);
       setError((err as Error).message);
     } finally {
