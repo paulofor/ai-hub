@@ -68,7 +68,10 @@ public class AccountController {
     ) throws IOException {
         String accountEmail = (email != null && !email.isBlank()) ? email.trim() : (String) session.getAttribute(ACCOUNT_EMAIL_KEY);
         if (accountEmail == null || accountEmail.isBlank()) {
-            accountEmail = "chatgpt-user@openai.com";
+            session.removeAttribute(ACCOUNT_EMAIL_KEY);
+            session.removeAttribute(EXPIRES_AT_KEY);
+            response.sendRedirect(loginSuccessRedirect + "?login=missing_email");
+            return;
         }
         session.setAttribute(ACCOUNT_EMAIL_KEY, accountEmail);
         session.setAttribute(EXPIRES_AT_KEY, Instant.now().plus(8, ChronoUnit.HOURS).toString());
