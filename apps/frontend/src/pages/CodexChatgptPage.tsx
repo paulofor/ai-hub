@@ -40,12 +40,36 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   if (!payload || typeof payload !== 'object') {
     return { connected: false, status: 'disconnected' };
   }
+
   const record = payload as Record<string, unknown>;
-  const connected = Boolean(record.connected);
-  const status = typeof record.status === 'string' ? record.status : connected ? 'connected' : 'disconnected';
-  const accountEmail = typeof record.accountEmail === 'string' ? record.accountEmail : null;
-  const expiresAt = typeof record.expiresAt === 'string' ? record.expiresAt : null;
-  return { connected, status, accountEmail, expiresAt };
+  const status = typeof record.status === 'string' ? record.status : undefined;
+  const normalizedStatus = status?.toLowerCase();
+
+  const accountEmail =
+    typeof record.accountEmail === 'string'
+      ? record.accountEmail
+      : typeof record.account_email === 'string'
+        ? record.account_email
+        : null;
+
+  const expiresAt =
+    typeof record.expiresAt === 'string'
+      ? record.expiresAt
+      : typeof record.expires_at === 'string'
+        ? record.expires_at
+        : null;
+
+  const connected =
+    typeof record.connected === 'boolean'
+      ? record.connected
+      : normalizedStatus === 'connected' || normalizedStatus === 'ok' || normalizedStatus === 'active' || Boolean(accountEmail && expiresAt);
+
+  return {
+    connected,
+    status: status ?? (connected ? 'connected' : 'disconnected'),
+    accountEmail,
+    expiresAt
+  };
 };
 
 export default function CodexChatgptPage() {
