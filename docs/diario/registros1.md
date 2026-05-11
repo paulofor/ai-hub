@@ -88,3 +88,7 @@
 
 - Correção de causa raiz no login ChatGPT: removido fallback que preenchia e-mail fictício (`chatgpt-user@openai.com`) no callback quando o provedor não devolvia e-mail.
 - `GET /api/account/login/callback` agora invalida a sessão e redireciona com `?login=missing_email` quando não há e-mail confirmado, evitando exibir conta inexistente como conectada.
+## 2026-05-11 23:23:06 UTC
+- Diagnóstico da causa raiz da falha de autenticação com `?login=missing_email`: o frontend priorizava `response.data.url` (callback local) em vez de `response.data.authUrl` (página de login real), abrindo diretamente `/api/account/login/callback` sem contexto de conta/e-mail.
+- Ajustada `CodexChatgptPage` para priorizar `authUrl` e usar `url` apenas como fallback, garantindo que o fluxo comece na autenticação do provedor antes do callback.
+

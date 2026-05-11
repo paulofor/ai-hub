@@ -194,7 +194,7 @@ export default function CodexChatgptPage() {
         return;
       }
       const response = await client.post('/account/login/start', selectedAccount ? { accountHint: selectedAccount } : {});
-      const authUrl = response.data?.url || response.data?.authUrl;
+      const authUrl = response.data?.authUrl || response.data?.url;
       if (typeof authUrl === 'string' && authUrl.length > 0) {
         window.open(authUrl, '_blank', 'noopener,noreferrer');
       }
