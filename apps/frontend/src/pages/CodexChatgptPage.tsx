@@ -86,6 +86,7 @@ export default function CodexChatgptPage() {
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('');
+  const [accountHintInput, setAccountHintInput] = useState('');
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
 
@@ -110,6 +111,7 @@ export default function CodexChatgptPage() {
     }
     setKnownAccounts((current) => (current.includes(email) ? current : [...current, email]));
     setSelectedAccount((current) => current || email);
+    setAccountHintInput((current) => current || email);
   }, []);
 
   const loadAccount = useCallback(async () => {
@@ -217,12 +219,14 @@ export default function CodexChatgptPage() {
         setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
         return;
       }
-      const response = await client.post('/account/login/start', selectedAccount ? { accountHint: selectedAccount } : {});
+      const sanitizedHint = accountHintInput.trim();
+      const accountHint = sanitizedHint || selectedAccount;
+      const response = await client.post('/account/login/start', accountHint ? { accountHint } : {});
       const authUrl = response.data?.authUrl || response.data?.url;
       if (typeof authUrl === 'string' && authUrl.length > 0) {
         window.open(authUrl, '_blank', 'noopener,noreferrer');
       }
-      registerTelemetry('login_started', selectedAccount ? `Login iniciado para ${selectedAccount}.` : 'Login iniciado sem conta sugerida.');
+      registerTelemetry('login_started', accountHint ? `Login iniciado para ${accountHint}.` : 'Login iniciado sem conta sugerida.');
       await loadAccount();
     } catch (err) {
       if (is404Error(err)) {
@@ -237,7 +241,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [loadAccount, registerTelemetry, selectedAccount]);
+  }, [accountHintInput, loadAccount, registerTelemetry, selectedAccount]);
 
   const handleLogout = useCallback(async () => {
     setActionLoading(true);
@@ -295,8 +299,18 @@ export default function CodexChatgptPage() {
           <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
           <button type="button" onClick={handleLogout} disabled={actionLoading || !account?.connected} className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Desconectar</button>
         </div>
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">Informe o e-mail da conta OpenAI para concluir o callback local e associar a sessão às execuções.</p>
+          <input
+            type="email"
+            value={accountHintInput}
+            onChange={(e) => setAccountHintInput(e.target.value)}
+            placeholder="voce@empresa.com"
+            className="w-full rounded-md border px-3 py-2 text-sm md:max-w-md"
+          />
+        </div>
         {knownAccounts.length > 0 ? <div className="space-y-2">
-          <p className="text-xs text-slate-500">Multi-conta (opcional): selecione um e-mail para sugerir no próximo login.</p>
+          <p className="text-xs text-slate-500">Multi-conta (opcional): selecione um e-mail salvo para preencher automaticamente.</p>
           <select value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
             {knownAccounts.map((email) => <option key={email} value={email}>{email}</option>)}
           </select>
