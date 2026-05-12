@@ -150,3 +150,24 @@ Quando o `access_token` expira, o core usa `refresh_token` no endpoint OAuth (`h
 - A proteção por `state` e PKCE reduz risco de interceptação e CSRF no fluxo OAuth.
 - O fluxo device code é útil para ambientes sem browser local.
 - A separação entre crate `login` (obtenção de tokens) e `core/auth` (uso/renovação) melhora manutenção.
+
+## 7) Gap de implementação no AI Hub (comparado ao codex-rs)
+
+No `codex-rs`, o fluxo completo depende de três peças encadeadas: URL OAuth real, callback com `authorization_code`, e exchange para `id/access/refresh token` com persistência segura.
+
+No AI Hub atual (`/api/account/*`), o fluxo ainda está em modo simulado/MVP:
+
+- `POST /api/account/login/start` não inicia OAuth real; ele retorna `authUrl` apontando para o próprio callback local (`/api/account/login/callback`).
+- o callback não recebe nem processa `code`/`state`; ele só grava e-mail em sessão.
+- não existe exchange com `/oauth/token`.
+- não há armazenamento de `access_token`/`refresh_token` (nem rotação/refresh).
+
+Consequência prática: a percepção de “login sem redirecionamento útil” e “sem token salvo” está correta para o backend atual do AI Hub, porque o fluxo não conclui a etapa de autorização OAuth do ChatGPT nem materializa credenciais de API reutilizáveis.
+
+### O que falta para equivaler ao codex-rs
+
+1. `login/start` gerar URL OAuth real com `redirect_uri`, `state` e PKCE.
+2. `login/callback` validar `state` e trocar `authorization_code` por tokens.
+3. persistir tokens (`id/access/refresh`) em storage seguro do servidor.
+4. expor estado de conexão baseado em token válido (e refresh quando expirar).
+5. usar `access_token` bearer no serviço que chama modelo/backend OpenAI.
