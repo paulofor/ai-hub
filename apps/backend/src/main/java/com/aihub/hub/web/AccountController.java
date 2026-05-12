@@ -28,6 +28,9 @@ public class AccountController {
     @Value("${hub.account.login-success-redirect:/codex-chatgpt}")
     private String loginSuccessRedirect;
 
+    @Value("${hub.account.login-callback-url:/api/account/login/callback}")
+    private String loginCallbackUrl;
+
     @GetMapping("/read")
     public Map<String, Object> read(HttpSession session) {
         String accountEmail = (String) session.getAttribute(ACCOUNT_EMAIL_KEY);
@@ -51,12 +54,13 @@ public class AccountController {
             session.setAttribute(ACCOUNT_EMAIL_KEY, accountHint);
         }
         session.setAttribute(EXPIRES_AT_KEY, Instant.now().plus(8, ChronoUnit.HOURS).toString());
-        String callback = "/api/account/login/callback" + (accountHint != null ? "?email=" + accountHint : "");
+        String callback = loginCallbackUrl + (accountHint != null ? "?email=" + accountHint : "");
 
         return Map.of(
             "status", "redirect_required",
-            "authUrl", openAiAuthUrl,
-            "url", callback
+            "authUrl", callback,
+            "url", callback,
+            "externalAuthUrl", openAiAuthUrl
         );
     }
 
