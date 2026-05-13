@@ -125,3 +125,7 @@
 ## 2026-05-13 01:27:22 UTC-3
 - Diagnóstico de causa raiz da falha no build/push da imagem `ai-hub-caddy` no CI: o workflow executava `docker buildx build --file infra/caddy/Dockerfile`, porém esse Dockerfile não existia no repositório, interrompendo a etapa de build.
 - Adicionado `infra/caddy/Dockerfile` mínimo e consistente com o stack atual (base `caddy:2.10-alpine` + cópia de `infra/caddy/Caddyfile`), restaurando o artefato esperado pela pipeline.
+
+- 2026-05-13 06:10:00 UTC: Criação do novo módulo `apps/mcp-server` (Java 21, Spring Boot, Maven) para atuar como serviço MCP dedicado, atacando a causa raiz da ausência de um serviço isolado para tools remotas no mesmo host dos demais módulos.
+- Implementada tool HTTP `POST /mcp/tools/linux-command` com autenticação por token (`X-MCP-TOKEN`) e execução de comandos Linux via `/bin/bash -lc`, com timeout defensivo de 30s para evitar processos presos.
+- Atualizados `docker-compose.yml` e `.github/workflows/ci.yml` para incluir build/test/push/deploy da imagem `ai-hub-mcp-server` no mesmo fluxo e host dos outros módulos.
