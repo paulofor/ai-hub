@@ -39,8 +39,6 @@ services:
     volumes:
       - ./infra:/infra
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
-    ports:
-      - "${BACKEND_HTTP_PORT:-8081}:8081"
     networks:
       default:
         aliases:
@@ -54,8 +52,6 @@ services:
       - .env
     depends_on:
       - backend
-    ports:
-      - "${FRONTEND_HTTP_PORT:-8082}:80"
     networks:
       default:
       public-net:
@@ -71,8 +67,6 @@ services:
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
       - ${SANDBOX_WORKDIR:-/root/ai-hub/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub/src}
-    ports:
-      - "${SANDBOX_ORCHESTRATOR_HTTP_PORT:-8083}:8083"
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
         export OPENAI_API_KEY=$(cat /run/secrets/openai-token/openai_api_key);
@@ -93,8 +87,6 @@ services:
       - .env
     environment:
       MCP_SERVER_API_TOKEN: ${MCP_SERVER_API_TOKEN:-change-me}
-    ports:
-      - "${MCP_SERVER_HTTP_PORT:-8084}:8084"
     networks:
       default:
         aliases:
