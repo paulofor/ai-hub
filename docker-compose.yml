@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: caddy:2.10-alpine
+    image: ${CADDY_IMAGE:-ghcr.io/paulodb/ai-hub-6-caddy:latest}
     restart: unless-stopped
     depends_on:
       - frontend
