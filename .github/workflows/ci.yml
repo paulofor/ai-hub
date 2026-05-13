@@ -64,6 +64,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push caddy image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/caddy/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:buildcache,mode=max
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
@@ -204,6 +215,7 @@ jobs:
             done
           }
 
+          delete_tag "ai-hub-caddy" "${GHCR_SHA}"
           delete_tag "ai-hub-backend" "${GHCR_SHA}"
           delete_tag "ai-hub-frontend" "${GHCR_SHA}"
           delete_tag "ai-hub-sandbox" "${GHCR_SHA}"
