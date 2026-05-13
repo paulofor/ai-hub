@@ -1,6 +1,7 @@
 package com.aihub.hub.web;
 
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -55,7 +56,11 @@ public class AccountController {
     }
 
     @PostMapping("/login/start")
-    public Map<String, Object> startLogin(@RequestBody(required = false) Map<String, Object> payload, HttpSession session) {
+    public Map<String, Object> startLogin(
+        @RequestBody(required = false) Map<String, Object> payload,
+        HttpSession session,
+        HttpServletRequest request
+    ) {
         String accountHint = null;
         if (payload != null && payload.get("accountHint") instanceof String hint && !hint.isBlank()) {
             accountHint = hint.trim();
@@ -65,7 +70,8 @@ public class AccountController {
         }
         String state = UUID.randomUUID().toString();
         session.setAttribute(LOGIN_STATE_KEY, state);
-        String callback = loginCallbackUrl
+        String callbackBase = resolveCallbackBaseUrl(request);
+        String callback = callbackBase
             + "?state=" + urlEncode(state)
             + (accountHint != null ? "&email=" + urlEncode(accountHint) : "");
         String authUrl = buildExternalAuthUrl(callback);
@@ -120,6 +126,26 @@ public class AccountController {
     private String buildExternalAuthUrl(String callback) {
         String separator = openAiAuthUrl.contains("?") ? "&" : "?";
         return openAiAuthUrl + separator + openAiAuthRedirectParam + "=" + urlEncode(callback);
+    }
+
+    private String resolveCallbackBaseUrl(HttpServletRequest request) {
+        if (loginCallbackUrl.startsWith("http://") || loginCallbackUrl.startsWith("https://")) {
+            return loginCallbackUrl;
+        }
+        String contextPath = request.getContextPath();
+        String normalizedContext = (contextPath == null) ? "" : contextPath;
+        String callbackPath = loginCallbackUrl.startsWith("/") ? loginCallbackUrl : "/" + loginCallbackUrl;
+        return request.getScheme() + "://" + request.getServerName() + buildPortSuffix(request) + normalizedContext + callbackPath;
+    }
+
+    private String buildPortSuffix(HttpServletRequest request) {
+        int port = request.getServerPort();
+        boolean defaultHttp = "http".equalsIgnoreCase(request.getScheme()) && port == 80;
+        boolean defaultHttps = "https".equalsIgnoreCase(request.getScheme()) && port == 443;
+        if (defaultHttp || defaultHttps) {
+            return "";
+        }
+        return ":" + port;
     }
 
     private String urlEncode(String value) {

@@ -103,3 +103,7 @@
 - 2026-05-12 22:20:00 UTC: Diagnóstico de causa raiz para o cenário "já estou logado na OpenAI, mas a tela fica desconectada": o callback local depende de um e-mail associado (`accountHint`) para consolidar a sessão; quando nenhum e-mail é informado, o fluxo termina em `missing_email` e bloqueia execuções.
 - Atualizada `CodexChatgptPage` para sempre exibir campo de e-mail da conta OpenAI antes de conectar, enviando `accountHint` explícito no `POST /account/login/start` e registrando telemetria com a conta efetiva usada no login.
 - Melhorado reaproveitamento multi-conta: ao detectar conta conhecida, o e-mail também preenche automaticamente o novo campo, reduzindo reconexões sem contexto.
+
+- 2026-05-13 00:09:07 UTC: Orientação operacional para uso da tela de autenticação: instruído que o usuário deve informar o e-mail da conta OpenAI no campo da tela e clicar em "Conectar com ChatGPT" para abrir `authUrl`; mesmo já logado em outra aba, o callback local só conclui sessão no AI Hub após esse fluxo com `accountHint`.
+
+- 2026-05-13 00:22:00 UTC: Correção de causa raiz no login ChatGPT em produção web: `login/start` montava `redirect_uri` com callback relativo (`/api/account/login/callback`), fazendo o provedor abrir o ChatGPT sem retorno válido ao AI Hub. Ajustado `AccountController` para resolver callback absoluto a partir da requisição (ou respeitar URL absoluta configurada), garantindo retorno ao domínio do AI Hub após autenticação.
