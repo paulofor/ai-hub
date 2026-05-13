@@ -142,3 +142,10 @@
 - 2026-05-13 20:18:00 UTC — Complemento da correção de causa raiz: além de tornar `CADDY_DOMAIN` obrigatório no compose, incluída a variável no `.env.example` com o domínio informado (`iahub.xyz`) para evitar ausência da configuração durante deploy/bootstrap e impedir regressão para certificado local.
 - 2026-05-13 20:40:00 UTC — Correção de causa raiz da falha `yaml: line 11: mapping values are not allowed in this context` durante deploy remoto: o passo de publicação montava um blob único em `REMOTE_IMAGES_ENV` (vários pares `KEY=VALUE` com tags `:latest`) e injetava via `export`, combinação frágil a parsing/quoting em diferentes shells/contexts do runner.
 - Ajustado `.github/workflows/ci.yml` para definir as imagens diretamente como variáveis de ambiente inline no comando remoto do `docker compose` (`CADDY_IMAGE=... BACKEND_IMAGE=... ... docker compose pull && docker compose up -d`), eliminando a camada intermediária e evitando erro de interpretação YAML/shell.
+
+- 2026-05-13 20:55:00 UTC — Correção de causa raiz do erro `yaml: line 11: mapping values are not allowed in this context` no `docker compose` durante deploy: a expressão de variável obrigatória em `docker-compose.yml` continha mensagem com `": "` (`ex.: ...`) em escalar YAML sem aspas (`CADDY_DOMAIN: ${...}`), o que quebra parsing YAML na linha 11.
+- Ajustado `CADDY_DOMAIN` para valor entre aspas (`CADDY_DOMAIN: "${...}"`), preservando validação obrigatória da variável e eliminando ambiguidade de parsing YAML.
+
+- 2026-05-13 21:05:00 UTC — Ajuste solicitado em revisão: exemplo do domínio em `CADDY_DOMAIN` alterado para `iahub.xyz` (sem usar domínio genérico), mantendo validação obrigatória da variável.
+
+- 2026-05-13 21:15:00 UTC — Ajuste solicitado em revisão: `CADDY_DOMAIN` definido diretamente no compose como `iahub.xyz` (`CADDY_DOMAIN: iahub.xyz`), removendo expansão por variável para atender requisito explícito.
