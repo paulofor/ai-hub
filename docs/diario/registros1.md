@@ -132,3 +132,7 @@
 - 2026-05-13 18:40:00 UTC: Ajuste inicial solicitado para mover o MCP Server para uma porta livre no stack: alterado o mapeamento padrão para `MCP_SERVER_HTTP_PORT=8085` (host) -> `8084` (container) no `docker-compose`, evitando colisão com portas já reservadas no projeto/deploy.
 - 2026-05-13 18:40:00 UTC: Atualizado o deploy remoto no workflow (`REMOTE_IMAGES_ENV`) para exportar explicitamente `MCP_SERVER_HTTP_PORT=8085`, mantendo consistência entre CI e `docker-compose` ao subir os serviços no VPS.
 - 2026-05-13 18:40:00 UTC: Diagnóstico de causa raiz do erro reportado no log de deploy: a falha que interrompe a publicação não está no MCP Server e sim no bind do `caddy` em `0.0.0.0:80` (`port is already allocated`), indicando conflito pré-existente de porta HTTP no host.
+- 2026-05-13 19:05:00 UTC: Revisão completa das portas dos containers no mesmo host com `caddy` como único proxy reverso de borda.
+- Removida a publicação de portas host para `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server` no `docker-compose`; esses serviços passam a ficar acessíveis somente na rede interna do compose (via DNS de serviço), reduzindo superfície de conflito e exposição indevida.
+- Mantidas apenas as portas do `caddy` (`80/443`) como ponto de entrada externo, alinhando o desenho de rede com a causa raiz do incidente de bind em host compartilhado.
+- Ajustado workflow de deploy para não exportar mais `MCP_SERVER_HTTP_PORT`, já que não há publicação externa de porta do MCP no host.
