@@ -136,3 +136,5 @@
 - Removida a publicação de portas host para `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server` no `docker-compose`; esses serviços passam a ficar acessíveis somente na rede interna do compose (via DNS de serviço), reduzindo superfície de conflito e exposição indevida.
 - Mantidas apenas as portas do `caddy` (`80/443`) como ponto de entrada externo, alinhando o desenho de rede com a causa raiz do incidente de bind em host compartilhado.
 - Ajustado workflow de deploy para não exportar mais `MCP_SERVER_HTTP_PORT`, já que não há publicação externa de porta do MCP no host.
+
+- 2026-05-13 20:12:24 UTC — Diagnóstico e correção de causa raiz no acesso por domínio: o `docker-compose.yml` aplicava fallback silencioso `CADDY_DOMAIN:-localhost`, fazendo o Caddy emitir certificado local para `localhost` e ignorar o domínio público quando a variável não era carregada. Ajustado para tornar `CADDY_DOMAIN` obrigatória com erro explícito no startup (`${CADDY_DOMAIN:?...}`), evitando reincidência e falha silenciosa em produção.
