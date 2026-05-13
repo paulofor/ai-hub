@@ -94,7 +94,7 @@ services:
     environment:
       MCP_SERVER_API_TOKEN: ${MCP_SERVER_API_TOKEN:-change-me}
     ports:
-      - "${MCP_SERVER_HTTP_PORT:-8084}:8084"
+      - "${MCP_SERVER_HTTP_PORT:-8085}:8084"
     networks:
       default:
         aliases:
