@@ -179,8 +179,15 @@ jobs:
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker network inspect public-net >/dev/null 2>&1 || docker network create public-net"
       - name: Publish services
         run: |
-          REMOTE_IMAGES_ENV="CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-caddy:latest BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-backend:latest FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-frontend:latest SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-sandbox:latest MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-mcp-server:latest"
-          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && cd ${REMOTE_PATH} && export ${REMOTE_IMAGES_ENV} && docker compose pull && docker compose up -d"
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "set -euo pipefail && \
+            cd ${REMOTE_PATH} && \
+            CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-caddy:latest \
+            BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-backend:latest \
+            FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-frontend:latest \
+            SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-sandbox:latest \
+            MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-mcp-server:latest \
+            docker compose pull && docker compose up -d"
       - name: Clean up GHCR images for this build
         env:
           GHCR_OWNER: ${{ github.repository_owner }}
