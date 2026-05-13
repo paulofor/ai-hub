@@ -1,0 +1,17 @@
+{$CADDY_DOMAIN} {
+    encode zstd gzip
+
+    @api path /api/*
+    handle @api {
+        reverse_proxy backend:8081
+    }
+
+    @sandbox path /sandbox/*
+    handle @sandbox {
+        reverse_proxy sandbox-orchestrator:8083
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+}

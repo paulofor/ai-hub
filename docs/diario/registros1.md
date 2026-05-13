@@ -107,3 +107,7 @@
 - 2026-05-13 00:09:07 UTC: Orientação operacional para uso da tela de autenticação: instruído que o usuário deve informar o e-mail da conta OpenAI no campo da tela e clicar em "Conectar com ChatGPT" para abrir `authUrl`; mesmo já logado em outra aba, o callback local só conclui sessão no AI Hub após esse fluxo com `accountHint`.
 
 - 2026-05-13 00:22:00 UTC: Correção de causa raiz no login ChatGPT em produção web: `login/start` montava `redirect_uri` com callback relativo (`/api/account/login/callback`), fazendo o provedor abrir o ChatGPT sem retorno válido ao AI Hub. Ajustado `AccountController` para resolver callback absoluto a partir da requisição (ou respeitar URL absoluta configurada), garantindo retorno ao domínio do AI Hub após autenticação.
+
+- 2026-05-13 00:40:00 UTC: Diagnóstico de causa raiz para HTTPS no mesmo host: o `docker-compose` publicava frontend/backend diretamente em portas HTTP sem um terminador TLS central, impedindo emissão/renovação automática de certificado no ponto de entrada.
+- Implementado serviço `caddy` no `docker-compose` como reverse proxy único (80/443) para o mesmo host, com volumes persistentes de certificados e roteamento por path para `frontend`, `backend` (`/api/*`) e `sandbox-orchestrator` (`/sandbox/*`).
+- Adicionado `infra/caddy/Caddyfile` parametrizado por `CADDY_DOMAIN`, permitindo ativar HTTPS automático via Caddy no domínio público do host.
