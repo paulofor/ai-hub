@@ -144,8 +144,8 @@ jobs:
     env:
       DEPLOY_HOST: 163.245.203.201
       DEPLOY_USER: root
-      REMOTE_PATH: /root/ai-hub
-      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
+      REMOTE_PATH: /root/ai-hub-6
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.repository_owner }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
