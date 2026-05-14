@@ -61,7 +61,7 @@ Para disponibilizar a interface web publicamente (sem TLS, usando apenas HTTP) a
 - Utilize o exemplo `infra/lightsail/containers.example.json` para provisionar o serviço no AWS Lightsail Container Service.
 - Em uma VPS genérica (como Locaweb), execute `sudo ./infra/setup_vps.sh` para instalar dependências, gerar `.env` com as credenciais do MySQL 5.7 hospedado em `d555d.vps-kinghost.net` e subir os contêineres via Docker Compose.
 
-- **IMPORTANTE:** use o mesmo owner em todo o fluxo (build/push e deploy/pull). Se `GHCR_USERNAME` divergir de `github.repository_owner`, o ambiente pode subir imagens de owners diferentes (por exemplo `paulodb` e `paulofor`).
+- **IMPORTANTE:** use o mesmo owner em todo o fluxo (build/push e deploy/pull). Se `GHCR_USERNAME` divergir de `github.repository_owner`, o ambiente pode subir imagens de owners diferentes (por exemplo `paulodb` e `outro-owner`).
 
 ## CI/CD
 
