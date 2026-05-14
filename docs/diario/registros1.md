@@ -170,3 +170,6 @@
 
 ## 2026-05-14 01:41:55 UTC-3
 - Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
+- 2026-05-14 04:49:56 UTC — Correção de causa raiz para nova ocorrência de `denied: permission_denied: write_package` no push do backend: o workflow priorizava `secrets.GHCR_TOKEN` quando presente, permitindo que um PAT desatualizado/sem `write:packages` sobrescrevesse o token nativo do GitHub Actions e quebrasse a publicação no GHCR.
+- Ajustado `.github/workflows/ci.yml` para o job `docker` autenticar no GHCR com `github.repository_owner` + `github.token` (credencial efêmera do run com `packages:write` do próprio workflow), removendo dependência de segredo legado para o push de imagens.
+- Mantido fallback por segredo apenas no `deploy` (login no VPS) e no cleanup via API, agora com fallback para `github.token` em vez de `secrets.GITHUB_TOKEN`, padronizando a fonte do token do runtime.
