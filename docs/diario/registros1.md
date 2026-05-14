@@ -162,3 +162,8 @@
 - 2026-05-14 04:25:00 UTC — Novo diagnóstico a partir da evidência visual do host: a causa raiz provável da divergência de versão não é permissão GHCR, e sim contexto/caminho de execução do deploy (`docker compose`) apontando para diretório legado (`/root/ai-hub`) em vez do diretório alvo do stack atual (`/root/ai-hub-6`), fazendo subir contêineres/projeto da pasta errada.
 - 2026-05-14 04:40:00 UTC — Correção de causa raiz no workflow de deploy: alterado `REMOTE_PATH` de `/root/ai-hub` para `/root/ai-hub-6` em `.github/workflows/ci.yml`, garantindo que `rsync` e `docker compose` operem no diretório correto do stack atual no host.
 - 2026-05-14 04:40:00 UTC — Ajuste preventivo adicional no workflow: fallback de `GHCR_USERNAME` trocado de `github.actor` para `github.repository_owner`, reduzindo risco de pull em namespace diferente do owner que publica as imagens.
+
+## 2026-05-14 01:32:12 UTC-3
+- Diagnóstico de causa raiz da falha `denied: permission_denied: write_package` no push para `ghcr.io/paulofor/ai-hub-6-backend:latest`: o job `docker` autenticava no GHCR com `${{ github.repository_owner }}` + `${{ secrets.GITHUB_TOKEN }}`, combinação que pode não ter permissão de escrita no pacote quando o namespace efetivo depende de credenciais de usuário legado/PAT.
+- Ajustado `.github/workflows/ci.yml` para resolver e usar credenciais explícitas no job de build/push (`GHCR_USERNAME`/`GHCR_TOKEN` via secrets, com fallback para owner/GITHUB_TOKEN), alinhando autenticação e destino do push ao mesmo usuário antigo esperado no registry.
+- Padronizadas as tags/cache de todas as imagens do job `docker` para `ghcr.io/${GHCR_USERNAME}/...`, evitando mismatch entre usuário autenticado e namespace de publicação.
