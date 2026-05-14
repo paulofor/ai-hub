@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: ${CADDY_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-6-caddy:latest}
+    image: ${CADDY_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulodb}/ai-hub-6-caddy:latest}
     restart: unless-stopped
     depends_on:
       - frontend
@@ -22,7 +22,7 @@ services:
         aliases:
           - aihub-caddy
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-6-backend:latest}
+    image: ${BACKEND_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulodb}/ai-hub-6-backend:latest}
     build:
       context: ./apps/backend
     command: >
@@ -44,7 +44,7 @@ services:
         aliases:
           - backend
   frontend:
-    image: ${FRONTEND_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-6-frontend:latest}
+    image: ${FRONTEND_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulodb}/ai-hub-6-frontend:latest}
     build:
       context: ./apps/frontend
     env_file:
@@ -58,7 +58,7 @@ services:
         aliases:
           - aihub-frontend
   sandbox-orchestrator:
-    image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-6-sandbox:latest}
+    image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulodb}/ai-hub-6-sandbox:latest}
     build:
       context: ./apps/sandbox-orchestrator
     env_file:
@@ -80,7 +80,7 @@ services:
         aliases:
           - sandbox-orchestrator
   mcp-server:
-    image: ${MCP_SERVER_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-6-mcp-server:latest}
+    image: ${MCP_SERVER_IMAGE:-ghcr.io/${GHCR_USERNAME:-paulodb}/ai-hub-6-mcp-server:latest}
     build:
       context: ./apps/mcp-server
     env_file:
