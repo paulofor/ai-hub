@@ -177,3 +177,31 @@
 - 2026-05-14 17:22:09 UTC — Correção de causa raiz para push no owner incorreto (`ghcr.io/paulofor/...`): no job `docker` do CI, a etapa "Resolve GHCR credentials" fixava `GHCR_USERNAME=${{ github.repository_owner }}` e ignorava `secrets.GHCR_USERNAME`; ajustado para a mesma regra do deploy (`secrets.GHCR_USERNAME/GHCR_TOKEN` com fallback), garantindo que build/push usem o namespace autorizado (ex.: `paulodb`) e evitando `denied: permission_denied: write_package`.
 
 - 2026-05-14 17:40:00 UTC — Correção adicional da causa raiz para persistência de push no owner incorreto (`paulofor`): o fallback de `GHCR_USERNAME` no workflow ainda dependia de `github.repository_owner` quando segredo não existia, mantendo namespace errado em forks/migrações; padronizado fallback para `secrets.GHCR_USERNAME` -> `vars.GHCR_USERNAME` -> `paulodb` tanto no job `docker` quanto no `deploy` e no cleanup (`GHCR_OWNER`), garantindo consistência total do namespace no build, pull e limpeza de tags.
+
+## 2026-05-14 16:32:50 UTC-3
+- Diagnóstico da causa raiz da falha no job `docker` do GitHub Actions: push para `ghcr.io/paulodb/ai-hub-6-caddy:latest` negado com `permission_denied: The requested installation does not exist`, indicando namespace/owner de registry divergente do owner onde o workflow roda (`paulofor`) e/ou ausência de autorização do GitHub App/Actions para publicar no pacote alvo.
+- Orientação operacional no GitHub para restabelecer o pipeline: alinhar todas as tags de imagem para `ghcr.io/paulofor/*`, garantir `permissions: packages: write` no workflow e habilitar acesso do repositório ao pacote no GHCR (Package settings > Manage Actions access).
+
+## 2026-05-14 16:36:05 UTC-3
+- Revisão do diagnóstico com evidência de UI do GitHub Packages: no perfil `paulofor` não aparece pacote `ai-hub-6-caddy` (nem os demais com sufixo `-6`), enquanto o workflow tenta publicar exatamente nesses nomes; isso explica o cenário "mas não tem?" e reforça que o namespace/nome de pacote do pipeline está desalinhado com os pacotes existentes/esperados no owner.
+- Ação de causa raiz recomendada no GitHub: padronizar os nomes usados no CI e no deploy para uma convenção única já existente no owner (ex.: `ai-hub-caddy`/`ai-hub-backend` etc.) **ou** aceitar criar novos pacotes `ai-hub-6-*` e, nesse caso, garantir permissões de publicação e vinculação do pacote ao repositório `paulofor/ai-hub`.
+
+## 2026-05-14 16:38:40 UTC-3
+- Correção do diagnóstico anterior com nova evidência: os pacotes `ai-hub-6-backend`, `ai-hub-6-frontend` e `ai-hub-6-sandbox` existem no owner `paulofor`; portanto o problema não é ausência geral do padrão `ai-hub-6-*`.
+- Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
+- Ação objetiva no GitHub: abrir/criar o package `ai-hub-6-caddy` no owner correto, vincular ao repositório `paulofor/ai-hub` em `Manage Actions access` e manter `packages: write` no workflow.
+
+## 2026-05-14 16:40:29 UTC-3
+- Nova correção do diagnóstico com evidência adicional: o package `ai-hub-6-caddy` também existe no owner `paulofor` (publicado por `paulofor/ai-hub`), então a hipótese de inexistência do package não se sustenta no estado atual.
+- Causa raiz provável consolidada para `permission_denied: The requested installation does not exist`: problema de autorização da instalação/token usada no run específico (ex.: `GITHUB_TOKEN` sem escopo efetivo de escrita naquele contexto, pacote privado sem grant para aquele repositório/workflow run, ou execução em contexto diferente como fork/owner divergente), e não ausência de nome de pacote.
+- Diretriz operacional: validar no run que falhou qual `GHCR_USERNAME` e qual token foram efetivamente usados no login (`docker/login-action`), manter `permissions.packages=write`, e conferir no package `ai-hub-6-caddy` o vínculo explícito de Actions para `paulofor/ai-hub`.
+
+## 2026-05-14 16:43:24 UTC-3
+- Correção explícita do ponto de autorização: se o package GHCR está vinculado ao repositório `paulofor/ai-hub-6`, conceder acesso para `paulofor/ai-hub` não resolve o run desse projeto; o grant e/ou publicação devem apontar para o repositório correto (`ai-hub-6`) para a instalação existir no contexto esperado.
+- Causa raiz refinada: mismatch entre o repositório associado ao package (ex.: `paulofor/ai-hub-6`) e o repositório que executa o workflow/push (ex.: `paulofor/ai-hub`) pode produzir exatamente `permission_denied: The requested installation does not exist`.
+- Ação objetiva: alinhar origem do workflow e vínculo do package no mesmo repo (`paulofor/ai-hub-6`), revisar `Manage Actions access` no package com esse repositório e validar secrets/variables no mesmo projeto onde o workflow roda.
+
+## 2026-05-14 16:45:45 UTC-3
+- Alinhamento aplicado na configuração para o contexto correto do owner/repositório atual (`paulofor` / stack `ai-hub-6`), atacando a causa raiz de mismatch entre defaults locais e destino real de publicação no GHCR.
+- Atualizado `.github/workflows/ci.yml` para fallback padrão de `GHCR_USERNAME` em `paulofor` (jobs `docker`, `deploy` e `cleanup`), evitando fallback legado para `paulodb` quando secrets/vars não estiverem definidos.
+- Atualizado `docker-compose.yml` para fallback de `GHCR_USERNAME` em `paulofor` e para `SANDBOX_WORKDIR` default em `/root/ai-hub-6/...`, mantendo consistência com `REMOTE_PATH=/root/ai-hub-6` no deploy.
