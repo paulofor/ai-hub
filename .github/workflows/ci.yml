@@ -83,40 +83,40 @@ jobs:
           file: infra/caddy/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:latest
-            ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-caddy:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-caddy:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-caddy:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-caddy:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-caddy:buildcache,mode=max
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
           context: apps/backend
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ai-hub-backend:latest
-            ghcr.io/${{ github.repository_owner }}/ai-hub-backend:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-backend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-backend:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-backend:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-backend:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-backend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-backend:buildcache,mode=max
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
           context: apps/frontend
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:latest
-            ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-frontend:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-frontend:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-frontend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-frontend:buildcache,mode=max
       - name: Build and push MCP server image
         uses: docker/build-push-action@v5
         with:
           context: apps/mcp-server
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ai-hub-mcp-server:latest
-            ghcr.io/${{ github.repository_owner }}/ai-hub-mcp-server:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-mcp-server:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-mcp-server:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-mcp-server:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-mcp-server:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-mcp-server:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-mcp-server:buildcache,mode=max
 
       - name: Build and push sandbox orchestrator image
         uses: docker/build-push-action@v5
@@ -124,10 +124,10 @@ jobs:
           context: apps/sandbox-orchestrator
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:latest
-            ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-sandbox:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-sandbox:latest
+            ghcr.io/${{ github.repository_owner }}/ai-hub-6-sandbox:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-sandbox:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ai-hub-6-sandbox:buildcache,mode=max
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -182,11 +182,11 @@ jobs:
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "set -euo pipefail && \
             cd ${REMOTE_PATH} && \
-            CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-caddy:latest \
-            BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-backend:latest \
-            FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-frontend:latest \
-            SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-sandbox:latest \
-            MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-mcp-server:latest \
+            CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:latest \
+            BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest \
+            FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest \
+            SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest \
+            MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest \
             docker compose pull && docker compose up -d"
       - name: Clean up GHCR images for this build
         env:
@@ -246,8 +246,8 @@ jobs:
             done
           }
 
-          delete_tag "ai-hub-caddy" "${GHCR_SHA}"
-          delete_tag "ai-hub-backend" "${GHCR_SHA}"
-          delete_tag "ai-hub-frontend" "${GHCR_SHA}"
-          delete_tag "ai-hub-sandbox" "${GHCR_SHA}"
-          delete_tag "ai-hub-mcp-server" "${GHCR_SHA}"
+          delete_tag "ai-hub-6-caddy" "${GHCR_SHA}"
+          delete_tag "ai-hub-6-backend" "${GHCR_SHA}"
+          delete_tag "ai-hub-6-frontend" "${GHCR_SHA}"
+          delete_tag "ai-hub-6-sandbox" "${GHCR_SHA}"
+          delete_tag "ai-hub-6-mcp-server" "${GHCR_SHA}"

@@ -149,3 +149,10 @@
 - 2026-05-13 21:05:00 UTC — Ajuste solicitado em revisão: exemplo do domínio em `CADDY_DOMAIN` alterado para `iahub.xyz` (sem usar domínio genérico), mantendo validação obrigatória da variável.
 
 - 2026-05-13 21:15:00 UTC — Ajuste solicitado em revisão: `CADDY_DOMAIN` definido diretamente no compose como `iahub.xyz` (`CADDY_DOMAIN: iahub.xyz`), removendo expansão por variável para atender requisito explícito.
+
+- 2026-05-14 01:50:49 UTC — Diagnóstico de causa raiz para divergência de versões em produção: os contêineres em execução podem ficar misturados entre owners distintos no GHCR (ex.: `paulodb` e `paulofor`) porque o deploy monta as imagens com `GHCR_USERNAME` enquanto o build publica em `github.repository_owner`; quando `GHCR_USERNAME` aponta para outro owner, parte das imagens vem de um namespace e parte de outro, parecendo que não é o stack `ai-hub-6` esperado.
+- Mitigação documentada: validar no VPS os valores efetivos de `CADDY_IMAGE`, `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `SANDBOX_ORCHESTRATOR_IMAGE` e `MCP_SERVER_IMAGE` antes do `docker compose pull` e padronizar `GHCR_USERNAME` para o mesmo owner que publica as imagens no workflow.
+
+- 2026-05-14 02:00:00 UTC — Levantamento solicitado sobre owners das imagens `ai-hub` e `ai-hub-6`: referências ativas do stack atual (`docker-compose.yml` e `ci.yml`) usam `ai-hub-*` com owner dinâmico (`GHCR_USERNAME`/`github.repository_owner`) e fallback local para `paulofor`; referências legadas `ai-hub-6-*` ainda existem em documentação/scripts antigos com owner `paulodb` (ex.: `infra/setup_vps.sh` e trecho de README), o que explica confusão de versões no ar quando variáveis não ficam alinhadas.
+
+- 2026-05-14 02:10:00 UTC — Ajuste solicitado para eliminar ambiguidade de nomenclatura de imagens no deploy: padronizado todo o pipeline/compose/README para usar exclusivamente `ai-hub-6-*` (incluindo `caddy` e `mcp-server`), removendo referências ativas a `ai-hub-*` para evitar nova confusão de versão em produção.
