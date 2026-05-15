@@ -23,6 +23,7 @@ interface ModelOption {
 const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
+const DEFAULT_ACCOUNT_HINT = 'paulofore@gmail.com';
 
 interface TelemetryEvent {
   id: string;
@@ -86,7 +87,7 @@ export default function CodexChatgptPage() {
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('');
-  const [accountHintInput, setAccountHintInput] = useState('');
+  const [accountHintInput, setAccountHintInput] = useState(DEFAULT_ACCOUNT_HINT);
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
 
