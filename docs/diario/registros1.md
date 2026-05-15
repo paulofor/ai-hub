@@ -218,3 +218,8 @@
 - Revisão orientada à causa raiz do erro `write_package` considerando publicação no mesmo owner do repositório: removida dependência de `secrets.GHCR_TOKEN` no workflow e padronizado uso de `github.token` nos fluxos de build/push, deploy e cleanup de GHCR.
 - Ajustada a etapa `Resolve GHCR credentials` para sempre definir `GHCR_TOKEN=${{ github.token }}` e falhar cedo se `GHCR_USERNAME` divergir de `github.repository_owner`, evitando combinações inválidas de owner/token.
 - Com isso, todos os pontos do workflow que autenticam/chamam GHCR passam a usar o mesmo token nativo do run, eliminando inconsistência de credenciais entre jobs.
+
+## 2026-05-15 01:45:26 UTC
+- Correção de causa raiz no publish/deploy: defaults locais ainda apontavam para `paulodb` em partes do stack, o que quebrava `docker compose pull` para imagens inexistentes nesse owner (ex.: `ai-hub-6-caddy` e `ai-hub-6-mcp-server`).
+- Atualizado `docker-compose.yml` para fallback único `GHCR_USERNAME:-paulofor` em todos os serviços publicados (`caddy`, `backend`, `frontend`, `sandbox-orchestrator`, `mcp-server`), eliminando namespace legado divergente no pull.
+- Atualizado `infra/setup_vps.sh` para gerar `.env` com defaults de imagens `backend/frontend/sandbox` em `ghcr.io/paulofor/...`, mantendo coerência entre setup da VPS e owner atual de publicação.
