@@ -76,7 +76,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Resolve GHCR credentials
         run: |
-          GHCR_USERNAME="${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulodb' }}"
+          GHCR_USERNAME="${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulofor' }}"
           GHCR_TOKEN="${{ github.token }}"
           if [ "$GHCR_USERNAME" != "${{ github.repository_owner }}" ]; then
             echo "GHCR_USERNAME ($GHCR_USERNAME) differs from repository owner (${{ github.repository_owner }})." >&2
@@ -180,7 +180,7 @@ jobs:
       DEPLOY_HOST: 163.245.203.201
       DEPLOY_USER: root
       REMOTE_PATH: /root/ai-hub-6
-      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulodb' }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulofor' }}
       GHCR_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -225,7 +225,7 @@ jobs:
             docker compose pull && docker compose up -d"
       - name: Clean up GHCR images for this build
         env:
-          GHCR_OWNER: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulodb' }}
+          GHCR_OWNER: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulofor' }}
           GHCR_SHA: ${{ github.sha }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
