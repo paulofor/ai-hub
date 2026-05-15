@@ -77,18 +77,34 @@ jobs:
       - name: Resolve GHCR credentials
         run: |
           GHCR_USERNAME="${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulofor' }}"
-          if [ "${{ secrets.GHCR_TOKEN != '' }}" = "true" ]; then
-            GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-          else
-            GHCR_TOKEN="${{ github.token }}"
-            if [ "$GHCR_USERNAME" != "${{ github.repository_owner }}" ]; then
-              echo "GHCR_USERNAME ($GHCR_USERNAME) differs from repository owner (${{ github.repository_owner }}) and no GHCR_TOKEN secret is configured." >&2
-              echo "Configure GHCR_TOKEN with write:packages for $GHCR_USERNAME or set GHCR_USERNAME to ${{ github.repository_owner }}." >&2
-              exit 1
-            fi
+          GHCR_TOKEN="${{ github.token }}"
+          if [ "$GHCR_USERNAME" != "${{ github.repository_owner }}" ]; then
+            echo "GHCR_USERNAME ($GHCR_USERNAME) differs from repository owner (${{ github.repository_owner }})." >&2
+            echo "As this repository publishes to the same owner, set GHCR_USERNAME to ${{ github.repository_owner }}." >&2
+            exit 1
           fi
           echo "GHCR_USERNAME=$GHCR_USERNAME" >> "$GITHUB_ENV"
           echo "GHCR_TOKEN=$GHCR_TOKEN" >> "$GITHUB_ENV"
+      - name: Validate GHCR write permission
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          owner="${GHCR_USERNAME}"
+          package="ai-hub-6-backend"
+          response="$(curl -sS -o /tmp/ghcr_pkg_check.json -w '%{http_code}'             -H "Authorization: Bearer ${GHCR_TOKEN}"             -H "Accept: application/vnd.github+json"             "https://api.github.com/users/${owner}/packages/container/${package}")"
+
+          if [ "$response" = "403" ]; then
+            echo "Token sem permissão de escrita/leitura no pacote ghcr.io/${owner}/${package}." >&2
+            echo "Use um GHCR_TOKEN (PAT fine-grained ou classic) com Packages: Read and write e acesso ao owner ${owner}." >&2
+            exit 1
+          fi
+
+          if [ "$response" = "404" ]; then
+            echo "Pacote ghcr.io/${owner}/${package} ainda não existe ou o token não consegue enxergá-lo." >&2
+            echo "Se for primeira publicação, confirme que GHCR_USERNAME=${owner} é o namespace correto e que o token tem write:packages." >&2
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -165,7 +181,7 @@ jobs:
       DEPLOY_USER: root
       REMOTE_PATH: /root/ai-hub-6
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulofor' }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || github.token }}
+      GHCR_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure SSH
@@ -211,7 +227,7 @@ jobs:
         env:
           GHCR_OWNER: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || vars.GHCR_USERNAME != '' && vars.GHCR_USERNAME || 'paulofor' }}
           GHCR_SHA: ${{ github.sha }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || github.token }}
+          GHCR_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -z "${GHCR_TOKEN}" ]; then
