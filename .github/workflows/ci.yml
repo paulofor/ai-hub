@@ -217,11 +217,11 @@ jobs:
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "set -euo pipefail && \
             cd ${REMOTE_PATH} && \
-            CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:latest \
-            BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest \
-            FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest \
-            SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest \
-            MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest \
+            export CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:latest && \
+            export BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest && \
+            export FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest && \
+            export SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest && \
+            export MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest && \
             docker compose pull && docker compose up -d"
       - name: Clean up GHCR images for this build
         env:
