@@ -238,3 +238,15 @@
 - Investigação profunda do fluxo \`Codex ChatGPT\` comparando implementação local com padrão de sessão persistente do exemplo `codex-rs`: causa raiz do status sempre `desconectado` no frontend era ausência de envio de cookie de sessão nas chamadas XHR quando frontend/backend estão em origens diferentes.
 - Correção aplicada em `apps/frontend/src/api/client.ts`: habilitado `withCredentials: true` no cliente Axios global, garantindo envio de `JSESSIONID` em `/api/account/read`, `/api/account/login/start` e `/api/account/logout` e permitindo reaproveitamento da mesma sessão estabelecida no callback de login.
 - Impacto esperado: após concluir login na aba externa e retornar ao AI Hub, o polling e o refresh passam a ler a sessão correta e exibir `connected` com e-mail/validade em vez de `disconnected`.
+
+## 2026-05-17 20:08:03 UTC-3
+- Revisão solicitada da causa raiz da conexão “AI Hub como ChatGPT”, comparando com o fluxo de referência em `docs/codex-rs-autenticacao-chatgpt.md` e implementação atual em `AccountController`.
+- Conclusão técnica: hoje o AI Hub ainda não está equivalente ao `codex-rs` porque o callback local não executa troca OAuth `authorization_code -> access_token/refresh_token` no backend; ele apenas aceita tokens por query string e marca sessão como conectada.
+- Risco de arquitetura identificado: depender de `access_token`/`refresh_token` via query param no callback não reproduz o modelo robusto do `codex-rs` (PKCE + token endpoint + renovação), e tende a manter sensação de “conecta mas não funciona como ChatGPT”.
+- Direção validada: é possível chegar no mesmo comportamento, mas o caminho correto é implementar OAuth server-side real (authorize + code exchange + refresh) e usar esse `access_token` nas chamadas do executor/sandbox ao provedor, em vez de manter somente estado de sessão por e-mail.
+- Próximo passo recomendado: criar fase de hardening focada em causa raiz com 4 entregas mínimas — (1) geração de PKCE/state em `login/start`, (2) exchange de `code` em `login/callback`, (3) persistência segura de `refresh_token` com expiração real, (4) renovação automática antes de enviar job Codex.
+
+## 2026-05-17 20:10:30 UTC-3
+- Solicitação atendida: criado plano de implementação no repositório para evoluir a conexão do AI Hub para o padrão “como ChatGPT”, com foco em causa raiz e referência no fluxo do `codex-rs`.
+- Novo documento `docs/plano-implementacao-chatgpt-codex-oauth.md` estruturado em fases (contrato, OAuth real com PKCE/state, exchange de token, refresh automático, integração com execução e rollout seguro).
+- Incluídos critérios de sucesso, riscos, critérios de aceite, variáveis de ambiente sugeridas e estratégia de testes para reduzir retrabalho de implementação.
