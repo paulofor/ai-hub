@@ -232,3 +232,9 @@
 - Diretriz objetiva: padronizar todas as imagens do compose para um único owner (preferencialmente `paulofor`, conforme ajustes recentes no projeto) e recriar os serviços para eliminar drift entre versões de 13h e 3h.
 - 2026-05-15 18:10:33 UTC — Investigada a causa raiz no workflow de deploy para containers subirem com imagens erradas/mistas: no step `Publish services` as variáveis (`CADDY_IMAGE`, `BACKEND_IMAGE`, etc.) estavam atribuídas inline apenas ao comando `docker compose pull`; o `docker compose up -d` subsequente executava sem essas variáveis exportadas, podendo cair em defaults/.env divergentes.
 - Correção aplicada em `.github/workflows/ci.yml`: variáveis de imagem agora são `export`adas antes de `docker compose pull && docker compose up -d`, garantindo o mesmo namespace/valores nos dois comandos e eliminando inicialização com owner incorreto por diferença de escopo de variável.
+
+
+## 2026-05-17 17:48:57 UTC
+- Investigação profunda do fluxo \`Codex ChatGPT\` comparando implementação local com padrão de sessão persistente do exemplo `codex-rs`: causa raiz do status sempre `desconectado` no frontend era ausência de envio de cookie de sessão nas chamadas XHR quando frontend/backend estão em origens diferentes.
+- Correção aplicada em `apps/frontend/src/api/client.ts`: habilitado `withCredentials: true` no cliente Axios global, garantindo envio de `JSESSIONID` em `/api/account/read`, `/api/account/login/start` e `/api/account/logout` e permitindo reaproveitamento da mesma sessão estabelecida no callback de login.
+- Impacto esperado: após concluir login na aba externa e retornar ao AI Hub, o polling e o refresh passam a ler a sessão correta e exibir `connected` com e-mail/validade em vez de `disconnected`.
