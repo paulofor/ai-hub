@@ -34,7 +34,8 @@ const normalizeApiBaseUrl = (value?: string) => {
 };
 
 const client = axios.create({
-  baseURL: normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL)
+  baseURL: normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
+  withCredentials: true
 });
 
 client.interceptors.response.use(
