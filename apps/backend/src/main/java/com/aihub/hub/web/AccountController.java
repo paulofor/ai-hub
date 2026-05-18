@@ -3,6 +3,10 @@ package com.aihub.hub.web;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
@@ -31,6 +35,7 @@ import java.security.SecureRandom;
 @RestController
 @RequestMapping("/api/account")
 public class AccountController {
+    private static final Logger log = LoggerFactory.getLogger(AccountController.class);
 
     private static final String ACCOUNT_EMAIL_KEY = TokenLifecycleManager.ACCOUNT_EMAIL_KEY;
     private static final String EXPIRES_AT_KEY = TokenLifecycleManager.EXPIRES_AT_KEY;
@@ -59,9 +64,11 @@ public class AccountController {
     private String loginCallbackUrl;
     private final RestClient restClient = RestClient.builder().build();
     private final TokenLifecycleManager tokenLifecycleManager;
+    private final MeterRegistry meterRegistry;
 
-    public AccountController(TokenLifecycleManager tokenLifecycleManager) {
+    public AccountController(TokenLifecycleManager tokenLifecycleManager, MeterRegistry meterRegistry) {
         this.tokenLifecycleManager = tokenLifecycleManager;
+        this.meterRegistry = meterRegistry;
     }
 
     @GetMapping("/read")
@@ -88,6 +95,8 @@ public class AccountController {
         HttpSession session,
         HttpServletRequest request
     ) {
+        String correlationId = UUID.randomUUID().toString();
+        MDC.put("oauthCorrelationId", correlationId);
         String accountHint = null;
         if (payload != null && payload.get("accountHint") instanceof String hint && !hint.isBlank()) {
             accountHint = hint.trim();
@@ -102,6 +111,9 @@ public class AccountController {
         session.setAttribute(LOGIN_PKCE_VERIFIER_KEY, codeVerifier);
         String callbackBase = resolveCallbackBaseUrl(request);
         String authUrl = buildExternalAuthUrl(callbackBase, state, codeChallenge);
+        meterRegistry.counter("oauth_login_start_total").increment();
+        log.info("OAuth login start gerado (callback={}, hasHint={}, correlationId={})", callbackBase, accountHint != null, correlationId);
+        MDC.remove("oauthCorrelationId");
 
         return Map.of(
             "status", "redirect_required",
@@ -121,14 +133,20 @@ public class AccountController {
         HttpServletRequest request,
         HttpServletResponse response
     ) throws IOException {
+        String correlationId = UUID.randomUUID().toString();
+        MDC.put("oauthCorrelationId", correlationId);
         String expectedState = (String) session.getAttribute(LOGIN_STATE_KEY);
         if (expectedState == null || state == null || !expectedState.equals(state)) {
             clearSession(session);
+            log.warn("OAuth callback inválido por state inconsistente (correlationId={})", correlationId);
+            MDC.remove("oauthCorrelationId");
             response.sendRedirect(loginSuccessRedirect + "?login=invalid_state");
             return;
         }
         if (code == null || code.isBlank()) {
             clearSession(session);
+            log.warn("OAuth callback sem authorization code (correlationId={})", correlationId);
+            MDC.remove("oauthCorrelationId");
             response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
             return;
         }
@@ -136,6 +154,8 @@ public class AccountController {
         String codeVerifier = (String) session.getAttribute(LOGIN_PKCE_VERIFIER_KEY);
         if (codeVerifier == null || codeVerifier.isBlank()) {
             clearSession(session);
+            log.warn("OAuth callback sem PKCE verifier em sessão (correlationId={})", correlationId);
+            MDC.remove("oauthCorrelationId");
             response.sendRedirect(loginSuccessRedirect + "?login=invalid_state");
             return;
         }
@@ -151,11 +171,15 @@ public class AccountController {
         }
         if (accountEmail == null || accountEmail.isBlank()) {
             clearSession(session);
+            log.warn("OAuth callback sem e-mail resolvido após exchange (correlationId={})", correlationId);
+            MDC.remove("oauthCorrelationId");
             response.sendRedirect(loginSuccessRedirect + "?login=missing_email");
             return;
         }
         if (accessToken == null || accessToken.isBlank()) {
             clearSession(session);
+            log.warn("OAuth callback sem access_token após exchange (correlationId={})", correlationId);
+            MDC.remove("oauthCorrelationId");
             response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
             return;
         }
@@ -170,6 +194,9 @@ public class AccountController {
             session.setAttribute(ID_TOKEN_KEY, idToken.trim());
         }
         session.removeAttribute(LOGIN_STATE_KEY);
+        meterRegistry.counter("oauth_login_success_total").increment();
+        log.info("OAuth login concluído com sucesso para conta {} (correlationId={})", accountEmail, correlationId);
+        MDC.remove("oauthCorrelationId");
         response.sendRedirect(loginSuccessRedirect);
     }
 

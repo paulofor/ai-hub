@@ -10,6 +10,7 @@ public record SandboxJobRequest(
     String testCommand,
     String profile,
     String model,
+    String accessToken,
     DatabaseConnection database,
     String callbackUrl,
     String callbackSecret
