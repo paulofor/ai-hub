@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.security.SecureRandom;
@@ -42,12 +45,17 @@ public class AccountController {
     private String oauthClientId;
     @Value("${hub.account.oauth.scopes:openid profile email offline_access}")
     private String oauthScopes;
+    @Value("${hub.account.oauth.token-url:https://auth.openai.com/oauth/token}")
+    private String oauthTokenUrl;
+    @Value("${hub.account.oauth.client-secret:}")
+    private String oauthClientSecret;
 
     @Value("${hub.account.login-success-redirect:/codex-chatgpt}")
     private String loginSuccessRedirect;
 
     @Value("${hub.account.login-callback-url:/api/account/login/callback}")
     private String loginCallbackUrl;
+    private final RestClient restClient = RestClient.builder().build();
 
     @GetMapping("/read")
     public Map<String, Object> read(HttpSession session) {
@@ -95,12 +103,10 @@ public class AccountController {
 
     @GetMapping("/login/callback")
     public void loginCallback(
-        @RequestParam(name = "email", required = false) String email,
+        @RequestParam(name = "code", required = false) String code,
         @RequestParam(name = "state", required = false) String state,
-        @RequestParam(name = "access_token", required = false) String accessToken,
-        @RequestParam(name = "refresh_token", required = false) String refreshToken,
-        @RequestParam(name = "id_token", required = false) String idToken,
         HttpSession session,
+        HttpServletRequest request,
         HttpServletResponse response
     ) throws IOException {
         String expectedState = (String) session.getAttribute(LOGIN_STATE_KEY);
@@ -109,18 +115,42 @@ public class AccountController {
             response.sendRedirect(loginSuccessRedirect + "?login=invalid_state");
             return;
         }
+        if (code == null || code.isBlank()) {
+            clearSession(session);
+            response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
+            return;
+        }
 
-        String accountEmail = (email != null && !email.isBlank()) ? email.trim() : (String) session.getAttribute(ACCOUNT_EMAIL_KEY);
+        String codeVerifier = (String) session.getAttribute(LOGIN_PKCE_VERIFIER_KEY);
+        if (codeVerifier == null || codeVerifier.isBlank()) {
+            clearSession(session);
+            response.sendRedirect(loginSuccessRedirect + "?login=invalid_state");
+            return;
+        }
+        String callbackBase = resolveCallbackBaseUrl(request);
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase);
+        String accessToken = asString(tokenResponse.get("access_token"));
+        String refreshToken = asString(tokenResponse.get("refresh_token"));
+        String idToken = asString(tokenResponse.get("id_token"));
+        Long expiresIn = asLong(tokenResponse.get("expires_in"));
+        String accountEmail = resolveEmailFromIdToken(idToken);
+        if ((accountEmail == null || accountEmail.isBlank()) && session.getAttribute(ACCOUNT_EMAIL_KEY) instanceof String hint && !hint.isBlank()) {
+            accountEmail = hint.trim();
+        }
         if (accountEmail == null || accountEmail.isBlank()) {
             clearSession(session);
             response.sendRedirect(loginSuccessRedirect + "?login=missing_email");
             return;
         }
-        session.setAttribute(ACCOUNT_EMAIL_KEY, accountEmail);
-        session.setAttribute(EXPIRES_AT_KEY, Instant.now().plus(8, ChronoUnit.HOURS).toString());
-        if (accessToken != null && !accessToken.isBlank()) {
-            session.setAttribute(ACCESS_TOKEN_KEY, accessToken.trim());
+        if (accessToken == null || accessToken.isBlank()) {
+            clearSession(session);
+            response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
+            return;
         }
+        session.setAttribute(ACCOUNT_EMAIL_KEY, accountEmail);
+        Instant expiresAt = Instant.now().plus((expiresIn == null || expiresIn <= 0) ? 8 : expiresIn, ChronoUnit.SECONDS);
+        session.setAttribute(EXPIRES_AT_KEY, expiresAt.toString());
+        session.setAttribute(ACCESS_TOKEN_KEY, accessToken.trim());
         if (refreshToken != null && !refreshToken.isBlank()) {
             session.setAttribute(REFRESH_TOKEN_KEY, refreshToken.trim());
         }
@@ -129,6 +159,84 @@ public class AccountController {
         }
         session.removeAttribute(LOGIN_STATE_KEY);
         response.sendRedirect(loginSuccessRedirect);
+    }
+
+    private Map<String, Object> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri) {
+        Map<String, String> payload = new HashMap<>();
+        payload.put("grant_type", "authorization_code");
+        payload.put("client_id", oauthClientId);
+        payload.put("code", code);
+        payload.put("redirect_uri", redirectUri);
+        payload.put("code_verifier", codeVerifier);
+        if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
+            payload.put("client_secret", oauthClientSecret);
+        }
+        return restClient.post()
+            .uri(oauthTokenUrl)
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .body(toFormUrlEncoded(payload))
+            .retrieve()
+            .body(Map.class);
+    }
+
+    private String toFormUrlEncoded(Map<String, String> values) {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (entry.getValue() == null || entry.getValue().isBlank()) {
+                continue;
+            }
+            if (!first) {
+                sb.append("&");
+            }
+            sb.append(urlEncode(entry.getKey())).append("=").append(urlEncode(entry.getValue()));
+            first = false;
+        }
+        return sb.toString();
+    }
+
+    private String resolveEmailFromIdToken(String idToken) {
+        if (idToken == null || idToken.isBlank()) {
+            return null;
+        }
+        String[] parts = idToken.split("\\.");
+        if (parts.length < 2) {
+            return null;
+        }
+        try {
+            String json = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            int emailIdx = json.indexOf("\"email\"");
+            if (emailIdx < 0) {
+                return null;
+            }
+            int colonIdx = json.indexOf(":", emailIdx);
+            int quoteStart = json.indexOf("\"", colonIdx + 1);
+            int quoteEnd = json.indexOf("\"", quoteStart + 1);
+            if (quoteStart < 0 || quoteEnd < 0) {
+                return null;
+            }
+            return json.substring(quoteStart + 1, quoteEnd).trim();
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private String asString(Object value) {
+        return value instanceof String text ? text : null;
+    }
+
+    private Long asLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private String buildExternalAuthUrl(String redirectUri, String state, String codeChallenge) {
