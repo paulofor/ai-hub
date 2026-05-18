@@ -261,3 +261,10 @@
 - Execução da Fase 1 em `AccountController`: implementada geração criptográfica de `state` + PKCE (S256), persistência temporária em sessão (`chatgpt_login_state` e `chatgpt_login_code_verifier`) e montagem de `authUrl` OAuth real com parâmetros `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge` e `code_challenge_method=S256`.
 - Ajuste complementar de configuração raiz para Fase 1: adicionadas propriedades `hub.account.oauth.authorize-url`, `hub.account.oauth.client-id` e `hub.account.oauth.scopes` no `application.yml` com fallback para variáveis de ambiente (`HUB_ACCOUNT_OAUTH_*`), garantindo contrato alinhado para ambientes distintos.
 - Mantida validação explícita de `state` no callback com rejeição por `?login=invalid_state` e limpeza de sessão para impedir conexão indevida quando houver retorno inválido.
+
+## 2026-05-18 10:05:00 UTC
+- Verificação de pendências das fases anteriores do plano OAuth: Fase 0 e Fase 1 já constavam implementadas; a causa raiz pendente estava na Fase 2, pois o callback ainda aceitava `access_token`/`refresh_token` por query string sem realizar exchange server-side de `authorization_code`.
+- Execução da Fase 2 no backend (`AccountController`): callback passou a exigir `code`, validar `state` + `code_verifier` e trocar o código por tokens no endpoint OAuth (`grant_type=authorization_code`) via chamada HTTP backend-backend.
+- Endurecimento de segurança: removida a dependência de tokens via query params no callback e adicionada validação explícita para falhas de exchange (`?login=token_exchange_failed`).
+- Persistência de sessão ajustada para dados reais do OAuth: `access_token`, `refresh_token`, `id_token` e `expires_at` derivado de `expires_in`; e-mail da conta agora é resolvido prioritariamente do `id_token` (claim `email`) com fallback para `accountHint`.
+- Configuração ampliada para Fase 2 em `application.yml`: incluídas propriedades `hub.account.oauth.token-url` e `hub.account.oauth.client-secret` (com fallback `HUB_ACCOUNT_OAUTH_TOKEN_URL` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET`) para suportar ambientes com/sem segredo de cliente.
