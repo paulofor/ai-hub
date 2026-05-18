@@ -66,6 +66,11 @@ hub:
     callback:
       url: ${HUB_SANDBOX_CALLBACK_URL:http://backend:8081/api/codex/requests/callbacks/sandbox}
       secret: ${HUB_SANDBOX_CALLBACK_SECRET:}
+  account:
+    oauth:
+      authorize-url: ${HUB_ACCOUNT_OAUTH_AUTHORIZE_URL:https://auth.openai.com/oauth/authorize}
+      client-id: ${HUB_ACCOUNT_OAUTH_CLIENT_ID:}
+      scopes: ${HUB_ACCOUNT_OAUTH_SCOPES:openid profile email offline_access}
 
 server:
   port: 8081
