@@ -47,6 +47,7 @@ class CodexRequestServiceTest {
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
+    private final TokenLifecycleManager tokenLifecycleManager = mock(TokenLifecycleManager.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
     private final PlatformTransactionManager transactionManager = new PlatformTransactionManager() {
         @Override
@@ -73,6 +74,7 @@ class CodexRequestServiceTest {
             environmentRepository,
             problemRepository,
             sandboxOrchestratorClient,
+            tokenLifecycleManager,
             tokenCostCalculator,
             transactionManager,
             "gpt-5-codex",
