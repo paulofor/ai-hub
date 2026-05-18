@@ -250,3 +250,8 @@
 - Solicitação atendida: criado plano de implementação no repositório para evoluir a conexão do AI Hub para o padrão “como ChatGPT”, com foco em causa raiz e referência no fluxo do `codex-rs`.
 - Novo documento `docs/plano-implementacao-chatgpt-codex-oauth.md` estruturado em fases (contrato, OAuth real com PKCE/state, exchange de token, refresh automático, integração com execução e rollout seguro).
 - Incluídos critérios de sucesso, riscos, critérios de aceite, variáveis de ambiente sugeridas e estratégia de testes para reduzir retrabalho de implementação.
+
+## 2026-05-18 00:00:00 UTC
+- Execução da Fase 0 do plano `docs/plano-implementacao-chatgpt-codex-oauth.md` com formalização do contrato entre frontend e backend para OAuth ChatGPT/OpenAI.
+- Criado `docs/fase-0-contrato-oauth-chatgpt.md` com definição objetiva dos endpoints `POST /api/account/login/start`, `GET /api/account/login/callback`, `GET /api/account/read` e `POST /api/account/logout`, incluindo payloads, respostas e códigos HTTP por cenário.
+- Definida política padronizada de erros (`invalid_state`, `token_exchange_failed`, `refresh_failed` e correlatos), modelo de persistência de sessão OAuth, variáveis de ambiente obrigatórias/opcionais e padrão de mascaramento de segredos em logs.
