@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.aihub.hub.service.TokenLifecycleManager;
+
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.security.MessageDigest;
@@ -30,11 +32,11 @@ import java.security.SecureRandom;
 @RequestMapping("/api/account")
 public class AccountController {
 
-    private static final String ACCOUNT_EMAIL_KEY = "chatgpt_account_email";
-    private static final String EXPIRES_AT_KEY = "chatgpt_expires_at";
-    private static final String ACCESS_TOKEN_KEY = "chatgpt_access_token";
-    private static final String REFRESH_TOKEN_KEY = "chatgpt_refresh_token";
-    private static final String ID_TOKEN_KEY = "chatgpt_id_token";
+    private static final String ACCOUNT_EMAIL_KEY = TokenLifecycleManager.ACCOUNT_EMAIL_KEY;
+    private static final String EXPIRES_AT_KEY = TokenLifecycleManager.EXPIRES_AT_KEY;
+    private static final String ACCESS_TOKEN_KEY = TokenLifecycleManager.ACCESS_TOKEN_KEY;
+    private static final String REFRESH_TOKEN_KEY = TokenLifecycleManager.REFRESH_TOKEN_KEY;
+    private static final String ID_TOKEN_KEY = TokenLifecycleManager.ID_TOKEN_KEY;
     private static final String LOGIN_STATE_KEY = "chatgpt_login_state";
     private static final String LOGIN_PKCE_VERIFIER_KEY = "chatgpt_login_code_verifier";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -56,12 +58,22 @@ public class AccountController {
     @Value("${hub.account.login-callback-url:/api/account/login/callback}")
     private String loginCallbackUrl;
     private final RestClient restClient = RestClient.builder().build();
+    private final TokenLifecycleManager tokenLifecycleManager;
+
+    public AccountController(TokenLifecycleManager tokenLifecycleManager) {
+        this.tokenLifecycleManager = tokenLifecycleManager;
+    }
 
     @GetMapping("/read")
     public Map<String, Object> read(HttpSession session) {
+        try {
+            tokenLifecycleManager.refreshIfNeeded(session);
+        } catch (Exception ignored) {
+            // Falha de refresh não deve quebrar leitura de estado; UI exibirá reconexão.
+        }
         String accountEmail = (String) session.getAttribute(ACCOUNT_EMAIL_KEY);
         String expiresAt = (String) session.getAttribute(EXPIRES_AT_KEY);
-        boolean connected = accountEmail != null && expiresAt != null;
+        boolean connected = isConnected(accountEmail, expiresAt);
         return Map.<String, Object>ofEntries(
             Map.entry("connected", connected),
             Map.entry("status", connected ? "connected" : "disconnected"),
@@ -299,6 +311,17 @@ public class AccountController {
         session.removeAttribute(ID_TOKEN_KEY);
         session.removeAttribute(LOGIN_STATE_KEY);
         session.removeAttribute(LOGIN_PKCE_VERIFIER_KEY);
+    }
+
+    private boolean isConnected(String accountEmail, String expiresAt) {
+        if (accountEmail == null || accountEmail.isBlank() || expiresAt == null || expiresAt.isBlank()) {
+            return false;
+        }
+        try {
+            return Instant.parse(expiresAt).isAfter(Instant.now());
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     @PostMapping("/logout")
