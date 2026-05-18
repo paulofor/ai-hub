@@ -42,6 +42,7 @@ public class SandboxOrchestratorClient {
         Optional.ofNullable(request.testCommand()).ifPresent(value -> body.put("testCommand", value));
         Optional.ofNullable(request.profile()).ifPresent(value -> body.put("profile", value));
         Optional.ofNullable(request.model()).ifPresent(value -> body.put("model", value));
+        Optional.ofNullable(request.accessToken()).ifPresent(value -> body.put("accessToken", value));
 
         Optional.ofNullable(request.database()).ifPresent(database -> {
             Map<String, Object> dbPayload = new HashMap<>();

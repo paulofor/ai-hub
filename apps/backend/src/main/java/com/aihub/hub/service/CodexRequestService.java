@@ -65,6 +65,7 @@ public class CodexRequestService {
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
+    private final TokenLifecycleManager tokenLifecycleManager;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
     private final String economyModel;
@@ -82,6 +83,7 @@ public class CodexRequestService {
                                EnvironmentRepository environmentRepository,
                                ProblemRepository problemRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
+                               TokenLifecycleManager tokenLifecycleManager,
                                TokenCostCalculator tokenCostCalculator,
                                PlatformTransactionManager transactionManager,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
@@ -98,6 +100,7 @@ public class CodexRequestService {
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
+        this.tokenLifecycleManager = tokenLifecycleManager;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
         this.economyModel = economyModel;
@@ -582,6 +585,10 @@ public class CodexRequestService {
 
         String callbackUrl = this.sandboxCallbackUrl;
         String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
+        String accessToken = tokenLifecycleManager.getValidAccessTokenFromCurrentSession().orElse(null);
+        if (accessToken == null) {
+            log.info("CodexRequest {} será executado sem access token OAuth de conta conectada", request.getId());
+        }
 
         SandboxJobRequest jobRequest = new SandboxJobRequest(
             jobId,
@@ -593,6 +600,7 @@ public class CodexRequestService {
             null,
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
             request.getModel(),
+            accessToken,
             resolveDatabase(request.getEnvironment()),
             callbackUrl,
             callbackSecret

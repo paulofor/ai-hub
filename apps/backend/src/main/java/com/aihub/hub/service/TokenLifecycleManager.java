@@ -1,6 +1,12 @@
 package com.aihub.hub.service;
 
 import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -13,9 +19,11 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class TokenLifecycleManager {
+    private static final Logger log = LoggerFactory.getLogger(TokenLifecycleManager.class);
 
     public static final String ACCOUNT_EMAIL_KEY = "chatgpt_account_email";
     public static final String EXPIRES_AT_KEY = "chatgpt_expires_at";
@@ -26,6 +34,7 @@ public class TokenLifecycleManager {
     private static final long REFRESH_SKEW_SECONDS = 60;
 
     private final RestClient restClient;
+    private final MeterRegistry meterRegistry;
 
     @Value("${hub.account.oauth.token-url:https://auth.openai.com/oauth/token}")
     private String oauthTokenUrl;
@@ -34,8 +43,9 @@ public class TokenLifecycleManager {
     @Value("${hub.account.oauth.client-secret:}")
     private String oauthClientSecret;
 
-    public TokenLifecycleManager() {
+    public TokenLifecycleManager(MeterRegistry meterRegistry) {
         this.restClient = RestClient.builder().build();
+        this.meterRegistry = meterRegistry;
     }
 
     public void refreshIfNeeded(HttpSession session) {
@@ -52,6 +62,7 @@ public class TokenLifecycleManager {
         }
 
         Map<String, Object> response = refreshWithRetry(refreshToken.trim());
+        meterRegistry.counter("oauth_token_refresh_total").increment();
         String accessToken = asString(response.get("access_token"));
         if (accessToken == null || accessToken.isBlank()) {
             markExpired(session);
@@ -71,6 +82,27 @@ public class TokenLifecycleManager {
         if (idToken != null && !idToken.isBlank()) {
             session.setAttribute(ID_TOKEN_KEY, idToken.trim());
         }
+        log.info("OAuth access token renovado com sucesso");
+    }
+
+    public Optional<String> getValidAccessTokenFromCurrentSession() {
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return Optional.empty();
+        }
+        HttpServletRequest request = attributes.getRequest();
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            return Optional.empty();
+        }
+        refreshIfNeeded(session);
+        String accessToken = asString(session.getAttribute(ACCESS_TOKEN_KEY));
+        String expiresAtRaw = asString(session.getAttribute(EXPIRES_AT_KEY));
+        Instant expiresAt = parseInstant(expiresAtRaw);
+        if (accessToken == null || accessToken.isBlank() || expiresAt == null || !expiresAt.isAfter(Instant.now())) {
+            return Optional.empty();
+        }
+        return Optional.of(accessToken.trim());
     }
 
     private Map<String, Object> refreshWithRetry(String refreshToken) {
@@ -113,6 +145,7 @@ public class TokenLifecycleManager {
     }
 
     private void markExpired(HttpSession session) {
+        meterRegistry.counter("oauth_token_refresh_failure_total").increment();
         session.removeAttribute(ACCESS_TOKEN_KEY);
         session.removeAttribute(REFRESH_TOKEN_KEY);
         session.removeAttribute(ID_TOKEN_KEY);
