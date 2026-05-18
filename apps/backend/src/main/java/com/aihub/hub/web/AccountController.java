@@ -13,11 +13,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
+import java.security.SecureRandom;
 
 @RestController
 @RequestMapping("/api/account")
@@ -29,12 +33,15 @@ public class AccountController {
     private static final String REFRESH_TOKEN_KEY = "chatgpt_refresh_token";
     private static final String ID_TOKEN_KEY = "chatgpt_id_token";
     private static final String LOGIN_STATE_KEY = "chatgpt_login_state";
+    private static final String LOGIN_PKCE_VERIFIER_KEY = "chatgpt_login_code_verifier";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    @Value("${hub.account.openai-auth-url:https://chatgpt.com/auth/login}")
-    private String openAiAuthUrl;
-
-    @Value("${hub.account.openai-auth-redirect-param:redirect_uri}")
-    private String openAiAuthRedirectParam;
+    @Value("${hub.account.oauth.authorize-url:https://auth.openai.com/oauth/authorize}")
+    private String oauthAuthorizeUrl;
+    @Value("${hub.account.oauth.client-id:}")
+    private String oauthClientId;
+    @Value("${hub.account.oauth.scopes:openid profile email offline_access}")
+    private String oauthScopes;
 
     @Value("${hub.account.login-success-redirect:/codex-chatgpt}")
     private String loginSuccessRedirect;
@@ -69,19 +76,20 @@ public class AccountController {
             session.setAttribute(ACCOUNT_EMAIL_KEY, accountHint);
         }
         String state = UUID.randomUUID().toString();
+        String codeVerifier = generateCodeVerifier();
+        String codeChallenge = generateCodeChallenge(codeVerifier);
         session.setAttribute(LOGIN_STATE_KEY, state);
+        session.setAttribute(LOGIN_PKCE_VERIFIER_KEY, codeVerifier);
         String callbackBase = resolveCallbackBaseUrl(request);
-        String callback = callbackBase
-            + "?state=" + urlEncode(state)
-            + (accountHint != null ? "&email=" + urlEncode(accountHint) : "");
-        String authUrl = buildExternalAuthUrl(callback);
+        String authUrl = buildExternalAuthUrl(callbackBase, state, codeChallenge);
 
         return Map.of(
             "status", "redirect_required",
             "authUrl", authUrl,
             "url", authUrl,
-            "callbackUrl", callback,
-            "externalAuthUrl", openAiAuthUrl
+            "callbackUrl", callbackBase,
+            "state", state,
+            "codeChallengeMethod", "S256"
         );
     }
 
@@ -123,9 +131,16 @@ public class AccountController {
         response.sendRedirect(loginSuccessRedirect);
     }
 
-    private String buildExternalAuthUrl(String callback) {
-        String separator = openAiAuthUrl.contains("?") ? "&" : "?";
-        return openAiAuthUrl + separator + openAiAuthRedirectParam + "=" + urlEncode(callback);
+    private String buildExternalAuthUrl(String redirectUri, String state, String codeChallenge) {
+        String separator = oauthAuthorizeUrl.contains("?") ? "&" : "?";
+        return oauthAuthorizeUrl
+            + separator + "response_type=code"
+            + "&client_id=" + urlEncode(oauthClientId)
+            + "&redirect_uri=" + urlEncode(redirectUri)
+            + "&scope=" + urlEncode(oauthScopes)
+            + "&state=" + urlEncode(state)
+            + "&code_challenge=" + urlEncode(codeChallenge)
+            + "&code_challenge_method=S256";
     }
 
     private String resolveCallbackBaseUrl(HttpServletRequest request) {
@@ -152,6 +167,22 @@ public class AccountController {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    private String generateCodeVerifier() {
+        byte[] randomBytes = new byte[32];
+        SECURE_RANDOM.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    private String generateCodeChallenge(String codeVerifier) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 indisponível para PKCE", e);
+        }
+    }
+
     private void clearSession(HttpSession session) {
         session.removeAttribute(ACCOUNT_EMAIL_KEY);
         session.removeAttribute(EXPIRES_AT_KEY);
@@ -159,6 +190,7 @@ public class AccountController {
         session.removeAttribute(REFRESH_TOKEN_KEY);
         session.removeAttribute(ID_TOKEN_KEY);
         session.removeAttribute(LOGIN_STATE_KEY);
+        session.removeAttribute(LOGIN_PKCE_VERIFIER_KEY);
     }
 
     @PostMapping("/logout")

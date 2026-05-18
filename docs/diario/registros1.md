@@ -255,3 +255,9 @@
 - Execução da Fase 0 do plano `docs/plano-implementacao-chatgpt-codex-oauth.md` com formalização do contrato entre frontend e backend para OAuth ChatGPT/OpenAI.
 - Criado `docs/fase-0-contrato-oauth-chatgpt.md` com definição objetiva dos endpoints `POST /api/account/login/start`, `GET /api/account/login/callback`, `GET /api/account/read` e `POST /api/account/logout`, incluindo payloads, respostas e códigos HTTP por cenário.
 - Definida política padronizada de erros (`invalid_state`, `token_exchange_failed`, `refresh_failed` e correlatos), modelo de persistência de sessão OAuth, variáveis de ambiente obrigatórias/opcionais e padrão de mascaramento de segredos em logs.
+
+## 2026-05-18 09:20:00 UTC
+- Verificação de pendências anteriores do plano OAuth: a Fase 0 já estava concluída em documentação, porém a Fase 1 permanecia incompleta na causa raiz do backend, pois `login/start` ainda não gerava PKCE S256 (`code_verifier`/`code_challenge`) nem montava URL OAuth padrão com `response_type=code`, `client_id` e `scope`.
+- Execução da Fase 1 em `AccountController`: implementada geração criptográfica de `state` + PKCE (S256), persistência temporária em sessão (`chatgpt_login_state` e `chatgpt_login_code_verifier`) e montagem de `authUrl` OAuth real com parâmetros `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge` e `code_challenge_method=S256`.
+- Ajuste complementar de configuração raiz para Fase 1: adicionadas propriedades `hub.account.oauth.authorize-url`, `hub.account.oauth.client-id` e `hub.account.oauth.scopes` no `application.yml` com fallback para variáveis de ambiente (`HUB_ACCOUNT_OAUTH_*`), garantindo contrato alinhado para ambientes distintos.
+- Mantida validação explícita de `state` no callback com rejeição por `?login=invalid_state` e limpeza de sessão para impedir conexão indevida quando houver retorno inválido.
