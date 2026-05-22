@@ -306,3 +306,15 @@
 - 2026-05-22 19:45:00 UTC — Análise de causa raiz do roteamento MCP no Caddy: o caminho base `/mcp` chegava ao `mcp-server`, porém retornava 404 por não existir handler nessa rota no serviço (apenas `/mcp/tools/*`). Correção aplicada no `infra/caddy/Caddyfile`: rota dedicada `@mcp_health` para `/mcp` com rewrite para `/actuator/health`, mantendo `/mcp/*` para as tools MCP.
 
 - 2026-05-22 19:55:00 UTC — Removida a exigência de token no MCP Server conforme solicitação: `POST /mcp/tools/linux-command` não valida mais o header `X-MCP-TOKEN`. Ajuste aplicado na causa raiz (controller) e documentação atualizada em `apps/mcp-server/README.md`.
+## 2026-05-22 16:53:52 UTC-3
+- Nova tentativa de acesso ao MCP Server pela URL solicitada (`http://iahub.xyz/mcp`) para investigar logs do container backend.
+- Validação de causa raiz de acesso: `GET /mcp` via HTTPS respondeu `{"status":"UP"}`, confirmando serviço ativo, porém as rotas esperadas de transporte MCP (`/mcp/`, `/mcp/sse`, `/mcp/messages`) retornaram `404 Not Found`.
+- Conclusão operacional: não foi possível consultar logs do container backend por esse endpoint sem o contrato exato da rota/tool exposta (ou credenciais/parâmetros compatíveis), apesar de o serviço base estar online.
+## 2026-05-22 16:58:04 UTC-3
+- Revisão da causa raiz da tentativa anterior: a verificação foi feita apenas em rotas de saúde/transporte (`GET /mcp`, `/mcp/sse`, `/mcp/messages`), sem acionar a tool correta de execução remota.
+- Acesso funcional ao MCP confirmado via `POST https://iahub.xyz/mcp/tools/linux-command` com body JSON `{ "command": "..." }`.
+- Comando remoto `docker ps --format "{{.Names}}"` retornou os containers ativos, incluindo `ai-hub-6-backend-1`.
+- Consulta de logs do backend realizada com sucesso por `docker logs --tail 120 ai-hub-6-backend-1`, retornando inicialização Spring Boot normal, conexão MySQL/Flyway válida e sem erro fatal no recorte coletado.
+## 2026-05-22 17:00:27 UTC-3
+- Solicitado registro explícito no `AGENTS.md` da forma correta de acessar o MCP Server.
+- Atualizado `AGENTS.md` com instruções objetivas: `GET /mcp` para healthcheck e `POST /mcp/tools/linux-command` com JSON `{ "command": "..." }` para executar comandos e consultar logs (incluindo exemplo do backend).
