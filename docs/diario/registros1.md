@@ -304,3 +304,5 @@
 - 2026-05-22 19:35:49 UTC — Nova tentativa via URL solicitada `http://iahub.xyz/mcp`: confirmado redirect 308 para HTTPS; `GET https://iahub.xyz/mcp` respondeu 404 (rota base) e `POST https://iahub.xyz/mcp/tools/linux-command` respondeu 401 Unauthorized sem token. Conclusão: endpoint MCP está acessível, mas a execução de comandos/logs requer autenticação.
 
 - 2026-05-22 19:45:00 UTC — Análise de causa raiz do roteamento MCP no Caddy: o caminho base `/mcp` chegava ao `mcp-server`, porém retornava 404 por não existir handler nessa rota no serviço (apenas `/mcp/tools/*`). Correção aplicada no `infra/caddy/Caddyfile`: rota dedicada `@mcp_health` para `/mcp` com rewrite para `/actuator/health`, mantendo `/mcp/*` para as tools MCP.
+
+- 2026-05-22 19:55:00 UTC — Removida a exigência de token no MCP Server conforme solicitação: `POST /mcp/tools/linux-command` não valida mais o header `X-MCP-TOKEN`. Ajuste aplicado na causa raiz (controller) e documentação atualizada em `apps/mcp-server/README.md`.
