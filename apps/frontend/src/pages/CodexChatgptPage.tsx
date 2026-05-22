@@ -37,6 +37,11 @@ const is404Error = (err: unknown): boolean => {
   return message.includes('404');
 };
 
+const is503Error = (err: unknown): boolean => {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('503');
+};
+
 const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   if (!payload || typeof payload !== 'object') {
     return { connected: false, status: 'disconnected' };
@@ -239,6 +244,11 @@ export default function CodexChatgptPage() {
         setAccount({ connected: false, status: 'unsupported' });
         registerTelemetry('login_failed', 'Endpoint de login indisponível: /account/login/start retornou 404.');
         setError('Este ambiente não expõe login de conta (/account/login/start). Contate o administrador para habilitar a integração.');
+        return;
+      }
+      if (is503Error(err)) {
+        registerTelemetry('login_failed', 'Serviço de login indisponível: /account/login/start retornou 503.');
+        setError('Serviço de login temporariamente indisponível (503). Peça ao administrador para revisar as variáveis OAuth do servidor (client_id, authorize_url e redirect_uri).');
         return;
       }
       registerTelemetry('login_failed', `Falha ao iniciar login: ${(err as Error).message}`);

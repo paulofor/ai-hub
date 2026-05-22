@@ -286,3 +286,8 @@
 - Correção de causa raiz do erro ao clicar em "Conectar com ChatGPT": o backend permitia iniciar OAuth com `hub.account.oauth.client-id` vazio, gerando redirecionamento inválido para `auth.openai.com` e retorno `empty_string`.
 - `POST /api/account/login/start` agora valida configuração crítica de OAuth antes de montar `authUrl`; quando `client_id` estiver ausente, retorna `503` com mensagem objetiva de configuração do servidor.
 - Frontend (`CodexChatgptPage`) endurecido para exigir `authUrl` não vazio e detectar bloqueio de pop-up na abertura da janela de autenticação, exibindo erro acionável ao usuário.
+
+## 2026-05-22 17:51:21 UTC
+- Ajuste orientado à causa raiz para o novo erro reportado no login: o endpoint `/api/account/login/start` passou a retornar `503` quando a configuração OAuth do servidor está incompleta/indisponível, mas o frontend ainda exibia mensagem genérica de falha HTTP.
+- Em `CodexChatgptPage`, adicionado tratamento explícito de `503` no fluxo `handleConnect`, com telemetria dedicada e mensagem acionável para validar `client_id`, `authorize_url` e `redirect_uri` no backend.
+- Mantido o comportamento de `404` como “API não suportada” e preservado fallback para demais erros, reduzindo ambiguidade no diagnóstico em produção.
