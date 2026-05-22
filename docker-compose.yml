@@ -87,6 +87,8 @@ services:
       - .env
     environment:
       MCP_SERVER_API_TOKEN: ${MCP_SERVER_API_TOKEN:-change-me}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       default:
         aliases:
