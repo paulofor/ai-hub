@@ -291,3 +291,8 @@
 - Ajuste orientado à causa raiz para o novo erro reportado no login: o endpoint `/api/account/login/start` passou a retornar `503` quando a configuração OAuth do servidor está incompleta/indisponível, mas o frontend ainda exibia mensagem genérica de falha HTTP.
 - Em `CodexChatgptPage`, adicionado tratamento explícito de `503` no fluxo `handleConnect`, com telemetria dedicada e mensagem acionável para validar `client_id`, `authorize_url` e `redirect_uri` no backend.
 - Mantido o comportamento de `404` como “API não suportada” e preservado fallback para demais erros, reduzindo ambiguidade no diagnóstico em produção.
+
+## 2026-05-22 18:20:00 UTC
+- Ajuste orientado à causa raiz para disponibilização do MCP Server pela porta 80 sem conflito de bind no host: mantida a arquitetura de borda única no `caddy` (80/443) e adicionado roteamento por path `/mcp/*` para `mcp-server:8084` no `infra/caddy/Caddyfile`.
+- Habilitado acesso a logs de containers pelo MCP Server com instalação do Docker CLI na imagem `apps/mcp-server` e montagem do socket do Docker host (`/var/run/docker.sock`) no serviço `mcp-server` do `docker-compose`.
+- Atualizado `AGENTS.md` com diretriz explícita de que o MCP Server permite executar comandos Linux no host e visualizar logs de containers.
