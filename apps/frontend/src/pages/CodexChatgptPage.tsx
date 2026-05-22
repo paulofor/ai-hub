@@ -224,8 +224,12 @@ export default function CodexChatgptPage() {
       const accountHint = sanitizedHint || selectedAccount;
       const response = await client.post('/account/login/start', accountHint ? { accountHint } : {});
       const authUrl = response.data?.authUrl || response.data?.url;
-      if (typeof authUrl === 'string' && authUrl.length > 0) {
-        window.open(authUrl, '_blank', 'noopener,noreferrer');
+      if (typeof authUrl !== 'string' || authUrl.length === 0) {
+        throw new Error('Servidor não retornou URL de autenticação válida (authUrl).');
+      }
+      const opened = window.open(authUrl, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        throw new Error('Não foi possível abrir a janela de autenticação. Verifique bloqueio de pop-up no navegador.');
       }
       registerTelemetry('login_started', accountHint ? `Login iniciado para ${accountHint}.` : 'Login iniciado sem conta sugerida.');
       await loadAccount();

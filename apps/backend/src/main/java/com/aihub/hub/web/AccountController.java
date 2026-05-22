@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.aihub.hub.service.TokenLifecycleManager;
 
@@ -104,6 +106,11 @@ public class AccountController {
         if (accountHint != null) {
             session.setAttribute(ACCOUNT_EMAIL_KEY, accountHint);
         }
+        if (oauthClientId == null || oauthClientId.isBlank()) {
+            log.error("OAuth login start abortado: hub.account.oauth.client-id não configurado");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Integração OAuth indisponível: client_id não configurado no servidor.");
+        }
+
         String state = UUID.randomUUID().toString();
         String codeVerifier = generateCodeVerifier();
         String codeChallenge = generateCodeChallenge(codeVerifier);
