@@ -11,7 +11,7 @@
         reverse_proxy sandbox-orchestrator:8083
     }
 
-    @mcp path /mcp/*
+    @mcp path /mcp /mcp/*
     handle @mcp {
         reverse_proxy mcp-server:8084
     }
