@@ -276,3 +276,13 @@
 - 2026-05-18 03:08:17 UTC: Observabilidade OAuth ampliada: adicionados contadores `oauth_login_start_total`, `oauth_login_success_total`, `oauth_token_refresh_total` e `oauth_token_refresh_failure_total`, além de logs estruturados com `oauthCorrelationId` no `AccountController` para rastreamento fim-a-fim do login/callback.
 - 2026-05-18 03:55:29 UTC: Correção de falha de compilação em testes do backend com foco em causa raiz: o construtor de `CodexRequestService` passou a exigir `TokenLifecycleManager`, mas `CodexRequestServiceTest` ainda instanciava o serviço sem essa dependência, gerando incompatibilidade de assinatura em `testCompile`.
 - 2026-05-18 03:55:29 UTC: Atualizado `CodexRequestServiceTest` para incluir mock de `TokenLifecycleManager` e injetá-lo no `buildService`, alinhando o teste ao contrato atual do construtor e restaurando compilação dos testes.
+
+## 2026-05-22 14:21:20 UTC-3
+- Diagnóstico orientado à causa raiz do erro de autenticação OpenAI `empty_string` observado em `auth.openai.com/error`: provável ausência/bloqueio de parâmetro obrigatório no fluxo de login federado (cookies/sessão/redirect interrompidos por extensão, política de privacidade do navegador ou URL de retorno incompleta).
+- Referenciadas fontes oficiais recentes da OpenAI (Help Center e Docs MCP) e o guia `codex-rs` para orientar troubleshooting sem correções paliativas.
+- Entregue checklist técnico objetivo para validar método de login original, cookies/JavaScript/3rd-party cookies, testes em janela anônima e desativação de bloqueadores/VPN antes de nova tentativa.
+
+## 2026-05-22 14:25:53 UTC-3
+- Correção de causa raiz do erro ao clicar em "Conectar com ChatGPT": o backend permitia iniciar OAuth com `hub.account.oauth.client-id` vazio, gerando redirecionamento inválido para `auth.openai.com` e retorno `empty_string`.
+- `POST /api/account/login/start` agora valida configuração crítica de OAuth antes de montar `authUrl`; quando `client_id` estiver ausente, retorna `503` com mensagem objetiva de configuração do servidor.
+- Frontend (`CodexChatgptPage`) endurecido para exigir `authUrl` não vazio e detectar bloqueio de pop-up na abertura da janela de autenticação, exibindo erro acionável ao usuário.
