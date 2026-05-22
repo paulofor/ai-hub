@@ -298,3 +298,9 @@
 - Atualizado `AGENTS.md` com diretriz explícita de que o MCP Server permite executar comandos Linux no host e visualizar logs de containers.
 - 2026-05-22 19:00:00 UTC — Ajuste de causa raiz no roteamento do MCP no Caddy: a regra anterior casava apenas `/mcp/*`, então a URL base `/mcp` não entrava no matcher e caía no `handle` padrão do frontend. Atualizado `infra/caddy/Caddyfile` para casar ambos `/mcp` e `/mcp/*`, garantindo resposta correta também na raiz do endpoint.
 - 2026-05-22 19:00:00 UTC — Validação externa: `POST https://iahub.xyz/mcp/tools/linux-command` retornou `401 Unauthorized` sem token, confirmando que o tráfego está chegando no `mcp-server` via Caddy (com autenticação ativa).
+
+- 2026-05-22: Solicitada consulta aos logs do container backend via MCP Server. Tentativa realizada com `docker ps`, porém o ambiente atual não possui o comando `docker` disponível (`docker: command not found`).
+
+- 2026-05-22 19:35:49 UTC — Nova tentativa via URL solicitada `http://iahub.xyz/mcp`: confirmado redirect 308 para HTTPS; `GET https://iahub.xyz/mcp` respondeu 404 (rota base) e `POST https://iahub.xyz/mcp/tools/linux-command` respondeu 401 Unauthorized sem token. Conclusão: endpoint MCP está acessível, mas a execução de comandos/logs requer autenticação.
+
+- 2026-05-22 19:45:00 UTC — Análise de causa raiz do roteamento MCP no Caddy: o caminho base `/mcp` chegava ao `mcp-server`, porém retornava 404 por não existir handler nessa rota no serviço (apenas `/mcp/tools/*`). Correção aplicada no `infra/caddy/Caddyfile`: rota dedicada `@mcp_health` para `/mcp` com rewrite para `/actuator/health`, mantendo `/mcp/*` para as tools MCP.

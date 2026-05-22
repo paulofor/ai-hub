@@ -11,7 +11,13 @@
         reverse_proxy sandbox-orchestrator:8083
     }
 
-    @mcp path /mcp /mcp/*
+    @mcp_health path /mcp
+    handle @mcp_health {
+        rewrite * /actuator/health
+        reverse_proxy mcp-server:8084
+    }
+
+    @mcp path /mcp/*
     handle @mcp {
         reverse_proxy mcp-server:8084
     }
