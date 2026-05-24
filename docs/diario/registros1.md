@@ -322,3 +322,27 @@
 ## 2026-05-24 00:20:00 UTC
 - Diagnóstico de causa raiz do erro `503` em `POST /api/account/login/start` com apoio do MCP Server: logs do container `ai-hub-6-backend-1` confirmaram abort explícito de OAuth por configuração ausente (`hub.account.oauth.client-id não configurado`), descartando indisponibilidade de container/rede.
 - Correção preventiva da causa raiz operacional: adicionadas variáveis de ambiente OAuth faltantes nos arquivos de exemplo (`.env.example` raiz e `apps/backend/.env.example`) para evitar novos deploys com configuração incompleta do login ChatGPT.
+
+## 2026-05-24 00:35:00 UTC
+- Orientação operacional registrada para configuração OAuth: `client_id` e `client_secret` devem ser definidos no backend pelas variáveis de ambiente `HUB_ACCOUNT_OAUTH_CLIENT_ID` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET` (mapeadas em `apps/backend/src/main/resources/application.yml`).
+- Causa raiz reforçada para evitar erro no login: quando `HUB_ACCOUNT_OAUTH_CLIENT_ID` não está preenchida, o backend interrompe `POST /api/account/login/start` com `503` e mensagem de integração indisponível.
+
+## 2026-05-24 13:36:41 UTC
+- Ajuste de documentação orientado à causa raiz da dúvida operacional sobre perda de credenciais após reboot: reforçado no `README.md` que `client_id`/`client_secret` OAuth devem ser persistidos em `.env` (ou secret manager do ambiente) e não apenas via `export` de sessão.
+- Incluídas instruções de aplicação prática para recriar contêiner após persistir `HUB_ACCOUNT_OAUTH_CLIENT_ID` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET`, evitando recorrência do `503` por configuração ausente no login OAuth.
+
+## 2026-05-24 14:03:12 UTC
+- Consulta solicitada via MCP Server para localizar `.env` no host: healthcheck `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}` e buscas remotas com `find` foram executadas via `POST /mcp/tools/linux-command`.
+- Resultado de causa raiz operacional: o contexto acessível pelo MCP nesta execução está restrito ao container com `pwd=/app` (contendo apenas `app.jar`), sem arquivo `.env` visível em `/app` nem em `/root` no escopo consultado; não foi encontrado `docker-compose.yml` no mesmo escopo.
+- Conclusão prática: o `.env` persistente provavelmente está no host/VPS fora desse filesystem de runtime ou em secret manager; necessário acessar o diretório de deploy (ex.: pasta onde roda `docker compose`) para editar o `.env` efetivo.
+
+## 2026-05-24 16:52:21 UTC
+- Varredura solicitada via MCP Server para localizar `.env`/arquivos de compose no host executada com `POST https://iahub.xyz/mcp/tools/linux-command`.
+- Diagnóstico de causa raiz do escopo: `pwd` remoto permanece `/app` e o filesystem visível apresenta contexto mínimo (app runtime), sem evidência de diretório de deploy.
+- Resultado da varredura ampla (`find` em `/root`, `/home`, `/opt`, `/srv`, `/etc` e depois `/` com pruning de `/proc|/sys|/dev`): nenhum arquivo `.env`, `*.env`, `docker-compose.yml`, `compose.yaml` ou `compose.yml` encontrado no escopo acessível ao MCP nesta sessão.
+- Conclusão operacional: o `.env` persistente está fora do escopo atual do MCP (host real de deploy) ou a implantação utiliza apenas variáveis injetadas por orquestrador/secret manager.
+
+## 2026-05-24 16:55:37 UTC
+- Ajuste solicitado para o MCP Server "ver tudo" no host: adicionada montagem explícita da raiz do host (`/:/host:ro`) no serviço `mcp-server` do `docker-compose.yml`.
+- Causa raiz identificada na investigação anterior: o MCP executava em escopo isolado de container (`/app`), sem acesso ao filesystem do host de deploy, o que impedia localizar `.env`/compose fora do runtime.
+- Documentação do módulo MCP atualizada para orientar uso do novo ponto de montagem (`/host`) em comandos de varredura, preservando leitura somente (`ro`) para reduzir risco operacional.
