@@ -318,3 +318,7 @@
 ## 2026-05-22 17:00:27 UTC-3
 - Solicitado registro explícito no `AGENTS.md` da forma correta de acessar o MCP Server.
 - Atualizado `AGENTS.md` com instruções objetivas: `GET /mcp` para healthcheck e `POST /mcp/tools/linux-command` com JSON `{ "command": "..." }` para executar comandos e consultar logs (incluindo exemplo do backend).
+
+## 2026-05-24 00:20:00 UTC
+- Diagnóstico de causa raiz do erro `503` em `POST /api/account/login/start` com apoio do MCP Server: logs do container `ai-hub-6-backend-1` confirmaram abort explícito de OAuth por configuração ausente (`hub.account.oauth.client-id não configurado`), descartando indisponibilidade de container/rede.
+- Correção preventiva da causa raiz operacional: adicionadas variáveis de ambiente OAuth faltantes nos arquivos de exemplo (`.env.example` raiz e `apps/backend/.env.example`) para evitar novos deploys com configuração incompleta do login ChatGPT.
