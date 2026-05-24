@@ -15,6 +15,7 @@ import ProblemsPage from './pages/ProblemsPage';
 import ProblemDetailPage from './pages/ProblemDetailPage';
 import VideoProjectsPage from './pages/VideoProjectsPage';
 import CodexChatgptPage from './pages/CodexChatgptPage';
+import PrivacyPage from './pages/PrivacyPage';
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
         <Route path="/video/projects" element={<VideoProjectsPage />} />
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ShellLayout>

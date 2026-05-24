@@ -346,3 +346,4 @@
 - Ajuste solicitado para o MCP Server "ver tudo" no host: adicionada montagem explícita da raiz do host (`/:/host:ro`) no serviço `mcp-server` do `docker-compose.yml`.
 - Causa raiz identificada na investigação anterior: o MCP executava em escopo isolado de container (`/app`), sem acesso ao filesystem do host de deploy, o que impedia localizar `.env`/compose fora do runtime.
 - Documentação do módulo MCP atualizada para orientar uso do novo ponto de montagem (`/host`) em comandos de varredura, preservando leitura somente (`ro`) para reduzir risco operacional.
+- 2026-05-24 17:21:48 UTC: Criada página de Política de Privacidade no frontend (`/privacy`) com conteúdo institucional inicial (dados coletados, finalidade, retenção, segurança e contato), e rota registrada em `App.tsx` para acesso direto no shell da aplicação.
