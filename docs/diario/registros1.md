@@ -347,3 +347,21 @@
 - Causa raiz identificada na investigação anterior: o MCP executava em escopo isolado de container (`/app`), sem acesso ao filesystem do host de deploy, o que impedia localizar `.env`/compose fora do runtime.
 - Documentação do módulo MCP atualizada para orientar uso do novo ponto de montagem (`/host`) em comandos de varredura, preservando leitura somente (`ro`) para reduzir risco operacional.
 - 2026-05-24 17:21:48 UTC: Criada página de Política de Privacidade no frontend (`/privacy`) com conteúdo institucional inicial (dados coletados, finalidade, retenção, segurança e contato), e rota registrada em `App.tsx` para acesso direto no shell da aplicação.
+
+## 2026-05-24 18:35:00 UTC
+- Investigação de causa raiz do problema de conexão no Codex ChatGPT: confirmado que o backend retorna `503` em `POST /api/account/login/start` quando `hub.account.oauth.client-id` está ausente, e a UI só descobria isso após clicar em "Conectar".
+- Correção orientada à causa raiz aplicada no backend (`/api/account/read`): inclusão dos campos `oauthConfigured`, `oauthStatus` e `oauthMessage` para expor prontidão OAuth já na leitura de status.
+- Correção no frontend (`CodexChatgptPage`): parsing dos novos campos, bloqueio do botão "Conectar com ChatGPT" quando OAuth não está configurado e mensagem explícita de configuração ausente para o usuário sem depender de tentativa de login falha.
+
+## 2026-05-24 19:35:00 UTC
+- Verificação solicitada via MCP Server da configuração `client_id` no host: healthcheck `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`.
+- Causa raiz observada na validação remota: não há chave `HUB_ACCOUNT_OAUTH_CLIENT_ID` definida nos `.env` encontrados em `/host/root/ai-hub-6/.env`, `/host/root/ai-hub/.env` e `/host/root/ai-hub-corporativo/.env` (resultado `KEY_NOT_FOUND`).
+- Evidência complementar: busca por `HUB_ACCOUNT_OAUTH_CLIENT_ID` retornou apenas documentação e arquivos `.env.example`/`application.yml`, sem ocorrência em `.env` efetivo.
+
+## 2026-05-24 19:43:00 UTC
+- Validação refinada conforme instrução do usuário para considerar somente `/root/ai-hub-6/.env` (via MCP mount `/host/root/ai-hub-6/.env`).
+- Resultado objetivo da causa raiz: chave `HUB_ACCOUNT_OAUTH_CLIENT_ID` continua ausente nesse arquivo específico (`KEY_NOT_FOUND`), mantendo a condição que provoca `503` no início do login OAuth.
+
+## 2026-05-24 20:02:00 UTC
+- Correção de causa raiz no workflow de deploy: identificado que o passo `rsync -az --delete` da pipeline para `/root/ai-hub-6` podia remover `.env` remoto (arquivo fora do versionamento), apagando `HUB_ACCOUNT_OAUTH_CLIENT_ID` previamente configurado no host.
+- Ajuste aplicado em `.github/workflows/ci.yml`: adicionados `--exclude '.env'` e `--exclude 'apps/backend/.env'` no rsync para preservar segredos locais durante sincronização do repositório.

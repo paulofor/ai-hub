@@ -83,11 +83,15 @@ public class AccountController {
         String accountEmail = (String) session.getAttribute(ACCOUNT_EMAIL_KEY);
         String expiresAt = (String) session.getAttribute(EXPIRES_AT_KEY);
         boolean connected = isConnected(accountEmail, expiresAt);
+        boolean oauthConfigured = oauthClientId != null && !oauthClientId.isBlank();
         return Map.<String, Object>ofEntries(
             Map.entry("connected", connected),
             Map.entry("status", connected ? "connected" : "disconnected"),
             Map.entry("accountEmail", connected ? accountEmail : ""),
-            Map.entry("expiresAt", connected ? expiresAt : "")
+            Map.entry("expiresAt", connected ? expiresAt : ""),
+            Map.entry("oauthConfigured", oauthConfigured),
+            Map.entry("oauthStatus", oauthConfigured ? "ready" : "missing_client_id"),
+            Map.entry("oauthMessage", oauthConfigured ? "" : "Integração OAuth indisponível: client_id não configurado no servidor.")
         );
     }
 

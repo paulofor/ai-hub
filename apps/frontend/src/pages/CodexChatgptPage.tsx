@@ -8,6 +8,9 @@ interface ChatgptAccountStatus {
   status?: string;
   accountEmail?: string | null;
   expiresAt?: string | null;
+  oauthConfigured?: boolean;
+  oauthStatus?: string | null;
+  oauthMessage?: string | null;
 }
 
 interface EnvironmentOption {
@@ -70,11 +73,22 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
       ? record.connected
       : normalizedStatus === 'connected' || normalizedStatus === 'ok' || normalizedStatus === 'active' || Boolean(accountEmail && expiresAt);
 
+  const oauthConfigured =
+    typeof record.oauthConfigured === 'boolean'
+      ? record.oauthConfigured
+      : true;
+
+  const oauthStatus = typeof record.oauthStatus === 'string' ? record.oauthStatus : null;
+  const oauthMessage = typeof record.oauthMessage === 'string' ? record.oauthMessage : null;
+
   return {
     connected,
     status: status ?? (connected ? 'connected' : 'disconnected'),
     accountEmail,
-    expiresAt
+    expiresAt,
+    oauthConfigured,
+    oauthStatus,
+    oauthMessage
   };
 };
 
@@ -209,6 +223,7 @@ export default function CodexChatgptPage() {
     return Number.isFinite(expiresAt) && expiresAt <= Date.now();
   }, [account]);
 
+  const oauthReady = accountApiAvailable && (account?.oauthConfigured ?? true);
   const isConnected = Boolean(account?.connected) && !accountExpired && account?.status !== 'expired';
   const expiresSoon = useMemo(() => {
     if (!account?.expiresAt) {
@@ -223,6 +238,12 @@ export default function CodexChatgptPage() {
     try {
       if (!accountApiAvailable) {
         setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
+        return;
+      }
+      if (!oauthReady) {
+        const reason = account?.oauthMessage || 'Integração OAuth indisponível no servidor.';
+        setError(`${reason} Peça ao administrador para configurar hub.account.oauth.client-id.`);
+        registerTelemetry('login_failed', `Login bloqueado por configuração ausente: ${reason}`);
         return;
       }
       const sanitizedHint = accountHintInput.trim();
@@ -256,7 +277,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [accountHintInput, loadAccount, registerTelemetry, selectedAccount]);
+  }, [account, accountApiAvailable, accountHintInput, loadAccount, oauthReady, registerTelemetry, selectedAccount]);
 
   const handleLogout = useCallback(async () => {
     setActionLoading(true);
@@ -311,7 +332,7 @@ export default function CodexChatgptPage() {
           <p><span className="font-medium">Validade:</span> {account.expiresAt ? formatDateTime(account.expiresAt) : 'não informada'}</p>
         </div> : null}
         <div className="flex gap-3">
-          <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
+          <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable || !oauthReady} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
           <button type="button" onClick={handleLogout} disabled={actionLoading || !account?.connected} className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Desconectar</button>
         </div>
         <div className="space-y-2">
