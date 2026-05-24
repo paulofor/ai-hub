@@ -31,6 +31,13 @@ infra/
 3. Instale o Maven localmente para executar comandos do backend (`mvn test`, `mvn clean package`). A imagem do sandbox já vem com Maven, JDK e Docker CLI pré-instalados; se precisar configurar a sua máquina, siga [este passo a passo](docs/maven-setup.md).
 4. A UI estará disponível em `http://localhost:8082`, a API em `http://localhost:8081` e o sandbox-orchestrator em `http://localhost:8083`.
 
+### Persistência de credenciais OAuth (client_id/client_secret)
+
+- Não use apenas `export ...` no shell para produção: esse valor pode se perder ao reiniciar sessão/servidor.
+- Grave `HUB_ACCOUNT_OAUTH_CLIENT_ID` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET` no arquivo `.env` da raiz (lido pelo `docker-compose`) ou no gerenciador de segredos do ambiente de deploy (ex.: Lightsail).
+- Depois de salvar, recrie os contêineres para aplicar: `docker compose up -d --force-recreate backend` (ou stack completa).
+- Referências de exemplo: `.env.example` e `apps/backend/.env.example` já incluem essas chaves para evitar deploy com OAuth incompleto.
+
 ### Armazenamento do token da OpenAI na VPS
 
 - Para guardar o token da OpenAI em um arquivo físico na VPS, use o caminho `/root/infra/openai-token/openai_api_key` (já esperado pelos contêineres por padrão). Esse diretório é montado como volume somente leitura no `sandbox-orchestrator` e, se o arquivo existir, o conteúdo é exportado como `OPENAI_API_KEY` antes de iniciar o serviço.
