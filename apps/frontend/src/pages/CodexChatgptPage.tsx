@@ -242,8 +242,8 @@ export default function CodexChatgptPage() {
       }
       if (!oauthReady) {
         const reason = account?.oauthMessage || 'Integração OAuth indisponível no servidor.';
-        setError(`${reason} Peça ao administrador para configurar hub.account.oauth.client-id.`);
-        registerTelemetry('login_failed', `Login bloqueado por configuração ausente: ${reason}`);
+        setError(`${reason} Peça ao administrador para revisar HUB_ACCOUNT_OAUTH_CLIENT_ID no backend.`);
+        registerTelemetry('login_failed', `Login bloqueado por configuração OAuth inválida: ${reason}`);
         return;
       }
       const sanitizedHint = accountHintInput.trim();

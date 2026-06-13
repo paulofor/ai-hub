@@ -83,15 +83,16 @@ public class AccountController {
         String accountEmail = (String) session.getAttribute(ACCOUNT_EMAIL_KEY);
         String expiresAt = (String) session.getAttribute(EXPIRES_AT_KEY);
         boolean connected = isConnected(accountEmail, expiresAt);
-        boolean oauthConfigured = oauthClientId != null && !oauthClientId.isBlank();
+        String oauthStatus = oauthReadinessStatus();
+        boolean oauthConfigured = "ready".equals(oauthStatus);
         return Map.<String, Object>ofEntries(
             Map.entry("connected", connected),
             Map.entry("status", connected ? "connected" : "disconnected"),
             Map.entry("accountEmail", connected ? accountEmail : ""),
             Map.entry("expiresAt", connected ? expiresAt : ""),
             Map.entry("oauthConfigured", oauthConfigured),
-            Map.entry("oauthStatus", oauthConfigured ? "ready" : "missing_client_id"),
-            Map.entry("oauthMessage", oauthConfigured ? "" : "Integração OAuth indisponível: client_id não configurado no servidor.")
+            Map.entry("oauthStatus", oauthStatus),
+            Map.entry("oauthMessage", oauthReadinessMessage(oauthStatus))
         );
     }
 
@@ -110,9 +111,10 @@ public class AccountController {
         if (accountHint != null) {
             session.setAttribute(ACCOUNT_EMAIL_KEY, accountHint);
         }
-        if (oauthClientId == null || oauthClientId.isBlank()) {
-            log.error("OAuth login start abortado: hub.account.oauth.client-id não configurado");
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Integração OAuth indisponível: client_id não configurado no servidor.");
+        String oauthStatus = oauthReadinessStatus();
+        if (!"ready".equals(oauthStatus)) {
+            log.error("OAuth login start abortado: {}", oauthReadinessMessage(oauthStatus));
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, oauthReadinessMessage(oauthStatus));
         }
 
         String state = UUID.randomUUID().toString();
@@ -308,17 +310,63 @@ public class AccountController {
         String contextPath = request.getContextPath();
         String normalizedContext = (contextPath == null) ? "" : contextPath;
         String callbackPath = loginCallbackUrl.startsWith("/") ? loginCallbackUrl : "/" + loginCallbackUrl;
-        return request.getScheme() + "://" + request.getServerName() + buildPortSuffix(request) + normalizedContext + callbackPath;
+        String scheme = firstForwardedHeader(request, "X-Forwarded-Proto", request.getScheme());
+        String host = firstForwardedHeader(request, "X-Forwarded-Host", request.getServerName());
+        String port = firstForwardedHeader(request, "X-Forwarded-Port", null);
+        return scheme + "://" + host + buildPortSuffix(scheme, host, port, request) + normalizedContext + callbackPath;
     }
 
-    private String buildPortSuffix(HttpServletRequest request) {
-        int port = request.getServerPort();
-        boolean defaultHttp = "http".equalsIgnoreCase(request.getScheme()) && port == 80;
-        boolean defaultHttps = "https".equalsIgnoreCase(request.getScheme()) && port == 443;
+    private String firstForwardedHeader(HttpServletRequest request, String headerName, String fallback) {
+        String value = request.getHeader(headerName);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        int commaIdx = value.indexOf(',');
+        String first = commaIdx >= 0 ? value.substring(0, commaIdx) : value;
+        return first.trim();
+    }
+
+    private String buildPortSuffix(String scheme, String host, String forwardedPort, HttpServletRequest request) {
+        if (host != null && host.contains(":")) {
+            return "";
+        }
+        int port = parsePort(forwardedPort, request.getServerPort());
+        boolean defaultHttp = "http".equalsIgnoreCase(scheme) && port == 80;
+        boolean defaultHttps = "https".equalsIgnoreCase(scheme) && port == 443;
         if (defaultHttp || defaultHttps) {
             return "";
         }
         return ":" + port;
+    }
+
+    private int parsePort(String rawPort, int fallback) {
+        if (rawPort == null || rawPort.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(rawPort.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private String oauthReadinessStatus() {
+        if (oauthClientId == null || oauthClientId.isBlank()) {
+            return "missing_client_id";
+        }
+        String trimmed = oauthClientId.trim();
+        if (!trimmed.startsWith("app_") || trimmed.length() < 20 || trimmed.contains("@")) {
+            return "invalid_client_id_format";
+        }
+        return "ready";
+    }
+
+    private String oauthReadinessMessage(String oauthStatus) {
+        return switch (oauthStatus) {
+            case "ready" -> "";
+            case "invalid_client_id_format" -> "Integração OAuth indisponível: client_id configurado no servidor tem formato inválido. Use o client_id OAuth da OpenAI (normalmente iniciado por app_) e não e-mail, API key ou nome de usuário.";
+            default -> "Integração OAuth indisponível: client_id não configurado no servidor.";
+        };
     }
 
     private String urlEncode(String value) {
