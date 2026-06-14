@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -46,6 +47,12 @@ public class AccountController {
     private static final String ID_TOKEN_KEY = TokenLifecycleManager.ID_TOKEN_KEY;
     private static final String LOGIN_STATE_KEY = "chatgpt_login_state";
     private static final String LOGIN_PKCE_VERIFIER_KEY = "chatgpt_login_code_verifier";
+    private static final String DEVICE_AUTH_ID_KEY = "chatgpt_device_auth_id";
+    private static final String DEVICE_USER_CODE_KEY = "chatgpt_device_user_code";
+    private static final String DEVICE_INTERVAL_KEY = "chatgpt_device_interval";
+    private static final String DEVICE_EXPIRES_AT_KEY = "chatgpt_device_expires_at";
+    private static final String DEFAULT_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+    private static final long DEVICE_AUTH_TTL_SECONDS = 15 * 60;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Value("${hub.account.oauth.authorize-url:https://auth.openai.com/oauth/authorize}")
@@ -58,6 +65,8 @@ public class AccountController {
     private String oauthTokenUrl;
     @Value("${hub.account.oauth.client-secret:}")
     private String oauthClientSecret;
+    @Value("${hub.account.oauth.device-client-id:app_EMoamEEZ73f0CkXaXp7hrann}")
+    private String oauthDeviceClientId;
 
     @Value("${hub.account.login-success-redirect:/codex-chatgpt}")
     private String loginSuccessRedirect;
@@ -92,7 +101,9 @@ public class AccountController {
             Map.entry("expiresAt", connected ? expiresAt : ""),
             Map.entry("oauthConfigured", oauthConfigured),
             Map.entry("oauthStatus", oauthStatus),
-            Map.entry("oauthMessage", oauthReadinessMessage(oauthStatus))
+            Map.entry("oauthMessage", oauthReadinessMessage(oauthStatus)),
+            Map.entry("deviceLoginAvailable", true),
+            Map.entry("deviceLoginClientId", maskClientId(resolveDeviceClientId()))
         );
     }
 
@@ -138,6 +149,89 @@ public class AccountController {
         );
     }
 
+
+    @PostMapping("/device/start")
+    public Map<String, Object> startDeviceLogin(
+        @RequestBody(required = false) Map<String, Object> payload,
+        HttpSession session
+    ) {
+        String accountHint = null;
+        if (payload != null && payload.get("accountHint") instanceof String hint && !hint.isBlank()) {
+            accountHint = hint.trim();
+            session.setAttribute(ACCOUNT_EMAIL_KEY, accountHint);
+        }
+
+        String clientId = resolveDeviceClientId();
+        Map<String, Object> userCodeResponse = requestDeviceUserCode(clientId);
+        String deviceAuthId = asString(userCodeResponse.get("device_auth_id"));
+        String userCode = asString(firstPresent(userCodeResponse, "user_code", "usercode"));
+        Long interval = asLong(userCodeResponse.get("interval"));
+        if (deviceAuthId == null || deviceAuthId.isBlank() || userCode == null || userCode.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI não retornou device_auth_id/user_code para login por código.");
+        }
+
+        Instant expiresAt = Instant.now().plusSeconds(DEVICE_AUTH_TTL_SECONDS);
+        session.setAttribute(DEVICE_AUTH_ID_KEY, deviceAuthId.trim());
+        session.setAttribute(DEVICE_USER_CODE_KEY, userCode.trim());
+        session.setAttribute(DEVICE_INTERVAL_KEY, interval == null || interval <= 0 ? 5L : interval);
+        session.setAttribute(DEVICE_EXPIRES_AT_KEY, expiresAt.toString());
+        meterRegistry.counter("oauth_device_login_start_total").increment();
+
+        return Map.of(
+            "status", "authorization_pending",
+            "verificationUrl", oauthIssuerBase() + "/codex/device",
+            "userCode", userCode.trim(),
+            "interval", interval == null || interval <= 0 ? 5L : interval,
+            "expiresAt", expiresAt.toString(),
+            "clientId", maskClientId(clientId),
+            "accountHint", accountHint == null ? "" : accountHint
+        );
+    }
+
+    @PostMapping("/device/poll")
+    public Map<String, Object> pollDeviceLogin(HttpSession session) {
+        String deviceAuthId = asString(session.getAttribute(DEVICE_AUTH_ID_KEY));
+        String userCode = asString(session.getAttribute(DEVICE_USER_CODE_KEY));
+        Instant expiresAt = parseInstant(asString(session.getAttribute(DEVICE_EXPIRES_AT_KEY)));
+        if (deviceAuthId == null || deviceAuthId.isBlank() || userCode == null || userCode.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Nenhum login por código em andamento.");
+        }
+        if (expiresAt == null || !expiresAt.isAfter(Instant.now())) {
+            clearDeviceLogin(session);
+            return Map.of("status", "expired", "connected", false);
+        }
+
+        Map<String, Object> codeResponse = pollDeviceAuthorization(deviceAuthId, userCode);
+        if (codeResponse == null) {
+            return Map.of(
+                "status", "authorization_pending",
+                "connected", false,
+                "verificationUrl", oauthIssuerBase() + "/codex/device",
+                "userCode", userCode,
+                "expiresAt", expiresAt.toString()
+            );
+        }
+
+        String authorizationCode = asString(codeResponse.get("authorization_code"));
+        String codeVerifier = asString(codeResponse.get("code_verifier"));
+        if (authorizationCode == null || authorizationCode.isBlank() || codeVerifier == null || codeVerifier.isBlank()) {
+            clearDeviceLogin(session);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI autorizou o device login, mas não retornou authorization_code/code_verifier.");
+        }
+
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(authorizationCode.trim(), codeVerifier.trim(), oauthIssuerBase() + "/deviceauth/callback", resolveDeviceClientId());
+        persistTokenResponse(session, tokenResponse);
+        clearDeviceLogin(session);
+        meterRegistry.counter("oauth_device_login_success_total").increment();
+        String accountEmail = asString(session.getAttribute(ACCOUNT_EMAIL_KEY));
+        return Map.of(
+            "status", "connected",
+            "connected", true,
+            "accountEmail", accountEmail == null ? "" : accountEmail,
+            "expiresAt", asString(session.getAttribute(EXPIRES_AT_KEY)) == null ? "" : asString(session.getAttribute(EXPIRES_AT_KEY))
+        );
+    }
+
     @GetMapping("/login/callback")
     public void loginCallback(
         @RequestParam(name = "code", required = false) String code,
@@ -173,7 +267,7 @@ public class AccountController {
             return;
         }
         String callbackBase = resolveCallbackBaseUrl(request);
-        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase);
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase, oauthClientId);
         String accessToken = asString(tokenResponse.get("access_token"));
         String refreshToken = asString(tokenResponse.get("refresh_token"));
         String idToken = asString(tokenResponse.get("id_token"));
@@ -196,8 +290,67 @@ public class AccountController {
             response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
             return;
         }
-        session.setAttribute(ACCOUNT_EMAIL_KEY, accountEmail);
-        Instant expiresAt = Instant.now().plus((expiresIn == null || expiresIn <= 0) ? 8 : expiresIn, ChronoUnit.SECONDS);
+        persistTokenResponse(session, tokenResponse, accountEmail);
+        session.removeAttribute(LOGIN_STATE_KEY);
+        meterRegistry.counter("oauth_login_success_total").increment();
+        log.info("OAuth login concluído com sucesso para conta {} (correlationId={})", accountEmail, correlationId);
+        MDC.remove("oauthCorrelationId");
+        response.sendRedirect(loginSuccessRedirect);
+    }
+
+
+    private Map<String, Object> requestDeviceUserCode(String clientId) {
+        Map<String, String> payload = Map.of("client_id", clientId);
+        return restClient.post()
+            .uri(oauthIssuerBase() + "/api/accounts/deviceauth/usercode")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(payload)
+            .retrieve()
+            .body(Map.class);
+    }
+
+    private Map<String, Object> pollDeviceAuthorization(String deviceAuthId, String userCode) {
+        Map<String, String> payload = Map.of(
+            "device_auth_id", deviceAuthId,
+            "user_code", userCode
+        );
+        try {
+            return restClient.post()
+                .uri(oauthIssuerBase() + "/api/accounts/deviceauth/token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(Map.class);
+        } catch (HttpStatusCodeException ex) {
+            if (ex.getStatusCode().value() == 403 || ex.getStatusCode().value() == 404) {
+                return null;
+            }
+            throw ex;
+        }
+    }
+
+    private void persistTokenResponse(HttpSession session, Map<String, Object> tokenResponse) {
+        String idToken = asString(tokenResponse.get("id_token"));
+        String accountEmail = resolveEmailFromIdToken(idToken);
+        if ((accountEmail == null || accountEmail.isBlank()) && session.getAttribute(ACCOUNT_EMAIL_KEY) instanceof String hint && !hint.isBlank()) {
+            accountEmail = hint.trim();
+        }
+        persistTokenResponse(session, tokenResponse, accountEmail);
+    }
+
+    private void persistTokenResponse(HttpSession session, Map<String, Object> tokenResponse, String accountEmail) {
+        String accessToken = asString(tokenResponse.get("access_token"));
+        String refreshToken = asString(tokenResponse.get("refresh_token"));
+        String idToken = asString(tokenResponse.get("id_token"));
+        Long expiresIn = asLong(tokenResponse.get("expires_in"));
+        if (accountEmail == null || accountEmail.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI não retornou e-mail no id_token e não há e-mail sugerido para associar a sessão.");
+        }
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI não retornou access_token após autorização.");
+        }
+        session.setAttribute(ACCOUNT_EMAIL_KEY, accountEmail.trim());
+        Instant expiresAt = Instant.now().plus(resolveTtlSeconds(expiresIn), ChronoUnit.SECONDS);
         session.setAttribute(EXPIRES_AT_KEY, expiresAt.toString());
         session.setAttribute(ACCESS_TOKEN_KEY, accessToken.trim());
         if (refreshToken != null && !refreshToken.isBlank()) {
@@ -206,17 +359,12 @@ public class AccountController {
         if (idToken != null && !idToken.isBlank()) {
             session.setAttribute(ID_TOKEN_KEY, idToken.trim());
         }
-        session.removeAttribute(LOGIN_STATE_KEY);
-        meterRegistry.counter("oauth_login_success_total").increment();
-        log.info("OAuth login concluído com sucesso para conta {} (correlationId={})", accountEmail, correlationId);
-        MDC.remove("oauthCorrelationId");
-        response.sendRedirect(loginSuccessRedirect);
     }
 
-    private Map<String, Object> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri) {
+    private Map<String, Object> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri, String clientId) {
         Map<String, String> payload = new HashMap<>();
         payload.put("grant_type", "authorization_code");
-        payload.put("client_id", oauthClientId);
+        payload.put("client_id", clientId);
         payload.put("code", code);
         payload.put("redirect_uri", redirectUri);
         payload.put("code_verifier", codeVerifier);
@@ -369,6 +517,58 @@ public class AccountController {
         };
     }
 
+
+    private Object firstPresent(Map<String, Object> values, String... keys) {
+        for (String key : keys) {
+            if (values.containsKey(key)) {
+                return values.get(key);
+            }
+        }
+        return null;
+    }
+
+    private long resolveTtlSeconds(Long expiresIn) {
+        return expiresIn == null || expiresIn <= 0 ? 8 * 60 * 60 : expiresIn;
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String oauthIssuerBase() {
+        if (oauthTokenUrl != null && oauthTokenUrl.contains("/oauth/token")) {
+            return oauthTokenUrl.substring(0, oauthTokenUrl.indexOf("/oauth/token"));
+        }
+        if (oauthAuthorizeUrl != null && oauthAuthorizeUrl.contains("/oauth/authorize")) {
+            return oauthAuthorizeUrl.substring(0, oauthAuthorizeUrl.indexOf("/oauth/authorize"));
+        }
+        return "https://auth.openai.com";
+    }
+
+    private String resolveDeviceClientId() {
+        if (oauthDeviceClientId != null && !oauthDeviceClientId.isBlank()) {
+            return oauthDeviceClientId.trim();
+        }
+        if (oauthClientId != null && !oauthClientId.isBlank()) {
+            return oauthClientId.trim();
+        }
+        return DEFAULT_CODEX_CLIENT_ID;
+    }
+
+    private String maskClientId(String clientId) {
+        if (clientId == null || clientId.length() <= 10) {
+            return "app_***";
+        }
+        return clientId.substring(0, 8) + "***" + clientId.substring(clientId.length() - 4);
+    }
+
     private String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
@@ -397,6 +597,14 @@ public class AccountController {
         session.removeAttribute(ID_TOKEN_KEY);
         session.removeAttribute(LOGIN_STATE_KEY);
         session.removeAttribute(LOGIN_PKCE_VERIFIER_KEY);
+        clearDeviceLogin(session);
+    }
+
+    private void clearDeviceLogin(HttpSession session) {
+        session.removeAttribute(DEVICE_AUTH_ID_KEY);
+        session.removeAttribute(DEVICE_USER_CODE_KEY);
+        session.removeAttribute(DEVICE_INTERVAL_KEY);
+        session.removeAttribute(DEVICE_EXPIRES_AT_KEY);
     }
 
     private boolean isConnected(String accountEmail, String expiresAt) {

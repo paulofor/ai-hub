@@ -11,6 +11,16 @@ interface ChatgptAccountStatus {
   oauthConfigured?: boolean;
   oauthStatus?: string | null;
   oauthMessage?: string | null;
+  deviceLoginAvailable?: boolean;
+  deviceLoginClientId?: string | null;
+}
+
+interface DeviceLoginState {
+  status: string;
+  verificationUrl: string;
+  userCode: string;
+  interval: number;
+  expiresAt?: string | null;
 }
 
 interface EnvironmentOption {
@@ -80,6 +90,8 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
 
   const oauthStatus = typeof record.oauthStatus === 'string' ? record.oauthStatus : null;
   const oauthMessage = typeof record.oauthMessage === 'string' ? record.oauthMessage : null;
+  const deviceLoginAvailable = typeof record.deviceLoginAvailable === 'boolean' ? record.deviceLoginAvailable : false;
+  const deviceLoginClientId = typeof record.deviceLoginClientId === 'string' ? record.deviceLoginClientId : null;
 
   return {
     connected,
@@ -88,7 +100,9 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
     expiresAt,
     oauthConfigured,
     oauthStatus,
-    oauthMessage
+    oauthMessage,
+    deviceLoginAvailable,
+    deviceLoginClientId
   };
 };
 
@@ -109,6 +123,7 @@ export default function CodexChatgptPage() {
   const [accountHintInput, setAccountHintInput] = useState(DEFAULT_ACCOUNT_HINT);
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
+  const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -223,7 +238,8 @@ export default function CodexChatgptPage() {
     return Number.isFinite(expiresAt) && expiresAt <= Date.now();
   }, [account]);
 
-  const oauthReady = accountApiAvailable && (account?.oauthConfigured ?? true);
+  const deviceLoginReady = accountApiAvailable && (account?.deviceLoginAvailable ?? true);
+  const oauthReady = accountApiAvailable && ((account?.oauthConfigured ?? false) || deviceLoginReady);
   const isConnected = Boolean(account?.connected) && !accountExpired && account?.status !== 'expired';
   const expiresSoon = useMemo(() => {
     if (!account?.expiresAt) {
@@ -240,44 +256,85 @@ export default function CodexChatgptPage() {
         setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
         return;
       }
-      if (!oauthReady) {
-        const reason = account?.oauthMessage || 'Integração OAuth indisponível no servidor.';
-        setError(`${reason} Peça ao administrador para revisar HUB_ACCOUNT_OAUTH_CLIENT_ID no backend.`);
-        registerTelemetry('login_failed', `Login bloqueado por configuração OAuth inválida: ${reason}`);
+      if (!deviceLoginReady) {
+        const reason = account?.oauthMessage || 'Login por código indisponível no servidor.';
+        setError(`${reason} Peça ao administrador para revisar a integração ChatGPT/Codex no backend.`);
+        registerTelemetry('login_failed', `Login por código bloqueado: ${reason}`);
         return;
       }
       const sanitizedHint = accountHintInput.trim();
       const accountHint = sanitizedHint || selectedAccount;
-      const response = await client.post('/account/login/start', accountHint ? { accountHint } : {});
-      const authUrl = response.data?.authUrl || response.data?.url;
-      if (typeof authUrl !== 'string' || authUrl.length === 0) {
-        throw new Error('Servidor não retornou URL de autenticação válida (authUrl).');
+      const response = await client.post('/account/device/start', accountHint ? { accountHint } : {});
+      const verificationUrl = response.data?.verificationUrl;
+      const userCode = response.data?.userCode;
+      const interval = Number(response.data?.interval || 5);
+      if (typeof verificationUrl !== 'string' || verificationUrl.length === 0 || typeof userCode !== 'string' || userCode.length === 0) {
+        throw new Error('Servidor não retornou verificationUrl/userCode para login por código.');
       }
-      const opened = window.open(authUrl, '_blank', 'noopener,noreferrer');
+      setDeviceLogin({
+        status: response.data?.status || 'authorization_pending',
+        verificationUrl,
+        userCode,
+        interval: Number.isFinite(interval) && interval > 0 ? interval : 5,
+        expiresAt: typeof response.data?.expiresAt === 'string' ? response.data.expiresAt : null
+      });
+      const opened = window.open(verificationUrl, '_blank', 'noopener,noreferrer');
       if (!opened) {
-        throw new Error('Não foi possível abrir a janela de autenticação. Verifique bloqueio de pop-up no navegador.');
+        registerTelemetry('login_started', 'Login por código iniciado; abertura automática bloqueada pelo navegador.');
+      } else {
+        registerTelemetry('login_started', 'Login por código iniciado e página da OpenAI aberta.');
       }
-      registerTelemetry('login_started', accountHint ? `Login iniciado para ${accountHint}.` : 'Login iniciado sem conta sugerida.');
-      await loadAccount();
+      setError(null);
     } catch (err) {
       if (is404Error(err)) {
         setAccountApiAvailable(false);
         setAccount({ connected: false, status: 'unsupported' });
-        registerTelemetry('login_failed', 'Endpoint de login indisponível: /account/login/start retornou 404.');
-        setError('Este ambiente não expõe login de conta (/account/login/start). Contate o administrador para habilitar a integração.');
+        registerTelemetry('login_failed', 'Endpoint de login por código indisponível: /account/device/start retornou 404.');
+        setError('Este ambiente não expõe login por código (/account/device/start). Contate o administrador para habilitar a integração.');
         return;
       }
       if (is503Error(err)) {
-        registerTelemetry('login_failed', 'Serviço de login indisponível: /account/login/start retornou 503.');
-        setError('Serviço de login temporariamente indisponível (503). Peça ao administrador para revisar as variáveis OAuth do servidor (client_id, authorize_url e redirect_uri).');
+        registerTelemetry('login_failed', 'Serviço de login por código indisponível: /account/device/start retornou 503.');
+        setError('Serviço de login temporariamente indisponível (503). Peça ao administrador para revisar a integração ChatGPT/Codex no backend.');
         return;
       }
-      registerTelemetry('login_failed', `Falha ao iniciar login: ${(err as Error).message}`);
+      registerTelemetry('login_failed', `Falha ao iniciar login por código: ${(err as Error).message}`);
       setError((err as Error).message);
     } finally {
       setActionLoading(false);
     }
-  }, [account, accountApiAvailable, accountHintInput, loadAccount, oauthReady, registerTelemetry, selectedAccount]);
+  }, [account, accountApiAvailable, accountHintInput, deviceLoginReady, registerTelemetry, selectedAccount]);
+
+  useEffect(() => {
+    if (!deviceLogin || isConnected) {
+      return undefined;
+    }
+    const delay = Math.max(2, deviceLogin.interval || 5) * 1000;
+    const intervalId = window.setInterval(() => {
+      client.post('/account/device/poll')
+        .then(async (response) => {
+          const status = response.data?.status || 'authorization_pending';
+          if (status === 'connected') {
+            setDeviceLogin(null);
+            await loadAccount();
+            registerTelemetry('login_started', 'Login por código concluído; sessão ChatGPT conectada.');
+            setError(null);
+            return;
+          }
+          if (status === 'expired') {
+            setDeviceLogin(null);
+            registerTelemetry('login_failed', 'Código de login expirou antes da autorização.');
+            setError('Código de login expirou. Clique em Conectar com ChatGPT para gerar um novo código.');
+            return;
+          }
+          setDeviceLogin((current) => current ? { ...current, status } : current);
+        })
+        .catch((err: Error) => {
+          registerTelemetry('login_failed', `Falha no polling do login por código: ${err.message}`);
+        });
+    }, delay);
+    return () => window.clearInterval(intervalId);
+  }, [deviceLogin, isConnected, loadAccount, registerTelemetry]);
 
   const handleLogout = useCallback(async () => {
     setActionLoading(true);
@@ -335,8 +392,15 @@ export default function CodexChatgptPage() {
           <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable || !oauthReady} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
           <button type="button" onClick={handleLogout} disabled={actionLoading || !account?.connected} className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Desconectar</button>
         </div>
+        {deviceLogin ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100 space-y-2">
+          <p className="font-semibold">Login OpenAI/ChatGPT por código em andamento</p>
+          <p>Abra a página da OpenAI e informe o código abaixo. O AI Hub confirmará automaticamente quando a autorização terminar.</p>
+          <p><span className="font-medium">URL:</span> <a href={deviceLogin.verificationUrl} target="_blank" rel="noreferrer" className="underline">{deviceLogin.verificationUrl}</a></p>
+          <p><span className="font-medium">Código:</span> <code className="rounded bg-white/80 px-2 py-1 text-base font-bold tracking-widest dark:bg-slate-900">{deviceLogin.userCode}</code></p>
+          <p className="text-xs">Status: {deviceLogin.status}. {deviceLogin.expiresAt ? `Expira em ${formatDateTime(deviceLogin.expiresAt)}.` : ''}</p>
+        </div> : null}
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">Informe o e-mail da conta OpenAI para concluir o callback local e associar a sessão às execuções.</p>
+          <p className="text-xs text-slate-500">Informe o e-mail da conta OpenAI para associar a sessão às execuções após o login por código.</p>
           <input
             type="email"
             value={accountHintInput}
