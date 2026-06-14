@@ -219,7 +219,7 @@ public class AccountController {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI autorizou o device login, mas não retornou authorization_code/code_verifier.");
         }
 
-        Map<String, Object> tokenResponse = exchangeAuthorizationCode(authorizationCode.trim(), codeVerifier.trim(), oauthIssuerBase() + "/deviceauth/callback", resolveDeviceClientId());
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(authorizationCode.trim(), codeVerifier.trim(), oauthIssuerBase() + "/deviceauth/callback", resolveDeviceClientId(), false);
         persistTokenResponse(session, tokenResponse);
         clearDeviceLogin(session);
         meterRegistry.counter("oauth_device_login_success_total").increment();
@@ -267,7 +267,7 @@ public class AccountController {
             return;
         }
         String callbackBase = resolveCallbackBaseUrl(request);
-        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase, oauthClientId);
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase, oauthClientId, true);
         String accessToken = asString(tokenResponse.get("access_token"));
         String refreshToken = asString(tokenResponse.get("refresh_token"));
         String idToken = asString(tokenResponse.get("id_token"));
@@ -361,22 +361,28 @@ public class AccountController {
         }
     }
 
-    private Map<String, Object> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri, String clientId) {
-        Map<String, String> payload = new HashMap<>();
-        payload.put("grant_type", "authorization_code");
-        payload.put("client_id", clientId);
-        payload.put("code", code);
-        payload.put("redirect_uri", redirectUri);
-        payload.put("code_verifier", codeVerifier);
-        if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
-            payload.put("client_secret", oauthClientSecret);
-        }
+    private Map<String, Object> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri, String clientId, boolean includeClientSecret) {
+        Map<String, String> payload = buildTokenExchangePayload(code, codeVerifier, redirectUri, clientId, includeClientSecret);
         return restClient.post()
             .uri(oauthTokenUrl)
             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
             .body(toFormUrlEncoded(payload))
             .retrieve()
             .body(Map.class);
+    }
+
+
+    Map<String, String> buildTokenExchangePayload(String code, String codeVerifier, String redirectUri, String clientId, boolean includeClientSecret) {
+        Map<String, String> payload = new HashMap<>();
+        payload.put("grant_type", "authorization_code");
+        payload.put("client_id", clientId);
+        payload.put("code", code);
+        payload.put("redirect_uri", redirectUri);
+        payload.put("code_verifier", codeVerifier);
+        if (includeClientSecret && oauthClientSecret != null && !oauthClientSecret.isBlank()) {
+            payload.put("client_secret", oauthClientSecret);
+        }
+        return payload;
     }
 
     private String toFormUrlEncoded(Map<String, String> values) {

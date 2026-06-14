@@ -400,3 +400,9 @@
 - Alteração solicitada aplicada no `docker-compose.yml`: o serviço `sandbox-orchestrator` agora monta `/root/.codex` do host em `/root/.codex` no container com modo somente leitura (`ro`).
 - Motivação de causa raiz: o login via Codex CLI gera `~/.codex/auth.json` no host, mas o container que executa o fluxo Codex não enxergava esse artefato; a montagem permite que o runtime tenha acesso ao cache oficial de autenticação sem copiar tokens para variáveis de ambiente ou logs.
 - Observação operacional: o `auth.json` deve ser regenerado após a exposição acidental do token e mantido com permissões restritas no host antes do deploy.
+
+## 2026-06-14 — Correção do token exchange no device login Codex
+- Investigação de causa raiz com logs do backend via MCP confirmou que o usuário concluía a autorização no `auth.openai.com`, mas o backend falhava em `POST /oauth/token` com `401 token_exchange_user_error` ao processar `/api/account/device/poll`.
+- Causa raiz identificada no código: o mesmo método de token exchange era reutilizado pelo OAuth de browser e pelo device login; quando `HUB_ACCOUNT_OAUTH_CLIENT_SECRET` estava configurado para o fluxo de browser, o backend também enviava `client_secret` no exchange do cliente público Codex/device, divergindo do fluxo oficial do `codex-rs`.
+- Correção aplicada em `AccountController`: o exchange de device login agora monta o payload sem `client_secret`, enquanto o callback OAuth tradicional continua enviando o segredo quando configurado.
+- Adicionados testes unitários para garantir que o payload do device login não inclua o segredo do cliente de browser e que o payload do browser continue preservando o segredo configurado.
