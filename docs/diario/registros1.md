@@ -407,3 +407,7 @@
 - Correção aplicada em `AccountController`: o exchange de device login agora monta o payload sem `client_secret`, enquanto o callback OAuth tradicional continua enviando o segredo quando configurado.
 - Adicionados testes unitários para garantir que o payload do device login não inclua o segredo do cliente de browser e que o payload do browser continue preservando o segredo configurado.
 - 2026-06-14 UTC — Investigada a causa raiz dos erros frequentes em `/codex-chatgpt`: registros antigos/externos com profile `ECO_30` eram lidos pelo backend, mas o enum `CodexIntegrationProfile` não reconhecia esse valor, causando falha no polling/listagem. Adicionado suporte compatível a `ECO_30` no backend e na normalização/visualização do frontend, tratando-o como perfil econômico.
+
+## 2026-06-14 — Remoção do quadro de troubleshooting Fase 3
+- Removido da página `/codex-chatgpt` o quadro visual "Troubleshooting & telemetria (Fase 3)", mantendo a telemetria interna usada pelos fluxos de diagnóstico sem renderizar a seção na interface.
+- Causa raiz do incômodo visual: a seção era sempre renderizada abaixo das execuções, exibindo eventos frequentes de polling (`poll_success`) e ocupando espaço desnecessário para o usuário final.

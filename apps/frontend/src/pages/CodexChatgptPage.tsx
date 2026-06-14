@@ -121,7 +121,7 @@ export default function CodexChatgptPage() {
   const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('');
   const [accountHintInput, setAccountHintInput] = useState(DEFAULT_ACCOUNT_HINT);
-  const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
+  const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
 
@@ -348,7 +348,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [loadAccount]);
+  }, [loadAccount, registerTelemetry]);
 
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -374,7 +374,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [environment, isConnected, loadRequests, model, prompt]);
+  }, [environment, isConnected, loadRequests, model, prompt, registerTelemetry]);
 
   return (
     <section className="space-y-6">
@@ -451,20 +451,6 @@ export default function CodexChatgptPage() {
           ))}
         </ul>
         {!requestsLoading && requests.length === 0 ? <p className="text-sm text-slate-500">Nenhuma execução ainda.</p> : null}
-      </div>
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
-        <h3 className="text-lg font-semibold">Troubleshooting & telemetria (Fase 3)</h3>
-        <p className="text-sm text-slate-500">Eventos recentes de autenticação, polling e execução para acelerar diagnóstico.</p>
-        <ul className="space-y-2">
-          {telemetry.map((event) => (
-            <li key={event.id} className="rounded-md border px-3 py-2 text-xs">
-              <p className="font-medium">{event.type}</p>
-              <p>{event.message}</p>
-              <p className="text-slate-500">{formatDateTime(event.createdAt)}</p>
-            </li>
-          ))}
-        </ul>
-        {telemetry.length === 0 ? <p className="text-sm text-slate-500">Sem eventos registrados nesta sessão.</p> : null}
       </div>
       {requests.some((item) => !isTerminalStatus(item.status)) ? <p className="text-xs text-slate-500">Monitoramento ativo a cada 5 segundos.</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
