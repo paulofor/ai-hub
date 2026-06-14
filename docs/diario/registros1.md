@@ -365,3 +365,15 @@
 ## 2026-05-24 20:02:00 UTC
 - Correção de causa raiz no workflow de deploy: identificado que o passo `rsync -az --delete` da pipeline para `/root/ai-hub-6` podia remover `.env` remoto (arquivo fora do versionamento), apagando `HUB_ACCOUNT_OAUTH_CLIENT_ID` previamente configurado no host.
 - Ajuste aplicado em `.github/workflows/ci.yml`: adicionados `--exclude '.env'` e `--exclude 'apps/backend/.env'` no rsync para preservar segredos locais durante sincronização do repositório.
+
+## 2026-06-13 — Diagnóstico e guarda contra client_id OAuth inválido
+- Investigada a causa raiz do erro OpenAI `invalid_client` ao conectar o Codex ChatGPT: via MCP Server, logs do backend confirmaram geração do OAuth e a variável `HUB_ACCOUNT_OAUTH_CLIENT_ID` em produção estava preenchida com valor curto/incompatível (aparentando e-mail/usuário), não com um client_id OAuth válido da OpenAI.
+- Ajustado `AccountController` para validar o formato do `client_id` antes de montar a URL para `auth.openai.com`, expondo `oauthStatus=invalid_client_id_format` em `/api/account/read` e retornando `503` acionável em `/api/account/login/start`, evitando redirecionar o usuário para uma tela genérica de `invalid_client`.
+- Ajustada a resolução do callback OAuth para respeitar `X-Forwarded-Proto`, `X-Forwarded-Host` e `X-Forwarded-Port`, evitando gerar `redirect_uri` com `http://` quando o AI Hub está publicado atrás de proxy HTTPS.
+- Ajuste complementar no frontend: mensagem de bloqueio do botão de conexão agora orienta revisar `HUB_ACCOUNT_OAUTH_CLIENT_ID`, cobrindo tanto ausência quanto formato inválido do client_id.
+
+## 2026-06-14 — Login ChatGPT/Codex por device code sem API key
+- Implementado fluxo de autenticação por código de dispositivo no `AccountController`, seguindo o padrão documentado do `codex-rs`: solicitar `user_code`, orientar o usuário a autorizar em `https://auth.openai.com/codex/device`, fazer polling e trocar o `authorization_code` por tokens OAuth.
+- O backend agora persiste `access_token`, `refresh_token`, `id_token`, e expiração na sessão HTTP após device login, permitindo que execuções `CHATGPT_CODEX` reutilizem o token conectado sem `OPENAI_API_KEY`.
+- A tela `/codex-chatgpt` foi ajustada para iniciar o login por código, exibir URL/código ao usuário e acompanhar automaticamente o polling até a conexão.
+- Adicionada configuração `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` com fallback para o client id público do Codex, evitando depender de criação manual de `client_id` OAuth no painel da OpenAI para o fluxo por código.
