@@ -471,6 +471,7 @@ public class CodexRequestService {
             || profile == CodexIntegrationProfile.ECO_1
             || profile == CodexIntegrationProfile.ECO_2
             || profile == CodexIntegrationProfile.ECO_3
+            || profile == CodexIntegrationProfile.ECO_30
             || profile == CodexIntegrationProfile.CHATGPT_CODEX)
             && StringUtils.hasText(economyModel)) {
             return economyModel.trim();

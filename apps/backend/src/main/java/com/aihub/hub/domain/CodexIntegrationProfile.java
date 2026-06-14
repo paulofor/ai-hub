@@ -1,5 +1,7 @@
 package com.aihub.hub.domain;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+
 public enum CodexIntegrationProfile {
     STANDARD,
     ECONOMY,
@@ -7,8 +9,10 @@ public enum CodexIntegrationProfile {
     ECO_1,
     ECO_2,
     ECO_3,
+    ECO_30,
     CHATGPT_CODEX;
 
+    @JsonCreator
     public static CodexIntegrationProfile fromString(String value) {
         if (value == null || value.isBlank()) {
             return STANDARD;
