@@ -66,6 +66,7 @@ services:
       - .env
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
+      - /root/.codex:/root/.codex:ro
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then

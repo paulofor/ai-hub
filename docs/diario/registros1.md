@@ -377,3 +377,26 @@
 - O backend agora persiste `access_token`, `refresh_token`, `id_token`, e expiração na sessão HTTP após device login, permitindo que execuções `CHATGPT_CODEX` reutilizem o token conectado sem `OPENAI_API_KEY`.
 - A tela `/codex-chatgpt` foi ajustada para iniciar o login por código, exibir URL/código ao usuário e acompanhar automaticamente o polling até a conexão.
 - Adicionada configuração `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` com fallback para o client id público do Codex, evitando depender de criação manual de `client_id` OAuth no painel da OpenAI para o fluxo por código.
+
+## 2026-06-14 — Diagnóstico dos logs do device login ChatGPT/Codex
+- Verificação solicitada via MCP Server: healthcheck `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`.
+- Logs do backend `ai-hub-6-backend-1` mostram boa evidência do ponto de falha após a autorização do usuário: o polling saiu de `authorization_pending`, recebeu `authorization_code/code_verifier` e falhou repetidamente na troca por token.
+- Erro observado entre 2026-06-14T15:51:32Z e 2026-06-14T15:53:07Z: OpenAI respondeu `401 Unauthorized` com `code=token_exchange_user_error` em `AccountController.exchangeAuthorizationCode`, chamado por `AccountController.pollDeviceLogin`.
+- Causa provável delimitada pelos logs: não é falha de abertura da tela/código nem timeout inicial; o problema ocorre especificamente na etapa final de token exchange do device login.
+
+## 2026-06-14 — Orientação sobre client_id do device login Codex
+- Dúvida recebida: o `client_id` usado no device login parece pertencer a outra aplicação e foi perguntado como criar um novo.
+- Consulta à documentação oficial atual do Codex: para login ChatGPT em ambiente headless, o caminho suportado é habilitar device code nas configurações do ChatGPT/workspace e usar o fluxo do próprio Codex (`codex login --device-auth`) ou, em automação confiável, gerar/copiar `auth.json` uma vez e deixar o Codex renovar a sessão.
+- Conclusão de causa raiz/arquitetura: para o fluxo ChatGPT-managed Codex, não há indicação oficial de criação manual de um OAuth `client_id` próprio para substituir o cliente público do Codex; criar/usar um `client_id` de outra aplicação tende a causar falha no token exchange, compatível com o erro observado `token_exchange_user_error`.
+- Próximo caminho recomendado: não tentar criar `client_id` novo para esse fluxo; ajustar a implementação para usar autenticação suportada pelo Codex (`auth.json`/refresh do próprio Codex) ou API key para automação, em vez de chamar diretamente o endpoint OAuth com cliente não suportado.
+
+## 2026-06-14 — Confirmação por auth.json real do Codex
+- Usuário mostrou saída de `~/.codex/auth.json` gerado pelo Codex CLI após login bem-sucedido e tela do navegador indicando "Iniciou sessão no Codex".
+- Diagnóstico atualizado: o `client_id` `app_EMoamEEZ73f0CkXaXp7hrann` não é de outra aplicação arbitrária; ele aparece como audiência/client_id nos tokens do próprio Codex, portanto é o cliente esperado para o fluxo oficial do Codex CLI.
+- Risco operacional identificado: o conteúdo exibido inclui `access_token` e `refresh_token`; por ter sido exposto em texto, a sessão deve ser revogada/rotacionada e um novo `auth.json` deve ser gerado antes de qualquer uso em produção.
+- Próximo passo técnico recomendado: integrar o AI Hub ao artefato `auth.json` ou ao fluxo nativo do Codex CLI, evitando manter token exchange manual concorrente quando o CLI já concluiu autenticação e renovação.
+
+## 2026-06-14 — Montagem do auth.json do Codex no sandbox
+- Alteração solicitada aplicada no `docker-compose.yml`: o serviço `sandbox-orchestrator` agora monta `/root/.codex` do host em `/root/.codex` no container com modo somente leitura (`ro`).
+- Motivação de causa raiz: o login via Codex CLI gera `~/.codex/auth.json` no host, mas o container que executa o fluxo Codex não enxergava esse artefato; a montagem permite que o runtime tenha acesso ao cache oficial de autenticação sem copiar tokens para variáveis de ambiente ou logs.
+- Observação operacional: o `auth.json` deve ser regenerado após a exposição acidental do token e mantido com permissões restritas no host antes do deploy.
