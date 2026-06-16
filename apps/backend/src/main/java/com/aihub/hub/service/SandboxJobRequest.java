@@ -1,5 +1,7 @@
 package com.aihub.hub.service;
 
+import java.util.List;
+
 public record SandboxJobRequest(
     String jobId,
     String repoSlug,
@@ -13,8 +15,15 @@ public record SandboxJobRequest(
     String accessToken,
     DatabaseConnection database,
     String callbackUrl,
-    String callbackSecret
+    String callbackSecret,
+    List<ImageAttachment> imageAttachments
 ) {
+    public record ImageAttachment(
+        String name,
+        String mimeType,
+        Long size,
+        String dataUrl
+    ) { }
     public record DatabaseConnection(
         String host,
         Integer port,

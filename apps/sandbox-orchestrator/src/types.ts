@@ -3,6 +3,13 @@ export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' 
 
 export type InteractionDirection = 'OUTBOUND' | 'INBOUND';
 
+export interface SandboxImageAttachment {
+  name?: string;
+  mimeType?: string;
+  size?: number;
+  dataUrl: string;
+}
+
 export interface SandboxDatabaseConfig {
   host: string;
   port?: number;
@@ -35,6 +42,7 @@ export interface SandboxJob {
   repoUrl: string;
   branch: string;
   taskDescription: string;
+  imageAttachments?: SandboxImageAttachment[];
   testCommand?: string;
   commitHash?: string;
   profile?: SandboxProfile;

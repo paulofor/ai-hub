@@ -411,3 +411,8 @@
 ## 2026-06-14 — Remoção do quadro de troubleshooting Fase 3
 - Removido da página `/codex-chatgpt` o quadro visual "Troubleshooting & telemetria (Fase 3)", mantendo a telemetria interna usada pelos fluxos de diagnóstico sem renderizar a seção na interface.
 - Causa raiz do incômodo visual: a seção era sempre renderizada abaixo das execuções, exibindo eventos frequentes de polling (`poll_success`) e ocupando espaço desnecessário para o usuário final.
+
+## 2026-06-16 — Anexos de imagens no Codex ChatGPT
+- Investigada a causa raiz da ausência de anexos na tela `/codex-chatgpt`: o frontend enviava apenas `prompt/environment/model/profile`, o backend repassava somente `taskDescription` ao sandbox e o runner montava a mensagem do modelo apenas como `input_text`, sem caminho para imagens coladas da área de transferência.
+- Adicionado suporte a colar prints via Ctrl+V no textarea e selecionar arquivos de imagem, com pré-visualização, remoção, limite de 5 imagens e validação de 5 MB por imagem.
+- Estendido o payload `CreateCodexRequest`/`SandboxJobRequest` e o sandbox-orchestrator para transportar `imageAttachments` como data URLs e montar a solicitação do modelo com partes `input_image` junto do texto.

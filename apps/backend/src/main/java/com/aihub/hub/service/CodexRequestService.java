@@ -159,7 +159,7 @@ public class CodexRequestService {
         CodexRequest saved = saveRequest(codexRequest);
         log.info("CodexRequest {} salvo, enviando para sandbox se aplicável", saved.getId());
         saved.setInteractionCount(0);
-        dispatchToSandbox(saved);
+        dispatchToSandbox(saved, request.getImageAttachments());
         return saved;
     }
 
@@ -563,6 +563,10 @@ public class CodexRequestService {
     }
 
     private void dispatchToSandbox(CodexRequest request) {
+        dispatchToSandbox(request, List.of());
+    }
+
+    private void dispatchToSandbox(CodexRequest request, List<CreateCodexRequest.ImageAttachment> imageAttachments) {
         RepoCoordinates coordinates = RepoCoordinates.from(request.getEnvironment());
         if (coordinates == null) {
             log.info("Ambiente {} não corresponde a um repositório; ignorando envio para o sandbox", request.getEnvironment());
@@ -604,7 +608,17 @@ public class CodexRequestService {
             accessToken,
             resolveDatabase(request.getEnvironment()),
             callbackUrl,
-            callbackSecret
+            callbackSecret,
+            Optional.ofNullable(imageAttachments)
+                .orElse(List.of())
+                .stream()
+                .map(attachment -> new SandboxJobRequest.ImageAttachment(
+                    attachment.name(),
+                    attachment.mimeType(),
+                    attachment.size(),
+                    attachment.dataUrl()
+                ))
+                .toList()
         );
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.createJob(jobRequest);

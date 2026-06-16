@@ -920,6 +920,15 @@ Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.m
               ? `
 Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos.`
               : '';
+    const userContent: Array<Record<string, string>> = [
+      { type: 'input_text', text: job.taskDescription },
+      ...(job.imageAttachments ?? []).map((attachment) => ({
+        type: 'input_image',
+        image_url: attachment.dataUrl,
+        detail: 'auto',
+      })),
+    ];
+
     const messages: ResponseItem[] = [
       {
         type: 'message',
@@ -957,7 +966,7 @@ ${profileInstruction}`,
         type: 'message',
         id: this.sanitizeId('msg_user'),
         role: 'user',
-        content: [{ type: 'input_text', text: job.taskDescription }],
+        content: userContent as any,
       },
     ];
 
