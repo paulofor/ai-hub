@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { SandboxJobProcessor } from './jobProcessor.js';
-import { JobProcessor, SandboxDatabaseConfig, SandboxJob, SandboxProfile } from './types.js';
+import { JobProcessor, SandboxDatabaseConfig, SandboxImageAttachment, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
   jobRegistry?: Map<string, SandboxJob>;
@@ -19,6 +19,32 @@ function validateString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+
+function normalizeImageAttachments(value: unknown): SandboxImageAttachment[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const attachments = value
+    .map((item): SandboxImageAttachment | null => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const dataUrl = validateString(record.dataUrl);
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+        return null;
+      }
+      return {
+        name: validateString(record.name),
+        mimeType: validateString(record.mimeType),
+        size: typeof record.size === 'number' ? record.size : undefined,
+        dataUrl,
+      };
+    })
+    .filter((item): item is SandboxImageAttachment => item !== null);
+  return attachments.length > 0 ? attachments.slice(0, 5) : undefined;
 }
 
 function normalizeDatabaseConfig(raw: unknown): SandboxDatabaseConfig | undefined {
@@ -124,6 +150,7 @@ export function createApp(options: AppOptions = {}) {
     const profile = normalizeProfile(validateString(req.body?.profile));
     const callbackUrl = validateString(req.body?.callbackUrl);
     const callbackSecret = validateString(req.body?.callbackSecret);
+    const imageAttachments = normalizeImageAttachments(req.body?.imageAttachments);
 
     if (!jobId || (!repoUrl && !repoSlug) || !branch || !taskDescription) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
@@ -147,6 +174,7 @@ export function createApp(options: AppOptions = {}) {
       repoUrl: repoUrl ?? `https://github.com/${repoSlug}.git`,
       branch,
       taskDescription,
+      imageAttachments,
       commitHash,
       testCommand,
       profile,

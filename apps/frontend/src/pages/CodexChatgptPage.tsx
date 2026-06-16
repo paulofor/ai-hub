@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequests } from '../lib/codex';
@@ -37,6 +37,16 @@ const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_ACCOUNT_HINT = 'paulofore@gmail.com';
+const MAX_IMAGE_ATTACHMENTS = 5;
+const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+interface ImageAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+}
 
 interface TelemetryEvent {
   id: string;
@@ -124,6 +134,7 @@ export default function CodexChatgptPage() {
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
+  const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -350,6 +361,71 @@ export default function CodexChatgptPage() {
     }
   }, [loadAccount, registerTelemetry]);
 
+
+  const readImageFile = useCallback((file: File): Promise<ImageAttachment> => new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error(`O arquivo ${file.name || 'sem nome'} não é uma imagem.`));
+      return;
+    }
+    if (file.size > MAX_IMAGE_ATTACHMENT_BYTES) {
+      reject(new Error(`A imagem ${file.name || 'sem nome'} excede o limite de 5 MB.`));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error(`Não foi possível ler a imagem ${file.name || 'sem nome'}.`));
+        return;
+      }
+      resolve({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: file.name || `imagem-${Date.now()}.png`,
+        mimeType: file.type || 'image/png',
+        size: file.size,
+        dataUrl: reader.result
+      });
+    };
+    reader.onerror = () => reject(new Error(`Falha ao ler a imagem ${file.name || 'sem nome'}.`));
+    reader.readAsDataURL(file);
+  }), []);
+
+  const appendImageFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) {
+      return;
+    }
+    const slotsAvailable = MAX_IMAGE_ATTACHMENTS - imageAttachments.length;
+    if (slotsAvailable <= 0) {
+      setError(`Limite de ${MAX_IMAGE_ATTACHMENTS} imagens por solicitação atingido.`);
+      return;
+    }
+    try {
+      const nextAttachments = await Promise.all(files.slice(0, slotsAvailable).map(readImageFile));
+      setImageAttachments((current) => [...current, ...nextAttachments]);
+      setError(files.length > slotsAvailable ? `Foram anexadas ${slotsAvailable} imagens; o limite é ${MAX_IMAGE_ATTACHMENTS}.` : null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, [imageAttachments.length, readImageFile]);
+
+  const handlePromptPaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    void appendImageFiles(files);
+  }, [appendImageFiles]);
+
+  const handleImageInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    void appendImageFiles(files);
+  }, [appendImageFiles]);
+
+  const removeImageAttachment = useCallback((id: string) => {
+    setImageAttachments((current) => current.filter((item) => item.id !== id));
+  }, []);
+
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!isConnected) {
@@ -362,9 +438,11 @@ export default function CodexChatgptPage() {
         prompt,
         environment,
         model,
-        profile: 'CHATGPT_CODEX'
+        profile: 'CHATGPT_CODEX',
+        imageAttachments: imageAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
       setPrompt('');
+      setImageAttachments([]);
       await loadRequests();
       registerTelemetry('execution_success', 'Execução enviada com profile CHATGPT_CODEX.');
       setError(null);
@@ -374,7 +452,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [environment, isConnected, loadRequests, model, prompt, registerTelemetry]);
+  }, [environment, imageAttachments, isConnected, loadRequests, model, prompt, registerTelemetry]);
 
   return (
     <section className="space-y-6">
@@ -430,7 +508,26 @@ export default function CodexChatgptPage() {
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.modelName}</option>)}
           </select>
         </div>
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5} placeholder="Descreva a tarefa..." className="w-full rounded-md border px-3 py-2 text-sm" required />
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder="Descreva a tarefa... Cole prints da área de transferência aqui (Ctrl+V)." className="w-full rounded-md border px-3 py-2 text-sm" required />
+        <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
+          <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+            Anexar imagens
+            <input type="file" accept="image/*" multiple onChange={handleImageInputChange} className="sr-only" />
+          </label>
+          <p className="mt-2 text-xs text-slate-500">Cole prints com Ctrl+V no campo da tarefa ou selecione arquivos. Até {MAX_IMAGE_ATTACHMENTS} imagens de 5 MB.</p>
+          {imageAttachments.length > 0 ? <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {imageAttachments.map((attachment) => (
+              <li key={attachment.id} className="flex items-center gap-2 rounded-md border border-slate-200 p-2 dark:border-slate-800">
+                <img src={attachment.dataUrl} alt={attachment.name} className="h-14 w-20 rounded object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{attachment.name}</p>
+                  <p className="text-[11px] text-slate-500">{Math.ceil(attachment.size / 1024)} KB</p>
+                </div>
+                <button type="button" onClick={() => removeImageAttachment(attachment.id)} className="text-xs text-rose-600 hover:underline">Remover</button>
+              </li>
+            ))}
+          </ul> : null}
+        </div>
         <button type="submit" disabled={actionLoading || !isConnected || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Executar</button>
         {!isConnected ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado por autenticação ausente/expirada.</p> : null}
       </form>

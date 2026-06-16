@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CodexIntegrationProfile;
 import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public class CreateCodexRequest {
 
@@ -35,7 +36,20 @@ public class CreateCodexRequest {
 
     private BigDecimal cost;
 
+    private List<ImageAttachment> imageAttachments;
+
     public CreateCodexRequest() {
+    }
+
+    public List<ImageAttachment> getImageAttachments() {
+        return imageAttachments;
+    }
+
+    public void setImageAttachments(List<ImageAttachment> imageAttachments) {
+        this.imageAttachments = imageAttachments;
+    }
+
+    public record ImageAttachment(String name, String mimeType, Long size, String dataUrl) {
     }
 
     public String getEnvironment() {
