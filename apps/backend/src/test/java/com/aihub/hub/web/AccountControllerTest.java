@@ -37,11 +37,13 @@ class AccountControllerTest {
     void deviceUserCodePayloadRequestsOrganizationClaims() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
+        ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
 
         Map<String, Object> payload = controller.buildDeviceUserCodePayload("app_device_client");
 
         assertThat(payload).containsEntry("client_id", "app_device_client");
         assertThat(payload).containsEntry("id_token_add_organizations", true);
+        assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
     }
 
     @Test
@@ -51,6 +53,7 @@ class AccountControllerTest {
         ReflectionTestUtils.setField(controller, "oauthAuthorizeUrl", "https://auth.openai.com/oauth/authorize");
         ReflectionTestUtils.setField(controller, "oauthClientId", "app_browser_client");
         ReflectionTestUtils.setField(controller, "oauthScopes", "openid profile email offline_access");
+        ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
 
         String authUrl = ReflectionTestUtils.invokeMethod(
             controller,
@@ -61,6 +64,7 @@ class AccountControllerTest {
         );
 
         assertThat(authUrl).contains("id_token_add_organizations=true");
+        assertThat(authUrl).contains("organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
     }
 
     @Test

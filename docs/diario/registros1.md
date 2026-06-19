@@ -486,3 +486,7 @@
 - Refinada a causa raiz do 401 `Invalid ID token: missing organization_id`: não bastava tratar a exceção do token exchange; o login OAuth precisava solicitar explicitamente que o `id_token` fosse emitido com dados de organização.
 - Corrigidos os fluxos de login browser e device para enviar `id_token_add_organizations=true`, alinhando o comportamento ao fluxo do Codex CLI e permitindo que o `id_token` carregue o `organization_id` necessário ao token exchange `openai-api-key`.
 - Corrigido também o refresh token OAuth para solicitar `id_token_add_organizations=true`, evitando que uma renovação posterior substitua a sessão por um `id_token` sem organização e recrie a falha.
+
+## 2026-06-19 — Configuração do `organization_id` informado
+- Usuário informou o `organization_id` efetivo `org-DgyTLAxNYnw0cOQVlAXInkyR`; adicionada configuração `hub.account.oauth.organization-id`/`HUB_ACCOUNT_OAUTH_ORGANIZATION_ID` com esse valor padrão no backend.
+- O `organization_id` agora acompanha o device login, a URL de login browser, o refresh OAuth e o token exchange Codex, além de manter `id_token_add_organizations=true` para que o `id_token` seja emitido com os dados de organização necessários.

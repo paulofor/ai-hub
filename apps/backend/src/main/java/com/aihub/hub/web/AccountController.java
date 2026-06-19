@@ -67,6 +67,8 @@ public class AccountController {
     private String oauthClientSecret;
     @Value("${hub.account.oauth.device-client-id:app_EMoamEEZ73f0CkXaXp7hrann}")
     private String oauthDeviceClientId;
+    @Value("${hub.account.oauth.organization-id:}")
+    private String oauthOrganizationId;
 
     @Value("${hub.account.login-success-redirect:/codex-chatgpt}")
     private String loginSuccessRedirect;
@@ -313,6 +315,7 @@ public class AccountController {
         Map<String, Object> payload = new HashMap<>();
         payload.put("client_id", clientId);
         payload.put("id_token_add_organizations", true);
+        addOrganizationId(payload);
         return payload;
     }
 
@@ -462,7 +465,21 @@ public class AccountController {
             + "&state=" + urlEncode(state)
             + "&code_challenge=" + urlEncode(codeChallenge)
             + "&code_challenge_method=S256"
-            + "&id_token_add_organizations=true";
+            + "&id_token_add_organizations=true"
+            + buildOrganizationIdQueryParam();
+    }
+
+    private void addOrganizationId(Map<String, Object> payload) {
+        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
+            payload.put("organization_id", oauthOrganizationId.trim());
+        }
+    }
+
+    private String buildOrganizationIdQueryParam() {
+        if (oauthOrganizationId == null || oauthOrganizationId.isBlank()) {
+            return "";
+        }
+        return "&organization_id=" + urlEncode(oauthOrganizationId.trim());
     }
 
     private String resolveCallbackBaseUrl(HttpServletRequest request) {

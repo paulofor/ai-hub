@@ -44,6 +44,8 @@ public class TokenLifecycleManager {
     private String oauthClientSecret;
     @Value("${hub.account.oauth.device-client-id:app_EMoamEEZ73f0CkXaXp7hrann}")
     private String oauthDeviceClientId;
+    @Value("${hub.account.oauth.organization-id:}")
+    private String oauthOrganizationId;
 
     public TokenLifecycleManager(MeterRegistry meterRegistry) {
         this.restClient = RestClient.builder().build();
@@ -169,6 +171,7 @@ public class TokenLifecycleManager {
         payload.put("refresh_token", refreshToken);
         payload.put("client_id", oauthClientId);
         payload.put("id_token_add_organizations", "true");
+        addOrganizationId(payload);
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
@@ -186,7 +189,14 @@ public class TokenLifecycleManager {
         payload.put("requested_token", "openai-api-key");
         payload.put("subject_token", idToken);
         payload.put("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
+        addOrganizationId(payload);
         return payload;
+    }
+
+    private void addOrganizationId(Map<String, String> payload) {
+        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
+            payload.put("organization_id", oauthOrganizationId.trim());
+        }
     }
 
     private Map<String, Object> postTokenForm(Map<String, String> payload) {
