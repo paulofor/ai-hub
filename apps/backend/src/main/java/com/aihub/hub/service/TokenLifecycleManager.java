@@ -42,6 +42,8 @@ public class TokenLifecycleManager {
     private String oauthClientId;
     @Value("${hub.account.oauth.client-secret:}")
     private String oauthClientSecret;
+    @Value("${hub.account.oauth.device-client-id:app_EMoamEEZ73f0CkXaXp7hrann}")
+    private String oauthDeviceClientId;
 
     public TokenLifecycleManager(MeterRegistry meterRegistry) {
         this.restClient = RestClient.builder().build();
@@ -86,23 +88,51 @@ public class TokenLifecycleManager {
     }
 
     public Optional<String> getValidAccessTokenFromCurrentSession() {
+        return currentSession()
+            .flatMap(session -> {
+                refreshIfNeeded(session);
+                String accessToken = asString(session.getAttribute(ACCESS_TOKEN_KEY));
+                String expiresAtRaw = asString(session.getAttribute(EXPIRES_AT_KEY));
+                Instant expiresAt = parseInstant(expiresAtRaw);
+                if (accessToken == null || accessToken.isBlank() || expiresAt == null || !expiresAt.isAfter(Instant.now())) {
+                    return Optional.empty();
+                }
+                return Optional.of(accessToken.trim());
+            });
+    }
+
+    public Optional<String> getValidCodexApiTokenFromCurrentSession() {
+        return currentSession()
+            .flatMap(session -> {
+                refreshIfNeeded(session);
+                String idToken = asString(session.getAttribute(ID_TOKEN_KEY));
+                String expiresAtRaw = asString(session.getAttribute(EXPIRES_AT_KEY));
+                Instant expiresAt = parseInstant(expiresAtRaw);
+                if (idToken == null || idToken.isBlank() || expiresAt == null || !expiresAt.isAfter(Instant.now())) {
+                    return Optional.empty();
+                }
+                String clientId = resolveClientIdForTokenExchange(idToken.trim());
+                if (clientId == null || clientId.isBlank()) {
+                    log.warn("Não foi possível resolver client_id para token exchange Codex");
+                    return Optional.empty();
+                }
+                Map<String, Object> response = requestCodexApiToken(idToken.trim(), clientId);
+                String apiToken = asString(response.get("access_token"));
+                if (apiToken == null || apiToken.isBlank()) {
+                    return Optional.empty();
+                }
+                meterRegistry.counter("oauth_codex_api_token_exchange_total").increment();
+                return Optional.of(apiToken.trim());
+            });
+    }
+
+    private Optional<HttpSession> currentSession() {
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attributes == null) {
             return Optional.empty();
         }
         HttpServletRequest request = attributes.getRequest();
-        HttpSession session = request.getSession(false);
-        if (session == null) {
-            return Optional.empty();
-        }
-        refreshIfNeeded(session);
-        String accessToken = asString(session.getAttribute(ACCESS_TOKEN_KEY));
-        String expiresAtRaw = asString(session.getAttribute(EXPIRES_AT_KEY));
-        Instant expiresAt = parseInstant(expiresAtRaw);
-        if (accessToken == null || accessToken.isBlank() || expiresAt == null || !expiresAt.isAfter(Instant.now())) {
-            return Optional.empty();
-        }
-        return Optional.of(accessToken.trim());
+        return Optional.ofNullable(request.getSession(false));
     }
 
     private Map<String, Object> refreshWithRetry(String refreshToken) {
@@ -129,12 +159,71 @@ public class TokenLifecycleManager {
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
+        return postTokenForm(payload);
+    }
+
+    private Map<String, Object> requestCodexApiToken(String idToken, String clientId) {
+        return postTokenForm(buildCodexApiTokenExchangePayload(idToken, clientId));
+    }
+
+    Map<String, String> buildCodexApiTokenExchangePayload(String idToken, String clientId) {
+        Map<String, String> payload = new HashMap<>();
+        payload.put("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange");
+        payload.put("client_id", clientId);
+        payload.put("requested_token", "openai-api-key");
+        payload.put("subject_token", idToken);
+        payload.put("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
+        return payload;
+    }
+
+    private Map<String, Object> postTokenForm(Map<String, String> payload) {
         return restClient.post()
             .uri(oauthTokenUrl)
             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
             .body(toFormUrlEncoded(payload))
             .retrieve()
             .body(Map.class);
+    }
+
+
+    private String resolveClientIdForTokenExchange(String idToken) {
+        String audience = resolveAudienceFromIdToken(idToken);
+        if (audience != null && !audience.isBlank()) {
+            return audience.trim();
+        }
+        if (oauthDeviceClientId != null && !oauthDeviceClientId.isBlank()) {
+            return oauthDeviceClientId.trim();
+        }
+        return oauthClientId == null ? null : oauthClientId.trim();
+    }
+
+    private String resolveAudienceFromIdToken(String idToken) {
+        try {
+            String[] parts = idToken.split("\\.");
+            if (parts.length < 2) {
+                return null;
+            }
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            int audIndex = payload.indexOf("\"aud\"");
+            if (audIndex < 0) {
+                return null;
+            }
+            int colon = payload.indexOf(':', audIndex);
+            if (colon < 0) {
+                return null;
+            }
+            int quoteStart = payload.indexOf('\"', colon + 1);
+            if (quoteStart < 0) {
+                return null;
+            }
+            int quoteEnd = payload.indexOf('\"', quoteStart + 1);
+            if (quoteEnd <= quoteStart) {
+                return null;
+            }
+            return payload.substring(quoteStart + 1, quoteEnd);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private long resolveTtlSeconds(Long expiresIn) {

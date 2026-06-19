@@ -13,6 +13,7 @@ import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -89,6 +90,8 @@ class CodexRequestServiceTest {
     @BeforeEach
     void setup() {
         when(environmentRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+        when(tokenLifecycleManager.getValidAccessTokenFromCurrentSession()).thenReturn(Optional.empty());
+        when(tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()).thenReturn(Optional.empty());
     }
 
     @Test
@@ -309,6 +312,29 @@ class CodexRequestServiceTest {
 
         CodexRequest created = service.create(payload);
         assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
+    }
+
+
+    @Test
+    void chatgptCodexSendsOAuthDerivedApiTokenToSandbox() {
+        CodexRequestService service = buildService();
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+        when(tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()).thenReturn(Optional.of("oauth-derived-api-token"));
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("modo codex chatgpt");
+        payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX);
+
+        service.create(payload);
+
+        ArgumentCaptor<SandboxJobRequest> captor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(captor.capture());
+        assertThat(captor.getValue().accessToken()).isEqualTo("oauth-derived-api-token");
+        verify(tokenLifecycleManager).getValidCodexApiTokenFromCurrentSession();
+        verify(tokenLifecycleManager, never()).getValidAccessTokenFromCurrentSession();
     }
 
     @Test

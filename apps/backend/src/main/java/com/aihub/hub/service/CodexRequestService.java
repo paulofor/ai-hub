@@ -590,9 +590,12 @@ public class CodexRequestService {
 
         String callbackUrl = this.sandboxCallbackUrl;
         String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
-        String accessToken = tokenLifecycleManager.getValidAccessTokenFromCurrentSession().orElse(null);
+        boolean chatgptCodexProfile = request.getProfile() == CodexIntegrationProfile.CHATGPT_CODEX;
+        String accessToken = chatgptCodexProfile
+            ? tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession().orElse(null)
+            : tokenLifecycleManager.getValidAccessTokenFromCurrentSession().orElse(null);
         if (accessToken == null) {
-            log.info("CodexRequest {} será executado sem access token OAuth de conta conectada", request.getId());
+            log.info("CodexRequest {} será executado sem token OAuth válido de conta conectada", request.getId());
         }
 
         SandboxJobRequest jobRequest = new SandboxJobRequest(
