@@ -476,3 +476,17 @@
 - Causa raiz refinada comparando com o `codex-rs`: o erro não se resolve adicionando manualmente `api.responses.write` ao device login; o fluxo oficial troca o `id_token` OAuth por um token do tipo `openai-api-key` (`requested_token=openai-api-key`) antes de chamar a API, enquanto o AI Hub estava enviando diretamente o `access_token` OAuth da sessão para a Responses API.
 - Correção aplicada: o backend agora faz token exchange OAuth (`urn:ietf:params:oauth:grant-type:token-exchange`) usando o `id_token` da sessão e envia ao sandbox o token derivado para execução `CHATGPT_CODEX`.
 - Mantido o sandbox usando o token recebido da sessão, sem recorrer à API key do projeto, e adicionados testes para o payload de token exchange e para o envio do token OAuth derivado ao sandbox.
+
+## 2026-06-19 — Correção do erro 500 ao criar request `CHATGPT_CODEX`
+- Investigada a causa raiz do `POST /api/codex/requests` retornar 500: o backend fazia token exchange OAuth para `CHATGPT_CODEX`, recebia 401 da OpenAI com `Invalid ID token: missing organization_id` e deixava a exceção propagar, abortando a criação da solicitação antes de enviar/registrar a execução no sandbox.
+- Corrigido o `TokenLifecycleManager` para tratar falhas do token exchange Codex como ausência controlada de token derivado, registrar métrica/log de falha e retornar `Optional.empty()` em vez de propagar `RestClientException` para o controller.
+- Com isso, a criação da solicitação deixa de quebrar com erro HTTP 500 por causa de credencial OAuth inválida/incompleta; o fluxo passa a registrar a execução e delegar ao sandbox a validação final de autenticação do profile `CHATGPT_CODEX`.
+
+## 2026-06-19 — Correção de causa raiz do `organization_id` no OAuth `CHATGPT_CODEX`
+- Refinada a causa raiz do 401 `Invalid ID token: missing organization_id`: não bastava tratar a exceção do token exchange; o login OAuth precisava solicitar explicitamente que o `id_token` fosse emitido com dados de organização.
+- Corrigidos os fluxos de login browser e device para enviar `id_token_add_organizations=true`, alinhando o comportamento ao fluxo do Codex CLI e permitindo que o `id_token` carregue o `organization_id` necessário ao token exchange `openai-api-key`.
+- Corrigido também o refresh token OAuth para solicitar `id_token_add_organizations=true`, evitando que uma renovação posterior substitua a sessão por um `id_token` sem organização e recrie a falha.
+
+## 2026-06-19 — Configuração do `organization_id` informado
+- Usuário informou o `organization_id` efetivo `org-DgyTLAxNYnw0cOQVlAXInkyR`; adicionada configuração `hub.account.oauth.organization-id`/`HUB_ACCOUNT_OAUTH_ORGANIZATION_ID` com esse valor padrão no backend.
+- O `organization_id` agora acompanha o device login, a URL de login browser, o refresh OAuth e o token exchange Codex, além de manter `id_token_add_organizations=true` para que o `id_token` seja emitido com os dados de organização necessários.

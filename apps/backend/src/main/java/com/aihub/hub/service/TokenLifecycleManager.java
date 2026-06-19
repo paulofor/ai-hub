@@ -44,6 +44,8 @@ public class TokenLifecycleManager {
     private String oauthClientSecret;
     @Value("${hub.account.oauth.device-client-id:app_EMoamEEZ73f0CkXaXp7hrann}")
     private String oauthDeviceClientId;
+    @Value("${hub.account.oauth.organization-id:}")
+    private String oauthOrganizationId;
 
     public TokenLifecycleManager(MeterRegistry meterRegistry) {
         this.restClient = RestClient.builder().build();
@@ -116,13 +118,21 @@ public class TokenLifecycleManager {
                     log.warn("Não foi possível resolver client_id para token exchange Codex");
                     return Optional.empty();
                 }
-                Map<String, Object> response = requestCodexApiToken(idToken.trim(), clientId);
-                String apiToken = asString(response.get("access_token"));
-                if (apiToken == null || apiToken.isBlank()) {
+                try {
+                    Map<String, Object> response = requestCodexApiToken(idToken.trim(), clientId);
+                    String apiToken = asString(response.get("access_token"));
+                    if (apiToken == null || apiToken.isBlank()) {
+                        meterRegistry.counter("oauth_codex_api_token_exchange_failure_total").increment();
+                        log.warn("Token exchange Codex não retornou access_token");
+                        return Optional.empty();
+                    }
+                    meterRegistry.counter("oauth_codex_api_token_exchange_total").increment();
+                    return Optional.of(apiToken.trim());
+                } catch (RestClientException ex) {
+                    meterRegistry.counter("oauth_codex_api_token_exchange_failure_total").increment();
+                    log.warn("Falha no token exchange Codex; execução seguirá sem token derivado para o sandbox: {}", ex.getMessage());
                     return Optional.empty();
                 }
-                meterRegistry.counter("oauth_codex_api_token_exchange_total").increment();
-                return Optional.of(apiToken.trim());
             });
     }
 
@@ -152,14 +162,20 @@ public class TokenLifecycleManager {
     }
 
     private Map<String, Object> requestTokenRefresh(String refreshToken) {
+        return postTokenForm(buildTokenRefreshPayload(refreshToken));
+    }
+
+    Map<String, String> buildTokenRefreshPayload(String refreshToken) {
         Map<String, String> payload = new HashMap<>();
         payload.put("grant_type", "refresh_token");
         payload.put("refresh_token", refreshToken);
         payload.put("client_id", oauthClientId);
+        payload.put("id_token_add_organizations", "true");
+        addOrganizationId(payload);
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
-        return postTokenForm(payload);
+        return payload;
     }
 
     private Map<String, Object> requestCodexApiToken(String idToken, String clientId) {
@@ -173,7 +189,14 @@ public class TokenLifecycleManager {
         payload.put("requested_token", "openai-api-key");
         payload.put("subject_token", idToken);
         payload.put("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
+        addOrganizationId(payload);
         return payload;
+    }
+
+    private void addOrganizationId(Map<String, String> payload) {
+        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
+            payload.put("organization_id", oauthOrganizationId.trim());
+        }
     }
 
     private Map<String, Object> postTokenForm(Map<String, String> payload) {
