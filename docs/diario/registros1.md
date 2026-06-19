@@ -422,3 +422,57 @@
 - Causa raiz do incômodo visual: o estado `requestsLoading` era renderizado como um parágrafo dentro do card de últimas execuções a cada atualização automática, provocando mudança perceptível no layout enquanto o monitoramento permanecia ativo.
 - 2026-06-19 17:25:49 UTC: Investigada a causa raiz da execução `CHATGPT_CODEX` aparecer nos logs da API mesmo com sessão ChatGPT conectada: o backend já enviava `accessToken` ao sandbox, porém o `sandbox-orchestrator` ignorava esse campo e sempre usava o cliente OpenAI inicializado com `OPENAI_API_KEY`.
 - 2026-06-19 17:25:49 UTC: Corrigido o fluxo do `sandbox-orchestrator` para aceitar e reter `accessToken` apenas internamente, não expor o token nas respostas HTTP e, em jobs `CHATGPT_CODEX`, criar o cliente OpenAI com o token OAuth da sessão conectada em vez da API key do projeto.
+
+## 2026-06-19 — Diagnóstico do erro 401 api.responses.write no CHATGPT_CODEX
+- Investigada a execução `ea921d16-2ac5-47b5-8fdd-504c2ee92cf8` exibida na tela `/codex/requests/702`.
+- Healthcheck do MCP confirmou o serviço operacional (`GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`).
+- Logs do `sandbox-orchestrator` confirmaram que o fluxo usou `access_token` da sessão ChatGPT conectada, sem `OPENAI_API_KEY` do projeto, e falhou na primeira chamada ao modelo com `401` por ausência do escopo `api.responses.write`.
+- Causa raiz provável: a credencial OAuth/sessão ChatGPT usada pelo profile `CHATGPT_CODEX` não possui permissão para escrever na Responses API no projeto/organização selecionado; não é problema do prompt, do clone do repositório, nem do workspace, pois o preflight e a preparação concluíram antes da falha.
+- Ação recomendada: reconectar/autorizar a conta ChatGPT/Codex com escopos que incluam `api.responses.write`, garantir papel adequado na organização/projeto (Writer/Owner e Member/Owner) ou usar uma credencial/API key não restrita com permissão de Responses API para esse fluxo.
+
+## 2026-06-19 — Esclarecimento sobre origem do escopo OAuth do Codex
+- Esclarecido que, no fluxo de login por código do `CHATGPT_CODEX`, o usuário não escolhe escopos manualmente na tela de login; o backend solicita o device login enviando apenas o `client_id` para `/api/accounts/deviceauth/usercode`.
+- Diferenciado do fluxo OAuth web tradicional, onde a lista de escopos vem de `hub.account.oauth.scopes`/`HUB_ACCOUNT_OAUTH_SCOPES` e é anexada à URL de autorização.
+- Conclusão de causa raiz refinada: para o device login do cliente público Codex, a definição efetiva de escopos/permissões fica vinculada ao aplicativo OAuth/client_id da OpenAI e às permissões da conta/projeto selecionados, não a uma configuração visível ao usuário final durante o login.
+- Orientação operacional: se o usuário só consegue clicar em login, a correção precisa ser feita no lado da configuração/autorização do app/ambiente — validar `HUB_ACCOUNT_OAUTH_SCOPES` apenas se estiver usando login OAuth web, ou trocar/ajustar a credencial/client_id/conta com acesso à Responses API para o fluxo por código.
+
+## 2026-06-19 — Orientação para alterar permissões de conta/projeto OpenAI
+- Consultada documentação oficial da OpenAI sobre projetos, papéis e permissões de API keys para orientar a correção do erro `api.responses.write`.
+- Esclarecido que permissões de usuário/projeto são alteradas no painel da API Platform: organização/projeto -> Members, onde apenas Owner de projeto pode atualizar papel ou remover usuário, e membros precisam ser adicionados ao projeto correto para executar inferência.
+- Esclarecido que permissões de chave são alteradas no painel do projeto -> API Keys; chaves podem ser `All`, `Restricted` ou `Read Only`, e no modo `Restricted` é necessário conceder `Write` ao endpoint/recurso de Responses.
+- Registrado que, se o usuário não vê essas opções, ele provavelmente não é Owner da organização/projeto e precisa pedir a um Owner para ajustar seu papel, adicioná-lo ao projeto correto ou gerar uma chave/service account com permissão adequada.
+
+## 2026-06-19 — Navegação no painel OpenAI para permissões
+- Orientado, a partir da tela `Organization settings > General`, que a alteração não fica no formulário geral da organização.
+- Para permissões da conta/usuário, o caminho indicado é `People` para papel na organização e `Projects` -> projeto correto -> `Members` para papel no projeto.
+- Para permissões de credencial, o caminho indicado é `API keys` no projeto correto, editando/criando chave com permissão `All` ou `Restricted` com `Write` para Responses/API de inferência.
+- Registrado que, caso as opções de edição estejam ocultas ou bloqueadas, o usuário está sem papel de Owner/Admin suficiente e precisa acionar o Owner da organização/projeto.
+
+## 2026-06-19 — Validação visual de role Organization Owner
+- Usuário mostrou `People & Permissions > Members > Manage roles`, com a conta marcada como `Owner` na organização.
+- Conclusão: a role da organização aparenta estar correta; o erro `api.responses.write` provavelmente não é por falta de Owner na organização.
+- Próximas verificações recomendadas: confirmar permissões no projeto correto em `Projects` -> projeto usado pelo AI Hub -> `Members`, e validar a credencial efetiva (`API keys` ou service account `curso--02`) para garantir permissão de escrita na Responses API.
+
+## 2026-06-19 — Identificação do projeto OpenAI usado pelo AI Hub
+- Investigado como o AI Hub escolhe o projeto OpenAI: `docker-compose.yml` carrega `OPENAI_API_KEY` a partir de `/run/secrets/openai-token/openai_api_key` para backend e `sandbox-orchestrator`, sem definir explicitamente `OPENAI_PROJECT_ID` ou `OPENAI_ORG_ID`.
+- Consulta via MCP ao container `ai-hub-6-sandbox-orchestrator-1` confirmou `OPENAI_PROJECT_ID` e `OPENAI_ORG_ID` vazios, e uma chave `sk-proj-...` montada no segredo.
+- Conclusão operacional: em execuções com API key, o projeto é o projeto ao qual essa chave `sk-proj` pertence no painel da OpenAI; em execuções `CHATGPT_CODEX`, o sandbox usa o `access_token` OAuth da sessão conectada, então o projeto efetivo depende da autorização/conta do token e não aparece como variável local no container.
+- Próximo passo recomendado: localizar a API key/service account correspondente no painel OpenAI em `Projects` -> projeto -> `API keys`, ou rotacionar a chave criando uma nova no projeto desejado e atualizando `/root/infra/openai-token/openai_api_key` no host.
+
+## 2026-06-19 — Comparação visual de projeto OpenAI e chave do AI Hub
+- Usuário mostrou a lista de projetos da OpenAI contendo apenas `Default project` com ID `proj_Wc5aRLIYuBySAfNjLLyprCCw`.
+- Comparado com a investigação anterior: o AI Hub não define `OPENAI_PROJECT_ID`; ele usa a chave `sk-proj-...` montada em `/run/secrets/openai-token/openai_api_key`, portanto é necessário abrir o `Default project` e conferir em `API keys` se a chave montada no servidor corresponde a esse projeto.
+- Orientação refinada: se a chave atual não aparecer no `Default project` ou estiver restrita sem escrita para Responses, gerar uma nova chave nesse projeto com permissão adequada, substituir `/root/infra/openai-token/openai_api_key` no host e reiniciar backend/sandbox.
+- Observação: para jobs `CHATGPT_CODEX`, o erro observado nos logs continua associado ao `access_token` OAuth da sessão conectada; trocar a API key corrige os fluxos baseados em `OPENAI_API_KEY`, mas pode não alterar o escopo do token OAuth se o runner continuar nesse profile.
+
+## 2026-06-19 — Solicitação de troca da chave OpenAI no AI Hub
+- Usuário solicitou alterar a chave OpenAI usada pelo AI Hub.
+- Verificado que a configuração efetiva do deploy lê a chave de `/root/infra/openai-token/openai_api_key` no host, montada nos containers como `/run/secrets/openai-token/openai_api_key`.
+- Não foi possível executar a troca sem receber uma nova chave válida (`sk-proj-...`); por segurança, a orientação é inserir a nova chave diretamente no host/secret store, não expor o valor completo no chat.
+- Procedimento recomendado após obter a nova chave no projeto correto: gravar o valor em `/root/infra/openai-token/openai_api_key` com permissões restritas e reiniciar `backend` e `sandbox-orchestrator` para recarregar `OPENAI_API_KEY`.
+
+## 2026-06-19 — Correção de causa raiz OAuth para `CHATGPT_CODEX` sem API key do projeto
+- Revertida a direção de usar `OPENAI_API_KEY` por padrão no `CHATGPT_CODEX`, pois o requisito é manter o fluxo OAuth da conta conectada.
+- Causa raiz refinada comparando com o `codex-rs`: o erro não se resolve adicionando manualmente `api.responses.write` ao device login; o fluxo oficial troca o `id_token` OAuth por um token do tipo `openai-api-key` (`requested_token=openai-api-key`) antes de chamar a API, enquanto o AI Hub estava enviando diretamente o `access_token` OAuth da sessão para a Responses API.
+- Correção aplicada: o backend agora faz token exchange OAuth (`urn:ietf:params:oauth:grant-type:token-exchange`) usando o `id_token` da sessão e envia ao sandbox o token derivado para execução `CHATGPT_CODEX`.
+- Mantido o sandbox usando o token recebido da sessão, sem recorrer à API key do projeto, e adicionados testes para o payload de token exchange e para o envio do token OAuth derivado ao sandbox.
