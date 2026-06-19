@@ -420,3 +420,5 @@
 ## 2026-06-19 — Remoção do indicador visual de atualização no Codex ChatGPT
 - Removido da página `/codex-chatgpt` o texto transitório "Atualizando..." exibido durante o polling das últimas execuções.
 - Causa raiz do incômodo visual: o estado `requestsLoading` era renderizado como um parágrafo dentro do card de últimas execuções a cada atualização automática, provocando mudança perceptível no layout enquanto o monitoramento permanecia ativo.
+- 2026-06-19 17:25:49 UTC: Investigada a causa raiz da execução `CHATGPT_CODEX` aparecer nos logs da API mesmo com sessão ChatGPT conectada: o backend já enviava `accessToken` ao sandbox, porém o `sandbox-orchestrator` ignorava esse campo e sempre usava o cliente OpenAI inicializado com `OPENAI_API_KEY`.
+- 2026-06-19 17:25:49 UTC: Corrigido o fluxo do `sandbox-orchestrator` para aceitar e reter `accessToken` apenas internamente, não expor o token nas respostas HTTP e, em jobs `CHATGPT_CODEX`, criar o cliente OpenAI com o token OAuth da sessão conectada em vez da API key do projeto.

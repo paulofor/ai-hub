@@ -118,6 +118,28 @@ test('não expõe o callbackSecret nas respostas', async () => {
   assert.equal(stored?.callbackSecret, 'super-secret');
 });
 
+
+test('persiste accessToken para execução e não expõe nas respostas', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  const payload = {
+    jobId: 'job-chatgpt-token',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'run with connected ChatGPT session',
+    profile: 'CHATGPT_CODEX',
+    accessToken: 'sess-token-123',
+  };
+
+  const creation = await request(app).post('/jobs').send(payload).expect(201);
+  assert.equal(creation.body.jobId, payload.jobId);
+  assert.equal(creation.body.profile, 'CHATGPT_CODEX');
+  assert.ok(!('accessToken' in creation.body) || creation.body.accessToken === undefined, 'accessToken should not be exposed');
+
+  const stored = registry.get(payload.jobId);
+  assert.equal(stored?.accessToken, payload.accessToken);
+});
+
 test('permite cancelar um job em execução', async () => {
   const registry = new Map<string, SandboxJob>();
   const processor = new SleepingProcessor();
