@@ -68,7 +68,7 @@ function normalizeDatabaseConfig(raw: unknown): SandboxDatabaseConfig | undefine
 }
 
 function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
-  const sanitized: SandboxJob = { ...job, callbackSecret: undefined };
+  const sanitized: SandboxJob = { ...job, accessToken: undefined, callbackSecret: undefined };
   if (job.database) {
     const { password: _password, ...database } = job.database;
     sanitized.database = database;
@@ -146,6 +146,7 @@ export function createApp(options: AppOptions = {}) {
     const commitHash = validateString(req.body?.commit);
     const testCommand = validateString(req.body?.testCommand);
     const model = validateString(req.body?.model);
+    const accessToken = validateString(req.body?.accessToken);
     const database = normalizeDatabaseConfig(req.body?.database);
     const profile = normalizeProfile(validateString(req.body?.profile));
     const callbackUrl = validateString(req.body?.callbackUrl);
@@ -179,6 +180,7 @@ export function createApp(options: AppOptions = {}) {
       testCommand,
       profile,
       model: model ?? undefined,
+      accessToken: accessToken ?? undefined,
       database,
       callbackUrl: callbackUrl ?? undefined,
       callbackSecret: callbackSecret ?? undefined,

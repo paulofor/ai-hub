@@ -673,13 +673,11 @@ export class SandboxJobProcessor implements JobProcessor {
       await this.runRunnerPreflight(job, repoPath!);
       this.ensureNotCancelled(job);
       const baseCommit = await this.getHeadCommit(repoPath!);
-      if (!this.openai) {
-        throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
-      }
+      const openai = this.resolveOpenAIClient(job);
 
       this.ensureNotCancelled(job);
       this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
-      const summary = await this.runCodexLoop(job, repoPath!, resolvedModel);
+      const summary = await this.runCodexLoop(job, repoPath!, resolvedModel, openai);
       job.summary = summary;
       this.ensureNotCancelled(job);
       job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
@@ -893,7 +891,24 @@ export class SandboxJobProcessor implements JobProcessor {
     ];
   }
 
-  private async runCodexLoop(job: SandboxJob, repoPath: string, model: string): Promise<string> {
+
+  private resolveOpenAIClient(job: SandboxJob): OpenAI {
+    if (this.isChatgptCodex(job)) {
+      const accessToken = typeof job.accessToken === 'string' ? job.accessToken.trim() : '';
+      if (!accessToken) {
+        throw new Error('Sessão ChatGPT conectada não forneceu access_token para execução CHATGPT_CODEX');
+      }
+      this.log(job, 'execução CHATGPT_CODEX usando access_token da sessão conectada, sem OPENAI_API_KEY do projeto');
+      return new OpenAI({ apiKey: accessToken });
+    }
+
+    if (!this.openai) {
+      throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
+    }
+    return this.openai;
+  }
+
+  private async runCodexLoop(job: SandboxJob, repoPath: string, model: string, openai: OpenAI): Promise<string> {
     this.ensureNotCancelled(job);
     job.taskDescription = this.sanitizeTaskDescription(job.taskDescription, job);
 
@@ -998,7 +1013,7 @@ ${profileInstruction}`,
         this.formatMessagesForRecording(layeredMessages),
       );
       const promptCacheKey = this.buildPromptCacheKey(job, model);
-      const response = await this.openai!.responses.create({
+      const response = await openai.responses.create({
         model,
         input: layeredMessages,
         tools,
