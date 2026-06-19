@@ -300,13 +300,20 @@ public class AccountController {
 
 
     private Map<String, Object> requestDeviceUserCode(String clientId) {
-        Map<String, String> payload = Map.of("client_id", clientId);
+        Map<String, Object> payload = buildDeviceUserCodePayload(clientId);
         return restClient.post()
             .uri(oauthIssuerBase() + "/api/accounts/deviceauth/usercode")
             .contentType(MediaType.APPLICATION_JSON)
             .body(payload)
             .retrieve()
             .body(Map.class);
+    }
+
+    Map<String, Object> buildDeviceUserCodePayload(String clientId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("client_id", clientId);
+        payload.put("id_token_add_organizations", true);
+        return payload;
     }
 
     private Map<String, Object> pollDeviceAuthorization(String deviceAuthId, String userCode) {
@@ -454,7 +461,8 @@ public class AccountController {
             + "&scope=" + urlEncode(oauthScopes)
             + "&state=" + urlEncode(state)
             + "&code_challenge=" + urlEncode(codeChallenge)
-            + "&code_challenge_method=S256";
+            + "&code_challenge_method=S256"
+            + "&id_token_add_organizations=true";
     }
 
     private String resolveCallbackBaseUrl(HttpServletRequest request) {

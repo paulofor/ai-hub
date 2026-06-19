@@ -481,3 +481,8 @@
 - Investigada a causa raiz do `POST /api/codex/requests` retornar 500: o backend fazia token exchange OAuth para `CHATGPT_CODEX`, recebia 401 da OpenAI com `Invalid ID token: missing organization_id` e deixava a exceção propagar, abortando a criação da solicitação antes de enviar/registrar a execução no sandbox.
 - Corrigido o `TokenLifecycleManager` para tratar falhas do token exchange Codex como ausência controlada de token derivado, registrar métrica/log de falha e retornar `Optional.empty()` em vez de propagar `RestClientException` para o controller.
 - Com isso, a criação da solicitação deixa de quebrar com erro HTTP 500 por causa de credencial OAuth inválida/incompleta; o fluxo passa a registrar a execução e delegar ao sandbox a validação final de autenticação do profile `CHATGPT_CODEX`.
+
+## 2026-06-19 — Correção de causa raiz do `organization_id` no OAuth `CHATGPT_CODEX`
+- Refinada a causa raiz do 401 `Invalid ID token: missing organization_id`: não bastava tratar a exceção do token exchange; o login OAuth precisava solicitar explicitamente que o `id_token` fosse emitido com dados de organização.
+- Corrigidos os fluxos de login browser e device para enviar `id_token_add_organizations=true`, alinhando o comportamento ao fluxo do Codex CLI e permitindo que o `id_token` carregue o `organization_id` necessário ao token exchange `openai-api-key`.
+- Corrigido também o refresh token OAuth para solicitar `id_token_add_organizations=true`, evitando que uma renovação posterior substitua a sessão por um `id_token` sem organização e recrie a falha.

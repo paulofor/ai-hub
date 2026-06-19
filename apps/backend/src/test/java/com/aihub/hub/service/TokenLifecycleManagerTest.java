@@ -10,6 +10,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TokenLifecycleManagerTest {
 
     @Test
+    void buildsTokenRefreshPayloadWithOrganizationClaims() {
+        TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
+
+        Map<String, String> payload = manager.buildTokenRefreshPayload("refresh-token");
+
+        assertThat(payload).containsEntry("grant_type", "refresh_token");
+        assertThat(payload).containsEntry("refresh_token", "refresh-token");
+        assertThat(payload).containsEntry("id_token_add_organizations", "true");
+    }
+
+    @Test
     void buildsCodexApiTokenExchangePayload() {
         TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
 

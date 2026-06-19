@@ -34,6 +34,36 @@ class AccountControllerTest {
     }
 
     @Test
+    void deviceUserCodePayloadRequestsOrganizationClaims() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
+
+        Map<String, Object> payload = controller.buildDeviceUserCodePayload("app_device_client");
+
+        assertThat(payload).containsEntry("client_id", "app_device_client");
+        assertThat(payload).containsEntry("id_token_add_organizations", true);
+    }
+
+    @Test
+    void browserAuthorizeUrlRequestsOrganizationClaims() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
+        ReflectionTestUtils.setField(controller, "oauthAuthorizeUrl", "https://auth.openai.com/oauth/authorize");
+        ReflectionTestUtils.setField(controller, "oauthClientId", "app_browser_client");
+        ReflectionTestUtils.setField(controller, "oauthScopes", "openid profile email offline_access");
+
+        String authUrl = ReflectionTestUtils.invokeMethod(
+            controller,
+            "buildExternalAuthUrl",
+            "https://iahub.xyz/api/account/login/callback",
+            "state-123",
+            "challenge-123"
+        );
+
+        assertThat(authUrl).contains("id_token_add_organizations=true");
+    }
+
+    @Test
     void browserTokenExchangePayloadKeepsConfiguredClientSecret() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);

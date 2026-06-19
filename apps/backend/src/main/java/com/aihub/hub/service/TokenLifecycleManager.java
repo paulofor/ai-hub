@@ -160,14 +160,19 @@ public class TokenLifecycleManager {
     }
 
     private Map<String, Object> requestTokenRefresh(String refreshToken) {
+        return postTokenForm(buildTokenRefreshPayload(refreshToken));
+    }
+
+    Map<String, String> buildTokenRefreshPayload(String refreshToken) {
         Map<String, String> payload = new HashMap<>();
         payload.put("grant_type", "refresh_token");
         payload.put("refresh_token", refreshToken);
         payload.put("client_id", oauthClientId);
+        payload.put("id_token_add_organizations", "true");
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
-        return postTokenForm(payload);
+        return payload;
     }
 
     private Map<String, Object> requestCodexApiToken(String idToken, String clientId) {
