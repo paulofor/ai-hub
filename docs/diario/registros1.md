@@ -476,3 +476,8 @@
 - Causa raiz refinada comparando com o `codex-rs`: o erro não se resolve adicionando manualmente `api.responses.write` ao device login; o fluxo oficial troca o `id_token` OAuth por um token do tipo `openai-api-key` (`requested_token=openai-api-key`) antes de chamar a API, enquanto o AI Hub estava enviando diretamente o `access_token` OAuth da sessão para a Responses API.
 - Correção aplicada: o backend agora faz token exchange OAuth (`urn:ietf:params:oauth:grant-type:token-exchange`) usando o `id_token` da sessão e envia ao sandbox o token derivado para execução `CHATGPT_CODEX`.
 - Mantido o sandbox usando o token recebido da sessão, sem recorrer à API key do projeto, e adicionados testes para o payload de token exchange e para o envio do token OAuth derivado ao sandbox.
+
+## 2026-06-19 — Correção do erro 500 ao criar request `CHATGPT_CODEX`
+- Investigada a causa raiz do `POST /api/codex/requests` retornar 500: o backend fazia token exchange OAuth para `CHATGPT_CODEX`, recebia 401 da OpenAI com `Invalid ID token: missing organization_id` e deixava a exceção propagar, abortando a criação da solicitação antes de enviar/registrar a execução no sandbox.
+- Corrigido o `TokenLifecycleManager` para tratar falhas do token exchange Codex como ausência controlada de token derivado, registrar métrica/log de falha e retornar `Optional.empty()` em vez de propagar `RestClientException` para o controller.
+- Com isso, a criação da solicitação deixa de quebrar com erro HTTP 500 por causa de credencial OAuth inválida/incompleta; o fluxo passa a registrar a execução e delegar ao sandbox a validação final de autenticação do profile `CHATGPT_CODEX`.

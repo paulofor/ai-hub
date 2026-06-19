@@ -116,13 +116,21 @@ public class TokenLifecycleManager {
                     log.warn("Não foi possível resolver client_id para token exchange Codex");
                     return Optional.empty();
                 }
-                Map<String, Object> response = requestCodexApiToken(idToken.trim(), clientId);
-                String apiToken = asString(response.get("access_token"));
-                if (apiToken == null || apiToken.isBlank()) {
+                try {
+                    Map<String, Object> response = requestCodexApiToken(idToken.trim(), clientId);
+                    String apiToken = asString(response.get("access_token"));
+                    if (apiToken == null || apiToken.isBlank()) {
+                        meterRegistry.counter("oauth_codex_api_token_exchange_failure_total").increment();
+                        log.warn("Token exchange Codex não retornou access_token");
+                        return Optional.empty();
+                    }
+                    meterRegistry.counter("oauth_codex_api_token_exchange_total").increment();
+                    return Optional.of(apiToken.trim());
+                } catch (RestClientException ex) {
+                    meterRegistry.counter("oauth_codex_api_token_exchange_failure_total").increment();
+                    log.warn("Falha no token exchange Codex; execução seguirá sem token derivado para o sandbox: {}", ex.getMessage());
                     return Optional.empty();
                 }
-                meterRegistry.counter("oauth_codex_api_token_exchange_total").increment();
-                return Optional.of(apiToken.trim());
             });
     }
 
