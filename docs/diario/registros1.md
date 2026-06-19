@@ -490,3 +490,16 @@
 ## 2026-06-19 — Configuração do `organization_id` informado
 - Usuário informou o `organization_id` efetivo `org-DgyTLAxNYnw0cOQVlAXInkyR`; adicionada configuração `hub.account.oauth.organization-id`/`HUB_ACCOUNT_OAUTH_ORGANIZATION_ID` com esse valor padrão no backend.
 - O `organization_id` agora acompanha o device login, a URL de login browser, o refresh OAuth e o token exchange Codex, além de manter `id_token_add_organizations=true` para que o `id_token` seja emitido com os dados de organização necessários.
+
+## 2026-06-19 — Bloqueio de execução `CHATGPT_CODEX` sem token derivado
+- Investigada a causa raiz do erro exibido na requisição 706: o backend permitia enviar jobs `CHATGPT_CODEX` ao sandbox mesmo quando a sessão conectada não conseguia gerar um token de execução OAuth derivado, fazendo o sandbox falhar depois com “Sessão ChatGPT conectada não forneceu access_token”.
+- Corrigido o fluxo para falhar localmente a requisição `CHATGPT_CODEX` quando o token derivado não estiver disponível, sem criar job no sandbox e com mensagem acionável para reconectar/verificar a organização OAuth.
+- Adicionado teste unitário garantindo que `CHATGPT_CODEX` sem token não chama o sandbox e registra a falha diretamente na solicitação.
+
+## 2026-06-19 — Causa real da ausência de token derivado no `CHATGPT_CODEX`
+- Verificado nos logs do backend que a requisição 706 não obteve token derivado porque o token exchange OAuth retornou `400 Bad Request` com `Unknown parameter: 'organization_id'`.
+- Causa raiz corrigida: `organization_id` deve continuar sendo usado no login/refresh para emitir `id_token` com organização, mas não deve ser enviado no token exchange `requested_token=openai-api-key`, pois esse endpoint rejeita o parâmetro.
+- Ajustado o payload de token exchange Codex para não incluir `organization_id` e atualizado o teste unitário para proteger esse contrato.
+
+## 2026-06-19 — Orientação de causa raiz no AGENTS
+- Adicionada ao `AGENTS.md` a instrução explícita para, antes de propor ou implementar ajuste para um erro, perguntar “por que esse erro aconteceu?” e usar essa resposta para guiar a investigação e a correção.

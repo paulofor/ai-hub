@@ -337,6 +337,30 @@ class CodexRequestServiceTest {
         verify(tokenLifecycleManager, never()).getValidAccessTokenFromCurrentSession();
     }
 
+
+    @Test
+    void chatgptCodexFailsLocallyWhenOAuthTokenIsUnavailable() {
+        CodexRequestService service = buildService();
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()).thenReturn(Optional.empty());
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("modo codex chatgpt sem token");
+        payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX);
+
+        CodexRequest created = service.create(payload);
+
+        assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(created.getResponseText()).contains("não gerou token de execução");
+        assertThat(created.getFinishedAt()).isNotNull();
+        assertThat(created.getDurationMs()).isNotNull();
+        verify(sandboxOrchestratorClient, never()).createJob(any());
+        verify(tokenLifecycleManager).getValidCodexApiTokenFromCurrentSession();
+        verify(tokenLifecycleManager, never()).getValidAccessTokenFromCurrentSession();
+    }
+
     @Test
     void chatgptCodexUsesEconomyModelWhenAvailable() {
         CodexRequestService service = buildService();
