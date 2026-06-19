@@ -416,3 +416,7 @@
 - Investigada a causa raiz da ausência de anexos na tela `/codex-chatgpt`: o frontend enviava apenas `prompt/environment/model/profile`, o backend repassava somente `taskDescription` ao sandbox e o runner montava a mensagem do modelo apenas como `input_text`, sem caminho para imagens coladas da área de transferência.
 - Adicionado suporte a colar prints via Ctrl+V no textarea e selecionar arquivos de imagem, com pré-visualização, remoção, limite de 5 imagens e validação de 5 MB por imagem.
 - Estendido o payload `CreateCodexRequest`/`SandboxJobRequest` e o sandbox-orchestrator para transportar `imageAttachments` como data URLs e montar a solicitação do modelo com partes `input_image` junto do texto.
+
+## 2026-06-19 — Remoção do indicador visual de atualização no Codex ChatGPT
+- Removido da página `/codex-chatgpt` o texto transitório "Atualizando..." exibido durante o polling das últimas execuções.
+- Causa raiz do incômodo visual: o estado `requestsLoading` era renderizado como um parágrafo dentro do card de últimas execuções a cada atualização automática, provocando mudança perceptível no layout enquanto o monitoramento permanecia ativo.
