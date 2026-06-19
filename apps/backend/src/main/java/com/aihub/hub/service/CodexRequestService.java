@@ -594,8 +594,12 @@ public class CodexRequestService {
         String accessToken = chatgptCodexProfile
             ? tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession().orElse(null)
             : tokenLifecycleManager.getValidAccessTokenFromCurrentSession().orElse(null);
-        if (accessToken == null) {
+        if (!StringUtils.hasText(accessToken)) {
             log.info("CodexRequest {} será executado sem token OAuth válido de conta conectada", request.getId());
+            if (chatgptCodexProfile) {
+                failChatgptCodexWithoutToken(request);
+                return;
+            }
         }
 
         SandboxJobRequest jobRequest = new SandboxJobRequest(
@@ -648,6 +652,26 @@ public class CodexRequestService {
         recordInteractions(request, response);
         recordHttpRequests(request, response);
     }
+
+    private void failChatgptCodexWithoutToken(CodexRequest request) {
+        String message = "Conta ChatGPT conectada não gerou token de execução para o Codex. "
+            + "Reconecte a conta ChatGPT e tente novamente; se persistir, verifique a organização configurada para o OAuth.";
+        request.setStatus(CodexRequestStatus.FAILED);
+        request.setResponseText(message);
+        Instant finishedAt = Instant.now();
+        request.setFinishedAt(finishedAt);
+        if (request.getStartedAt() == null) {
+            request.setStartedAt(Optional.ofNullable(request.getCreatedAt()).orElse(finishedAt));
+        }
+        request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
+        request.setCost(BigDecimal.ZERO);
+        request.setPromptTokens(Optional.ofNullable(request.getPromptTokens()).orElse(0));
+        request.setCachedPromptTokens(Optional.ofNullable(request.getCachedPromptTokens()).orElse(0));
+        request.setCompletionTokens(Optional.ofNullable(request.getCompletionTokens()).orElse(0));
+        request.setTotalTokens(Optional.ofNullable(request.getTotalTokens()).orElse(0));
+        saveRequest(request);
+    }
+
 
     @Transactional
     public boolean handleSandboxCallback(SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
