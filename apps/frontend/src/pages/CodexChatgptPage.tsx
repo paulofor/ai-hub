@@ -534,7 +534,6 @@ export default function CodexChatgptPage() {
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
         <h3 className="text-lg font-semibold">Últimas execuções ChatGPT</h3>
-        {requestsLoading ? <p className="text-sm text-slate-500">Atualizando...</p> : null}
         <ul className="space-y-2">
           {requests.map((item) => (
             <li key={item.id} className="rounded-md border px-3 py-2 text-sm">
