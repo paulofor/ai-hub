@@ -16,13 +16,29 @@ class TokenLifecycleManagerTest {
     void buildsTokenRefreshPayloadWithoutOrganizationId() {
         TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
         ReflectionTestUtils.setField(manager, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        ReflectionTestUtils.setField(manager, "oauthClientId", "");
+        ReflectionTestUtils.setField(manager, "oauthDeviceClientId", "app_EMoamEEZ73f0CkXaXp7hrann");
 
         Map<String, String> payload = manager.buildTokenRefreshPayload("refresh-token");
 
         assertThat(payload).containsEntry("grant_type", "refresh_token");
         assertThat(payload).containsEntry("refresh_token", "refresh-token");
+        assertThat(payload).containsEntry("client_id", "app_EMoamEEZ73f0CkXaXp7hrann");
+        assertThat(payload).containsEntry("scope", "openid profile email");
         assertThat(payload).doesNotContainKey("organization_id");
         assertThat(payload).doesNotContainKey("id_token_add_organizations");
+    }
+
+
+    @Test
+    void tokenRefreshPayloadPrefersConfiguredOauthClientId() {
+        TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
+        ReflectionTestUtils.setField(manager, "oauthClientId", " app_browser_client ");
+        ReflectionTestUtils.setField(manager, "oauthDeviceClientId", "app_device_client");
+
+        Map<String, String> payload = manager.buildTokenRefreshPayload("refresh-token");
+
+        assertThat(payload).containsEntry("client_id", "app_browser_client");
     }
 
     @Test

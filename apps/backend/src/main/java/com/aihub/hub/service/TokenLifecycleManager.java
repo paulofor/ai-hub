@@ -252,11 +252,22 @@ public class TokenLifecycleManager {
         Map<String, String> payload = new HashMap<>();
         payload.put("grant_type", "refresh_token");
         payload.put("refresh_token", refreshToken);
-        payload.put("client_id", oauthClientId);
+        payload.put("client_id", resolveClientIdForTokenRefresh());
+        payload.put("scope", "openid profile email");
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
         return payload;
+    }
+
+    private String resolveClientIdForTokenRefresh() {
+        if (oauthClientId != null && !oauthClientId.isBlank()) {
+            return oauthClientId.trim();
+        }
+        if (oauthDeviceClientId != null && !oauthDeviceClientId.isBlank()) {
+            return oauthDeviceClientId.trim();
+        }
+        return null;
     }
 
     private Map<String, Object> requestCodexApiToken(String idToken, String clientId) {
