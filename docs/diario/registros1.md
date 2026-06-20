@@ -579,3 +579,10 @@
 - Ajuste aplicado no código: `AccountController.buildDeviceUserCodePayload` foi alinhado ao fluxo público do `codex-rs`, enviando somente `client_id` no start do device login.
 - Ajuste aplicado nos testes: `TokenLifecycleManagerTest` agora protege que o refresh não carregue `organization_id` nem `id_token_add_organizations`; `AccountControllerTest` protege que o device usercode não carregue parâmetros extras de organização.
 - Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,AccountControllerTest` em `apps/backend`, com `BUILD SUCCESS`, `Tests run: 9`, `Failures: 0`, `Errors: 0`.
+
+## 2026-06-20 — Diagnóstico e correção do erro CHATGPT_CODEX 711
+- Pergunta de causa raiz: por que esse erro aconteceu? A requisição 711 foi enviada ao sandbox sem token OAuth derivado porque o backend falhou ao renovar a sessão com `401 Invalid client specified` e, em seguida, o token exchange continuou usando um `id_token` antigo sem `organization_id`, retornando `Invalid ID token: missing organization_id`.
+- Pesquisa na documentação oficial da OpenAI: a documentação atual recomenda API key para automações programáticas de Codex e, quando a automação precisa identidade ChatGPT/Codex, usar tokens de acesso ou o refresh embutido do próprio Codex, sem chamar manualmente o endpoint OAuth.
+- Comparação com `exemplos/codex-rs`: o refresh oficial usa o client público `app_EMoamEEZ73f0CkXaXp7hrann` e inclui o escopo `openid profile email`, sem `organization_id` ou `id_token_add_organizations` no corpo.
+- Conclusão: após remover os parâmetros extras, restou uma divergência de client no refresh; em instalações sem `HUB_ACCOUNT_OAUTH_CLIENT_ID`, o AI Hub montava `client_id` vazio, causando `invalid_client`, enquanto o fluxo device/Codex deve usar o `device-client-id` público como fallback.
+- Correção aplicada: `TokenLifecycleManager.buildTokenRefreshPayload` agora resolve o `client_id` do refresh usando `HUB_ACCOUNT_OAUTH_CLIENT_ID` quando configurado e, caso contrário, cai para `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` (`app_EMoamEEZ73f0CkXaXp7hrann`), além de enviar `scope=openid profile email` para alinhar ao `codex-rs`.
