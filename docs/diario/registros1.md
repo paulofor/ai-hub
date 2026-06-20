@@ -534,3 +534,9 @@
 - Causa raiz confirmada nos logs via MCP: o token exchange OAuth para gerar `openai-api-key` falhava com `Invalid ID token: missing organization_id`.
 - Ajuste aplicado: `organization_id` passa a ser incluído no payload de token exchange do Codex quando configurado, evitando que a execução ChatGPT Codex falhe antes de chegar ao sandbox.
 - Teste executado: `mvn test -Dtest=TokenLifecycleManagerTest` em `apps/backend` com sucesso.
+
+## 2026-06-19 21:22:22 UTC-3
+- Revisão solicitada: verificado no próprio `docs/diario/registros1.md` que já havia sido tentado enviar `organization_id` no corpo do token exchange Codex.
+- Evidência encontrada nos registros anteriores: a requisição 706 recebeu `400 Bad Request` com `Unknown parameter: 'organization_id'`, e a conclusão registrada foi que o `organization_id` deve ser usado no login/refresh/header, mas não no payload `requested_token=openai-api-key`.
+- Causa raiz da regressão do ajuste anterior: confundi o erro atual `Invalid ID token: missing organization_id` com necessidade de reenviar `organization_id` no corpo do token exchange, apesar do histórico mostrar que esse endpoint rejeita o parâmetro.
+- Correção aplicada: removido novamente `organization_id` do payload de token exchange Codex e restaurado o teste unitário que protege esse contrato.

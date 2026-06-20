@@ -189,7 +189,6 @@ public class TokenLifecycleManager {
         payload.put("requested_token", "openai-api-key");
         payload.put("subject_token", idToken);
         payload.put("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
-        addOrganizationId(payload);
         return payload;
     }
 
