@@ -547,3 +547,10 @@
 - Comparação com `exemplos/codex-rs`: o fluxo oficial solicita `id_token_add_organizations=true` no login browser, troca o authorization code por tokens e só então faz token exchange para `openai-api-key` sem `organization_id` no corpo.
 - Pergunta de causa raiz: por que o erro `Invalid ID token: missing organization_id` continuou depois das correções? Resposta: sessões já existentes podem manter um `id_token` antigo sem claim de organização enquanto ainda não expiraram; o backend só renovava por expiração, então repetia o token exchange com um `id_token` stale.
 - Correção aplicada: antes do token exchange Codex, quando há `organization_id` configurado, o backend agora verifica se o `id_token` possui a claim de organização esperada; se não possuir e houver `refresh_token`, força refresh OAuth usando o payload já correto (`id_token_add_organizations=true` + `organization_id` no refresh) e só depois tenta gerar o token `openai-api-key`.
+
+## 2026-06-20 - Correção do token de execução do Codex ChatGPT
+- Investigado erro exibido em `/codex/requests/709`: "Conta ChatGPT conectada não gerou token de execução para o Codex".
+- Pergunta de causa raiz: por que esse erro aconteceu? Os logs do backend mostraram que a renovação OAuth enviava o parâmetro `id_token_add_organizations` para o endpoint de token refresh, mas o provedor retornou `Unknown parameter: 'id_token_add_organizations'`; com isso o id token não era atualizado com a organização e o token exchange do Codex falhava por `missing organization_id`.
+- Ajustado o refresh OAuth para não enviar o parâmetro incompatível e manter apenas `organization_id` quando configurado.
+- Corrigida a detecção local da claim de organização no id token para também aceitar a estrutura aninhada em `https://api.openai.com/auth`.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
