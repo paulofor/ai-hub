@@ -554,3 +554,9 @@
 - Ajustado o refresh OAuth para não enviar o parâmetro incompatível e manter apenas `organization_id` quando configurado.
 - Corrigida a detecção local da claim de organização no id token para também aceitar a estrutura aninhada em `https://api.openai.com/auth`.
 - Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-20 - Correção de compilação no TokenLifecycleManager
+- Erro investigado: o build Java falhava com `method extractJsonString(java.lang.String,java.lang.String) is already defined in class com.aihub.hub.service.TokenLifecycleManager`.
+- Pergunta de causa raiz: por que esse erro aconteceu? A classe `TokenLifecycleManager` continha duas declarações idênticas de `extractJsonString(String, String)`, introduzidas durante os ajustes de leitura das claims do `id_token`.
+- Correção aplicada: removida a declaração duplicada e mantida uma única implementação compartilhada pelo parser simples de JWT/JSON.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
