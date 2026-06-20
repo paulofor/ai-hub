@@ -253,7 +253,6 @@ public class TokenLifecycleManager {
         payload.put("grant_type", "refresh_token");
         payload.put("refresh_token", refreshToken);
         payload.put("client_id", oauthClientId);
-        addOrganizationId(payload);
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }

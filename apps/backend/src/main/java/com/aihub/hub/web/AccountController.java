@@ -314,8 +314,6 @@ public class AccountController {
     Map<String, Object> buildDeviceUserCodePayload(String clientId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("client_id", clientId);
-        payload.put("id_token_add_organizations", true);
-        addOrganizationId(payload);
         return payload;
     }
 

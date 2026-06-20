@@ -34,7 +34,7 @@ class AccountControllerTest {
     }
 
     @Test
-    void deviceUserCodePayloadRequestsOrganizationClaims() {
+    void deviceUserCodePayloadMatchesCodexRsPublicClientRequest() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
         ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
@@ -42,8 +42,8 @@ class AccountControllerTest {
         Map<String, Object> payload = controller.buildDeviceUserCodePayload("app_device_client");
 
         assertThat(payload).containsEntry("client_id", "app_device_client");
-        assertThat(payload).containsEntry("id_token_add_organizations", true);
-        assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(payload).doesNotContainKey("id_token_add_organizations");
+        assertThat(payload).doesNotContainKey("organization_id");
     }
 
     @Test
