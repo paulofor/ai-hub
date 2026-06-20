@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TokenLifecycleManagerTest {
 
     @Test
-    void buildsTokenRefreshPayloadWithOrganizationClaims() {
+    void buildsTokenRefreshPayloadWithOrganizationIdOnly() {
         TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
         ReflectionTestUtils.setField(manager, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
 
@@ -21,8 +21,8 @@ class TokenLifecycleManagerTest {
 
         assertThat(payload).containsEntry("grant_type", "refresh_token");
         assertThat(payload).containsEntry("refresh_token", "refresh-token");
-        assertThat(payload).containsEntry("id_token_add_organizations", "true");
         assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(payload).doesNotContainKey("id_token_add_organizations");
     }
 
     @Test
