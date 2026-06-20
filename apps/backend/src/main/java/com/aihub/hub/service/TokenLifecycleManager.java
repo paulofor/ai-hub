@@ -107,6 +107,7 @@ public class TokenLifecycleManager {
         return currentSession()
             .flatMap(session -> {
                 refreshIfNeeded(session);
+                refreshIfOrganizationClaimsMissing(session);
                 String idToken = asString(session.getAttribute(ID_TOKEN_KEY));
                 String expiresAtRaw = asString(session.getAttribute(EXPIRES_AT_KEY));
                 Instant expiresAt = parseInstant(expiresAtRaw);
@@ -134,6 +135,84 @@ public class TokenLifecycleManager {
                     return Optional.empty();
                 }
             });
+    }
+
+
+    private void refreshIfOrganizationClaimsMissing(HttpSession session) {
+        String configuredOrganizationId = oauthOrganizationId == null ? null : oauthOrganizationId.trim();
+        if (configuredOrganizationId == null || configuredOrganizationId.isBlank()) {
+            return;
+        }
+
+        String idToken = asString(session.getAttribute(ID_TOKEN_KEY));
+        if (idTokenHasOrganizationClaim(idToken, configuredOrganizationId)) {
+            return;
+        }
+
+        String refreshToken = asString(session.getAttribute(REFRESH_TOKEN_KEY));
+        if (refreshToken == null || refreshToken.isBlank()) {
+            log.warn("ID token OAuth sem organization_id e sessão sem refresh_token para renovar claims da organização");
+            return;
+        }
+
+        try {
+            Map<String, Object> response = refreshWithRetry(refreshToken.trim());
+            meterRegistry.counter("oauth_token_refresh_for_organization_claim_total").increment();
+            persistRefreshedTokenResponse(session, response);
+            String refreshedIdToken = asString(session.getAttribute(ID_TOKEN_KEY));
+            if (!idTokenHasOrganizationClaim(refreshedIdToken, configuredOrganizationId)) {
+                log.warn("Refresh OAuth concluído, mas id_token ainda não contém organization_id esperado para Codex");
+            }
+        } catch (RuntimeException ex) {
+            meterRegistry.counter("oauth_token_refresh_for_organization_claim_failure_total").increment();
+            log.warn("Falha ao renovar OAuth para obter claims de organização no id_token: {}", ex.getMessage());
+        }
+    }
+
+    private void persistRefreshedTokenResponse(HttpSession session, Map<String, Object> response) {
+        String accessToken = asString(response.get("access_token"));
+        if (accessToken == null || accessToken.isBlank()) {
+            markExpired(session);
+            return;
+        }
+
+        Long expiresIn = asLong(response.get("expires_in"));
+        session.setAttribute(ACCESS_TOKEN_KEY, accessToken.trim());
+        session.setAttribute(EXPIRES_AT_KEY, Instant.now().plus(resolveTtlSeconds(expiresIn), ChronoUnit.SECONDS).toString());
+
+        String rotatedRefreshToken = asString(response.get("refresh_token"));
+        if (rotatedRefreshToken != null && !rotatedRefreshToken.isBlank()) {
+            session.setAttribute(REFRESH_TOKEN_KEY, rotatedRefreshToken.trim());
+        }
+
+        String idToken = asString(response.get("id_token"));
+        if (idToken != null && !idToken.isBlank()) {
+            session.setAttribute(ID_TOKEN_KEY, idToken.trim());
+        }
+    }
+
+    boolean idTokenHasOrganizationClaim(String idToken, String expectedOrganizationId) {
+        if (idToken == null || idToken.isBlank() || expectedOrganizationId == null || expectedOrganizationId.isBlank()) {
+            return false;
+        }
+        String payload = decodeJwtPayload(idToken);
+        if (payload == null || payload.isBlank()) {
+            return false;
+        }
+        String organizationId = extractJsonString(payload, "organization_id");
+        return expectedOrganizationId.trim().equals(organizationId);
+    }
+
+    private String decodeJwtPayload(String jwt) {
+        try {
+            String[] parts = jwt.split("\\.");
+            if (parts.length < 2) {
+                return null;
+            }
+            return new String(java.util.Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private Optional<HttpSession> currentSession() {
@@ -234,27 +313,34 @@ public class TokenLifecycleManager {
             if (parts.length < 2) {
                 return null;
             }
-            String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-            int audIndex = payload.indexOf("\"aud\"");
-            if (audIndex < 0) {
-                return null;
-            }
-            int colon = payload.indexOf(':', audIndex);
-            if (colon < 0) {
-                return null;
-            }
-            int quoteStart = payload.indexOf('\"', colon + 1);
-            if (quoteStart < 0) {
-                return null;
-            }
-            int quoteEnd = payload.indexOf('\"', quoteStart + 1);
-            if (quoteEnd <= quoteStart) {
-                return null;
-            }
-            return payload.substring(quoteStart + 1, quoteEnd);
+            String payload = decodeJwtPayload(idToken);
+            return extractJsonString(payload, "aud");
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String extractJsonString(String payload, String key) {
+        if (payload == null || key == null || key.isBlank()) {
+            return null;
+        }
+        int keyIndex = payload.indexOf("\"" + key + "\"");
+        if (keyIndex < 0) {
+            return null;
+        }
+        int colon = payload.indexOf(':', keyIndex);
+        if (colon < 0) {
+            return null;
+        }
+        int quoteStart = payload.indexOf('\"', colon + 1);
+        if (quoteStart < 0) {
+            return null;
+        }
+        int quoteEnd = payload.indexOf('\"', quoteStart + 1);
+        if (quoteEnd <= quoteStart) {
+            return null;
+        }
+        return payload.substring(quoteStart + 1, quoteEnd);
     }
 
     private long resolveTtlSeconds(Long expiresIn) {
