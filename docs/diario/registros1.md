@@ -521,3 +521,16 @@
 - Usuário mostrou a tela `Organization settings > General` com `Organization ID` igual a `org-DgyTLAxNYnw0cOQVlAXInkyR` e status `Verified`.
 - Consultada documentação oficial: quando o usuário pertence a múltiplas organizações, a organização usada na API deve ser selecionada via header da requisição; a tela `General` apenas exibe o identificador e o status de verificação.
 - Conclusão: não há ajuste necessário nessa tela de settings; o ID já confere com o valor configurado no AI Hub e a organização já está verificada. O ajuste necessário é operacional/código: enviar esse ID nas chamadas OpenAI e reconectar a conta ChatGPT para renovar o `id_token` com organização.
+
+## 2026-06-20 - Correção token exchange Codex ChatGPT
+- Problema investigado: solicitação Codex 708 falhava com a mensagem "Conta ChatGPT conectada não gerou token de execução para o Codex".
+- Pergunta de causa raiz: por que esse erro aconteceu?
+- Causa raiz encontrada nos logs do backend via MCP: o endpoint OAuth retornava `Invalid ID token: missing organization_id` durante o token exchange para `openai-api-key`.
+- Correção aplicada: o payload de token exchange do Codex agora inclui `organization_id` quando configurado, alinhando-o ao refresh OAuth e aos headers `OpenAI-Organization` já enviados.
+- Validação: teste unitário atualizado para garantir que o payload `urn:ietf:params:oauth:grant-type:token-exchange` carregue `organization_id`.
+
+## 2026-06-19 21:15:49 UTC-3
+- Correção de registro: a entrada anterior desta investigação usou título fora do formato obrigatório com hora UTC-3; esta entrada mantém a rastreabilidade no formato correto.
+- Causa raiz confirmada nos logs via MCP: o token exchange OAuth para gerar `openai-api-key` falhava com `Invalid ID token: missing organization_id`.
+- Ajuste aplicado: `organization_id` passa a ser incluído no payload de token exchange do Codex quando configurado, evitando que a execução ChatGPT Codex falhe antes de chegar ao sandbox.
+- Teste executado: `mvn test -Dtest=TokenLifecycleManagerTest` em `apps/backend` com sucesso.
