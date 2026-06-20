@@ -200,6 +200,10 @@ public class TokenLifecycleManager {
             return false;
         }
         String organizationId = extractJsonString(payload, "organization_id");
+        if (organizationId == null) {
+            String openAiAuthClaim = extractJsonObject(payload, "https://api.openai.com/auth");
+            organizationId = extractJsonString(openAiAuthClaim, "organization_id");
+        }
         return expectedOrganizationId.trim().equals(organizationId);
     }
 
@@ -249,7 +253,6 @@ public class TokenLifecycleManager {
         payload.put("grant_type", "refresh_token");
         payload.put("refresh_token", refreshToken);
         payload.put("client_id", oauthClientId);
-        payload.put("id_token_add_organizations", "true");
         addOrganizationId(payload);
         if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
@@ -318,6 +321,54 @@ public class TokenLifecycleManager {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String extractJsonObject(String payload, String key) {
+        if (payload == null || key == null || key.isBlank()) {
+            return null;
+        }
+        int keyIndex = payload.indexOf("\"" + key + "\"");
+        if (keyIndex < 0) {
+            return null;
+        }
+        int colonIndex = payload.indexOf(':', keyIndex);
+        if (colonIndex < 0) {
+            return null;
+        }
+        int objectStart = payload.indexOf('{', colonIndex + 1);
+        if (objectStart < 0) {
+            return null;
+        }
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = objectStart; i < payload.length(); i++) {
+            char current = payload.charAt(i);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (current == '\\') {
+                escaped = inString;
+                continue;
+            }
+            if (current == '\"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                continue;
+            }
+            if (current == '{') {
+                depth++;
+            } else if (current == '}') {
+                depth--;
+                if (depth == 0) {
+                    return payload.substring(objectStart, i + 1);
+                }
+            }
+        }
+        return null;
     }
 
     private String extractJsonString(String payload, String key) {
