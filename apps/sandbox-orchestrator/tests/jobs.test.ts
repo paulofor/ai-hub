@@ -7,7 +7,7 @@ import path from 'node:path';
 import request from 'supertest';
 
 import { createApp } from '../src/server.js';
-import { SandboxJobProcessor } from '../src/jobProcessor.js';
+import { openAIClientConfigForTests, SandboxJobProcessor } from '../src/jobProcessor.js';
 import { JobProcessor, SandboxJob } from '../src/types.js';
 
 class StubProcessor implements JobProcessor {
@@ -2792,5 +2792,41 @@ test('persiste objetivo e conclusão em formato estruturado nas interações', a
     assert.equal(inbound.conclusion, 'política validada com sucesso.');
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+
+test('resolve configuração de organização OpenAI para enviar no client', () => {
+  const originalOrganization = process.env.OPENAI_ORGANIZATION;
+  const originalOrgId = process.env.OPENAI_ORG_ID;
+  const originalHubOrganizationId = process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID;
+  try {
+    process.env.OPENAI_ORGANIZATION = ' org-DgyTLAxNYnw0cOQVlAXInkyR ';
+    process.env.OPENAI_ORG_ID = 'org-ignored';
+    assert.equal(openAIClientConfigForTests.resolveOpenAIOrganization(), 'org-DgyTLAxNYnw0cOQVlAXInkyR');
+
+    delete process.env.OPENAI_ORGANIZATION;
+    process.env.OPENAI_ORG_ID = ' org-DgyTLAxNYnw0cOQVlAXInkyR ';
+    assert.equal(openAIClientConfigForTests.resolveOpenAIOrganization(), 'org-DgyTLAxNYnw0cOQVlAXInkyR');
+
+    delete process.env.OPENAI_ORG_ID;
+    process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID = ' org-DgyTLAxNYnw0cOQVlAXInkyR ';
+    assert.equal(openAIClientConfigForTests.resolveOpenAIOrganization(), 'org-DgyTLAxNYnw0cOQVlAXInkyR');
+  } finally {
+    if (originalOrganization === undefined) {
+      delete process.env.OPENAI_ORGANIZATION;
+    } else {
+      process.env.OPENAI_ORGANIZATION = originalOrganization;
+    }
+    if (originalOrgId === undefined) {
+      delete process.env.OPENAI_ORG_ID;
+    } else {
+      process.env.OPENAI_ORG_ID = originalOrgId;
+    }
+    if (originalHubOrganizationId === undefined) {
+      delete process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID;
+    } else {
+      process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID = originalHubOrganizationId;
+    }
   }
 });

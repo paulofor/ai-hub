@@ -503,3 +503,21 @@
 
 ## 2026-06-19 — Orientação de causa raiz no AGENTS
 - Adicionada ao `AGENTS.md` a instrução explícita para, antes de propor ou implementar ajuste para um erro, perguntar “por que esse erro aconteceu?” e usar essa resposta para guiar a investigação e a correção.
+
+## 2026-06-19 — Diagnóstico do novo erro na requisição 707 `CHATGPT_CODEX`
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?” A requisição 707 falhou localmente porque o backend não conseguiu obter o token derivado `openai-api-key` necessário para executar o profile `CHATGPT_CODEX` no sandbox.
+- Healthcheck do MCP confirmou o serviço operacional (`GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`).
+- Logs do backend da requisição 707 mostram que o token exchange OAuth retornou `401 Unauthorized` com `Invalid ID token: missing organization_id`, então o backend bloqueou corretamente a criação do job no sandbox e exibiu a mensagem “Conta ChatGPT conectada não gerou token de execução para o Codex”.
+- Conclusão: o erro novo não é de prompt nem do repositório `paulofor/marketing-hub`; ele ocorre antes do sandbox executar, na conversão do `id_token` da sessão ChatGPT em token de execução Codex. A sessão atual provavelmente foi criada/renovada com um `id_token` ainda sem `organization_id`.
+- Ação recomendada: reconectar a conta ChatGPT depois das correções de OAuth já aplicadas, para forçar a emissão de um novo `id_token` contendo organização; se persistir, validar no login/refresh se o parâmetro `id_token_add_organizations=true` está chegando ao provedor e se a organização configurada é a mesma da conta conectada.
+
+## 2026-06-19 — Envio do `organization_id` para a OpenAI
+- Pesquisada documentação oficial da OpenAI sobre uso de organização em requisições de API: usuários em múltiplas organizações devem informar a organização por header para que a requisição seja associada à organização correta.
+- Causa raiz revisitada: o `organization_id` informado (`org-DgyTLAxNYnw0cOQVlAXInkyR`) não deve voltar ao corpo do token exchange Codex, pois esse endpoint já rejeitou o parâmetro como desconhecido; a forma compatível para chamadas OpenAI é enviar a organização como header/ configuração de client.
+- Ajustado o backend para enviar `OpenAI-Organization: org-DgyTLAxNYnw0cOQVlAXInkyR` nas chamadas ao endpoint OAuth/token quando houver organização configurada.
+- Ajustado o sandbox-orchestrator para configurar a organização no client oficial OpenAI a partir de `OPENAI_ORGANIZATION`, `OPENAI_ORG_ID` ou `HUB_ACCOUNT_OAUTH_ORGANIZATION_ID`, garantindo que chamadas Responses API — inclusive com token derivado do `CHATGPT_CODEX` — sejam enviadas para a OpenAI com a organização correta.
+
+## 2026-06-19 — Orientação sobre settings da organização OpenAI
+- Usuário mostrou a tela `Organization settings > General` com `Organization ID` igual a `org-DgyTLAxNYnw0cOQVlAXInkyR` e status `Verified`.
+- Consultada documentação oficial: quando o usuário pertence a múltiplas organizações, a organização usada na API deve ser selecionada via header da requisição; a tela `General` apenas exibe o identificador e o status de verificação.
+- Conclusão: não há ajuste necessário nessa tela de settings; o ID já confere com o valor configurado no AI Hub e a organização já está verificada. O ajuste necessário é operacional/código: enviar esse ID nas chamadas OpenAI e reconectar a conta ChatGPT para renovar o `id_token` com organização.
