@@ -64,7 +64,9 @@ class AccountControllerTest {
         );
 
         assertThat(authUrl).contains("id_token_add_organizations=true");
-        assertThat(authUrl).contains("organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(authUrl).contains("codex_cli_simplified_flow=true");
+        assertThat(authUrl).contains("allowed_workspace_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(authUrl).doesNotContain("organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
     }
 
     @Test

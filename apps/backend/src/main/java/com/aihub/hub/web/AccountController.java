@@ -464,7 +464,8 @@ public class AccountController {
             + "&code_challenge=" + urlEncode(codeChallenge)
             + "&code_challenge_method=S256"
             + "&id_token_add_organizations=true"
-            + buildOrganizationIdQueryParam();
+            + "&codex_cli_simplified_flow=true"
+            + buildWorkspaceRestrictionQueryParam();
     }
 
     private void addOrganizationId(Map<String, Object> payload) {
@@ -473,11 +474,11 @@ public class AccountController {
         }
     }
 
-    private String buildOrganizationIdQueryParam() {
+    private String buildWorkspaceRestrictionQueryParam() {
         if (oauthOrganizationId == null || oauthOrganizationId.isBlank()) {
             return "";
         }
-        return "&organization_id=" + urlEncode(oauthOrganizationId.trim());
+        return "&allowed_workspace_id=" + urlEncode(oauthOrganizationId.trim());
     }
 
     private String resolveCallbackBaseUrl(HttpServletRequest request) {

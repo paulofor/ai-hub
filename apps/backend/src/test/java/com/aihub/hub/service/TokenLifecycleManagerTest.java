@@ -63,7 +63,7 @@ class TokenLifecycleManagerTest {
         assertThat(payload).containsEntry("requested_token", "openai-api-key");
         assertThat(payload).containsEntry("subject_token", "id-token");
         assertThat(payload).containsEntry("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
-        assertThat(payload).doesNotContainKey("organization_id");
+        assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
     }
 
     @Test
