@@ -281,6 +281,7 @@ public class TokenLifecycleManager {
         payload.put("requested_token", "openai-api-key");
         payload.put("subject_token", idToken);
         payload.put("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
+        addOrganizationId(payload);
         return payload;
     }
 
@@ -291,13 +292,33 @@ public class TokenLifecycleManager {
     }
 
     private Map<String, Object> postTokenForm(Map<String, String> payload) {
-        return restClient.post()
-            .uri(oauthTokenUrl)
-            .headers(headers -> buildOpenAIOrganizationHeaders().forEach(headers::set))
-            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .body(toFormUrlEncoded(payload))
-            .retrieve()
-            .body(Map.class);
+        String operation = resolveTokenOperation(payload);
+        OpenAiExchangeLogger.logRequest(log, operation, "POST", oauthTokenUrl, payload);
+        try {
+            Map<String, Object> response = restClient.post()
+                .uri(oauthTokenUrl)
+                .headers(headers -> buildOpenAIOrganizationHeaders().forEach(headers::set))
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(toFormUrlEncoded(payload))
+                .retrieve()
+                .body(Map.class);
+            OpenAiExchangeLogger.logResponse(log, operation, response);
+            return response;
+        } catch (RestClientException ex) {
+            OpenAiExchangeLogger.logError(log, operation, ex);
+            throw ex;
+        }
+    }
+
+    private String resolveTokenOperation(Map<String, String> payload) {
+        String grantType = payload == null ? null : payload.get("grant_type");
+        if ("refresh_token".equals(grantType)) {
+            return "oauth_token_refresh";
+        }
+        if ("urn:ietf:params:oauth:grant-type:token-exchange".equals(grantType)) {
+            return "codex_api_token_exchange";
+        }
+        return "oauth_token";
     }
 
     Map<String, String> buildOpenAIOrganizationHeaders() {

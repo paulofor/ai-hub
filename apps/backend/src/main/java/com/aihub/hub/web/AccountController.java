@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.aihub.hub.service.OpenAiExchangeLogger;
 import com.aihub.hub.service.TokenLifecycleManager;
 
 import java.io.IOException;
@@ -137,6 +138,7 @@ public class AccountController {
         session.setAttribute(LOGIN_PKCE_VERIFIER_KEY, codeVerifier);
         String callbackBase = resolveCallbackBaseUrl(request);
         String authUrl = buildExternalAuthUrl(callbackBase, state, codeChallenge);
+        OpenAiExchangeLogger.logRequest(log, "oauth_authorize_redirect", "GET", authUrl, Map.of());
         meterRegistry.counter("oauth_login_start_total").increment();
         log.info("OAuth login start gerado (callback={}, hasHint={}, correlationId={})", callbackBase, accountHint != null, correlationId);
         MDC.remove("oauthCorrelationId");
@@ -303,12 +305,21 @@ public class AccountController {
 
     private Map<String, Object> requestDeviceUserCode(String clientId) {
         Map<String, Object> payload = buildDeviceUserCodePayload(clientId);
-        return restClient.post()
-            .uri(oauthIssuerBase() + "/api/accounts/deviceauth/usercode")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(payload)
-            .retrieve()
-            .body(Map.class);
+        String url = oauthIssuerBase() + "/api/accounts/deviceauth/usercode";
+        OpenAiExchangeLogger.logRequest(log, "device_user_code", "POST", url, payload);
+        try {
+            Map<String, Object> response = restClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(Map.class);
+            OpenAiExchangeLogger.logResponse(log, "device_user_code", response);
+            return response;
+        } catch (org.springframework.web.client.RestClientException ex) {
+            OpenAiExchangeLogger.logError(log, "device_user_code", ex);
+            throw ex;
+        }
     }
 
     Map<String, Object> buildDeviceUserCodePayload(String clientId) {
@@ -322,14 +333,19 @@ public class AccountController {
             "device_auth_id", deviceAuthId,
             "user_code", userCode
         );
+        String url = oauthIssuerBase() + "/api/accounts/deviceauth/token";
+        OpenAiExchangeLogger.logRequest(log, "device_authorization_poll", "POST", url, payload);
         try {
-            return restClient.post()
-                .uri(oauthIssuerBase() + "/api/accounts/deviceauth/token")
+            Map<String, Object> response = restClient.post()
+                .uri(url)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
                 .body(Map.class);
+            OpenAiExchangeLogger.logResponse(log, "device_authorization_poll", response);
+            return response;
         } catch (HttpStatusCodeException ex) {
+            OpenAiExchangeLogger.logError(log, "device_authorization_poll", ex);
             if (ex.getStatusCode().value() == 403 || ex.getStatusCode().value() == 404) {
                 return null;
             }
@@ -371,12 +387,20 @@ public class AccountController {
 
     private Map<String, Object> exchangeAuthorizationCode(String code, String codeVerifier, String redirectUri, String clientId, boolean includeClientSecret) {
         Map<String, String> payload = buildTokenExchangePayload(code, codeVerifier, redirectUri, clientId, includeClientSecret);
-        return restClient.post()
-            .uri(oauthTokenUrl)
-            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .body(toFormUrlEncoded(payload))
-            .retrieve()
-            .body(Map.class);
+        OpenAiExchangeLogger.logRequest(log, "authorization_code_exchange", "POST", oauthTokenUrl, payload);
+        try {
+            Map<String, Object> response = restClient.post()
+                .uri(oauthTokenUrl)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(toFormUrlEncoded(payload))
+                .retrieve()
+                .body(Map.class);
+            OpenAiExchangeLogger.logResponse(log, "authorization_code_exchange", response);
+            return response;
+        } catch (org.springframework.web.client.RestClientException ex) {
+            OpenAiExchangeLogger.logError(log, "authorization_code_exchange", ex);
+            throw ex;
+        }
     }
 
 
@@ -464,7 +488,8 @@ public class AccountController {
             + "&code_challenge=" + urlEncode(codeChallenge)
             + "&code_challenge_method=S256"
             + "&id_token_add_organizations=true"
-            + buildOrganizationIdQueryParam();
+            + "&codex_cli_simplified_flow=true"
+            + buildWorkspaceRestrictionQueryParam();
     }
 
     private void addOrganizationId(Map<String, Object> payload) {
@@ -473,11 +498,11 @@ public class AccountController {
         }
     }
 
-    private String buildOrganizationIdQueryParam() {
+    private String buildWorkspaceRestrictionQueryParam() {
         if (oauthOrganizationId == null || oauthOrganizationId.isBlank()) {
             return "";
         }
-        return "&organization_id=" + urlEncode(oauthOrganizationId.trim());
+        return "&allowed_workspace_id=" + urlEncode(oauthOrganizationId.trim());
     }
 
     private String resolveCallbackBaseUrl(HttpServletRequest request) {

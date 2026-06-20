@@ -35,6 +35,37 @@ function buildOpenAIClient(apiKey: string): OpenAI {
 
 export const openAIClientConfigForTests = { resolveOpenAIOrganization };
 
+function sanitizeOpenAIExchange(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeOpenAIExchange(item));
+  }
+  if (value && typeof value === 'object') {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
+      sanitized[key] = isSensitiveOpenAIExchangeKey(key) ? '[redacted]' : sanitizeOpenAIExchange(entryValue);
+    }
+    return sanitized;
+  }
+  if (typeof value === 'string') {
+    return value.replace(/(Bearer)\s+[A-Za-z0-9._~+/-]+=*/gi, '$1 [redacted]');
+  }
+  return value;
+}
+
+function isSensitiveOpenAIExchangeKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return normalized.includes('token')
+    || normalized.includes('secret')
+    || normalized === 'authorization'
+    || normalized === 'api_key'
+    || normalized === 'apikey';
+}
+
+function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operation: string, payload: unknown): void {
+  const serialized = JSON.stringify(sanitizeOpenAIExchange(payload));
+  console.log(`OpenAI exchange ${direction} operation=${operation} payload=${serialized}`);
+}
+
 const exec = promisify(execCallback);
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
@@ -1028,13 +1059,25 @@ ${profileInstruction}`,
         this.formatMessagesForRecording(layeredMessages),
       );
       const promptCacheKey = this.buildPromptCacheKey(job, model);
-      const response = await openai.responses.create({
+      const openAIRequest = {
         model,
         input: layeredMessages,
         tools,
         ...(this.promptCacheRetention ? { prompt_cache_retention: this.promptCacheRetention } : {}),
         ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
-      } as any);
+      };
+      logOpenAIExchange('outbound', 'responses.create', openAIRequest);
+      let response: Awaited<ReturnType<OpenAI['responses']['create']>>;
+      try {
+        response = await openai.responses.create(openAIRequest as any);
+        logOpenAIExchange('inbound', 'responses.create', response);
+      } catch (error) {
+        logOpenAIExchange('error', 'responses.create', {
+          name: error instanceof Error ? error.name : typeof error,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
       this.log(
         job,
         `resposta do modelo recebida (responseId=${response.id ?? 'n/d'}, output_items=${(response.output ?? []).length})`,

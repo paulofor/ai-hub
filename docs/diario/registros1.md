@@ -586,3 +586,17 @@
 - Comparação com `exemplos/codex-rs`: o refresh oficial usa o client público `app_EMoamEEZ73f0CkXaXp7hrann` e inclui o escopo `openid profile email`, sem `organization_id` ou `id_token_add_organizations` no corpo.
 - Conclusão: após remover os parâmetros extras, restou uma divergência de client no refresh; em instalações sem `HUB_ACCOUNT_OAUTH_CLIENT_ID`, o AI Hub montava `client_id` vazio, causando `invalid_client`, enquanto o fluxo device/Codex deve usar o `device-client-id` público como fallback.
 - Correção aplicada: `TokenLifecycleManager.buildTokenRefreshPayload` agora resolve o `client_id` do refresh usando `HUB_ACCOUNT_OAUTH_CLIENT_ID` quando configurado e, caso contrário, cai para `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` (`app_EMoamEEZ73f0CkXaXp7hrann`), além de enviar `scope=openid profile email` para alinhar ao `codex-rs`.
+
+## 2026-06-20 14:43:51 UTC-3
+- Investigação de causa raiz do request Codex ChatGPT 712: logs do backend em produção mostraram falha no refresh OAuth por `invalid_client` e, em seguida, falha no token exchange Codex por `Invalid ID token: missing organization_id`, resultando na mensagem de UI “Conta ChatGPT conectada não gerou token de execução para o Codex”.
+- Comparação com a documentação oficial da OpenAI e com o exemplo `exemplos/codex-rs/login/src/server.rs`: Codex usa login ChatGPT com retorno de access token, suporta `CODEX_ACCESS_TOKEN`/tokens de automação para fluxos confiáveis, e o fluxo browser do codex-rs solicita claims de organizações com `id_token_add_organizations=true`, `codex_cli_simplified_flow=true` e restrição de workspace via `allowed_workspace_id`.
+- Correção aplicada no backend: a URL OAuth browser agora segue o padrão do codex-rs para workspace (`allowed_workspace_id` em vez de `organization_id`) e inclui `codex_cli_simplified_flow=true`; o token exchange também passa a enviar `organization_id` quando configurado, evitando perder o contexto da organização no pedido de token Codex.
+
+## 2026-06-20 14:51:15 UTC-3
+- Ajuste solicitado após revisão: adicionar logging de toda troca de informação do backend com a OpenAI no fluxo de conta ChatGPT/Codex.
+- Causa raiz operacional: quando a OpenAI retorna erros como `invalid_client` ou `missing organization_id`, os logs anteriores mostravam apenas partes do erro e não registravam de forma uniforme a requisição, resposta e operação envolvidas, dificultando correlação ponta a ponta.
+- Implementado `OpenAiExchangeLogger` para registrar chamadas de autorização, device auth, polling device, exchange de authorization code, refresh OAuth e token exchange Codex, sempre com sanitização de tokens, secrets, codes, verifiers, challenges, state e bearer tokens para evitar vazamento de credenciais nos logs.
+
+## 2026-06-20 14:53:11 UTC-3
+- Complemento do logging solicitado: além do backend OAuth, o sandbox-orchestrator agora registra as trocas diretas com a OpenAI Responses API (`responses.create`) em outbound, inbound e erro.
+- O logging do sandbox inclui o payload sanitizado da requisição e da resposta para permitir auditoria ponta a ponta do que foi enviado e recebido do modelo, sem registrar chaves/API keys, tokens, secrets ou Authorization headers.
