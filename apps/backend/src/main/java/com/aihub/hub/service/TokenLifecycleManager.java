@@ -201,10 +201,19 @@ public class TokenLifecycleManager {
     private Map<String, Object> postTokenForm(Map<String, String> payload) {
         return restClient.post()
             .uri(oauthTokenUrl)
+            .headers(headers -> buildOpenAIOrganizationHeaders().forEach(headers::set))
             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
             .body(toFormUrlEncoded(payload))
             .retrieve()
             .body(Map.class);
+    }
+
+    Map<String, String> buildOpenAIOrganizationHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
+            headers.put("OpenAI-Organization", oauthOrganizationId.trim());
+        }
+        return headers;
     }
 
 

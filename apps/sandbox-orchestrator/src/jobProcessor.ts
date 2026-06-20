@@ -20,6 +20,21 @@ import {
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
 import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog, SandboxDatabaseConfig } from './types.js';
 
+function resolveOpenAIOrganization(): string | undefined {
+  const organization = process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID ?? process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID;
+  return organization && organization.trim() ? organization.trim() : undefined;
+}
+
+function buildOpenAIClient(apiKey: string): OpenAI {
+  const organization = resolveOpenAIOrganization();
+  return new OpenAI({
+    apiKey,
+    ...(organization ? { organization } : {}),
+  });
+}
+
+export const openAIClientConfigForTests = { resolveOpenAIOrganization };
+
 const exec = promisify(execCallback);
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
@@ -257,7 +272,7 @@ export class SandboxJobProcessor implements JobProcessor {
     if (openaiClient) {
       this.openai = openaiClient;
     } else if (apiKey) {
-      this.openai = new OpenAI({ apiKey });
+      this.openai = buildOpenAIClient(apiKey);
     }
     this.fetchImpl = fetchImpl;
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
@@ -899,7 +914,7 @@ export class SandboxJobProcessor implements JobProcessor {
         throw new Error('Sessão ChatGPT conectada não forneceu access_token para execução CHATGPT_CODEX');
       }
       this.log(job, 'execução CHATGPT_CODEX usando access_token da sessão conectada, sem OPENAI_API_KEY do projeto');
-      return new OpenAI({ apiKey: accessToken });
+      return buildOpenAIClient(accessToken);
     }
 
     if (!this.openai) {

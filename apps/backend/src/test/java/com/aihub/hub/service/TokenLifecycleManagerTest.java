@@ -24,6 +24,16 @@ class TokenLifecycleManagerTest {
     }
 
     @Test
+    void buildsOpenAIOrganizationHeader() {
+        TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
+        ReflectionTestUtils.setField(manager, "oauthOrganizationId", " org-DgyTLAxNYnw0cOQVlAXInkyR ");
+
+        Map<String, String> headers = manager.buildOpenAIOrganizationHeaders();
+
+        assertThat(headers).containsEntry("OpenAI-Organization", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+    }
+
+    @Test
     void buildsCodexApiTokenExchangePayload() {
         TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
         ReflectionTestUtils.setField(manager, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
