@@ -394,6 +394,29 @@ public class TokenLifecycleManager {
         return payload.substring(quoteStart + 1, quoteEnd);
     }
 
+    private String extractJsonString(String payload, String key) {
+        if (payload == null || key == null || key.isBlank()) {
+            return null;
+        }
+        int keyIndex = payload.indexOf("\"" + key + "\"");
+        if (keyIndex < 0) {
+            return null;
+        }
+        int colon = payload.indexOf(':', keyIndex);
+        if (colon < 0) {
+            return null;
+        }
+        int quoteStart = payload.indexOf('\"', colon + 1);
+        if (quoteStart < 0) {
+            return null;
+        }
+        int quoteEnd = payload.indexOf('\"', quoteStart + 1);
+        if (quoteEnd <= quoteStart) {
+            return null;
+        }
+        return payload.substring(quoteStart + 1, quoteEnd);
+    }
+
     private long resolveTtlSeconds(Long expiresIn) {
         if (expiresIn == null || expiresIn <= 0) {
             return 300;
