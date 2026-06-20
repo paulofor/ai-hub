@@ -610,3 +610,10 @@
 ## 2026-06-20 20:05:00 UTC
 - Solicitação atendida: registrar em documento próprio o diálogo observado nos logs entre o AI Hub e a OpenAI para a CodexRequest 713.
 - Criado `docs/diario/dialogo-openai-codex-713.md` com a linha do tempo sanitizada do fluxo `device_user_code`, `device_authorization_poll`, `authorization_code_exchange`, `oauth_token_refresh` e `codex_api_token_exchange`, além da conclusão de que não houve chamada `responses.create` no sandbox para essa requisição.
+
+## 2026-06-20 — Correção OAuth Codex client_id
+
+- Investigação orientada por `docs/diario/correcao-oauth-codex-client-id.md`.
+- Pergunta de causa raiz: por que esse erro aconteceu? Porque a sessão OAuth não registrava o `client_id`/tipo do cliente que originou os tokens; no refresh, o backend podia trocar o client público do device login por um client global de browser e ainda incluir `client_secret`. Além disso, o token exchange Codex enviava `organization_id`, parâmetro rejeitado pelo `/oauth/token`.
+- Ajuste aplicado: sessão agora persiste `chatgpt_oauth_client_id` e `chatgpt_oauth_client_type`; refresh usa o client salvo na sessão; `client_secret` só é enviado para sessão confidencial; token exchange Codex não envia `organization_id`.
+- Testes executados: `mvn test -Dtest=AccountControllerTest,TokenLifecycleManagerTest` em `apps/backend` com sucesso.

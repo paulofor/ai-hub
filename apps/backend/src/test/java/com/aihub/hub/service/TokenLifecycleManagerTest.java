@@ -2,6 +2,7 @@ package com.aihub.hub.service;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -31,7 +32,41 @@ class TokenLifecycleManagerTest {
 
 
     @Test
-    void tokenRefreshPayloadPrefersConfiguredOauthClientId() {
+    void tokenRefreshPayloadUsesSessionDeviceClientOverConfiguredBrowserClient() {
+        TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
+        ReflectionTestUtils.setField(manager, "oauthClientId", "app_browser_client");
+        ReflectionTestUtils.setField(manager, "oauthClientSecret", "browser-secret");
+        ReflectionTestUtils.setField(manager, "oauthDeviceClientId", "app_EMoamEEZ73f0CkXaXp7hrann");
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(TokenLifecycleManager.OAUTH_CLIENT_ID_KEY, "app_EMoamEEZ73f0CkXaXp7hrann");
+        session.setAttribute(TokenLifecycleManager.OAUTH_CLIENT_TYPE_KEY, TokenLifecycleManager.OAUTH_CLIENT_TYPE_PUBLIC);
+
+        Map<String, String> payload = manager.buildTokenRefreshPayload(session, "refresh-token");
+
+        assertThat(payload).containsEntry("client_id", "app_EMoamEEZ73f0CkXaXp7hrann");
+        assertThat(payload).doesNotContainKey("client_secret");
+        assertThat(payload).doesNotContainKey("organization_id");
+        assertThat(payload).doesNotContainKey("id_token_add_organizations");
+    }
+
+    @Test
+    void tokenRefreshPayloadUsesSessionBrowserClientSecretOnlyForConfidentialSession() {
+        TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
+        ReflectionTestUtils.setField(manager, "oauthClientId", "app_browser_client");
+        ReflectionTestUtils.setField(manager, "oauthClientSecret", "browser-secret");
+        ReflectionTestUtils.setField(manager, "oauthDeviceClientId", "app_device_client");
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(TokenLifecycleManager.OAUTH_CLIENT_ID_KEY, "app_browser_client");
+        session.setAttribute(TokenLifecycleManager.OAUTH_CLIENT_TYPE_KEY, TokenLifecycleManager.OAUTH_CLIENT_TYPE_CONFIDENTIAL);
+
+        Map<String, String> payload = manager.buildTokenRefreshPayload(session, "refresh-token");
+
+        assertThat(payload).containsEntry("client_id", "app_browser_client");
+        assertThat(payload).containsEntry("client_secret", "browser-secret");
+    }
+
+    @Test
+    void tokenRefreshPayloadPrefersConfiguredOauthClientIdWithoutSession() {
         TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
         ReflectionTestUtils.setField(manager, "oauthClientId", " app_browser_client ");
         ReflectionTestUtils.setField(manager, "oauthDeviceClientId", "app_device_client");
@@ -63,7 +98,7 @@ class TokenLifecycleManagerTest {
         assertThat(payload).containsEntry("requested_token", "openai-api-key");
         assertThat(payload).containsEntry("subject_token", "id-token");
         assertThat(payload).containsEntry("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
-        assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(payload).doesNotContainKey("organization_id");
     }
 
     @Test

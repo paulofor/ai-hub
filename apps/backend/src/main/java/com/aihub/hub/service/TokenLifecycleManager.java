@@ -30,6 +30,10 @@ public class TokenLifecycleManager {
     public static final String ACCESS_TOKEN_KEY = "chatgpt_access_token";
     public static final String REFRESH_TOKEN_KEY = "chatgpt_refresh_token";
     public static final String ID_TOKEN_KEY = "chatgpt_id_token";
+    public static final String OAUTH_CLIENT_ID_KEY = "chatgpt_oauth_client_id";
+    public static final String OAUTH_CLIENT_TYPE_KEY = "chatgpt_oauth_client_type";
+    public static final String OAUTH_CLIENT_TYPE_PUBLIC = "public";
+    public static final String OAUTH_CLIENT_TYPE_CONFIDENTIAL = "confidential";
 
     private static final long REFRESH_SKEW_SECONDS = 60;
 
@@ -65,7 +69,7 @@ public class TokenLifecycleManager {
             return;
         }
 
-        Map<String, Object> response = refreshWithRetry(refreshToken.trim());
+        Map<String, Object> response = refreshWithRetry(session, refreshToken.trim());
         meterRegistry.counter("oauth_token_refresh_total").increment();
         String accessToken = asString(response.get("access_token"));
         if (accessToken == null || accessToken.isBlank()) {
@@ -114,7 +118,7 @@ public class TokenLifecycleManager {
                 if (idToken == null || idToken.isBlank() || expiresAt == null || !expiresAt.isAfter(Instant.now())) {
                     return Optional.empty();
                 }
-                String clientId = resolveClientIdForTokenExchange(idToken.trim());
+                String clientId = resolveClientIdForTokenExchange(session, idToken.trim());
                 if (clientId == null || clientId.isBlank()) {
                     log.warn("Não foi possível resolver client_id para token exchange Codex");
                     return Optional.empty();
@@ -156,7 +160,7 @@ public class TokenLifecycleManager {
         }
 
         try {
-            Map<String, Object> response = refreshWithRetry(refreshToken.trim());
+            Map<String, Object> response = refreshWithRetry(session, refreshToken.trim());
             meterRegistry.counter("oauth_token_refresh_for_organization_claim_total").increment();
             persistRefreshedTokenResponse(session, response);
             String refreshedIdToken = asString(session.getAttribute(ID_TOKEN_KEY));
@@ -228,7 +232,7 @@ public class TokenLifecycleManager {
         return Optional.ofNullable(request.getSession(false));
     }
 
-    private Map<String, Object> refreshWithRetry(String refreshToken) {
+    private Map<String, Object> refreshWithRetry(HttpSession session, String refreshToken) {
         RestClientException lastException = null;
         long[] waits = new long[]{0, 200, 500};
         for (long waitMs : waits) {
@@ -236,7 +240,7 @@ public class TokenLifecycleManager {
                 sleep(waitMs);
             }
             try {
-                return requestTokenRefresh(refreshToken);
+                return requestTokenRefresh(session, refreshToken);
             } catch (RestClientException ex) {
                 lastException = ex;
             }
@@ -244,23 +248,32 @@ public class TokenLifecycleManager {
         throw lastException != null ? lastException : new IllegalStateException("Falha no refresh OAuth");
     }
 
-    private Map<String, Object> requestTokenRefresh(String refreshToken) {
-        return postTokenForm(buildTokenRefreshPayload(refreshToken));
+    private Map<String, Object> requestTokenRefresh(HttpSession session, String refreshToken) {
+        return postTokenForm(buildTokenRefreshPayload(session, refreshToken));
     }
 
     Map<String, String> buildTokenRefreshPayload(String refreshToken) {
+        return buildTokenRefreshPayload(null, refreshToken);
+    }
+
+    Map<String, String> buildTokenRefreshPayload(HttpSession session, String refreshToken) {
         Map<String, String> payload = new HashMap<>();
         payload.put("grant_type", "refresh_token");
         payload.put("refresh_token", refreshToken);
-        payload.put("client_id", resolveClientIdForTokenRefresh());
+        String clientId = resolveClientIdForTokenRefresh(session);
+        payload.put("client_id", clientId);
         payload.put("scope", "openid profile email");
-        if (oauthClientSecret != null && !oauthClientSecret.isBlank()) {
+        if (isConfidentialSessionClient(session, clientId) && oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
         return payload;
     }
 
-    private String resolveClientIdForTokenRefresh() {
+    private String resolveClientIdForTokenRefresh(HttpSession session) {
+        String sessionClientId = asString(session == null ? null : session.getAttribute(OAUTH_CLIENT_ID_KEY));
+        if (sessionClientId != null && !sessionClientId.isBlank()) {
+            return sessionClientId.trim();
+        }
         if (oauthClientId != null && !oauthClientId.isBlank()) {
             return oauthClientId.trim();
         }
@@ -268,6 +281,20 @@ public class TokenLifecycleManager {
             return oauthDeviceClientId.trim();
         }
         return null;
+    }
+
+    private boolean isConfidentialSessionClient(HttpSession session, String clientId) {
+        String sessionClientType = asString(session == null ? null : session.getAttribute(OAUTH_CLIENT_TYPE_KEY));
+        if (OAUTH_CLIENT_TYPE_CONFIDENTIAL.equals(sessionClientType)) {
+            return true;
+        }
+        if (OAUTH_CLIENT_TYPE_PUBLIC.equals(sessionClientType)) {
+            return false;
+        }
+        String configuredBrowserClientId = oauthClientId == null ? null : oauthClientId.trim();
+        return configuredBrowserClientId != null
+            && !configuredBrowserClientId.isBlank()
+            && configuredBrowserClientId.equals(clientId);
     }
 
     private Map<String, Object> requestCodexApiToken(String idToken, String clientId) {
@@ -281,14 +308,7 @@ public class TokenLifecycleManager {
         payload.put("requested_token", "openai-api-key");
         payload.put("subject_token", idToken);
         payload.put("subject_token_type", "urn:ietf:params:oauth:token-type:id_token");
-        addOrganizationId(payload);
         return payload;
-    }
-
-    private void addOrganizationId(Map<String, String> payload) {
-        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
-            payload.put("organization_id", oauthOrganizationId.trim());
-        }
     }
 
     private Map<String, Object> postTokenForm(Map<String, String> payload) {
@@ -330,7 +350,11 @@ public class TokenLifecycleManager {
     }
 
 
-    private String resolveClientIdForTokenExchange(String idToken) {
+    private String resolveClientIdForTokenExchange(HttpSession session, String idToken) {
+        String sessionClientId = asString(session == null ? null : session.getAttribute(OAUTH_CLIENT_ID_KEY));
+        if (sessionClientId != null && !sessionClientId.isBlank()) {
+            return sessionClientId.trim();
+        }
         String audience = resolveAudienceFromIdToken(idToken);
         if (audience != null && !audience.isBlank()) {
             return audience.trim();
@@ -437,6 +461,8 @@ public class TokenLifecycleManager {
         session.removeAttribute(ACCESS_TOKEN_KEY);
         session.removeAttribute(REFRESH_TOKEN_KEY);
         session.removeAttribute(ID_TOKEN_KEY);
+        session.removeAttribute(OAUTH_CLIENT_ID_KEY);
+        session.removeAttribute(OAUTH_CLIENT_TYPE_KEY);
         session.setAttribute(EXPIRES_AT_KEY, Instant.now().minusSeconds(1).toString());
     }
 
