@@ -600,3 +600,13 @@
 ## 2026-06-20 14:53:11 UTC-3
 - Complemento do logging solicitado: além do backend OAuth, o sandbox-orchestrator agora registra as trocas diretas com a OpenAI Responses API (`responses.create`) em outbound, inbound e erro.
 - O logging do sandbox inclui o payload sanitizado da requisição e da resposta para permitir auditoria ponta a ponta do que foi enviado e recebido do modelo, sem registrar chaves/API keys, tokens, secrets ou Authorization headers.
+
+## 2026-06-20 19:52:00 UTC
+- Solicitação atendida: verificar nos logs como foi a “conversa” com a OpenAI para a requisição Codex 713 exibida na tela.
+- Causa raiz perguntada explicitamente antes de concluir: por que esse erro aconteceu? A conversa de device login com a OpenAI concluiu com sucesso, mas a execução Codex 713 falhou antes de chegar ao modelo porque o backend tentou renovar OAuth usando `client_id=paulofore` com `client_secret`, recebendo `401 invalid_client`; em seguida tentou o token exchange Codex incluindo `organization_id`, e a OpenAI rejeitou com `400 Unknown parameter: 'organization_id'`.
+- Evidências via MCP: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; `docker logs --tail 500 ai-hub-6-backend-1` mostrou o fluxo `device_user_code`, múltiplos polls `device_authorization_pending`, sucesso no `device_authorization_poll`, sucesso no `authorization_code_exchange`, criação da `CodexRequest 713`, falhas no `oauth_token_refresh` e falha no `codex_api_token_exchange`.
+- Evidência adicional: `docker logs --tail 300 ai-hub-6-sandbox-orchestrator-1` mostrou apenas inicialização do serviço, sem chamada `responses.create`, indicando que não houve conversa com a Responses API/modelo para esse request; a falha ocorreu na etapa de autenticação/token antes do sandbox ter token válido.
+
+## 2026-06-20 20:05:00 UTC
+- Solicitação atendida: registrar em documento próprio o diálogo observado nos logs entre o AI Hub e a OpenAI para a CodexRequest 713.
+- Criado `docs/diario/dialogo-openai-codex-713.md` com a linha do tempo sanitizada do fluxo `device_user_code`, `device_authorization_poll`, `authorization_code_exchange`, `oauth_token_refresh` e `codex_api_token_exchange`, além da conclusão de que não houve chamada `responses.create` no sandbox para essa requisição.
