@@ -46,6 +46,8 @@ public class AccountController {
     private static final String ACCESS_TOKEN_KEY = TokenLifecycleManager.ACCESS_TOKEN_KEY;
     private static final String REFRESH_TOKEN_KEY = TokenLifecycleManager.REFRESH_TOKEN_KEY;
     private static final String ID_TOKEN_KEY = TokenLifecycleManager.ID_TOKEN_KEY;
+    private static final String OAUTH_CLIENT_ID_KEY = TokenLifecycleManager.OAUTH_CLIENT_ID_KEY;
+    private static final String OAUTH_CLIENT_TYPE_KEY = TokenLifecycleManager.OAUTH_CLIENT_TYPE_KEY;
     private static final String LOGIN_STATE_KEY = "chatgpt_login_state";
     private static final String LOGIN_PKCE_VERIFIER_KEY = "chatgpt_login_code_verifier";
     private static final String DEVICE_AUTH_ID_KEY = "chatgpt_device_auth_id";
@@ -223,8 +225,9 @@ public class AccountController {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI autorizou o device login, mas não retornou authorization_code/code_verifier.");
         }
 
-        Map<String, Object> tokenResponse = exchangeAuthorizationCode(authorizationCode.trim(), codeVerifier.trim(), oauthIssuerBase() + "/deviceauth/callback", resolveDeviceClientId(), false);
-        persistTokenResponse(session, tokenResponse);
+        String deviceClientId = resolveDeviceClientId();
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(authorizationCode.trim(), codeVerifier.trim(), oauthIssuerBase() + "/deviceauth/callback", deviceClientId, false);
+        persistTokenResponse(session, tokenResponse, deviceClientId, TokenLifecycleManager.OAUTH_CLIENT_TYPE_PUBLIC);
         clearDeviceLogin(session);
         meterRegistry.counter("oauth_device_login_success_total").increment();
         String accountEmail = asString(session.getAttribute(ACCOUNT_EMAIL_KEY));
@@ -294,7 +297,7 @@ public class AccountController {
             response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
             return;
         }
-        persistTokenResponse(session, tokenResponse, accountEmail);
+        persistTokenResponse(session, tokenResponse, accountEmail, oauthClientId, TokenLifecycleManager.OAUTH_CLIENT_TYPE_CONFIDENTIAL);
         session.removeAttribute(LOGIN_STATE_KEY);
         meterRegistry.counter("oauth_login_success_total").increment();
         log.info("OAuth login concluído com sucesso para conta {} (correlationId={})", accountEmail, correlationId);
@@ -353,16 +356,16 @@ public class AccountController {
         }
     }
 
-    private void persistTokenResponse(HttpSession session, Map<String, Object> tokenResponse) {
+    private void persistTokenResponse(HttpSession session, Map<String, Object> tokenResponse, String clientId, String clientType) {
         String idToken = asString(tokenResponse.get("id_token"));
         String accountEmail = resolveEmailFromIdToken(idToken);
         if ((accountEmail == null || accountEmail.isBlank()) && session.getAttribute(ACCOUNT_EMAIL_KEY) instanceof String hint && !hint.isBlank()) {
             accountEmail = hint.trim();
         }
-        persistTokenResponse(session, tokenResponse, accountEmail);
+        persistTokenResponse(session, tokenResponse, accountEmail, clientId, clientType);
     }
 
-    private void persistTokenResponse(HttpSession session, Map<String, Object> tokenResponse, String accountEmail) {
+    private void persistTokenResponse(HttpSession session, Map<String, Object> tokenResponse, String accountEmail, String clientId, String clientType) {
         String accessToken = asString(tokenResponse.get("access_token"));
         String refreshToken = asString(tokenResponse.get("refresh_token"));
         String idToken = asString(tokenResponse.get("id_token"));
@@ -382,6 +385,12 @@ public class AccountController {
         }
         if (idToken != null && !idToken.isBlank()) {
             session.setAttribute(ID_TOKEN_KEY, idToken.trim());
+        }
+        if (clientId != null && !clientId.isBlank()) {
+            session.setAttribute(OAUTH_CLIENT_ID_KEY, clientId.trim());
+        }
+        if (clientType != null && !clientType.isBlank()) {
+            session.setAttribute(OAUTH_CLIENT_TYPE_KEY, clientType.trim());
         }
     }
 
@@ -649,6 +658,8 @@ public class AccountController {
         session.removeAttribute(ACCESS_TOKEN_KEY);
         session.removeAttribute(REFRESH_TOKEN_KEY);
         session.removeAttribute(ID_TOKEN_KEY);
+        session.removeAttribute(OAUTH_CLIENT_ID_KEY);
+        session.removeAttribute(OAUTH_CLIENT_TYPE_KEY);
         session.removeAttribute(LOGIN_STATE_KEY);
         session.removeAttribute(LOGIN_PKCE_VERIFIER_KEY);
         clearDeviceLogin(session);
