@@ -560,3 +560,10 @@
 - Pergunta de causa raiz: por que esse erro aconteceu? A classe `TokenLifecycleManager` continha duas declarações idênticas de `extractJsonString(String, String)`, introduzidas durante os ajustes de leitura das claims do `id_token`.
 - Correção aplicada: removida a declaração duplicada e mantida uma única implementação compartilhada pelo parser simples de JWT/JSON.
 - Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-20 — Correção de refresh/device OAuth alinhada ao codex-rs
+- Pergunta de causa raiz antes do ajuste: “por que esse erro aconteceu?”. Resposta: a execução `CHATGPT_CODEX` falhava antes de chegar ao sandbox porque o backend tentava derivar um token de execução a partir do `id_token`, mas a etapa de refresh enviava `organization_id` para `/oauth/token`, parâmetro rejeitado pela OpenAI como `Unknown parameter`, e em seguida o token exchange falhava com `Invalid ID token: missing organization_id`.
+- Comparação com o exemplo `exemplos/codex-rs`: o refresh/token exchange do Codex CLI não envia `organization_id` no form body de `/oauth/token`, e o device code request público envia apenas `client_id`; portanto o problema não era o `app_id` padrão `app_EMoamEEZ73f0CkXaXp7hrann` em si, mas parâmetros extras adicionados pelo AI Hub no fluxo OAuth.
+- Ajustado `TokenLifecycleManager` para não incluir `organization_id` no payload de refresh token, preservando apenas `grant_type`, `refresh_token`, `client_id` e `client_secret` quando aplicável.
+- Ajustado `AccountController` para alinhar o payload de `/api/accounts/deviceauth/usercode` ao `codex-rs`, enviando apenas `client_id` no device login público.
+- Atualizados testes unitários para cobrir que refresh e device usercode não carregam parâmetros de organização no corpo das requisições.
