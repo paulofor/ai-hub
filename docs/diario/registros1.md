@@ -624,3 +624,17 @@
 - Evidências via MCP: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; `docker logs --tail 800 ai-hub-6-backend-1` mostrou `device_user_code`, polls pendentes, sucesso em `device_authorization_poll`, sucesso em `authorization_code_exchange`, criação da `CodexRequest 714`, sucesso em `oauth_token_refresh` e falha em `codex_api_token_exchange` por `missing organization_id`.
 - Evidência adicional: `docker logs --tail 300 ai-hub-6-sandbox-orchestrator-1` mostrou apenas `Sandbox orchestrator listening on port 8083`, sem chamada `responses.create`; portanto não houve conversa com a Responses API/modelo para esse request.
 - Criado `docs/diario/dialogo-openai-codex-714.md` com a linha do tempo sanitizada do fluxo e a conclusão de que a causa raiz atual é a ausência da claim de organização no `id_token` usado como `subject_token`.
+
+## 2026-06-21 17:59:22 UTC — Bloqueio de token exchange sem `organization_id` na CodexRequest 714
+- Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu? O relatório `docs/diario/dialogo-openai-codex-714.md` mostrou que o login/refresh OAuth já usava o client público correto e era aceito pela OpenAI, mas o `id_token` renovado continuava sem a claim `organization_id`; apesar disso, o backend ainda tentava o token exchange Codex e recebia `401 invalid_subject_token`.
+- Causa raiz tratada no código: a ausência da claim de organização no `id_token` é pré-condição inválida para o token exchange `requested_token=openai-api-key`; insistir na chamada apenas produz erro externo conhecido e não corrige a sessão.
+- Ajuste aplicado: `TokenLifecycleManager` agora interrompe o token exchange quando há `hub.account.oauth.organization-id` configurado e, mesmo após refresh, o `id_token` segue sem a organização esperada; a sessão recebe um motivo operacional para orientar reconexão via login browser quando o fluxo público por device code não retornar `organization_id`.
+- Ajuste aplicado: `CodexRequestService` passa a anexar esse motivo à mensagem de falha da requisição `CHATGPT_CODEX`, evitando envio ao sandbox sem token derivado e tornando a causa visível ao usuário.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-21 18:10:00 UTC — Envio de `organization_id` no refresh OAuth Codex
+- Correção solicitada sobre o ajuste anterior: enviar o `organization_id` na hora do refresh OAuth, pois esta é a causa raiz indicada para o `id_token` renovado continuar sem a claim de organização.
+- Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu? Porque o refresh OAuth do AI Hub renovava a sessão usando o client correto, mas sem declarar o workspace/organização configurado no próprio payload do refresh; assim o provedor podia devolver um `id_token` válido, porém sem `organization_id`, inviabilizando o token exchange Codex.
+- Ajuste aplicado: `TokenLifecycleManager.buildTokenRefreshPayload` voltou a incluir `organization_id` quando `hub.account.oauth.organization-id` está configurado, mantendo `id_token_add_organizations` fora do refresh.
+- Ajuste aplicado: os testes de refresh OAuth foram atualizados para exigir `organization_id` no payload, inclusive em sessão pública/device login, sem adicionar `client_secret` nem `id_token_add_organizations`.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.

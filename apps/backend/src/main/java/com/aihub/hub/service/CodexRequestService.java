@@ -597,7 +597,10 @@ public class CodexRequestService {
         if (!StringUtils.hasText(accessToken)) {
             log.info("CodexRequest {} será executado sem token OAuth válido de conta conectada", request.getId());
             if (chatgptCodexProfile) {
-                failChatgptCodexWithoutToken(request);
+                failChatgptCodexWithoutToken(
+                    request,
+                    tokenLifecycleManager.getCodexTokenBlockReasonFromCurrentSession().orElse(null)
+                );
                 return;
             }
         }
@@ -653,9 +656,12 @@ public class CodexRequestService {
         recordHttpRequests(request, response);
     }
 
-    private void failChatgptCodexWithoutToken(CodexRequest request) {
+    private void failChatgptCodexWithoutToken(CodexRequest request, String blockReason) {
         String message = "Conta ChatGPT conectada não gerou token de execução para o Codex. "
             + "Reconecte a conta ChatGPT e tente novamente; se persistir, verifique a organização configurada para o OAuth.";
+        if (StringUtils.hasText(blockReason)) {
+            message = message + " Detalhe: " + blockReason.trim();
+        }
         request.setStatus(CodexRequestStatus.FAILED);
         request.setResponseText(message);
         Instant finishedAt = Instant.now();

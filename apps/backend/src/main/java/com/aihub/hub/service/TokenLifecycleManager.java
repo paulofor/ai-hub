@@ -34,6 +34,7 @@ public class TokenLifecycleManager {
     public static final String OAUTH_CLIENT_TYPE_KEY = "chatgpt_oauth_client_type";
     public static final String OAUTH_CLIENT_TYPE_PUBLIC = "public";
     public static final String OAUTH_CLIENT_TYPE_CONFIDENTIAL = "confidential";
+    public static final String CODEX_TOKEN_BLOCK_REASON_KEY = "chatgpt_codex_token_block_reason";
 
     private static final long REFRESH_SKEW_SECONDS = 60;
 
@@ -110,8 +111,11 @@ public class TokenLifecycleManager {
     public Optional<String> getValidCodexApiTokenFromCurrentSession() {
         return currentSession()
             .flatMap(session -> {
+                session.removeAttribute(CODEX_TOKEN_BLOCK_REASON_KEY);
                 refreshIfNeeded(session);
-                refreshIfOrganizationClaimsMissing(session);
+                if (!ensureOrganizationClaimsForCodex(session)) {
+                    return Optional.empty();
+                }
                 String idToken = asString(session.getAttribute(ID_TOKEN_KEY));
                 String expiresAtRaw = asString(session.getAttribute(EXPIRES_AT_KEY));
                 Instant expiresAt = parseInstant(expiresAtRaw);
@@ -141,22 +145,33 @@ public class TokenLifecycleManager {
             });
     }
 
+    public Optional<String> getCodexTokenBlockReasonFromCurrentSession() {
+        return currentSession()
+            .map(session -> asString(session.getAttribute(CODEX_TOKEN_BLOCK_REASON_KEY)))
+            .filter(reason -> reason != null && !reason.isBlank())
+            .map(String::trim);
+    }
 
-    private void refreshIfOrganizationClaimsMissing(HttpSession session) {
+
+    private boolean ensureOrganizationClaimsForCodex(HttpSession session) {
         String configuredOrganizationId = oauthOrganizationId == null ? null : oauthOrganizationId.trim();
         if (configuredOrganizationId == null || configuredOrganizationId.isBlank()) {
-            return;
+            return true;
         }
 
         String idToken = asString(session.getAttribute(ID_TOKEN_KEY));
         if (idTokenHasOrganizationClaim(idToken, configuredOrganizationId)) {
-            return;
+            return true;
         }
 
         String refreshToken = asString(session.getAttribute(REFRESH_TOKEN_KEY));
         if (refreshToken == null || refreshToken.isBlank()) {
             log.warn("ID token OAuth sem organization_id e sessão sem refresh_token para renovar claims da organização");
-            return;
+            session.setAttribute(
+                CODEX_TOKEN_BLOCK_REASON_KEY,
+                "Sessão ChatGPT não possui refresh_token para renovar o id_token com a organização configurada."
+            );
+            return false;
         }
 
         try {
@@ -165,11 +180,23 @@ public class TokenLifecycleManager {
             persistRefreshedTokenResponse(session, response);
             String refreshedIdToken = asString(session.getAttribute(ID_TOKEN_KEY));
             if (!idTokenHasOrganizationClaim(refreshedIdToken, configuredOrganizationId)) {
-                log.warn("Refresh OAuth concluído, mas id_token ainda não contém organization_id esperado para Codex");
+                String clientType = asString(session.getAttribute(OAUTH_CLIENT_TYPE_KEY));
+                String guidance = OAUTH_CLIENT_TYPE_PUBLIC.equals(clientType)
+                    ? "O device login público não retornou organization_id; refaça a conexão pelo login browser do ChatGPT/Codex para autorizar o workspace configurado."
+                    : "Refaça a conexão ChatGPT/Codex para autorizar explicitamente o workspace configurado.";
+                log.warn("Refresh OAuth concluído, mas id_token ainda não contém organization_id esperado para Codex; token exchange não será tentado para evitar invalid_subject_token. {}", guidance);
+                session.setAttribute(CODEX_TOKEN_BLOCK_REASON_KEY, guidance);
+                return false;
             }
+            return true;
         } catch (RuntimeException ex) {
             meterRegistry.counter("oauth_token_refresh_for_organization_claim_failure_total").increment();
             log.warn("Falha ao renovar OAuth para obter claims de organização no id_token: {}", ex.getMessage());
+            session.setAttribute(
+                CODEX_TOKEN_BLOCK_REASON_KEY,
+                "Falha ao renovar a sessão ChatGPT para obter a organização configurada no id_token."
+            );
+            return false;
         }
     }
 
@@ -263,6 +290,9 @@ public class TokenLifecycleManager {
         String clientId = resolveClientIdForTokenRefresh(session);
         payload.put("client_id", clientId);
         payload.put("scope", "openid profile email");
+        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
+            payload.put("organization_id", oauthOrganizationId.trim());
+        }
         if (isConfidentialSessionClient(session, clientId) && oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }
