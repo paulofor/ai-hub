@@ -661,3 +661,8 @@
 - Gerado o documento `docs/diario/dialogo-openai-codex-717.md` com o diálogo observado entre AI Hub e OpenAI para a CodexRequest 717.
 - O documento registra a pergunta obrigatória de causa raiz, a linha do tempo do device login, polling, authorization-code exchange, refresh OAuth aceito, bloqueio antes do token exchange e comparação com as execuções 713, 714, 715 e 716.
 - Conclusão registrada: a 717 não repetiu o `400 unknown_parameter` da 715; ela repetiu a ausência de `organization_id` no `id_token` de sessão device, agravada pela configuração inválida `HUB_ACCOUNT_OAUTH_CLIENT_ID=paulofore` que mantinha a UI no fallback de device login.
+
+## 2026-06-22 14:00:18 UTC-3
+- Gerado o documento `docs/diario/dialogo-openai-codex-718.md` com o diálogo observado entre AI Hub e OpenAI para a CodexRequest 718.
+- O documento registra a pergunta obrigatória de causa raiz e a linha do tempo completa: device login, polling pendente, autorização concluída, authorization-code exchange, refresh OAuth aceito e bloqueio antes do token exchange por ausência de `organization_id` no `id_token`.
+- Comparação registrada: a 718 repetiu a 717; a correção do `organization_id` no refresh permanece efetiva, mas a tentativa ainda usou sessão device pública em vez de sessão browser/PKCE com workspace autorizado.
