@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TokenLifecycleManagerTest {
 
     @Test
-    void buildsTokenRefreshPayloadWithOrganizationIdWhenConfigured() {
+    void buildsTokenRefreshPayloadWithoutOrganizationIdWhenConfigured() {
         TokenLifecycleManager manager = new TokenLifecycleManager(new SimpleMeterRegistry());
         ReflectionTestUtils.setField(manager, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
         ReflectionTestUtils.setField(manager, "oauthClientId", "");
@@ -26,7 +26,7 @@ class TokenLifecycleManagerTest {
         assertThat(payload).containsEntry("refresh_token", "refresh-token");
         assertThat(payload).containsEntry("client_id", "app_EMoamEEZ73f0CkXaXp7hrann");
         assertThat(payload).containsEntry("scope", "openid profile email");
-        assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(payload).doesNotContainKey("organization_id");
         assertThat(payload).doesNotContainKey("id_token_add_organizations");
     }
 
@@ -45,7 +45,7 @@ class TokenLifecycleManagerTest {
         Map<String, String> payload = manager.buildTokenRefreshPayload(session, "refresh-token");
 
         assertThat(payload).containsEntry("client_id", "app_EMoamEEZ73f0CkXaXp7hrann");
-        assertThat(payload).containsEntry("organization_id", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThat(payload).doesNotContainKey("organization_id");
         assertThat(payload).doesNotContainKey("client_secret");
         assertThat(payload).doesNotContainKey("id_token_add_organizations");
     }

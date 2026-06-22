@@ -290,9 +290,8 @@ public class TokenLifecycleManager {
         String clientId = resolveClientIdForTokenRefresh(session);
         payload.put("client_id", clientId);
         payload.put("scope", "openid profile email");
-        if (oauthOrganizationId != null && !oauthOrganizationId.isBlank()) {
-            payload.put("organization_id", oauthOrganizationId.trim());
-        }
+        // A OpenAI rejeita organization_id no corpo do refresh token (unknown_parameter).
+        // A organização/workspace deve ser solicitada no fluxo de autorização, não na renovação.
         if (isConfidentialSessionClient(session, clientId) && oauthClientSecret != null && !oauthClientSecret.isBlank()) {
             payload.put("client_secret", oauthClientSecret);
         }

@@ -638,3 +638,9 @@
 - Ajuste aplicado: `TokenLifecycleManager.buildTokenRefreshPayload` voltou a incluir `organization_id` quando `hub.account.oauth.organization-id` está configurado, mantendo `id_token_add_organizations` fora do refresh.
 - Ajuste aplicado: os testes de refresh OAuth foram atualizados para exigir `organization_id` no payload, inclusive em sessão pública/device login, sem adicionar `client_secret` nem `id_token_add_organizations`.
 - Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-22 08:39:12 UTC-3
+- Investigado o erro da CodexRequest 715 e comparado com os registros anteriores `dialogo-openai-codex-713.md` e `dialogo-openai-codex-714.md`.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a correção anterior havia removido `organization_id` do token exchange, mas o payload de refresh voltou a enviar `organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR`; a OpenAI rejeitou esse parâmetro com `400 unknown_parameter`, impedindo a renovação do `id_token` antes da execução.
+- Ajustado `TokenLifecycleManager` para nunca incluir `organization_id` no corpo do refresh token, mantendo o `client_id` público da sessão device e evitando repetir a falha observada no request 715.
+- Atualizados os testes unitários para garantir que o refresh não contenha `organization_id` nem `id_token_add_organizations`, inclusive quando há organização configurada e sessão device pública.
