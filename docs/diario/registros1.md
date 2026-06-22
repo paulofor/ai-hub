@@ -638,3 +638,21 @@
 - Ajuste aplicado: `TokenLifecycleManager.buildTokenRefreshPayload` voltou a incluir `organization_id` quando `hub.account.oauth.organization-id` está configurado, mantendo `id_token_add_organizations` fora do refresh.
 - Ajuste aplicado: os testes de refresh OAuth foram atualizados para exigir `organization_id` no payload, inclusive em sessão pública/device login, sem adicionar `client_secret` nem `id_token_add_organizations`.
 - Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-22 08:39:12 UTC-3
+- Investigado o erro da CodexRequest 715 e comparado com os registros anteriores `dialogo-openai-codex-713.md` e `dialogo-openai-codex-714.md`.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a correção anterior havia removido `organization_id` do token exchange, mas o payload de refresh voltou a enviar `organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR`; a OpenAI rejeitou esse parâmetro com `400 unknown_parameter`, impedindo a renovação do `id_token` antes da execução.
+- Ajustado `TokenLifecycleManager` para nunca incluir `organization_id` no corpo do refresh token, mantendo o `client_id` público da sessão device e evitando repetir a falha observada no request 715.
+- Atualizados os testes unitários para garantir que o refresh não contenha `organization_id` nem `id_token_add_organizations`, inclusive quando há organização configurada e sessão device pública.
+
+## 2026-06-22 09:16:09 UTC-3
+- Investigada a CodexRequest 716 via logs do backend e comparada com as requisições 713, 714 e 715.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a remoção de `organization_id` do refresh resolveu o `400 unknown_parameter` da 715, mas a 716 voltou ao diagnóstico da 714: o device login público renova com sucesso, porém continua sem `organization_id` no `id_token`; como o próprio backend já sabe que device login público não autoriza o workspace configurado, o frontend não deveria continuar iniciando esse fluxo quando há OAuth browser configurado.
+- Ajustado o fluxo da tela `CodexChatgptPage`: ao clicar em “Conectar com ChatGPT”, se o backend indicar `oauthConfigured=true`, a UI passa a iniciar `/account/login/start` e abrir o login browser ChatGPT/Codex, que usa `id_token_add_organizations=true` e `allowed_workspace_id`; o device login fica apenas como fallback quando o OAuth browser não estiver configurado.
+- Objetivo definitivo do ajuste: obter uma sessão originada pelo client OAuth confidencial/browser capaz de autorizar o workspace, em vez de repetir device logins públicos que, pelos logs 714/716, não retornam `organization_id`.
+
+## 2026-06-22 12:38:39 UTC-3
+- Investigada a CodexRequest 717 via MCP/logs do backend e comparada com 713, 714, 715 e 716.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: mesmo após a UI preferir `/account/login/start`, a produção ainda iniciou `device_user_code`; a causa raiz encontrada no container é configuração inválida `HUB_ACCOUNT_OAUTH_CLIENT_ID=paulofore`, já documentada como inválida desde a 713. Por isso o backend marcava `oauthConfigured=false`, a UI caía no fallback de device login e a execução repetia o erro de `id_token` sem `organization_id`.
+- Ajustado `AccountController` para considerar o OAuth browser pronto quando houver um `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` público válido (`app_...`) mesmo que `HUB_ACCOUNT_OAUTH_CLIENT_ID` esteja inválido; nesse caso, `/account/login/start` usa o client público válido e não envia `client_secret`, preservando o fluxo PKCE com `id_token_add_organizations=true` e `allowed_workspace_id`.
+- Adicionado teste cobrindo o cenário real de produção (`HUB_ACCOUNT_OAUTH_CLIENT_ID=paulofore` + device client válido) para garantir que a URL browser do Codex use `client_id=app_EMoamEEZ73f0CkXaXp7hrann` e solicite autorização do workspace, evitando novo fallback silencioso para device login.

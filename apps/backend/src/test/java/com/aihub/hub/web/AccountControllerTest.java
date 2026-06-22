@@ -24,12 +24,12 @@ class AccountControllerTest {
             "authorization-code",
             "code-verifier",
             "https://auth.openai.com/deviceauth/callback",
-            "app_device_client",
+            "app_device_client_123",
             false
         );
 
         assertThat(payload).containsEntry("grant_type", "authorization_code");
-        assertThat(payload).containsEntry("client_id", "app_device_client");
+        assertThat(payload).containsEntry("client_id", "app_device_client_123");
         assertThat(payload).containsEntry("code", "authorization-code");
         assertThat(payload).containsEntry("redirect_uri", "https://auth.openai.com/deviceauth/callback");
         assertThat(payload).containsEntry("code_verifier", "code-verifier");
@@ -42,9 +42,9 @@ class AccountControllerTest {
         AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
         ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
 
-        Map<String, Object> payload = controller.buildDeviceUserCodePayload("app_device_client");
+        Map<String, Object> payload = controller.buildDeviceUserCodePayload("app_device_client_123");
 
-        assertThat(payload).containsEntry("client_id", "app_device_client");
+        assertThat(payload).containsEntry("client_id", "app_device_client_123");
         assertThat(payload).doesNotContainKey("id_token_add_organizations");
         assertThat(payload).doesNotContainKey("organization_id");
     }
@@ -54,7 +54,7 @@ class AccountControllerTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
         ReflectionTestUtils.setField(controller, "oauthAuthorizeUrl", "https://auth.openai.com/oauth/authorize");
-        ReflectionTestUtils.setField(controller, "oauthClientId", "app_browser_client");
+        ReflectionTestUtils.setField(controller, "oauthClientId", "app_browser_client_123");
         ReflectionTestUtils.setField(controller, "oauthScopes", "openid profile email offline_access");
         ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
 
@@ -70,6 +70,29 @@ class AccountControllerTest {
         assertThat(authUrl).contains("codex_cli_simplified_flow=true");
         assertThat(authUrl).contains("allowed_workspace_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
         assertThat(authUrl).doesNotContain("organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
+    }
+
+    @Test
+    void browserAuthorizeUrlFallsBackToPublicDeviceClientWhenConfiguredBrowserClientIsInvalid() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
+        ReflectionTestUtils.setField(controller, "oauthAuthorizeUrl", "https://auth.openai.com/oauth/authorize");
+        ReflectionTestUtils.setField(controller, "oauthClientId", "paulofore");
+        ReflectionTestUtils.setField(controller, "oauthDeviceClientId", "app_EMoamEEZ73f0CkXaXp7hrann");
+        ReflectionTestUtils.setField(controller, "oauthScopes", "openid profile email offline_access");
+        ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+
+        String authUrl = ReflectionTestUtils.invokeMethod(
+            controller,
+            "buildExternalAuthUrl",
+            "https://iahub.xyz/api/account/login/callback",
+            "state-123",
+            "challenge-123"
+        );
+
+        assertThat(authUrl).contains("client_id=app_EMoamEEZ73f0CkXaXp7hrann");
+        assertThat(authUrl).contains("id_token_add_organizations=true");
+        assertThat(authUrl).contains("allowed_workspace_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
     }
 
 
@@ -108,7 +131,7 @@ class AccountControllerTest {
             "authorization-code",
             "code-verifier",
             "https://iahub.xyz/api/account/login/callback",
-            "browser-client",
+            "app_browser_client_123",
             true
         );
 
