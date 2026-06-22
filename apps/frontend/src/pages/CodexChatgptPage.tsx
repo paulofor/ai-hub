@@ -267,14 +267,31 @@ export default function CodexChatgptPage() {
         setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
         return;
       }
+      const sanitizedHint = accountHintInput.trim();
+      const accountHint = sanitizedHint || selectedAccount;
+      if (account?.oauthConfigured) {
+        const response = await client.post('/account/login/start', accountHint ? { accountHint } : {});
+        const authUrl = response.data?.authUrl || response.data?.url;
+        if (typeof authUrl !== 'string' || authUrl.length === 0) {
+          throw new Error('Servidor não retornou authUrl para login browser ChatGPT/Codex.');
+        }
+        setDeviceLogin(null);
+        const opened = window.open(authUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          registerTelemetry('login_started', 'Login browser ChatGPT/Codex iniciado; abertura automática bloqueada pelo navegador.');
+          setError('Login browser iniciado, mas o navegador bloqueou a abertura automática. Permita pop-ups para concluir a autorização do workspace.');
+        } else {
+          registerTelemetry('login_started', 'Login browser ChatGPT/Codex iniciado para autorizar o workspace configurado.');
+          setError(null);
+        }
+        return;
+      }
       if (!deviceLoginReady) {
         const reason = account?.oauthMessage || 'Login por código indisponível no servidor.';
         setError(`${reason} Peça ao administrador para revisar a integração ChatGPT/Codex no backend.`);
         registerTelemetry('login_failed', `Login por código bloqueado: ${reason}`);
         return;
       }
-      const sanitizedHint = accountHintInput.trim();
-      const accountHint = sanitizedHint || selectedAccount;
       const response = await client.post('/account/device/start', accountHint ? { accountHint } : {});
       const verificationUrl = response.data?.verificationUrl;
       const userCode = response.data?.userCode;
@@ -305,7 +322,7 @@ export default function CodexChatgptPage() {
         return;
       }
       if (is503Error(err)) {
-        registerTelemetry('login_failed', 'Serviço de login por código indisponível: /account/device/start retornou 503.');
+        registerTelemetry('login_failed', 'Serviço de login indisponível: backend retornou 503.');
         setError('Serviço de login temporariamente indisponível (503). Peça ao administrador para revisar a integração ChatGPT/Codex no backend.');
         return;
       }

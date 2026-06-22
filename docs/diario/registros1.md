@@ -644,3 +644,9 @@
 - Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a correção anterior havia removido `organization_id` do token exchange, mas o payload de refresh voltou a enviar `organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR`; a OpenAI rejeitou esse parâmetro com `400 unknown_parameter`, impedindo a renovação do `id_token` antes da execução.
 - Ajustado `TokenLifecycleManager` para nunca incluir `organization_id` no corpo do refresh token, mantendo o `client_id` público da sessão device e evitando repetir a falha observada no request 715.
 - Atualizados os testes unitários para garantir que o refresh não contenha `organization_id` nem `id_token_add_organizations`, inclusive quando há organização configurada e sessão device pública.
+
+## 2026-06-22 09:16:09 UTC-3
+- Investigada a CodexRequest 716 via logs do backend e comparada com as requisições 713, 714 e 715.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a remoção de `organization_id` do refresh resolveu o `400 unknown_parameter` da 715, mas a 716 voltou ao diagnóstico da 714: o device login público renova com sucesso, porém continua sem `organization_id` no `id_token`; como o próprio backend já sabe que device login público não autoriza o workspace configurado, o frontend não deveria continuar iniciando esse fluxo quando há OAuth browser configurado.
+- Ajustado o fluxo da tela `CodexChatgptPage`: ao clicar em “Conectar com ChatGPT”, se o backend indicar `oauthConfigured=true`, a UI passa a iniciar `/account/login/start` e abrir o login browser ChatGPT/Codex, que usa `id_token_add_organizations=true` e `allowed_workspace_id`; o device login fica apenas como fallback quando o OAuth browser não estiver configurado.
+- Objetivo definitivo do ajuste: obter uma sessão originada pelo client OAuth confidencial/browser capaz de autorizar o workspace, em vez de repetir device logins públicos que, pelos logs 714/716, não retornam `organization_id`.
