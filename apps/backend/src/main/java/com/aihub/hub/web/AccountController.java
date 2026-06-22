@@ -50,6 +50,8 @@ public class AccountController {
     private static final String OAUTH_CLIENT_TYPE_KEY = TokenLifecycleManager.OAUTH_CLIENT_TYPE_KEY;
     private static final String LOGIN_STATE_KEY = "chatgpt_login_state";
     private static final String LOGIN_PKCE_VERIFIER_KEY = "chatgpt_login_code_verifier";
+    private static final String LOGIN_CLIENT_ID_KEY = "chatgpt_login_oauth_client_id";
+    private static final String LOGIN_CLIENT_TYPE_KEY = "chatgpt_login_oauth_client_type";
     private static final String DEVICE_AUTH_ID_KEY = "chatgpt_device_auth_id";
     private static final String DEVICE_USER_CODE_KEY = "chatgpt_device_user_code";
     private static final String DEVICE_INTERVAL_KEY = "chatgpt_device_interval";
@@ -133,13 +135,16 @@ public class AccountController {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, oauthReadinessMessage(oauthStatus));
         }
 
+        BrowserLoginClient browserLoginClient = resolveBrowserLoginClient();
         String state = UUID.randomUUID().toString();
         String codeVerifier = generateCodeVerifier();
         String codeChallenge = generateCodeChallenge(codeVerifier);
         session.setAttribute(LOGIN_STATE_KEY, state);
         session.setAttribute(LOGIN_PKCE_VERIFIER_KEY, codeVerifier);
+        session.setAttribute(LOGIN_CLIENT_ID_KEY, browserLoginClient.clientId());
+        session.setAttribute(LOGIN_CLIENT_TYPE_KEY, browserLoginClient.clientType());
         String callbackBase = resolveCallbackBaseUrl(request);
-        String authUrl = buildExternalAuthUrl(callbackBase, state, codeChallenge);
+        String authUrl = buildExternalAuthUrl(callbackBase, state, codeChallenge, browserLoginClient.clientId());
         OpenAiExchangeLogger.logRequest(log, "oauth_authorize_redirect", "GET", authUrl, Map.of());
         meterRegistry.counter("oauth_login_start_total").increment();
         log.info("OAuth login start gerado (callback={}, hasHint={}, correlationId={})", callbackBase, accountHint != null, correlationId);
@@ -274,7 +279,15 @@ public class AccountController {
             return;
         }
         String callbackBase = resolveCallbackBaseUrl(request);
-        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase, oauthClientId, true);
+        String loginClientId = asString(session.getAttribute(LOGIN_CLIENT_ID_KEY));
+        String loginClientType = asString(session.getAttribute(LOGIN_CLIENT_TYPE_KEY));
+        if (loginClientId == null || loginClientId.isBlank()) {
+            BrowserLoginClient browserLoginClient = resolveBrowserLoginClient();
+            loginClientId = browserLoginClient.clientId();
+            loginClientType = browserLoginClient.clientType();
+        }
+        boolean includeClientSecret = TokenLifecycleManager.OAUTH_CLIENT_TYPE_CONFIDENTIAL.equals(loginClientType);
+        Map<String, Object> tokenResponse = exchangeAuthorizationCode(code.trim(), codeVerifier, callbackBase, loginClientId, includeClientSecret);
         String accessToken = asString(tokenResponse.get("access_token"));
         String refreshToken = asString(tokenResponse.get("refresh_token"));
         String idToken = asString(tokenResponse.get("id_token"));
@@ -297,8 +310,10 @@ public class AccountController {
             response.sendRedirect(loginSuccessRedirect + "?login=token_exchange_failed");
             return;
         }
-        persistTokenResponse(session, tokenResponse, accountEmail, oauthClientId, TokenLifecycleManager.OAUTH_CLIENT_TYPE_CONFIDENTIAL);
+        persistTokenResponse(session, tokenResponse, accountEmail, loginClientId, loginClientType);
         session.removeAttribute(LOGIN_STATE_KEY);
+        session.removeAttribute(LOGIN_CLIENT_ID_KEY);
+        session.removeAttribute(LOGIN_CLIENT_TYPE_KEY);
         meterRegistry.counter("oauth_login_success_total").increment();
         log.info("OAuth login concluído com sucesso para conta {} (correlationId={})", accountEmail, correlationId);
         MDC.remove("oauthCorrelationId");
@@ -487,10 +502,14 @@ public class AccountController {
     }
 
     private String buildExternalAuthUrl(String redirectUri, String state, String codeChallenge) {
+        return buildExternalAuthUrl(redirectUri, state, codeChallenge, resolveBrowserLoginClient().clientId());
+    }
+
+    private String buildExternalAuthUrl(String redirectUri, String state, String codeChallenge, String clientId) {
         String separator = oauthAuthorizeUrl.contains("?") ? "&" : "?";
         return oauthAuthorizeUrl
             + separator + "response_type=code"
-            + "&client_id=" + urlEncode(oauthClientId)
+            + "&client_id=" + urlEncode(clientId)
             + "&redirect_uri=" + urlEncode(redirectUri)
             + "&scope=" + urlEncode(oauthScopes)
             + "&state=" + urlEncode(state)
@@ -562,22 +581,46 @@ public class AccountController {
     }
 
     private String oauthReadinessStatus() {
-        if (oauthClientId == null || oauthClientId.isBlank()) {
-            return "missing_client_id";
+        if (isValidOAuthClientId(oauthClientId) || isValidOAuthClientId(oauthDeviceClientId)) {
+            return "ready";
         }
-        String trimmed = oauthClientId.trim();
-        if (!trimmed.startsWith("app_") || trimmed.length() < 20 || trimmed.contains("@")) {
+        if (hasText(oauthClientId) || hasText(oauthDeviceClientId)) {
             return "invalid_client_id_format";
         }
-        return "ready";
+        return "missing_client_id";
     }
 
     private String oauthReadinessMessage(String oauthStatus) {
         return switch (oauthStatus) {
             case "ready" -> "";
-            case "invalid_client_id_format" -> "Integração OAuth indisponível: client_id configurado no servidor tem formato inválido. Use o client_id OAuth da OpenAI (normalmente iniciado por app_) e não e-mail, API key ou nome de usuário.";
+            case "invalid_client_id_format" -> "Integração OAuth indisponível: nenhum client_id OAuth válido foi configurado. Use um client_id da OpenAI iniciado por app_ em HUB_ACCOUNT_OAUTH_CLIENT_ID ou HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID; não use e-mail, API key ou nome de usuário.";
             default -> "Integração OAuth indisponível: client_id não configurado no servidor.";
         };
+    }
+
+    private BrowserLoginClient resolveBrowserLoginClient() {
+        if (isValidOAuthClientId(oauthClientId)) {
+            return new BrowserLoginClient(oauthClientId.trim(), TokenLifecycleManager.OAUTH_CLIENT_TYPE_CONFIDENTIAL);
+        }
+        if (hasText(oauthClientId)) {
+            log.warn("HUB_ACCOUNT_OAUTH_CLIENT_ID configurado com formato inválido; usando device client público para login browser Codex quando disponível");
+        }
+        if (isValidOAuthClientId(oauthDeviceClientId)) {
+            return new BrowserLoginClient(oauthDeviceClientId.trim(), TokenLifecycleManager.OAUTH_CLIENT_TYPE_PUBLIC);
+        }
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, oauthReadinessMessage(oauthReadinessStatus()));
+    }
+
+    private boolean isValidOAuthClientId(String clientId) {
+        if (!hasText(clientId)) {
+            return false;
+        }
+        String trimmed = clientId.trim();
+        return trimmed.startsWith("app_") && trimmed.length() >= 20 && !trimmed.contains("@");
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
 
@@ -613,6 +656,9 @@ public class AccountController {
             return oauthAuthorizeUrl.substring(0, oauthAuthorizeUrl.indexOf("/oauth/authorize"));
         }
         return "https://auth.openai.com";
+    }
+
+    private record BrowserLoginClient(String clientId, String clientType) {
     }
 
     private String resolveDeviceClientId() {
