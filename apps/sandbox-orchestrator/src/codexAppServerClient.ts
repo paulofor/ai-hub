@@ -65,7 +65,7 @@ export class CodexAppServerClient {
     this.command = options.command ?? process.env.CODEX_APP_SERVER_COMMAND ?? 'codex';
     this.args = options.args ?? (process.env.CODEX_APP_SERVER_ARGS?.trim().split(/\s+/).filter(Boolean) ?? ['app-server', '--listen', 'stdio://']);
     this.env = { ...process.env, ...options.env };
-    this.requestTimeoutMs = options.requestTimeoutMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS ?? '10000', 10);
+    this.requestTimeoutMs = options.requestTimeoutMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS ?? '60000', 10);
     this.restartBackoffMs = options.restartBackoffMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_RESTART_BACKOFF_MS ?? '2000', 10);
     this.maxRestartAttempts = options.maxRestartAttempts ?? Number.parseInt(process.env.CODEX_APP_SERVER_MAX_RESTART_ATTEMPTS ?? '3', 10);
     this.autoRestart = options.autoRestart ?? true;

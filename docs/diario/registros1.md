@@ -813,3 +813,15 @@ O erro aconteceu porque a correção anterior ainda dependia de edição manual 
 
 - Adicionado passo de deploy no GitHub Actions para criar backup do `.env` remoto, remover `HUB_ACCOUNT_OAUTH_*`, remover pins antigos de imagens e gravar `CODEX_APP_SERVER_ENABLED=true` com as imagens atuais `ai-hub-6-*`.
 - Atualizada a documentação operacional para indicar que o caminho preferencial agora é reexecutar o workflow de `main`, deixando os comandos manuais apenas como fallback quando o workflow não puder ser usado.
+
+## 2026-06-23 — Correção do erro 500 no login Codex ChatGPT
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estruturada de indisponibilidade do Codex App Server (`503` com `blockReason=CODEX_APP_SERVER_UNAVAILABLE`), mas o backend consumia essa resposta via `RestClient.retrieve().body(...)` sem tratar status 4xx/5xx. A exceção do `RestClient` escapava do `AccountController`, e o Spring convertia a falha controlada do upstream em `500 Internal Server Error` para `/api/account/login/start` e `/api/account/read`. A investigação via MCP também mostrou que o Codex App Server respondeu ao `initialize` depois do timeout inicial de 10 segundos, deixando o supervisor em estado degradado.
+
+### Trabalho realizado
+
+- Ajustado `SandboxOrchestratorClient` para reaproveitar o JSON de erro retornado pelo `sandbox-orchestrator` em operações de conta, evitando transformar indisponibilidade conhecida do Codex App Server em erro 500 genérico.
+- Aumentado o timeout padrão de request do Codex App Server de 10s para 60s, reduzindo falsos negativos no handshake `initialize` quando o binário demora para aquecer no container.
+- Adicionados testes unitários garantindo que `readCodexAccount` e `startCodexLogin` retornem os corpos estruturados de erro do upstream em vez de lançar exceção.
