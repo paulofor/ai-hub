@@ -825,3 +825,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajustado `SandboxOrchestratorClient` para reaproveitar o JSON de erro retornado pelo `sandbox-orchestrator` em operações de conta, evitando transformar indisponibilidade conhecida do Codex App Server em erro 500 genérico.
 - Aumentado o timeout padrão de request do Codex App Server de 10s para 60s, reduzindo falsos negativos no handshake `initialize` quando o binário demora para aquecer no container.
 - Adicionados testes unitários garantindo que `readCodexAccount` e `startCodexLogin` retornem os corpos estruturados de erro do upstream em vez de lançar exceção.
+
+## 2026-06-23 - Correção do sandbox mode enviado ao Codex App Server
+
+- Pergunta de causa raiz: por que esse erro aconteceu? A execução 720 chegou ao Codex App Server pelo caminho novo de `thread/start`, mas o `sandbox-orchestrator` enviava o campo `sandbox` com o valor camelCase legado `workspaceWrite`. A versão ativa do App Server valida esse campo como variante kebab-case e aceita `read-only`, `workspace-write` ou `danger-full-access`; por isso rejeitou a requisição antes de iniciar o turno.
+- Ajuste aplicado: o payload de `thread/start` do perfil `CHATGPT_CODEX` agora envia `sandbox: 'workspace-write'`, alinhado ao contrato retornado pelo erro de produção.
+- Cobertura: o teste de execução via Codex App Server passou a verificar explicitamente que `thread/start` usa `workspace-write`, evitando regressão para `workspaceWrite`.
