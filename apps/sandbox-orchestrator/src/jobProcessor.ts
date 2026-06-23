@@ -978,13 +978,13 @@ export class SandboxJobProcessor implements JobProcessor {
 
     this.recordInteraction(job, 'OUTBOUND', this.safeStringify({
       method: 'thread/start',
-      params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: 'workspaceWrite', serviceName: 'ai_hub' },
+      params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: 'workspace-write', serviceName: 'ai_hub' },
     }));
     const thread = await client.request<Record<string, unknown>>('thread/start', {
       model,
       cwd: repoPath,
       approvalPolicy: 'never',
-      sandbox: 'workspaceWrite',
+      sandbox: 'workspace-write',
       serviceName: 'ai_hub',
     });
     const threadId = this.extractCodexId(thread, ['threadId', 'id'], 'thread.id');
