@@ -751,3 +751,14 @@ O erro aconteceu porque ainda existia uma superfície backend capaz de renovar s
 - Mantida a barreira de readiness para `CHATGPT_CODEX`, que só despacha quando `account/read` do App Server retorna conta executável.
 - Validado via MCP que o servidor MCP está ativo e que os containers de produção estão em execução; a tentativa de limpar `/host/root/ai-hub-6/.env` foi bloqueada por filesystem somente leitura no MCP.
 - Registrado `docs/operacao/codex-app-server-fase5-producao.md` com checklist de produção, evidências coletadas e pendências: deploy da nova imagem, limpeza real do `.env`, login humano pelo novo fluxo, restart, request real e confirmação de `thread/start`, `turn/start`, `turn/completed` nos logs.
+
+## 2026-06-23 — Correção de lint no frontend ChatGPT Codex
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque `CodexChatgptPage.tsx` importava `useMemo` de `react`, mas a página não possuía mais nenhum cálculo memoizado usando esse hook. A causa raiz foi um import obsoleto que sobrou após refatorações do fluxo ChatGPT/Codex; com a regra `@typescript-eslint/no-unused-vars`, o ESLint falha quando encontra imports não usados.
+
+### Trabalho realizado
+
+- Removido o import não utilizado de `useMemo` em `CodexChatgptPage.tsx`, mantendo apenas os hooks realmente usados pela página.
+- Validado o lint do frontend para confirmar que o erro `useMemo is defined but never used` foi eliminado.
