@@ -10,3 +10,7 @@
 - Healthcheck: `GET https://iahub.xyz/mcp` (retorna `{"status":"UP"}`).
 - Execução de comandos/logs: `POST https://iahub.xyz/mcp/tools/linux-command` com header `Content-Type: application/json` e body `{ "command": "<comando>" }`.
 - Exemplo para logs do backend: `{ "command": "docker logs --tail 200 ai-hub-6-backend-1" }`.
+
+**Integração Codex App Server / sandbox mode:**
+- Ao montar payloads para o Codex App Server, especialmente `thread/start`, use os valores de sandbox em kebab-case aceitos pelo App Server: `read-only`, `workspace-write` ou `danger-full-access`.
+- Nunca envie `workspaceWrite`, `readOnly` ou `dangerFullAccess` para o campo `sandbox` do App Server; esses valores camelCase são legados e causam erro `Invalid request: unknown variant`.

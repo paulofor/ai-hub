@@ -831,3 +831,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta de causa raiz: por que esse erro aconteceu? A execução 720 chegou ao Codex App Server pelo caminho novo de `thread/start`, mas o `sandbox-orchestrator` enviava o campo `sandbox` com o valor camelCase legado `workspaceWrite`. A versão ativa do App Server valida esse campo como variante kebab-case e aceita `read-only`, `workspace-write` ou `danger-full-access`; por isso rejeitou a requisição antes de iniciar o turno.
 - Ajuste aplicado: o payload de `thread/start` do perfil `CHATGPT_CODEX` agora envia `sandbox: 'workspace-write'`, alinhado ao contrato retornado pelo erro de produção.
 - Cobertura: o teste de execução via Codex App Server passou a verificar explicitamente que `thread/start` usa `workspace-write`, evitando regressão para `workspaceWrite`.
+
+## 2026-06-23 - Regra permanente no AGENTS para sandbox mode do Codex App Server
+
+- Pergunta de causa raiz: por que esse erro poderia voltar a acontecer? A correção anterior ajustou o código, mas a convenção do Codex App Server (`workspace-write`) ainda não estava registrada nas instruções permanentes do repositório; outro agente poderia reintroduzir os valores camelCase legados ao tocar no mesmo fluxo.
+- Ajuste aplicado: o `AGENTS.md` raiz agora documenta explicitamente que payloads do Codex App Server devem usar `read-only`, `workspace-write` ou `danger-full-access`, e nunca `workspaceWrite`, `readOnly` ou `dangerFullAccess` no campo `sandbox`.
