@@ -55,11 +55,15 @@ fi
 "$PATCH_BIN" -p0 -u -N --no-backup-if-mismatch <"${TMPFILE}.patch"
 EOF
 RUN chmod +x /usr/local/bin/apply_patch
-RUN npm install -g typescript
+RUN npm install -g typescript @openai/codex@0.141.0 \
+  && codex --version \
+  && mkdir -p /var/lib/ai-hub/codex \
+  && chmod 700 /var/lib/ai-hub/codex
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 ENV NODE_ENV=production
 ENV PORT=8083
+ENV CODEX_HOME=/var/lib/ai-hub/codex
 EXPOSE 8083
 CMD ["node", "dist/src/index.js"]

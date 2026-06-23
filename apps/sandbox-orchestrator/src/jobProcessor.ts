@@ -17,6 +17,8 @@ import {
   ResponseReasoningItem,
 } from 'openai/resources/responses/responses.js';
 
+import { CodexAppServerClient } from './codexAppServerClient.js';
+import { readCodexAccount } from './codexAppServerAuth.js';
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
 import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog, SandboxDatabaseConfig } from './types.js';
 
@@ -292,12 +294,15 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly stagnationResetMs: number;
   private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
   private readonly runnerEnvironmentStates: WeakMap<SandboxJob, RunnerEnvironmentState> = new WeakMap();
+  private readonly codexAppServerClient?: CodexAppServerClient;
+  private readonly codexTurnTimeoutMs: number;
 
   constructor(
     apiKey?: string,
     model = 'gpt-5-codex',
     openaiClient?: OpenAI,
     fetchImpl: (input: string | URL, init?: any) => Promise<any> = globalThis.fetch,
+    codexAppServerClient?: CodexAppServerClient,
   ) {
     this.model = model;
     if (openaiClient) {
@@ -306,6 +311,8 @@ export class SandboxJobProcessor implements JobProcessor {
       this.openai = buildOpenAIClient(apiKey);
     }
     this.fetchImpl = fetchImpl;
+    this.codexAppServerClient = codexAppServerClient;
+    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 10 * 60 * 1000);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
     this.toolOutputStringLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_STRING_LIMIT, 12_000);
@@ -719,11 +726,12 @@ export class SandboxJobProcessor implements JobProcessor {
       await this.runRunnerPreflight(job, repoPath!);
       this.ensureNotCancelled(job);
       const baseCommit = await this.getHeadCommit(repoPath!);
-      const openai = this.resolveOpenAIClient(job);
 
       this.ensureNotCancelled(job);
       this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
-      const summary = await this.runCodexLoop(job, repoPath!, resolvedModel, openai);
+      const summary = this.isChatgptCodex(job)
+        ? await this.runWithCodexAppServer(job, repoPath!, resolvedModel)
+        : await this.runWithOpenAIResponsesApi(job, repoPath!, resolvedModel);
       job.summary = summary;
       this.ensureNotCancelled(job);
       job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
@@ -940,18 +948,185 @@ export class SandboxJobProcessor implements JobProcessor {
 
   private resolveOpenAIClient(job: SandboxJob): OpenAI {
     if (this.isChatgptCodex(job)) {
-      const accessToken = typeof job.accessToken === 'string' ? job.accessToken.trim() : '';
-      if (!accessToken) {
-        throw new Error('Sessão ChatGPT conectada não forneceu access_token para execução CHATGPT_CODEX');
-      }
-      this.log(job, 'execução CHATGPT_CODEX usando access_token da sessão conectada, sem OPENAI_API_KEY do projeto');
-      return buildOpenAIClient(accessToken);
+      throw new Error('CHATGPT_CODEX deve executar exclusivamente via Codex App Server, sem OpenAI Responses API');
     }
 
     if (!this.openai) {
       throw new Error('OPENAI_API_KEY não configurada no sandbox orchestrator');
     }
     return this.openai;
+  }
+
+  private async runWithOpenAIResponsesApi(job: SandboxJob, repoPath: string, model: string): Promise<string> {
+    const openai = this.resolveOpenAIClient(job);
+    return this.runCodexLoop(job, repoPath, model, openai);
+  }
+
+  private async runWithCodexAppServer(job: SandboxJob, repoPath: string, model: string): Promise<string> {
+    const client = this.codexAppServerClient;
+    if (!client || !client.isReady()) {
+      throw new Error('CODEX_APP_SERVER_UNAVAILABLE');
+    }
+
+    const account = await readCodexAccount(client);
+    if (!account.executable) {
+      throw new Error(account.blockReason || 'CODEX_NOT_AUTHENTICATED');
+    }
+    if (job.imageAttachments && job.imageAttachments.length > 0) {
+      throw new Error('CODEX_INPUT_IMAGE_UNSUPPORTED');
+    }
+
+    this.recordInteraction(job, 'OUTBOUND', this.safeStringify({
+      method: 'thread/start',
+      params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: 'workspaceWrite', serviceName: 'ai_hub' },
+    }));
+    const thread = await client.request<Record<string, unknown>>('thread/start', {
+      model,
+      cwd: repoPath,
+      approvalPolicy: 'never',
+      sandbox: 'workspaceWrite',
+      serviceName: 'ai_hub',
+    });
+    const threadId = this.extractCodexId(thread, ['threadId', 'id'], 'thread.id');
+    if (!threadId) {
+      throw new Error('CODEX_THREAD_START_FAILED');
+    }
+    this.log(job, `Codex App Server thread/start concluído threadId=${threadId}`);
+
+    let completed = false;
+    let failedReason: string | undefined;
+    let summary = '';
+    let firstEventAt: number | undefined;
+    const startedAt = Date.now();
+    const unsubscribeCallbacks = [
+      client.onNotification('item/agentMessage/delta', (params) => {
+        firstEventAt = firstEventAt ?? Date.now();
+        const delta = this.extractCodexText(params) ?? '';
+        if (delta) {
+          summary += delta;
+          this.recordInteraction(job, 'INBOUND', delta);
+        }
+      }),
+      client.onNotification('item/completed', (params) => {
+        firstEventAt = firstEventAt ?? Date.now();
+        this.log(job, `Codex App Server item/completed ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
+      }),
+      client.onNotification('item/started', (params) => {
+        firstEventAt = firstEventAt ?? Date.now();
+        this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
+      }),
+      client.onNotification('turn/completed', (params) => {
+        firstEventAt = firstEventAt ?? Date.now();
+        const status = this.extractCodexStatus(params);
+        const text = this.extractCodexText(params);
+        if (text) {
+          summary = text;
+          this.recordInteraction(job, 'INBOUND', text);
+        }
+        if (status && !['completed', 'succeeded', 'success', 'ok'].includes(status)) {
+          failedReason = `CODEX_TURN_FAILED: ${status}`;
+        }
+        completed = true;
+      }),
+    ];
+
+    try {
+      const turnParams = {
+        threadId,
+        input: [{ type: 'text', text: job.taskDescription }],
+      };
+      this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
+      const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
+      const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
+      this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId}`);
+      const immediateStatus = this.extractCodexStatus(turn);
+      const immediateText = this.extractCodexText(turn);
+      if (immediateText) {
+        summary = immediateText;
+      }
+      if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) {
+        completed = true;
+      }
+      await this.waitForCodexTurn(job, () => completed, () => failedReason);
+      if (failedReason) {
+        throw new Error(failedReason);
+      }
+      const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
+      this.log(job, `Codex App Server turn/completed recebido threadId=${threadId} turnId=${turnId}${firstEventMs !== undefined ? ` firstEventMs=${firstEventMs}` : ''}`);
+      return summary.trim() || 'Codex App Server concluiu o turno sem mensagem final.';
+    } finally {
+      unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
+    }
+  }
+
+  private async waitForCodexTurn(job: SandboxJob, isCompleted: () => boolean, failureReason: () => string | undefined): Promise<void> {
+    const startedAt = Date.now();
+    while (!isCompleted()) {
+      this.ensureNotCancelled(job);
+      const failure = failureReason();
+      if (failure) {
+        throw new Error(failure);
+      }
+      if (Date.now() - startedAt > this.codexTurnTimeoutMs) {
+        throw new Error('CODEX_TURN_INTERRUPTED');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  private extractCodexId(value: unknown, keys: string[], nestedKey?: string): string | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    for (const key of keys) {
+      const candidate = record[key];
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+    if (nestedKey) {
+      const [outer, inner] = nestedKey.split('.');
+      const nested = record[outer];
+      if (nested && typeof nested === 'object') {
+        const candidate = (nested as Record<string, unknown>)[inner];
+        if (typeof candidate === 'string' && candidate.trim()) {
+          return candidate.trim();
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private extractCodexText(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const candidates = [record.text, record.delta, record.message, record.summary, record.output, record.result];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate;
+      }
+    }
+    const item = record.item;
+    if (item && typeof item === 'object') {
+      return this.extractCodexText(item);
+    }
+    return undefined;
+  }
+
+  private extractCodexStatus(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const status = record.status ?? record.outcome;
+    return typeof status === 'string' ? status.toLowerCase() : undefined;
+  }
+
+  private sanitizeCodexEvent(value: unknown): unknown {
+    return sanitizeOpenAIExchange(value);
   }
 
   private async runCodexLoop(job: SandboxJob, repoPath: string, model: string, openai: OpenAI): Promise<string> {

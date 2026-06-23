@@ -119,7 +119,7 @@ test('não expõe o callbackSecret nas respostas', async () => {
 });
 
 
-test('persiste accessToken para execução e não expõe nas respostas', async () => {
+test('não persiste accessToken em jobs CHATGPT_CODEX', async () => {
   const registry = new Map<string, SandboxJob>();
   const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
   const payload = {
@@ -137,7 +137,7 @@ test('persiste accessToken para execução e não expõe nas respostas', async (
   assert.ok(!('accessToken' in creation.body) || creation.body.accessToken === undefined, 'accessToken should not be exposed');
 
   const stored = registry.get(payload.jobId);
-  assert.equal(stored?.accessToken, payload.accessToken);
+  assert.equal(stored?.accessToken, undefined);
 });
 
 test('permite cancelar um job em execução', async () => {
@@ -2828,5 +2828,151 @@ test('resolve configuração de organização OpenAI para enviar no client', () 
     } else {
       process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID = originalHubOrganizationId;
     }
+  }
+});
+
+test('inclui estado do Codex App Server no healthcheck', async () => {
+  const fakeCodexAppServerClient = {
+    health: () => ({ status: 'ready', ready: true, restartAttempts: 0, initializedAt: '2026-06-22T00:00:00.000Z' }),
+    isReady: () => true,
+    request: async () => ({ authMode: 'chatgpt', planType: 'plus' }),
+  } as any;
+  const app = createApp({ processor: new StubProcessor(), codexAppServerClient: fakeCodexAppServerClient });
+  const response = await request(app).get('/health').expect(200);
+
+  assert.equal(response.body.status, 'ok');
+  assert.equal(response.body.codexAppServer.status, 'ready');
+  assert.equal(response.body.codexAppServer.ready, true);
+});
+
+test('expõe account/read interno via Codex App Server sem tokens', async () => {
+  const fakeCodexAppServerClient = {
+    health: () => ({ status: 'ready', ready: true, restartAttempts: 0 }),
+    isReady: () => true,
+    request: async (method: string) => {
+      assert.equal(method, 'account/read');
+      return { authMode: 'chatgpt', planType: 'plus', accessToken: 'never-expose' };
+    },
+  } as any;
+  const app = createApp({ processor: new StubProcessor(), codexAppServerClient: fakeCodexAppServerClient });
+  const response = await request(app).get('/codex-app-server/account/read').expect(200);
+
+  assert.equal(response.body.connected, true);
+  assert.equal(response.body.executable, true);
+  assert.equal(response.body.authMode, 'chatgpt');
+  assert.ok(!('accessToken' in response.body), 'tokens must not be exposed');
+});
+
+test('inicia login device code via Codex App Server sem montar OAuth manual', async () => {
+  const fakeCodexAppServerClient = {
+    health: () => ({ status: 'ready', ready: true, restartAttempts: 0 }),
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      assert.equal(method, 'account/login/start');
+      assert.deepEqual(params, { type: 'chatgptDeviceCode' });
+      return { type: 'chatgptDeviceCode', loginId: 'login-123', verificationUrl: 'https://auth.openai.com/codex/device', userCode: 'ABCD-1234' };
+    },
+  } as any;
+  const app = createApp({ processor: new StubProcessor(), codexAppServerClient: fakeCodexAppServerClient });
+  const response = await request(app).post('/codex-app-server/account/login/start').send({ type: 'chatgptDeviceCode' }).expect(202);
+
+  assert.equal(response.body.status, 'authorization_pending');
+  assert.equal(response.body.loginId, 'login-123');
+  assert.equal(response.body.userCode, 'ABCD-1234');
+});
+
+test('encaminha logout para Codex App Server', async () => {
+  const calls: string[] = [];
+  const fakeCodexAppServerClient = {
+    health: () => ({ status: 'ready', ready: true, restartAttempts: 0 }),
+    isReady: () => true,
+    request: async (method: string) => {
+      calls.push(method);
+      if (method === 'account/logout') {
+        return { ok: true };
+      }
+      if (method === 'account/read') {
+        return {};
+      }
+      return {};
+    },
+  } as any;
+  const app = createApp({ processor: new StubProcessor(), codexAppServerClient: fakeCodexAppServerClient });
+  const response = await request(app).post('/codex-app-server/account/logout').send({}).expect(200);
+
+  assert.deepEqual(calls, ['account/logout', 'account/read']);
+  assert.equal(response.body.connected, false);
+  assert.equal(response.body.executable, false);
+});
+
+test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-codex-app-server-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: unknown }> = [];
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') {
+        return { authMode: 'chatgpt', planType: 'plus' };
+      }
+      if (method === 'thread/start') {
+        return { id: 'thread-123' };
+      }
+      if (method === 'turn/start') {
+        setTimeout(() => {
+          for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
+            listener({ delta: 'resumo via app server' });
+          }
+          for (const listener of listeners.get('turn/completed') ?? []) {
+            listener({ status: 'completed', turnId: 'turn-123' });
+          }
+        }, 5);
+        return { id: 'turn-123' };
+      }
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+  const job: SandboxJob = {
+    jobId: 'job-chatgpt-codex-app-server',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'use app server',
+    profile: 'CHATGPT_CODEX',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+
+    assert.equal(job.status, 'COMPLETED');
+    assert.equal(job.summary, 'resumo via app server');
+    assert.ok(calls.some((call) => call.method === 'thread/start'));
+    assert.ok(calls.some((call) => call.method === 'turn/start'));
+    assert.ok(!calls.some((call) => call.method === 'responses.create'));
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
   }
 });

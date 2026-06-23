@@ -81,3 +81,28 @@ export interface SandboxJob {
 export interface JobProcessor {
   process(job: SandboxJob): Promise<void>;
 }
+
+export type CodexFunctionalErrorCode =
+  | 'CODEX_APP_SERVER_UNAVAILABLE'
+  | 'CODEX_NOT_AUTHENTICATED'
+  | 'CODEX_MODEL_UNSUPPORTED'
+  | 'CODEX_THREAD_START_FAILED'
+  | 'CODEX_TURN_FAILED'
+  | 'CODEX_TURN_INTERRUPTED'
+  | 'CODEX_INPUT_IMAGE_UNSUPPORTED';
+
+export interface CodexThreadStartResult {
+  threadId: string;
+}
+
+export interface CodexTurnStartResult {
+  turnId: string;
+  threadId: string;
+}
+
+export interface CodexTurnCompletedEvent {
+  turnId?: string;
+  threadId?: string;
+  status?: string;
+  text?: string;
+}

@@ -5,12 +5,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { CodexAppServerClient } from './codexAppServerClient.js';
+import { cancelCodexLogin, logoutCodexAccount, readCodexAccount, startCodexLogin } from './codexAppServerAuth.js';
 import { SandboxJobProcessor } from './jobProcessor.js';
 import { JobProcessor, SandboxDatabaseConfig, SandboxImageAttachment, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
   jobRegistry?: Map<string, SandboxJob>;
   processor?: JobProcessor;
+  codexAppServerClient?: CodexAppServerClient;
 }
 
 function validateString(value: unknown): string | undefined {
@@ -78,8 +81,9 @@ function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
 
 export function createApp(options: AppOptions = {}) {
   const jobRegistry = options.jobRegistry ?? new Map<string, SandboxJob>();
+  const codexAppServerClient = options.codexAppServerClient;
   const processor =
-    options.processor ?? new SandboxJobProcessor(process.env.OPENAI_API_KEY, process.env.CIFIX_MODEL);
+    options.processor ?? new SandboxJobProcessor(process.env.OPENAI_API_KEY, process.env.CIFIX_MODEL, undefined, globalThis.fetch, codexAppServerClient);
 
   const normalizeProfile = (value?: string): SandboxProfile => {
     if (!value) {
@@ -134,7 +138,74 @@ export function createApp(options: AppOptions = {}) {
   };
 
   app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', python: healthcheckPythonInfo() });
+    const codexAppServer = codexAppServerClient?.health() ?? {
+      status: 'disabled',
+      ready: false,
+      restartAttempts: 0,
+    };
+    res.json({ status: codexAppServer.status === 'degraded' ? 'degraded' : 'ok', python: healthcheckPythonInfo(), codexAppServer });
+  });
+
+  app.get('/codex-app-server/account/read', async (_req: Request, res: Response) => {
+    if (!codexAppServerClient) {
+      return res.status(503).json({
+        connected: false,
+        status: 'unavailable',
+        executable: false,
+        blockReason: 'CODEX_APP_SERVER_DISABLED',
+      });
+    }
+    const state = await readCodexAccount(codexAppServerClient);
+    const httpStatus = state.status === 'unavailable' ? 503 : 200;
+    return res.status(httpStatus).json(state);
+  });
+
+
+  app.post('/codex-app-server/account/login/start', async (req: Request, res: Response) => {
+    if (!codexAppServerClient) {
+      return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
+    }
+    try {
+      const requestedType = validateString(req.body?.type) ?? 'chatgptDeviceCode';
+      const state = await startCodexLogin(codexAppServerClient, requestedType);
+      return res.status(202).json(state);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'CODEX_LOGIN_FAILED';
+      const status = message === 'CODEX_APP_SERVER_UNAVAILABLE' ? 503 : 502;
+      return res.status(status).json({ status: 'failed', blockReason: message });
+    }
+  });
+
+  app.post('/codex-app-server/account/login/cancel', async (req: Request, res: Response) => {
+    if (!codexAppServerClient) {
+      return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
+    }
+    const loginId = validateString(req.body?.loginId);
+    if (!loginId) {
+      return res.status(400).json({ status: 'failed', blockReason: 'CODEX_LOGIN_ID_REQUIRED' });
+    }
+    try {
+      await cancelCodexLogin(codexAppServerClient, loginId);
+      return res.json({ status: 'cancelled', loginId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'CODEX_LOGIN_FAILED';
+      const status = message === 'CODEX_APP_SERVER_UNAVAILABLE' ? 503 : 502;
+      return res.status(status).json({ status: 'failed', blockReason: message });
+    }
+  });
+
+  app.post('/codex-app-server/account/logout', async (_req: Request, res: Response) => {
+    if (!codexAppServerClient) {
+      return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
+    }
+    try {
+      const state = await logoutCodexAccount(codexAppServerClient);
+      return res.json(state);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'CODEX_APP_SERVER_UNAVAILABLE';
+      const status = message === 'CODEX_APP_SERVER_UNAVAILABLE' ? 503 : 502;
+      return res.status(status).json({ status: 'failed', blockReason: message });
+    }
   });
 
   app.post('/jobs', async (req: Request, res: Response) => {
@@ -180,7 +251,7 @@ export function createApp(options: AppOptions = {}) {
       testCommand,
       profile,
       model: model ?? undefined,
-      accessToken: accessToken ?? undefined,
+      accessToken: profile === 'CHATGPT_CODEX' ? undefined : accessToken ?? undefined,
       database,
       callbackUrl: callbackUrl ?? undefined,
       callbackSecret: callbackSecret ?? undefined,

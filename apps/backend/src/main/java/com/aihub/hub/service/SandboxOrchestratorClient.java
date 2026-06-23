@@ -31,6 +31,40 @@ public class SandboxOrchestratorClient {
         this.jobsPath = jobsPath;
     }
 
+    public Map<String, Object> readCodexAccount() {
+        return restClient.get()
+            .uri("/codex-app-server/account/read")
+            .retrieve()
+            .body(Map.class);
+    }
+
+    public Map<String, Object> startCodexLogin(String type) {
+        return restClient.post()
+            .uri("/codex-app-server/account/login/start")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("type", type == null || type.isBlank() ? "chatgptDeviceCode" : type))
+            .retrieve()
+            .body(Map.class);
+    }
+
+    public Map<String, Object> cancelCodexLogin(String loginId) {
+        return restClient.post()
+            .uri("/codex-app-server/account/login/cancel")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("loginId", loginId))
+            .retrieve()
+            .body(Map.class);
+    }
+
+    public Map<String, Object> logoutCodexAccount() {
+        return restClient.post()
+            .uri("/codex-app-server/account/logout")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of())
+            .retrieve()
+            .body(Map.class);
+    }
+
     public SandboxOrchestratorJobResponse createJob(SandboxJobRequest request) {
         Map<String, Object> body = new HashMap<>();
         body.put("jobId", request.jobId());
