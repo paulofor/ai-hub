@@ -2969,7 +2969,9 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
 
     assert.equal(job.status, 'COMPLETED');
     assert.equal(job.summary, 'resumo via app server');
-    assert.ok(calls.some((call) => call.method === 'thread/start'));
+    const threadStartCall = calls.find((call) => call.method === 'thread/start');
+    assert.ok(threadStartCall);
+    assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'workspace-write');
     assert.ok(calls.some((call) => call.method === 'turn/start'));
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
   } finally {
