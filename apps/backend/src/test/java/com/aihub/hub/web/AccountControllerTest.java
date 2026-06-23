@@ -1,150 +1,115 @@
 package com.aihub.hub.web;
 
-import com.aihub.hub.service.TokenLifecycleManager;
+import com.aihub.hub.service.SandboxOrchestratorClient;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class AccountControllerTest {
 
     @Test
-    void deviceCodeTokenExchangePayloadDoesNotIncludeBrowserClientSecret() {
-        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
-        ReflectionTestUtils.setField(controller, "oauthClientSecret", "browser-secret");
+    void readReturnsRemovedLegacyStateWhenAppServerIsDisabled() {
+        AccountController controller = new AccountController(null, new SimpleMeterRegistry());
 
-        Map<String, String> payload = controller.buildTokenExchangePayload(
-            "authorization-code",
-            "code-verifier",
-            "https://auth.openai.com/deviceauth/callback",
-            "app_device_client_123",
-            false
-        );
+        Map<String, Object> response = controller.read();
 
-        assertThat(payload).containsEntry("grant_type", "authorization_code");
-        assertThat(payload).containsEntry("client_id", "app_device_client_123");
-        assertThat(payload).containsEntry("code", "authorization-code");
-        assertThat(payload).containsEntry("redirect_uri", "https://auth.openai.com/deviceauth/callback");
-        assertThat(payload).containsEntry("code_verifier", "code-verifier");
-        assertThat(payload).doesNotContainKey("client_secret");
+        assertThat(response).containsEntry("connected", false);
+        assertThat(response).containsEntry("status", "app_server_disabled");
+        assertThat(response).containsEntry("executable", false);
+        assertThat(response).containsEntry("blockReason", "CODEX_APP_SERVER_DISABLED");
+        assertThat(response.get("message")).asString().contains("Fluxo OAuth legado removido");
     }
 
     @Test
-    void deviceUserCodePayloadMatchesCodexRsPublicClientRequest() {
-        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
-        ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+    void loginStartRejectsLegacyOAuthWhenAppServerIsDisabled() {
+        AccountController controller = new AccountController(null, new SimpleMeterRegistry());
 
-        Map<String, Object> payload = controller.buildDeviceUserCodePayload("app_device_client_123");
-
-        assertThat(payload).containsEntry("client_id", "app_device_client_123");
-        assertThat(payload).doesNotContainKey("id_token_add_organizations");
-        assertThat(payload).doesNotContainKey("organization_id");
+        assertThatThrownBy(() -> controller.startLogin(Map.of()))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("Fluxo OAuth legado removido");
     }
 
     @Test
-    void browserAuthorizeUrlRequestsOrganizationClaims() {
-        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
-        ReflectionTestUtils.setField(controller, "oauthAuthorizeUrl", "https://auth.openai.com/oauth/authorize");
-        ReflectionTestUtils.setField(controller, "oauthClientId", "app_browser_client_123");
-        ReflectionTestUtils.setField(controller, "oauthScopes", "openid profile email offline_access");
-        ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+    void legacyCallbackIsRemovedEvenWhenAppServerIsEnabled() {
+        AccountController controller = new AccountController(null, new SimpleMeterRegistry());
+        ReflectionTestUtils.setField(controller, "codexAppServerEnabled", true);
 
-        String authUrl = ReflectionTestUtils.invokeMethod(
-            controller,
-            "buildExternalAuthUrl",
-            "https://iahub.xyz/api/account/login/callback",
-            "state-123",
-            "challenge-123"
-        );
-
-        assertThat(authUrl).contains("id_token_add_organizations=true");
-        assertThat(authUrl).contains("codex_cli_simplified_flow=true");
-        assertThat(authUrl).contains("allowed_workspace_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
-        assertThat(authUrl).doesNotContain("organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
+        assertThatThrownBy(controller::loginCallback)
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("Callback OAuth legado removido");
     }
 
     @Test
-    void browserAuthorizeUrlFallsBackToPublicDeviceClientWhenConfiguredBrowserClientIsInvalid() {
+    void appServerReadProxiesSandboxAccountState() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
-        ReflectionTestUtils.setField(controller, "oauthAuthorizeUrl", "https://auth.openai.com/oauth/authorize");
-        ReflectionTestUtils.setField(controller, "oauthClientId", "paulofore");
-        ReflectionTestUtils.setField(controller, "oauthDeviceClientId", "app_EMoamEEZ73f0CkXaXp7hrann");
-        ReflectionTestUtils.setField(controller, "oauthScopes", "openid profile email offline_access");
-        ReflectionTestUtils.setField(controller, "oauthOrganizationId", "org-DgyTLAxNYnw0cOQVlAXInkyR");
+        SandboxOrchestratorClient sandbox = mock(SandboxOrchestratorClient.class);
+        when(sandbox.readCodexAccount()).thenReturn(Map.of(
+            "connected", true,
+            "status", "connected",
+            "authMode", "chatgpt",
+            "planType", "plus",
+            "executable", true
+        ));
+        AccountController controller = new AccountController(sandbox, meterRegistry);
+        ReflectionTestUtils.setField(controller, "codexAppServerEnabled", true);
 
-        String authUrl = ReflectionTestUtils.invokeMethod(
-            controller,
-            "buildExternalAuthUrl",
-            "https://iahub.xyz/api/account/login/callback",
-            "state-123",
-            "challenge-123"
-        );
+        Map<String, Object> response = controller.read();
 
-        assertThat(authUrl).contains("client_id=app_EMoamEEZ73f0CkXaXp7hrann");
-        assertThat(authUrl).contains("id_token_add_organizations=true");
-        assertThat(authUrl).contains("allowed_workspace_id=org-DgyTLAxNYnw0cOQVlAXInkyR");
-    }
-
-
-    @Test
-    void persistDeviceLoginTokenResponseStoresPublicOauthClientOrigin() {
-        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute(TokenLifecycleManager.ACCOUNT_EMAIL_KEY, "device@example.com");
-
-        ReflectionTestUtils.invokeMethod(
-            controller,
-            "persistTokenResponse",
-            session,
-            Map.of(
-                "access_token", "access-token",
-                "refresh_token", "refresh-token",
-                "id_token", jwtWithPayload("{\"email\":\"device@example.com\"}"),
-                "expires_in", 3600
-            ),
-            "app_EMoamEEZ73f0CkXaXp7hrann",
-            TokenLifecycleManager.OAUTH_CLIENT_TYPE_PUBLIC
-        );
-
-        assertThat(session.getAttribute(TokenLifecycleManager.OAUTH_CLIENT_ID_KEY)).isEqualTo("app_EMoamEEZ73f0CkXaXp7hrann");
-        assertThat(session.getAttribute(TokenLifecycleManager.OAUTH_CLIENT_TYPE_KEY)).isEqualTo(TokenLifecycleManager.OAUTH_CLIENT_TYPE_PUBLIC);
+        assertThat(response).containsEntry("authMode", "chatgpt");
+        assertThat(response).containsEntry("executable", true);
+        verify(sandbox).readCodexAccount();
     }
 
     @Test
-    void browserTokenExchangePayloadKeepsConfiguredClientSecret() {
+    void appServerLoginStartUsesDeviceCodeByDefault() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        AccountController controller = new AccountController(new TokenLifecycleManager(meterRegistry), meterRegistry);
-        ReflectionTestUtils.setField(controller, "oauthClientSecret", "browser-secret");
+        SandboxOrchestratorClient sandbox = mock(SandboxOrchestratorClient.class);
+        when(sandbox.startCodexLogin("chatgptDeviceCode")).thenReturn(Map.of(
+            "status", "authorization_pending",
+            "loginId", "login-123",
+            "verificationUrl", "https://auth.openai.com/codex/device",
+            "userCode", "ABCD-1234"
+        ));
+        AccountController controller = new AccountController(sandbox, meterRegistry);
+        ReflectionTestUtils.setField(controller, "codexAppServerEnabled", true);
 
-        Map<String, String> payload = controller.buildTokenExchangePayload(
-            "authorization-code",
-            "code-verifier",
-            "https://iahub.xyz/api/account/login/callback",
-            "app_browser_client_123",
-            true
-        );
+        Map<String, Object> response = controller.startLogin(Map.of());
 
-        assertThat(payload).containsEntry("client_secret", "browser-secret");
+        assertThat(response).containsEntry("loginId", "login-123");
+        assertThat(response).containsEntry("userCode", "ABCD-1234");
+        verify(sandbox).startCodexLogin("chatgptDeviceCode");
     }
 
-    private String jwtWithPayload(String payload) {
-        return base64Url("{\"alg\":\"none\"}") + "." + base64Url(payload) + ".signature";
+    @Test
+    void appServerDeviceStartUsesDeviceCode() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        SandboxOrchestratorClient sandbox = mock(SandboxOrchestratorClient.class);
+        when(sandbox.startCodexLogin("chatgptDeviceCode")).thenReturn(Map.of("loginId", "login-device"));
+        AccountController controller = new AccountController(sandbox, meterRegistry);
+        ReflectionTestUtils.setField(controller, "codexAppServerEnabled", true);
+
+        Map<String, Object> response = controller.startDeviceLogin();
+
+        assertThat(response).containsEntry("loginId", "login-device");
+        verify(sandbox).startCodexLogin("chatgptDeviceCode");
     }
 
-    private String base64Url(String value) {
-        return Base64.getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    @Test
+    void appServerCancelRequiresLoginId() {
+        AccountController controller = new AccountController(mock(SandboxOrchestratorClient.class), new SimpleMeterRegistry());
+        ReflectionTestUtils.setField(controller, "codexAppServerEnabled", true);
+
+        assertThatThrownBy(() -> controller.cancelLogin(Map.of()))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("loginId é obrigatório");
     }
 }

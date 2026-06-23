@@ -13,7 +13,6 @@ import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -24,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +48,6 @@ class CodexRequestServiceTest {
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
-    private final TokenLifecycleManager tokenLifecycleManager = mock(TokenLifecycleManager.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
     private final PlatformTransactionManager transactionManager = new PlatformTransactionManager() {
         @Override
@@ -66,6 +65,10 @@ class CodexRequestServiceTest {
     };
 
     private CodexRequestService buildService() {
+        return buildService(false);
+    }
+
+    private CodexRequestService buildService(boolean codexAppServerEnabled) {
         return new CodexRequestService(
             codexRequestRepository,
             promptRepository,
@@ -75,13 +78,13 @@ class CodexRequestServiceTest {
             environmentRepository,
             problemRepository,
             sandboxOrchestratorClient,
-            tokenLifecycleManager,
             tokenCostCalculator,
             transactionManager,
             "gpt-5-codex",
             "gpt-4.1-mini",
             "main",
             1_500_000,
+            codexAppServerEnabled,
             null,
             null
         );
@@ -90,8 +93,6 @@ class CodexRequestServiceTest {
     @BeforeEach
     void setup() {
         when(environmentRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
-        when(tokenLifecycleManager.getValidAccessTokenFromCurrentSession()).thenReturn(Optional.empty());
-        when(tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()).thenReturn(Optional.empty());
     }
 
     @Test
@@ -316,25 +317,20 @@ class CodexRequestServiceTest {
 
 
     @Test
-    void chatgptCodexSendsOAuthDerivedApiTokenToSandbox() {
+    void chatgptCodexDoesNotUseOAuthDerivedApiTokenWhileAppServerIsNotIntegrated() {
         CodexRequestService service = buildService();
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
-        when(tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()).thenReturn(Optional.of("oauth-derived-api-token"));
-
         CreateCodexRequest payload = new CreateCodexRequest();
         payload.setEnvironment("owner/repo@main");
         payload.setPrompt("modo codex chatgpt");
         payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX);
 
-        service.create(payload);
+        CodexRequest created = service.create(payload);
 
-        ArgumentCaptor<SandboxJobRequest> captor = ArgumentCaptor.forClass(SandboxJobRequest.class);
-        verify(sandboxOrchestratorClient).createJob(captor.capture());
-        assertThat(captor.getValue().accessToken()).isEqualTo("oauth-derived-api-token");
-        verify(tokenLifecycleManager).getValidCodexApiTokenFromCurrentSession();
-        verify(tokenLifecycleManager, never()).getValidAccessTokenFromCurrentSession();
+        assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(created.getResponseText()).contains("Codex App Server");
+        verify(sandboxOrchestratorClient, never()).createJob(any());
     }
 
 
@@ -343,8 +339,6 @@ class CodexRequestServiceTest {
         CodexRequestService service = buildService();
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()).thenReturn(Optional.empty());
-
         CreateCodexRequest payload = new CreateCodexRequest();
         payload.setEnvironment("owner/repo@main");
         payload.setPrompt("modo codex chatgpt sem token");
@@ -353,13 +347,38 @@ class CodexRequestServiceTest {
         CodexRequest created = service.create(payload);
 
         assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
-        assertThat(created.getResponseText()).contains("não gerou token de execução");
+        assertThat(created.getResponseText()).contains("Codex App Server");
         assertThat(created.getFinishedAt()).isNotNull();
         assertThat(created.getDurationMs()).isNotNull();
         verify(sandboxOrchestratorClient, never()).createJob(any());
-        verify(tokenLifecycleManager).getValidCodexApiTokenFromCurrentSession();
-        verify(tokenLifecycleManager, never()).getValidAccessTokenFromCurrentSession();
     }
+
+
+    @Test
+    void chatgptCodexDispatchesViaAppServerWhenExecutableWithoutOauthToken() {
+        CodexRequestService service = buildService(true);
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.readCodexAccount()).thenReturn(Map.of(
+            "connected", true,
+            "status", "connected",
+            "authMode", "chatgpt",
+            "executable", true
+        ));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("modo codex chatgpt via app server");
+        payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX);
+
+        CodexRequest created = service.create(payload);
+
+        assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.PENDING);
+        verify(sandboxOrchestratorClient).readCodexAccount();
+        verify(sandboxOrchestratorClient).createJob(any());
+    }
+
 
     @Test
     void chatgptCodexUsesEconomyModelWhenAvailable() {

@@ -666,3 +666,88 @@
 - Gerado o documento `docs/diario/dialogo-openai-codex-718.md` com o diálogo observado entre AI Hub e OpenAI para a CodexRequest 718.
 - O documento registra a pergunta obrigatória de causa raiz e a linha do tempo completa: device login, polling pendente, autorização concluída, authorization-code exchange, refresh OAuth aceito e bloqueio antes do token exchange por ausência de `organization_id` no `id_token`.
 - Comparação registrada: a 718 repetiu a 717; a correção do `organization_id` no refresh permanece efetiva, mas a tentativa ainda usou sessão device pública em vez de sessão browser/PKCE com workspace autorizado.
+
+## 2026-06-22 — Fase 0 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque o AI Hub tentou reproduzir internamente a autenticação privada usada pelo Codex: montou OAuth/device flow, refresh e token exchange manualmente, misturou clientes OAuth na mesma sessão, passou a depender de claims como `organization_id` no `id_token` e ainda marcou/encaminhou execuções `CHATGPT_CODEX` mesmo sem uma credencial executável real. A correção da fase 0, portanto, não deve ajustar mais parâmetros desse fluxo legado; deve congelá-lo até que o Codex App Server assuma autenticação e execução.
+
+### Trabalho realizado
+
+- Adicionada a feature flag `CODEX_APP_SERVER_ENABLED`, exposta em `hub.codex.app-server-enabled`, com padrão `false`.
+- Congelado o caminho legado de execução `CHATGPT_CODEX`: novas requisições desse perfil falham localmente com motivo funcional e não chamam `TokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()`, não fazem token exchange manual e não enviam token ao sandbox.
+- Preservado o caminho `OPENAI_API`/perfis não ChatGPT, que continua podendo usar o token OAuth/API existente quando disponível.
+- Congelados endpoints HTTP de OAuth legado de conta enquanto o App Server não estiver habilitado, retornando estado não executável em `/api/account/read` e bloqueando novas tentativas manuais de login/callback/device.
+- Atualizados testes unitários do backend para validar que o perfil `CHATGPT_CODEX` não envia token OAuth derivado ao sandbox durante a fase 0.
+
+
+## 2026-06-22 — Fase 1 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque o AI Hub ainda não tinha um supervisor local para o processo oficial `codex app-server`; sem esse componente, a autenticação e o estado de conta do perfil `CHATGPT_CODEX` continuariam dependendo do fluxo legado congelado na fase 0 ou de tentativas manuais de token exchange. A causa raiz da fase 1, portanto, é arquitetural: faltava mover a posse da sessão ChatGPT/Codex para o sandbox-orchestrator, que é onde a execução e o workspace real já são gerenciados.
+
+### Trabalho realizado
+
+- Instalado o CLI oficial `@openai/codex` na imagem do sandbox-orchestrator e configurado `CODEX_HOME=/var/lib/ai-hub/codex` com diretório dedicado e permissão restrita.
+- Criado o cliente/supervisor `CodexAppServerClient` para iniciar `codex app-server --listen stdio://`, fazer o handshake `initialize`/`initialized`, correlacionar respostas por `id`, distribuir notificações, rejeitar requests pendentes em falhas e publicar saúde `starting`, `ready`, `degraded` ou `stopped`.
+- Criada leitura segura de conta via `account/read`, expondo apenas estado operacional (`connected`, `authMode`, `planType`, `executable`, `blockReason`) sem repassar tokens ao backend.
+- Integrado o App Server opcionalmente ao boot do sandbox-orchestrator por `CODEX_APP_SERVER_ENABLED=true`, ao healthcheck e ao endpoint interno `GET /codex-app-server/account/read`.
+- Adicionados testes de handshake, correlação fora de ordem, notificações, rejeição de pendências, degradação em encerramento inesperado, healthcheck e account/read sem tokens.
+
+## 2026-06-22 — Fase 2 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque, mesmo com o supervisor do App Server criado na fase 1, a autenticação exposta ao usuário ainda passava por endpoints e UI pensados para o OAuth legado: e-mail obrigatório, falsa seleção multi-conta, browser/device flow manual e estado inferido localmente. A causa raiz da fase 2 era a falta de uma fachada HTTP que delegasse login, logout e leitura de conta ao `codex app-server`, preservando apenas campos seguros para o frontend.
+
+### Trabalho realizado
+
+- Implementado login `chatgptDeviceCode` no sandbox-orchestrator via `account/login/start`, além de cancelamento e logout delegados ao App Server.
+- Reescritos os endpoints `/api/account/read`, `/api/account/login/start`, `/api/account/device/start`, `/api/account/device/poll`, `/api/account/login/cancel` e `/api/account/logout` para atuarem como proxy do sandbox-orchestrator quando `CODEX_APP_SERVER_ENABLED=true`, sem chamar endpoints privados da OpenAI nem persistir tokens na sessão HTTP.
+- Atualizado o frontend `CodexChatgptPage` para usar device code por padrão, remover e-mail obrigatório e a falsa UI multi-conta, exibir `authMode`, `planType`, `executable` e `blockReason`, e bloquear execução quando `executable=false`.
+- Configurado volume persistente `codex-auth-data` para `CODEX_HOME=/var/lib/ai-hub/codex` no Docker Compose, sem montar o volume no frontend.
+- Adicionados testes do sandbox-orchestrator para login e logout via App Server, mantendo validação de leitura sanitizada sem tokens.
+
+## 2026-06-22 — Fase 3 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque, até a fase 2, o sistema já tinha um caminho seguro de autenticação via App Server, mas a execução `CHATGPT_CODEX` ainda não tinha um fluxo próprio de `thread/start` e `turn/start`. Sem essa separação, o backend poderia voltar a despachar jobs sem validar readiness/conta executável ou o sandbox-orchestrator poderia tentar executar o perfil ChatGPT pelo caminho legado da Responses API. A causa raiz da fase 3 era a ausência de um caminho de execução exclusivo do Codex App Server e de uma barreira de readiness antes do dispatch.
+
+### Trabalho realizado
+
+- Backend passou a consultar `account/read` do sandbox-orchestrator antes de despachar `CHATGPT_CODEX`, falhando localmente quando a conta não está executável e nunca enviando token OAuth no payload desse perfil.
+- Sandbox-orchestrator passou a separar `CHATGPT_CODEX` da Responses API, executando `thread/start` e `turn/start` no Codex App Server somente quando o cliente está pronto e a conta está executável.
+- Consumidos eventos mínimos do App Server (`item/started`, `item/completed`, `item/agentMessage/delta`, `turn/completed`) para formar resumo, registrar interações sanitizadas e concluir o job apenas após `turn/completed`.
+- Adicionado timeout funcional `CODEX_APP_SERVER_TURN_TIMEOUT_MS`, tipos auxiliares de thread/turn/erros funcionais e hardening para descartar `accessToken` recebido em jobs `CHATGPT_CODEX`.
+- Adicionados testes cobrindo dispatch backend sem token OAuth quando a conta está executável e execução sandbox via App Server sem chamar `responses.create`.
+
+## 2026-06-22 — Fase 4 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque, mesmo após autenticação e execução terem sido movidas para o Codex App Server nas fases 1 a 3, o backend ainda mantinha código morto do OAuth manual no `AccountController`: montagem de URL PKCE, device polling próprio, callback local, persistência de tokens na sessão HTTP e variáveis `HUB_ACCOUNT_OAUTH_*` expostas como configuração de aplicação. A causa raiz da fase 4 era a coexistência do caminho novo com o legado, o que deixava risco de alguém reativar token exchange manual ou interpretar a UI/configuração antiga como suportada.
+
+### Trabalho realizado
+
+- Removido o OAuth manual do `AccountController`, deixando `/api/account/*` como fachada do sandbox-orchestrator/Codex App Server quando `CODEX_APP_SERVER_ENABLED=true`.
+- Removidos callback próprio, PKCE/token exchange, device polling local, persistência de tokens OpenAI na sessão HTTP e dependência de `TokenLifecycleManager` no controller de conta.
+- Mantido estado explícito e não executável quando o App Server está desabilitado, com mensagem de legado removido em vez de tentar fallback OAuth.
+- Removidas variáveis `HUB_ACCOUNT_OAUTH_*` do `application.yml` e do `.env.example`, evitando divulgar configuração legada como caminho operacional.
+- Atualizados testes de `AccountController` para cobrir apenas proxy App Server, rejeição do legado removido e callback próprio desativado.
+
+## 2026-06-23 — Fase 5 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque ainda existia uma superfície backend capaz de renovar sessão HTTP OAuth antiga (`TokenLifecycleManager`) e porque a produção ainda expunha variáveis `HUB_ACCOUNT_OAUTH_*` no `.env`, mesmo depois de o caminho correto ter passado a ser o Codex App Server. A causa raiz da fase 5 é operacional e de código: para afirmar que não há fallback manual para `/oauth/token`, o backend não pode mais possuir o gerenciador legado nem enviar tokens de sessão HTTP ao sandbox, e a produção precisa remover as variáveis antigas antes do login novo.
+
+### Trabalho realizado
+
+- Removido `TokenLifecycleManager` e seus testes, eliminando do backend a implementação que chamava manualmente `/oauth/token`.
+- `CodexRequestService` deixou de depender de sessão OAuth HTTP para qualquer perfil; jobs seguem para o sandbox sem `accessToken`, e as credenciais de execução passam a pertencer ao sandbox-orchestrator/Codex App Server.
+- Mantida a barreira de readiness para `CHATGPT_CODEX`, que só despacha quando `account/read` do App Server retorna conta executável.
+- Validado via MCP que o servidor MCP está ativo e que os containers de produção estão em execução; a tentativa de limpar `/host/root/ai-hub-6/.env` foi bloqueada por filesystem somente leitura no MCP.
+- Registrado `docs/operacao/codex-app-server-fase5-producao.md` com checklist de produção, evidências coletadas e pendências: deploy da nova imagem, limpeza real do `.env`, login humano pelo novo fluxo, restart, request real e confirmação de `thread/start`, `turn/start`, `turn/completed` nos logs.

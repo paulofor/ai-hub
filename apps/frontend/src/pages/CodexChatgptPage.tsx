@@ -6,13 +6,13 @@ import { codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, pars
 interface ChatgptAccountStatus {
   connected: boolean;
   status?: string;
-  accountEmail?: string | null;
-  expiresAt?: string | null;
-  oauthConfigured?: boolean;
-  oauthStatus?: string | null;
-  oauthMessage?: string | null;
-  deviceLoginAvailable?: boolean;
-  deviceLoginClientId?: string | null;
+  authMode?: string | null;
+  planType?: string | null;
+  executable?: boolean;
+  blockReason?: string | null;
+  requiresOpenaiAuth?: boolean;
+  loginInProgress?: boolean;
+  loginMode?: string | null;
 }
 
 interface DeviceLoginState {
@@ -35,8 +35,6 @@ interface ModelOption {
 
 const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
-const SESSION_WARNING_WINDOW_MS = 5 * 60 * 1000;
-const DEFAULT_ACCOUNT_HINT = 'paulofore@gmail.com';
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
@@ -74,45 +72,25 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   const status = typeof record.status === 'string' ? record.status : undefined;
   const normalizedStatus = status?.toLowerCase();
 
-  const accountEmail =
-    typeof record.accountEmail === 'string'
-      ? record.accountEmail
-      : typeof record.account_email === 'string'
-        ? record.account_email
-        : null;
-
-  const expiresAt =
-    typeof record.expiresAt === 'string'
-      ? record.expiresAt
-      : typeof record.expires_at === 'string'
-        ? record.expires_at
-        : null;
-
-  const connected =
-    typeof record.connected === 'boolean'
-      ? record.connected
-      : normalizedStatus === 'connected' || normalizedStatus === 'ok' || normalizedStatus === 'active' || Boolean(accountEmail && expiresAt);
-
-  const oauthConfigured =
-    typeof record.oauthConfigured === 'boolean'
-      ? record.oauthConfigured
-      : true;
-
-  const oauthStatus = typeof record.oauthStatus === 'string' ? record.oauthStatus : null;
-  const oauthMessage = typeof record.oauthMessage === 'string' ? record.oauthMessage : null;
-  const deviceLoginAvailable = typeof record.deviceLoginAvailable === 'boolean' ? record.deviceLoginAvailable : false;
-  const deviceLoginClientId = typeof record.deviceLoginClientId === 'string' ? record.deviceLoginClientId : null;
+  const connected = typeof record.connected === 'boolean' ? record.connected : normalizedStatus === 'connected';
+  const executable = typeof record.executable === 'boolean' ? record.executable : connected;
+  const authMode = typeof record.authMode === 'string' ? record.authMode : typeof record.auth_mode === 'string' ? record.auth_mode : null;
+  const planType = typeof record.planType === 'string' ? record.planType : typeof record.plan_type === 'string' ? record.plan_type : null;
+  const blockReason = typeof record.blockReason === 'string' ? record.blockReason : typeof record.block_reason === 'string' ? record.block_reason : null;
+  const requiresOpenaiAuth = typeof record.requiresOpenaiAuth === 'boolean' ? record.requiresOpenaiAuth : true;
+  const loginInProgress = typeof record.loginInProgress === 'boolean' ? record.loginInProgress : false;
+  const loginMode = typeof record.loginMode === 'string' ? record.loginMode : null;
 
   return {
     connected,
     status: status ?? (connected ? 'connected' : 'disconnected'),
-    accountEmail,
-    expiresAt,
-    oauthConfigured,
-    oauthStatus,
-    oauthMessage,
-    deviceLoginAvailable,
-    deviceLoginClientId
+    authMode,
+    planType,
+    executable,
+    blockReason,
+    requiresOpenaiAuth,
+    loginInProgress,
+    loginMode
   };
 };
 
@@ -128,9 +106,6 @@ export default function CodexChatgptPage() {
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
-  const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState('');
-  const [accountHintInput, setAccountHintInput] = useState(DEFAULT_ACCOUNT_HINT);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
@@ -151,15 +126,6 @@ export default function CodexChatgptPage() {
     });
   }, []);
 
-  const includeKnownAccount = useCallback((email?: string | null) => {
-    if (!email) {
-      return;
-    }
-    setKnownAccounts((current) => (current.includes(email) ? current : [...current, email]));
-    setSelectedAccount((current) => current || email);
-    setAccountHintInput((current) => current || email);
-  }, []);
-
   const loadAccount = useCallback(async () => {
     if (!accountApiAvailable) {
       setAccount({ connected: false, status: 'unsupported' });
@@ -169,7 +135,6 @@ export default function CodexChatgptPage() {
       const response = await client.get('/account/read');
       const parsed = parseStatus(response.data);
       setAccount(parsed);
-      includeKnownAccount(parsed.accountEmail);
       setAccountApiAvailable(true);
     } catch (err) {
       if (is404Error(err)) {
@@ -180,7 +145,7 @@ export default function CodexChatgptPage() {
       }
       throw err;
     }
-  }, [accountApiAvailable, includeKnownAccount, registerTelemetry]);
+  }, [accountApiAvailable, registerTelemetry]);
 
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
@@ -204,7 +169,6 @@ export default function CodexChatgptPage() {
       if (accountResult.ok) {
         const parsedAccount = parseStatus(accountResult.data);
         setAccount(parsedAccount);
-        includeKnownAccount(parsedAccount.accountEmail);
         setAccountApiAvailable(true);
       } else if (is404Error(accountResult.error)) {
         setAccountApiAvailable(false);
@@ -226,7 +190,7 @@ export default function CodexChatgptPage() {
     } finally {
       setLoading(false);
     }
-  }, [includeKnownAccount, loadRequests, registerTelemetry]);
+  }, [loadRequests, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -241,24 +205,8 @@ export default function CodexChatgptPage() {
     return () => clearInterval(interval);
   }, [loadAccount, loadRequests, registerTelemetry]);
 
-  const accountExpired = useMemo(() => {
-    if (!account?.expiresAt) {
-      return false;
-    }
-    const expiresAt = new Date(account.expiresAt).getTime();
-    return Number.isFinite(expiresAt) && expiresAt <= Date.now();
-  }, [account]);
-
-  const deviceLoginReady = accountApiAvailable && (account?.deviceLoginAvailable ?? true);
-  const oauthReady = accountApiAvailable && ((account?.oauthConfigured ?? false) || deviceLoginReady);
-  const isConnected = Boolean(account?.connected) && !accountExpired && account?.status !== 'expired';
-  const expiresSoon = useMemo(() => {
-    if (!account?.expiresAt) {
-      return false;
-    }
-    const delta = new Date(account.expiresAt).getTime() - Date.now();
-    return Number.isFinite(delta) && delta > 0 && delta <= SESSION_WARNING_WINDOW_MS;
-  }, [account]);
+  const isConnected = Boolean(account?.connected) && account?.status === 'connected';
+  const isExecutable = Boolean(account?.executable) && isConnected;
 
   const handleConnect = useCallback(async () => {
     setActionLoading(true);
@@ -267,32 +215,7 @@ export default function CodexChatgptPage() {
         setError('Este ambiente não expõe a API de conta (/account/*). Contate o administrador para habilitar a integração.');
         return;
       }
-      const sanitizedHint = accountHintInput.trim();
-      const accountHint = sanitizedHint || selectedAccount;
-      if (account?.oauthConfigured) {
-        const response = await client.post('/account/login/start', accountHint ? { accountHint } : {});
-        const authUrl = response.data?.authUrl || response.data?.url;
-        if (typeof authUrl !== 'string' || authUrl.length === 0) {
-          throw new Error('Servidor não retornou authUrl para login browser ChatGPT/Codex.');
-        }
-        setDeviceLogin(null);
-        const opened = window.open(authUrl, '_blank', 'noopener,noreferrer');
-        if (!opened) {
-          registerTelemetry('login_started', 'Login browser ChatGPT/Codex iniciado; abertura automática bloqueada pelo navegador.');
-          setError('Login browser iniciado, mas o navegador bloqueou a abertura automática. Permita pop-ups para concluir a autorização do workspace.');
-        } else {
-          registerTelemetry('login_started', 'Login browser ChatGPT/Codex iniciado para autorizar o workspace configurado.');
-          setError(null);
-        }
-        return;
-      }
-      if (!deviceLoginReady) {
-        const reason = account?.oauthMessage || 'Login por código indisponível no servidor.';
-        setError(`${reason} Peça ao administrador para revisar a integração ChatGPT/Codex no backend.`);
-        registerTelemetry('login_failed', `Login por código bloqueado: ${reason}`);
-        return;
-      }
-      const response = await client.post('/account/device/start', accountHint ? { accountHint } : {});
+      const response = await client.post('/account/login/start', { type: 'chatgptDeviceCode' });
       const verificationUrl = response.data?.verificationUrl;
       const userCode = response.data?.userCode;
       const interval = Number(response.data?.interval || 5);
@@ -306,24 +229,20 @@ export default function CodexChatgptPage() {
         interval: Number.isFinite(interval) && interval > 0 ? interval : 5,
         expiresAt: typeof response.data?.expiresAt === 'string' ? response.data.expiresAt : null
       });
-      const opened = window.open(verificationUrl, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        registerTelemetry('login_started', 'Login por código iniciado; abertura automática bloqueada pelo navegador.');
-      } else {
-        registerTelemetry('login_started', 'Login por código iniciado e página da OpenAI aberta.');
-      }
+      window.open(verificationUrl, '_blank', 'noopener,noreferrer');
+      registerTelemetry('login_started', 'Login por código iniciado via Codex App Server.');
       setError(null);
     } catch (err) {
       if (is404Error(err)) {
         setAccountApiAvailable(false);
-        setAccount({ connected: false, status: 'unsupported' });
-        registerTelemetry('login_failed', 'Endpoint de login por código indisponível: /account/device/start retornou 404.');
-        setError('Este ambiente não expõe login por código (/account/device/start). Contate o administrador para habilitar a integração.');
+        setAccount({ connected: false, status: 'unsupported', executable: false });
+        registerTelemetry('login_failed', 'Endpoint de login indisponível: /account/login/start retornou 404.');
+        setError('Este ambiente não expõe login Codex (/account/login/start). Contate o administrador para habilitar a integração.');
         return;
       }
       if (is503Error(err)) {
         registerTelemetry('login_failed', 'Serviço de login indisponível: backend retornou 503.');
-        setError('Serviço de login temporariamente indisponível (503). Peça ao administrador para revisar a integração ChatGPT/Codex no backend.');
+        setError('Serviço de login temporariamente indisponível (503). O Codex App Server pode não estar pronto.');
         return;
       }
       registerTelemetry('login_failed', `Falha ao iniciar login por código: ${(err as Error).message}`);
@@ -331,7 +250,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [account, accountApiAvailable, accountHintInput, deviceLoginReady, registerTelemetry, selectedAccount]);
+  }, [accountApiAvailable, registerTelemetry]);
 
   useEffect(() => {
     if (!deviceLogin || isConnected) {
@@ -342,7 +261,7 @@ export default function CodexChatgptPage() {
       client.post('/account/device/poll')
         .then(async (response) => {
           const status = response.data?.status || 'authorization_pending';
-          if (status === 'connected') {
+          if (status === 'connected' || response.data?.executable === true) {
             setDeviceLogin(null);
             await loadAccount();
             registerTelemetry('login_started', 'Login por código concluído; sessão ChatGPT conectada.');
@@ -445,8 +364,8 @@ export default function CodexChatgptPage() {
 
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isConnected) {
-      setError('Conta ChatGPT não conectada ou expirada. Reconecte para executar.');
+    if (!isExecutable) {
+      setError('Conta ChatGPT não executável pelo Codex App Server. Reconecte para executar.');
       return;
     }
     setActionLoading(true);
@@ -469,7 +388,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [environment, imageAttachments, isConnected, loadRequests, model, prompt, registerTelemetry]);
+  }, [environment, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
 
   return (
     <section className="space-y-6">
@@ -480,11 +399,13 @@ export default function CodexChatgptPage() {
         {account ? <div className="space-y-1 text-sm">
           <p><span className="font-medium">Status:</span> {account.status ?? 'disconnected'}</p>
           <p><span className="font-medium">Conectado:</span> {isConnected ? 'Sim' : 'Não'}</p>
-          <p><span className="font-medium">Conta:</span> {account.accountEmail || 'não informada'}</p>
-          <p><span className="font-medium">Validade:</span> {account.expiresAt ? formatDateTime(account.expiresAt) : 'não informada'}</p>
+          <p><span className="font-medium">Auth mode:</span> {account.authMode || 'não informado'}</p>
+          <p><span className="font-medium">Plano:</span> {account.planType || 'não informado'}</p>
+          <p><span className="font-medium">Executável:</span> {account.executable ? 'Sim' : 'Não'}</p>
+          {account.blockReason ? <p><span className="font-medium">Bloqueio:</span> {account.blockReason}</p> : null}
         </div> : null}
         <div className="flex gap-3">
-          <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable || !oauthReady} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
+          <button type="button" onClick={handleConnect} disabled={actionLoading || !accountApiAvailable} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Conectar com ChatGPT</button>
           <button type="button" onClick={handleLogout} disabled={actionLoading || !account?.connected} className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium disabled:opacity-50">Desconectar</button>
         </div>
         {deviceLogin ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100 space-y-2">
@@ -494,23 +415,6 @@ export default function CodexChatgptPage() {
           <p><span className="font-medium">Código:</span> <code className="rounded bg-white/80 px-2 py-1 text-base font-bold tracking-widest dark:bg-slate-900">{deviceLogin.userCode}</code></p>
           <p className="text-xs">Status: {deviceLogin.status}. {deviceLogin.expiresAt ? `Expira em ${formatDateTime(deviceLogin.expiresAt)}.` : ''}</p>
         </div> : null}
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500">Informe o e-mail da conta OpenAI para associar a sessão às execuções após o login por código.</p>
-          <input
-            type="email"
-            value={accountHintInput}
-            onChange={(e) => setAccountHintInput(e.target.value)}
-            placeholder="voce@empresa.com"
-            className="w-full rounded-md border px-3 py-2 text-sm md:max-w-md"
-          />
-        </div>
-        {knownAccounts.length > 0 ? <div className="space-y-2">
-          <p className="text-xs text-slate-500">Multi-conta (opcional): selecione um e-mail salvo para preencher automaticamente.</p>
-          <select value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
-            {knownAccounts.map((email) => <option key={email} value={email}>{email}</option>)}
-          </select>
-        </div> : null}
-        {expiresSoon ? <p className="text-xs text-amber-700 dark:text-amber-300">Sessão próxima da expiração (menos de 5 minutos). Recomendado reconectar para evitar falhas.</p> : null}
         {!accountApiAvailable ? <p className="text-sm text-amber-700 dark:text-amber-300">Integração de autenticação indisponível: backend não possui rotas <code>/account/*</code> (retorno 404).</p> : null}
       </div>
 
@@ -545,8 +449,8 @@ export default function CodexChatgptPage() {
             ))}
           </ul> : null}
         </div>
-        <button type="submit" disabled={actionLoading || !isConnected || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Executar</button>
-        {!isConnected ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado por autenticação ausente/expirada.</p> : null}
+        <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Executar</button>
+        {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
       </form>
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">

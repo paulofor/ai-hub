@@ -10,6 +10,11 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 
 ### Endpoints
 
+- `GET /health`: retorna a saúde do orquestrador, incluindo `codexAppServer.status` (`disabled`, `starting`, `ready`, `degraded` ou `stopped`) sem expor credenciais.
+- `GET /codex-app-server/account/read`: endpoint interno para consultar `account/read` via App Server quando o supervisor estiver habilitado, sem expor tokens.
+- `POST /codex-app-server/account/login/start`: inicia o login `chatgptDeviceCode` (ou outro `type` explicitamente solicitado) no App Server e retorna apenas `loginId`, `verificationUrl`, `userCode` e metadados seguros.
+- `POST /codex-app-server/account/login/cancel`: cancela um login em andamento pelo `loginId`.
+- `POST /codex-app-server/account/logout`: encaminha `account/logout` ao App Server e retorna o estado seguro atualizado da conta.
 - `POST /jobs`: cria um job informando `jobId`, `repoUrl` ou `repoSlug`, `branch`, `taskDescription` e (opcionalmente) `testCommand`/`commit`. O serviço clona o repositório em um diretório temporário, expõe as tools `run_shell`, `read_file`, `write_file` e `http_get` ao modelo e inicia o loop de tool-calling. A tool `http_get` permite consultas HTTP públicas, bloqueando hosts locais/privados e truncando respostas grandes.
   Quando um `testCommand` é enviado, ele é executado automaticamente no final do job; se o comando retornar erro ou expirar, o job é marcado como `FAILED` e o patch não é enviado para PR.
 - `GET /jobs/{id}`: retorna o status atualizado do job (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`), além de `logs`, resumo, arquivos alterados e patch gerado (`git diff`).
@@ -23,6 +28,9 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | Variável | Descrição | Padrão |
 | --- | --- | --- |
 | `PORT` | Porta HTTP exposta pelo serviço | `8083` |
+| `CODEX_APP_SERVER_ENABLED` | Quando `true`, inicia o supervisor local do `codex app-server --listen stdio://` e inclui seu estado no healthcheck. | `false` |
+| `CODEX_HOME` | Diretório persistente do Codex App Server para cache de autenticação gerenciado pelo próprio Codex. Deve ser tratado como segredo quando usar storage em arquivo. | `/var/lib/ai-hub/codex` na imagem |
+| `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX` via App Server. | `600000` |
 | `SANDBOX_SLUG_PREFIX` | Prefixo aplicado antes do slug original | *(vazio)* |
 | `SANDBOX_SLUG_SUFFIX` | Sufixo aplicado após o slug original | `-sandbox` |
 | `SANDBOX_IMAGE` | Imagem base utilizada para provisionar o contêiner/VM efêmero | `ghcr.io/ai-hub-6/sandbox:latest` |

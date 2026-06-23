@@ -65,7 +65,6 @@ public class CodexRequestService {
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
-    private final TokenLifecycleManager tokenLifecycleManager;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
     private final String economyModel;
@@ -74,6 +73,7 @@ public class CodexRequestService {
     private final String sandboxCallbackUrl;
     private final String sandboxCallbackSecret;
     private final int smartEconomyEconomyTokenCeiling;
+    private final boolean codexAppServerEnabled;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -83,13 +83,13 @@ public class CodexRequestService {
                                EnvironmentRepository environmentRepository,
                                ProblemRepository problemRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
-                               TokenLifecycleManager tokenLifecycleManager,
                                TokenCostCalculator tokenCostCalculator,
                                PlatformTransactionManager transactionManager,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch,
                                @Value("${hub.codex.smart-economy.max-economy-tokens:1500000}") int smartEconomyEconomyTokenCeiling,
+                               @Value("${hub.codex.app-server-enabled:false}") boolean codexAppServerEnabled,
                                @Value("${hub.sandbox.callback.url:}") String sandboxCallbackUrl,
                                @Value("${hub.sandbox.callback.secret:}") String sandboxCallbackSecret) {
         this.codexRequestRepository = codexRequestRepository;
@@ -100,7 +100,6 @@ public class CodexRequestService {
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
-        this.tokenLifecycleManager = tokenLifecycleManager;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
         this.economyModel = economyModel;
@@ -108,6 +107,7 @@ public class CodexRequestService {
         this.sandboxCallbackUrl = StringUtils.hasText(sandboxCallbackUrl) ? sandboxCallbackUrl.trim() : null;
         this.sandboxCallbackSecret = StringUtils.hasText(sandboxCallbackSecret) ? sandboxCallbackSecret.trim() : null;
         this.smartEconomyEconomyTokenCeiling = smartEconomyEconomyTokenCeiling > 0 ? smartEconomyEconomyTokenCeiling : 1_500_000;
+        this.codexAppServerEnabled = codexAppServerEnabled;
         Objects.requireNonNull(transactionManager, "transactionManager is required");
         this.sandboxRefreshTemplate = new TransactionTemplate(transactionManager);
         this.sandboxRefreshTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -591,18 +591,14 @@ public class CodexRequestService {
         String callbackUrl = this.sandboxCallbackUrl;
         String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
         boolean chatgptCodexProfile = request.getProfile() == CodexIntegrationProfile.CHATGPT_CODEX;
-        String accessToken = chatgptCodexProfile
-            ? tokenLifecycleManager.getValidCodexApiTokenFromCurrentSession().orElse(null)
-            : tokenLifecycleManager.getValidAccessTokenFromCurrentSession().orElse(null);
-        if (!StringUtils.hasText(accessToken)) {
-            log.info("CodexRequest {} será executado sem token OAuth válido de conta conectada", request.getId());
-            if (chatgptCodexProfile) {
-                failChatgptCodexWithoutToken(
-                    request,
-                    tokenLifecycleManager.getCodexTokenBlockReasonFromCurrentSession().orElse(null)
-                );
-                return;
-            }
+        if (chatgptCodexProfile && !ensureChatgptCodexExecutable(request)) {
+            return;
+        }
+        String accessToken = null;
+        if (chatgptCodexProfile) {
+            log.info("CodexRequest {} será despachada para execução CHATGPT_CODEX via Codex App Server, sem token OAuth no payload", request.getId());
+        } else {
+            log.info("CodexRequest {} será executado sem sessão OAuth HTTP legada; credenciais de execução pertencem ao sandbox-orchestrator", request.getId());
         }
 
         SandboxJobRequest jobRequest = new SandboxJobRequest(
@@ -654,6 +650,49 @@ public class CodexRequestService {
         recordResponse(metadata, response);
         recordInteractions(request, response);
         recordHttpRequests(request, response);
+    }
+
+    private boolean ensureChatgptCodexExecutable(CodexRequest request) {
+        if (!codexAppServerEnabled) {
+            freezeChatgptCodexUntilAppServer(request);
+            return false;
+        }
+        Map<String, Object> accountState;
+        try {
+            accountState = sandboxOrchestratorClient.readCodexAccount();
+        } catch (Exception ex) {
+            log.warn("CodexRequest {} bloqueada: falha ao consultar account/read do Codex App Server: {}", request.getId(), ex.getMessage());
+            failChatgptCodexWithoutToken(request, "CODEX_APP_SERVER_UNAVAILABLE");
+            return false;
+        }
+        Object executable = accountState == null ? null : accountState.get("executable");
+        if (Boolean.TRUE.equals(executable)) {
+            return true;
+        }
+        String blockReason = accountState != null && accountState.get("blockReason") instanceof String text && StringUtils.hasText(text)
+            ? text.trim()
+            : "CODEX_NOT_AUTHENTICATED";
+        log.warn("CodexRequest {} bloqueada por pré-condição CHATGPT_CODEX não executável: {}", request.getId(), blockReason);
+        failChatgptCodexWithoutToken(request, blockReason);
+        return false;
+    }
+
+    private void freezeChatgptCodexUntilAppServer(CodexRequest request) {
+        String reason = codexAppServerEnabled
+            ? "CODEX_APP_SERVER_NOT_IMPLEMENTED"
+            : "CODEX_APP_SERVER_DISABLED";
+        log.warn(
+            "CodexRequest {} com perfil CHATGPT_CODEX bloqueada por {}. "
+                + "Fluxo OAuth/token exchange manual permanece congelado até a integração com Codex App Server.",
+            request.getId(),
+            reason
+        );
+        failChatgptCodexWithoutToken(
+            request,
+            "O perfil CHATGPT_CODEX está congelado até a integração com o Codex App Server. "
+                + "CODEX_APP_SERVER_ENABLED=" + codexAppServerEnabled + ". "
+                + "Nenhum token OAuth manual será trocado ou enviado ao sandbox."
+        );
     }
 
     private void failChatgptCodexWithoutToken(CodexRequest request, String blockReason) {

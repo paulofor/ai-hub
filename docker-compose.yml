@@ -64,9 +64,11 @@ services:
     env_file:
       - apps/sandbox-orchestrator/.env.example
       - .env
+    environment:
+      CODEX_HOME: /var/lib/ai-hub/codex
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
-      - /root/.codex:/root/.codex:ro
+      - codex-auth-data:/var/lib/ai-hub/codex
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
@@ -104,3 +106,4 @@ networks:
 volumes:
   caddy-data:
   caddy-config:
+  codex-auth-data:
