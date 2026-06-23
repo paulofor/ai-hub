@@ -4,6 +4,44 @@
 
 A causa raiz do problema original foi o backend do AI Hub tentar gerenciar autenticação ChatGPT/Codex por OAuth próprio, incluindo refresh/token exchange manual e sessão HTTP local. Em produção, a fase 5 precisa provar que a posse da autenticação e da execução ficou no sandbox-orchestrator/Codex App Server, e que o backend não chama mais `/oauth/token`.
 
+
+## O que o workflow já faz e o que é manual
+
+O deploy do GitHub Actions em `main` já executa automaticamente os passos de CI, build/push das imagens Docker, sincronização do repositório para `/root/ai-hub-6`, normalização segura do `.env` operacional do Codex App Server, `docker compose pull` e `docker compose up -d`. O `docker-compose.yml` também já define `CODEX_HOME=/var/lib/ai-hub/codex` no `sandbox-orchestrator` e monta o volume persistente `codex-auth-data` nesse caminho.
+
+Portanto, para sair do estado `CODEX_APP_SERVER_DISABLED`, o caminho preferencial é reexecutar o workflow em `main`; ele preserva um backup do `.env`, remove chaves legadas `HUB_ACCOUNT_OAUTH_*`, remove pins antigos de imagem e grava as imagens atuais `ghcr.io/<GHCR_USERNAME>/ai-hub-6-*`. O procedimento manual abaixo fica como fallback caso o workflow não possa ser executado:
+
+1. Se o workflow não puder ser usado, editar `/root/ai-hub-6/.env` e garantir:
+   - `CODEX_APP_SERVER_ENABLED=true`;
+   - remoção das variáveis legadas `HUB_ACCOUNT_OAUTH_*`;
+   - remoção de pins antigos `BACKEND_IMAGE`, `FRONTEND_IMAGE` e `SANDBOX_ORCHESTRATOR_IMAGE` apontando para `ghcr.io/paulodb/ai-hub-*`, ou troca explícita para as imagens atuais `ghcr.io/paulofor/ai-hub-6-*`.
+2. Depois que a alteração estiver no `.env`, preferir reexecutar o workflow de `main`; se a imagem já estiver atualizada e o workflow estiver indisponível, reiniciar os serviços com `docker compose up -d` dentro de `/root/ai-hub-6`.
+3. Abrir `/codex-chatgpt`, clicar em **Conectar com ChatGPT**, abrir a `verificationUrl` exibida e informar o `userCode`. Essa autorização humana da conta ChatGPT não é automatizável pelo workflow.
+4. Confirmar na própria tela, ou em `GET /api/account/read`, que `connected=true` e `executable=true`.
+5. Executar uma request `CHATGPT_CODEX` real e conferir os logs do sandbox-orchestrator (`thread/start`, `turn/start`, `turn/completed`).
+
+Comandos úteis no host, se for fazer via SSH:
+
+```bash
+cd /root/ai-hub-6
+cp .env .env.backup-$(date +%Y%m%d%H%M%S)
+sed -i '/^HUB_ACCOUNT_OAUTH_/d' .env
+sed -i '/^CODEX_APP_SERVER_ENABLED=/d' .env
+sed -i '/^BACKEND_IMAGE=/d; /^FRONTEND_IMAGE=/d; /^SANDBOX_ORCHESTRATOR_IMAGE=/d; /^CADDY_IMAGE=/d; /^MCP_SERVER_IMAGE=/d' .env
+cat >> .env <<'EOF'
+CODEX_APP_SERVER_ENABLED=true
+BACKEND_IMAGE=ghcr.io/paulofor/ai-hub-6-backend:latest
+FRONTEND_IMAGE=ghcr.io/paulofor/ai-hub-6-frontend:latest
+SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/paulofor/ai-hub-6-sandbox:latest
+CADDY_IMAGE=ghcr.io/paulofor/ai-hub-6-caddy:latest
+MCP_SERVER_IMAGE=ghcr.io/paulofor/ai-hub-6-mcp-server:latest
+EOF
+docker compose pull backend frontend sandbox-orchestrator caddy mcp-server
+docker compose up -d
+```
+
+> Observação: no erro observado em 2026-06-23, `CODEX_APP_SERVER_ENABLED=true` já estava presente, mas o `.env` ainda pinava `BACKEND_IMAGE=ghcr.io/paulodb/ai-hub-backend:latest` e `SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/paulodb/ai-hub-sandbox:latest`; por isso o container continuou servindo o endpoint OAuth legado `redirect_required` em vez do proxy App Server.
+
 ## Checklist operacional
 
 1. Encerrar sessões antigas pelo fluxo App Server:

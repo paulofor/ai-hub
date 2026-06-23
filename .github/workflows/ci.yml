@@ -214,6 +214,22 @@ jobs:
       - name: Ensure public network exists on VPS
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker network inspect public-net >/dev/null 2>&1 || docker network create public-net"
+      - name: Normalize Codex App Server env on VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && \
+            cd ${REMOTE_PATH} && \
+            if [ -f .env ]; then cp .env .env.workflow-backup-\$(date -u +%Y%m%d%H%M%S); else touch .env; fi && \
+            sed -i '/^HUB_ACCOUNT_OAUTH_/d' .env && \
+            sed -i '/^CODEX_APP_SERVER_ENABLED=/d' .env && \
+            sed -i '/^BACKEND_IMAGE=/d; /^FRONTEND_IMAGE=/d; /^SANDBOX_ORCHESTRATOR_IMAGE=/d; /^CADDY_IMAGE=/d; /^MCP_SERVER_IMAGE=/d' .env && \
+            printf '%s\n' \
+              'CODEX_APP_SERVER_ENABLED=true' \
+              'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest' \
+              'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest' \
+              'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest' \
+              'CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:latest' \
+              'MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest' \
+              >> .env"
       - name: Publish services
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \

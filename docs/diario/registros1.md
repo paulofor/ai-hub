@@ -762,3 +762,54 @@ O erro aconteceu porque `CodexChatgptPage.tsx` importava `useMemo` de `react`, m
 
 - Removido o import não utilizado de `useMemo` em `CodexChatgptPage.tsx`, mantendo apenas os hooks realmente usados pela página.
 - Validado o lint do frontend para confirmar que o erro `useMemo is defined but never used` foi eliminado.
+
+## 2026-06-23 — Orientação de conexão Codex ChatGPT em produção
+
+### Por que esse erro aconteceu?
+
+O bloqueio visto na tela aconteceu porque o ambiente de produção ainda está com `CODEX_APP_SERVER_ENABLED=false` no container `ai-hub-6-sandbox-orchestrator-1` e sem `CODEX_APP_SERVER_ENABLED=true` no backend. Com isso, `/api/account/read` retorna `status=app_server_disabled`, `connected=false`, `executable=false` e `blockReason=CODEX_APP_SERVER_DISABLED`; portanto o botão não consegue iniciar uma sessão executável até o App Server ser habilitado e os serviços reiniciados.
+
+### Trabalho realizado
+
+- Verificado o healthcheck do MCP Server em `https://iahub.xyz/mcp` com resposta `UP`.
+- Verificados containers de produção via MCP: `ai-hub-6-backend-1` e `ai-hub-6-sandbox-orchestrator-1` estão em execução.
+- Confirmada a causa operacional: o sandbox-orchestrator expõe `CODEX_APP_SERVER_ENABLED=false` e `CODEX_HOME=/var/lib/ai-hub/codex`; o backend não expõe `CODEX_APP_SERVER_ENABLED=true` no ambiente atual.
+- Orientação registrada: habilitar `CODEX_APP_SERVER_ENABLED=true` no backend e no sandbox-orchestrator, manter `CODEX_HOME=/var/lib/ai-hub/codex` com volume persistente, reiniciar os serviços e então usar o botão “Conectar com ChatGPT” para concluir o device login exibido pela UI.
+
+
+## 2026-06-23 — Separação entre workflow e ação manual para conexão Codex ChatGPT
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque a orientação anterior misturava tarefas que o workflow já executa com tarefas que exigem ação humana no host. A causa raiz operacional permanece `CODEX_APP_SERVER_DISABLED`, mas o ponto prático é que o workflow sincroniza código, publica imagens e roda `docker compose up -d`; ele não sobrescreve o `.env` de produção e não consegue fazer o login humano da conta ChatGPT.
+
+### Trabalho realizado
+
+- Atualizada a documentação operacional da Fase 5 para separar explicitamente o que o GitHub Actions já faz do que precisa ser feito manualmente.
+- Esclarecido que a ação manual efetiva é editar `/root/ai-hub-6/.env` para definir `CODEX_APP_SERVER_ENABLED=true` e remover variáveis `HUB_ACCOUNT_OAUTH_*`, depois reiniciar/aguardar deploy.
+- Registrado que a etapa de abrir a `verificationUrl` e informar o `userCode` continua sendo manual, porque depende de autorização humana na conta ChatGPT.
+
+
+## 2026-06-23 — Correção da orientação após retorno `redirect_required` legado
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque a produção já tinha `CODEX_APP_SERVER_ENABLED=true`, mas continuava executando imagens antigas pinadas no `.env` (`ghcr.io/paulodb/ai-hub-backend:latest` e `ghcr.io/paulodb/ai-hub-sandbox:latest`). Assim, o backend ativo ainda era o código legado que respondia `POST /api/account/login/start` com `status=redirect_required` e `authUrl=https://chatgpt.com/auth/login`, em vez do código atual que encaminha `chatgptDeviceCode` para o Codex App Server.
+
+### Trabalho realizado
+
+- Atualizada a documentação operacional para incluir a remoção/troca dos pins antigos de imagem no `.env`, além da feature flag `CODEX_APP_SERVER_ENABLED=true`.
+- Atualizados os comandos manuais para remover `HUB_ACCOUNT_OAUTH_*`, remover pins antigos de imagem e repinar explicitamente para `ghcr.io/paulofor/ai-hub-6-*` antes de `docker compose pull` e `docker compose up -d`.
+- Removidas variáveis `HUB_ACCOUNT_OAUTH_*` de `apps/backend/.env.example`, evitando que o exemplo de ambiente continue sugerindo o caminho OAuth legado.
+
+
+## 2026-06-23 — Automação da normalização do `.env` no workflow
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque a correção anterior ainda dependia de edição manual do `.env` no host, mesmo quando o usuário preferia apenas reexecutar o workflow. A causa raiz operacional era que o workflow preservava o `.env` remoto, mas não normalizava as chaves que mantinham imagens antigas e o caminho OAuth legado.
+
+### Trabalho realizado
+
+- Adicionado passo de deploy no GitHub Actions para criar backup do `.env` remoto, remover `HUB_ACCOUNT_OAUTH_*`, remover pins antigos de imagens e gravar `CODEX_APP_SERVER_ENABLED=true` com as imagens atuais `ai-hub-6-*`.
+- Atualizada a documentação operacional para indicar que o caminho preferencial agora é reexecutar o workflow de `main`, deixando os comandos manuais apenas como fallback quando o workflow não puder ser usado.
