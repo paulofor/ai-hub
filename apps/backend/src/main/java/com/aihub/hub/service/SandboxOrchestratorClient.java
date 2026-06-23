@@ -1,12 +1,15 @@
 package com.aihub.hub.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
@@ -19,6 +22,8 @@ import java.util.Optional;
 public class SandboxOrchestratorClient {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxOrchestratorClient.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final RestClient restClient;
     private final String jobsPath;
@@ -32,37 +37,74 @@ public class SandboxOrchestratorClient {
     }
 
     public Map<String, Object> readCodexAccount() {
-        return restClient.get()
-            .uri("/codex-app-server/account/read")
-            .retrieve()
-            .body(Map.class);
+        try {
+            return restClient.get()
+                .uri("/codex-app-server/account/read")
+                .retrieve()
+                .body(Map.class);
+        } catch (HttpStatusCodeException ex) {
+            return accountStateFromUpstreamError(ex, "CODEX_APP_SERVER_UNAVAILABLE");
+        }
     }
 
     public Map<String, Object> startCodexLogin(String type) {
-        return restClient.post()
-            .uri("/codex-app-server/account/login/start")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(Map.of("type", type == null || type.isBlank() ? "chatgptDeviceCode" : type))
-            .retrieve()
-            .body(Map.class);
+        try {
+            return restClient.post()
+                .uri("/codex-app-server/account/login/start")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("type", type == null || type.isBlank() ? "chatgptDeviceCode" : type))
+                .retrieve()
+                .body(Map.class);
+        } catch (HttpStatusCodeException ex) {
+            return accountStateFromUpstreamError(ex, "CODEX_LOGIN_FAILED");
+        }
     }
 
     public Map<String, Object> cancelCodexLogin(String loginId) {
-        return restClient.post()
-            .uri("/codex-app-server/account/login/cancel")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(Map.of("loginId", loginId))
-            .retrieve()
-            .body(Map.class);
+        try {
+            return restClient.post()
+                .uri("/codex-app-server/account/login/cancel")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("loginId", loginId))
+                .retrieve()
+                .body(Map.class);
+        } catch (HttpStatusCodeException ex) {
+            return accountStateFromUpstreamError(ex, "CODEX_LOGIN_FAILED");
+        }
     }
 
     public Map<String, Object> logoutCodexAccount() {
-        return restClient.post()
-            .uri("/codex-app-server/account/logout")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(Map.of())
-            .retrieve()
-            .body(Map.class);
+        try {
+            return restClient.post()
+                .uri("/codex-app-server/account/logout")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of())
+                .retrieve()
+                .body(Map.class);
+        } catch (HttpStatusCodeException ex) {
+            return accountStateFromUpstreamError(ex, "CODEX_APP_SERVER_UNAVAILABLE");
+        }
+    }
+
+    private Map<String, Object> accountStateFromUpstreamError(HttpStatusCodeException ex, String fallbackBlockReason) {
+        String responseBody = ex.getResponseBodyAsString();
+        if (responseBody != null && !responseBody.isBlank()) {
+            try {
+                Map<String, Object> parsed = OBJECT_MAPPER.readValue(responseBody, MAP_TYPE);
+                if (!parsed.isEmpty()) {
+                    return parsed;
+                }
+            } catch (Exception parseError) {
+                log.warn("Resposta de erro do sandbox-orchestrator não é JSON de conta válido: status={} body={}", ex.getStatusCode(), responseBody);
+            }
+        }
+        return Map.of(
+            "connected", false,
+            "status", "unavailable",
+            "executable", false,
+            "blockReason", fallbackBlockReason,
+            "upstreamStatus", ex.getStatusCode().value()
+        );
     }
 
     public SandboxOrchestratorJobResponse createJob(SandboxJobRequest request) {
