@@ -873,3 +873,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 ## 2026-06-24 - Ajuste do texto do Modo Codex (ChatGPT)
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela apresentava as orientações do perfil Codex (ChatGPT) com linguagem imperativa e absoluta, dando a entender que squads, worktrees e checkpoints de custo seriam obrigatórios em qualquer sessão, embora o próprio perfil documente esses itens como recomendações para missões com múltiplas sub-tarefas paralelas e não para demandas simples.
 - Correção aplicada: a copy da tela de detalhe e da seleção de perfil foi ajustada para explicar que as orientações entram no prompt inicial, mas que squads/worktrees/checkpoints devem ser usados apenas quando a tarefa justificar coordenação paralela ou investigação longa.
+
+## 2026-06-24 — Fase 2 interativa do Codex ChatGPT
+- Causa raiz identificada: a tela da Fase 2 tratava cada envio como uma execução isolada, sem estado de conversa, sem refletir a resposta do modelo na própria página e sem ação dedicada para solicitar PR ao final do diálogo.
+- Ajustada a tela `CodexChatgptPage` para manter uma conversa local entre usuário e modelo, montar o prompt com o histórico antes de cada nova mensagem, acompanhar a execução ativa por polling e atualizar a resposta quando a solicitação terminar.
+- Adicionado botão `Pedir PR` para acionar a criação de PR a partir da última resposta concluída, evitando misturar a conversa iterativa com a etapa final de publicação.
