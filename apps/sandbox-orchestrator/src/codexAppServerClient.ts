@@ -70,6 +70,10 @@ export class CodexAppServerClient {
     this.maxRestartAttempts = options.maxRestartAttempts ?? Number.parseInt(process.env.CODEX_APP_SERVER_MAX_RESTART_ATTEMPTS ?? '3', 10);
     this.autoRestart = options.autoRestart ?? true;
     this.logger = options.logger ?? console;
+    this.notifications.on('error', (params) => {
+      this.lastError = `Codex App Server error notification: ${this.sanitize(this.stringifyForLog(params))}`;
+      this.logger.warn(this.lastError);
+    });
   }
 
   async start(): Promise<void> {
@@ -313,6 +317,14 @@ export class CodexAppServerClient {
       clearTimeout(pending.timeout);
       pending.reject(error);
       this.pending.delete(id);
+    }
+  }
+
+  private stringifyForLog(value: unknown): string {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
     }
   }
 

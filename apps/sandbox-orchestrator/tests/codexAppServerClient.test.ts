@@ -74,3 +74,18 @@ test('marca estado degradado quando o processo encerra durante initialize', asyn
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(client.health().status, 'degraded');
 });
+
+
+test('trata notificações error do Codex App Server sem derrubar o processo', async () => {
+  const client = createClient({}, 1000);
+  const received = new Promise<unknown>((resolve) => {
+    client.onNotification('error', resolve);
+  });
+
+  await client.start();
+  assert.deepEqual(await client.request('test/error-notification'), { ok: true });
+  assert.deepEqual(await received, { error: { message: 'fake codex app server error' }, willRetry: false });
+  assert.equal(client.isReady(), true);
+
+  await client.stop();
+});
