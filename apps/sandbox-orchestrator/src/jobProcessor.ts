@@ -988,10 +988,6 @@ export class SandboxJobProcessor implements JobProcessor {
     if (!account.executable) {
       throw new Error(account.blockReason || 'CODEX_NOT_AUTHENTICATED');
     }
-    if (job.imageAttachments && job.imageAttachments.length > 0) {
-      throw new Error('CODEX_INPUT_IMAGE_UNSUPPORTED');
-    }
-
     this.recordInteraction(job, 'OUTBOUND', this.safeStringify({
       method: 'thread/start',
       params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: this.codexAppServerSandboxMode, serviceName: 'ai_hub' },
@@ -1054,7 +1050,7 @@ export class SandboxJobProcessor implements JobProcessor {
     try {
       const turnParams = {
         threadId,
-        input: [{ type: 'text', text: job.taskDescription }],
+        input: this.buildCodexAppServerInput(job),
       };
       this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
       const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
@@ -1078,6 +1074,16 @@ export class SandboxJobProcessor implements JobProcessor {
     } finally {
       unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
     }
+  }
+
+  private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
+    return [
+      { type: 'text', text: job.taskDescription },
+      ...(job.imageAttachments ?? []).map((attachment) => ({
+        type: 'image',
+        url: attachment.dataUrl,
+      })),
+    ];
   }
 
   private async waitForCodexTurn(job: SandboxJob, isCompleted: () => boolean, failureReason: () => string | undefined): Promise<void> {

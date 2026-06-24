@@ -3087,6 +3087,12 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     repoUrl: tempRepo,
     branch: 'main',
     taskDescription: 'use app server',
+    imageAttachments: [{
+      name: 'print.png',
+      mimeType: 'image/png',
+      size: 3,
+      dataUrl: 'data:image/png;base64,QUJD',
+    }],
     profile: 'CHATGPT_CODEX',
     status: 'PENDING',
     logs: [],
@@ -3105,7 +3111,12 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     const threadStartCall = calls.find((call) => call.method === 'thread/start');
     assert.ok(threadStartCall);
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');
-    assert.ok(calls.some((call) => call.method === 'turn/start'));
+    const turnStartCall = calls.find((call) => call.method === 'turn/start');
+    assert.ok(turnStartCall);
+    assert.deepEqual((turnStartCall.params as { input?: unknown }).input, [
+      { type: 'text', text: 'use app server' },
+      { type: 'image', url: 'data:image/png;base64,QUJD' },
+    ]);
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });

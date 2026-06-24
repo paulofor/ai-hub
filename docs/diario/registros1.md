@@ -909,3 +909,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pesquisadas fontes oficiais da OpenAI sobre disponibilidade do GPT-5.5 Pro em ChatGPT, Codex e API.
 - Conclusão: GPT-5.5 Pro pode existir para planos ChatGPT Pro/Business/Enterprise/Edu e também como modelo de API Responses, mas a documentação de Codex para login com ChatGPT recomenda/expõe GPT-5.5 para Codex; o teste real do AI Hub confirmou que o Codex App Server rejeita `gpt-5.5-pro` quando usado com conta ChatGPT.
 - Direção operacional: trocar configurações da conta pode liberar GPT-5.5 Pro no ChatGPT normal, mas não há evidência oficial de configuração de conta que force `gpt-5.5-pro` no Codex via ChatGPT sign-in. Para usar Pro programaticamente, o caminho mais plausível é integração por API/Responses com chave e modelo `gpt-5.5-pro`, não o fluxo atual do Codex App Server autenticado por ChatGPT.
+
+## 2026-06-24 19:43:10 UTC — Suporte a imagens no Codex ChatGPT via App Server
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend e o backend já transportavam anexos de imagem, mas o `sandbox-orchestrator` bloqueava qualquer `imageAttachments` no perfil `CHATGPT_CODEX` com `CODEX_INPUT_IMAGE_UNSUPPORTED`, embora o protocolo do Codex App Server aceite entrada de imagem no `turn/start` como item `{ type: "image", url: ... }`.
+- Correção aplicada: removido o bloqueio local e convertido cada data URL de imagem anexada para o formato aceito pelo Codex App Server no payload de `turn/start`, mantendo o texto como primeiro item da entrada.
+- Validação: ampliado o teste do fluxo `CHATGPT_CODEX` para cobrir anexo de imagem e confirmar que o `turn/start` recebe texto mais imagem, sem cair na Responses API.
