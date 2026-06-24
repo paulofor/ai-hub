@@ -1,7 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequests } from '../lib/codex';
+import { CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -48,6 +48,15 @@ interface ImageAttachment {
   mimeType: string;
   size: number;
   dataUrl: string;
+}
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  requestId?: number;
+  status?: CodexRequest['status'];
+  createdAt: string;
 }
 
 interface TelemetryEvent {
@@ -114,6 +123,10 @@ export default function CodexChatgptPage() {
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
+  const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
+  const [prLoading, setPrLoading] = useState(false);
+  const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -365,6 +378,26 @@ export default function CodexChatgptPage() {
     setImageAttachments((current) => current.filter((item) => item.id !== id));
   }, []);
 
+  const buildConversationPrompt = useCallback((message: string) => {
+    const history = conversation.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
+    return [
+      'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
+      'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
+      'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
+      history ? `Histórico da conversa:\n${history}` : '',
+      `Última mensagem do usuário:\n${message}`
+    ].filter(Boolean).join('\n\n');
+  }, [conversation]);
+
+  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
+
+  const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
+    setConversation((current) => current.map((message) => {
+      if (message.role !== 'assistant' || message.requestId !== request.id) return message;
+      return { ...message, status: request.status, content: isTerminalStatus(request.status) ? extractAssistantContent(request) : `Aguardando resposta do modelo... (${formatStatus(request.status)})` };
+    }));
+  }, [extractAssistantContent]);
+
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!isExecutable) {
@@ -373,13 +406,22 @@ export default function CodexChatgptPage() {
     }
     setActionLoading(true);
     try {
-      await client.post('/codex/requests', {
-        prompt,
+      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: prompt, createdAt: new Date().toISOString() };
+      const requestPrompt = buildConversationPrompt(prompt);
+      setConversation((current) => [...current, userMessage]);
+      const response = await client.post('/codex/requests', {
+        prompt: requestPrompt,
         environment,
         model,
         profile: 'CHATGPT_CODEX',
         imageAttachments: imageAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
+      const created = parseCodexRequest(response.data);
+      if (created) {
+        setActiveRequestId(created.id);
+        setPrResult(null);
+        setConversation((current) => [...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: `Aguardando resposta do modelo... (${formatStatus(created.status)})`, requestId: created.id, status: created.status, createdAt: new Date().toISOString() }]);
+      }
       setPrompt('');
       setImageAttachments([]);
       await loadRequests();
@@ -391,7 +433,43 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [environment, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
+  }, [buildConversationPrompt, environment, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
+
+
+  useEffect(() => {
+    if (!activeRequestId) return undefined;
+    const refreshActiveRequest = () => {
+      client.get(`/codex/requests/${activeRequestId}`)
+        .then((response) => {
+          const parsed = parseCodexRequest(response.data);
+          if (!parsed) return;
+          updateAssistantFromRequest(parsed);
+          if (isTerminalStatus(parsed.status)) setActiveRequestId(null);
+        })
+        .catch((err: Error) => registerTelemetry('poll_error', `Falha ao atualizar conversa: ${err.message}`));
+    };
+    refreshActiveRequest();
+    const intervalId = window.setInterval(refreshActiveRequest, POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [activeRequestId, registerTelemetry, updateAssistantFromRequest]);
+
+  const handleCreatePr = useCallback(async () => {
+    const lastCompleted = [...conversation].reverse().find((message) => message.role === 'assistant' && message.requestId && message.status === 'COMPLETED');
+    if (!lastCompleted?.requestId) {
+      setError('Ainda não há resposta concluída para criar PR.');
+      return;
+    }
+    setPrLoading(true);
+    try {
+      const response = await client.post(`/codex/requests/${lastCompleted.requestId}/create-pr`);
+      setPrResult({ url: response.data?.url, title: response.data?.title });
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPrLoading(false);
+    }
+  }, [conversation]);
 
   return (
     <section className="space-y-6">
@@ -422,8 +500,19 @@ export default function CodexChatgptPage() {
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
-        <h3 className="text-lg font-semibold">Execução integrada (Fase 2)</h3>
-        <p className="text-sm text-slate-500">Executa no pipeline padrão com profile <code>CHATGPT_CODEX</code>.</p>
+        <h3 className="text-lg font-semibold">Conversa interativa (Fase 2)</h3>
+        <p className="text-sm text-slate-500">Envie uma solicitação, aguarde a resposta do modelo, continue conversando e peça o PR somente quando estiver satisfeito.</p>
+        {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          {conversation.map((message) => (
+            <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
+              <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <span>{message.role === 'user' ? 'Usuário' : 'Modelo'}</span>
+                {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
+              </div>
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            </article>
+          ))}
+        </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
         <div className="grid gap-3 md:grid-cols-2">
           <select value={environment} onChange={(e) => setEnvironment(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
             {environments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
@@ -432,7 +521,7 @@ export default function CodexChatgptPage() {
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.modelName}</option>)}
           </select>
         </div>
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder="Descreva a tarefa... Cole prints da área de transferência aqui (Ctrl+V)." className="w-full rounded-md border px-3 py-2 text-sm" required />
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder="Digite sua mensagem para o modelo... Cole prints com Ctrl+V. Quando estiver pronto, use Pedir PR." className="w-full rounded-md border px-3 py-2 text-sm" required />
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
             Anexar imagens
@@ -452,7 +541,11 @@ export default function CodexChatgptPage() {
             ))}
           </ul> : null}
         </div>
-        <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Executar</button>
+        <div className="flex flex-wrap gap-3">
+          <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model || Boolean(activeRequestId)} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
+          <button type="button" onClick={handleCreatePr} disabled={prLoading || Boolean(activeRequestId) || !conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED')} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
+        </div>
+        {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
       </form>
 
