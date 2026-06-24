@@ -37,6 +37,10 @@ const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const CHATGPT_CODEX_MODELS: ModelOption[] = [
+  { id: 55, modelName: 'gpt-5.5' },
+  { id: 54, modelName: 'gpt-5.4' }
+];
 
 interface ImageAttachment {
   id: string;
@@ -161,10 +165,9 @@ export default function CodexChatgptPage() {
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountResult, envResponse, modelResponse] = await Promise.all([
+      const [accountResult, envResponse] = await Promise.all([
         client.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
-        client.get<EnvironmentOption[]>('/environments'),
-        client.get<ModelOption[]>('/codex/models')
+        client.get<EnvironmentOption[]>('/environments')
       ]);
       if (accountResult.ok) {
         const parsedAccount = parseStatus(accountResult.data);
@@ -178,9 +181,9 @@ export default function CodexChatgptPage() {
         throw accountResult.error;
       }
       setEnvironments(envResponse.data);
-      setModels(modelResponse.data);
+      setModels(CHATGPT_CODEX_MODELS);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
-      setModel((current) => current || modelResponse.data[0]?.modelName || '');
+      setModel((current) => CHATGPT_CODEX_MODELS.some((item) => item.modelName === current) ? current : CHATGPT_CODEX_MODELS[0].modelName);
       await loadRequests();
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);

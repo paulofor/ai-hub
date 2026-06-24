@@ -836,3 +836,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 
 - Pergunta de causa raiz: por que esse erro poderia voltar a acontecer? A correção anterior ajustou o código, mas a convenção do Codex App Server (`workspace-write`) ainda não estava registrada nas instruções permanentes do repositório; outro agente poderia reintroduzir os valores camelCase legados ao tocar no mesmo fluxo.
 - Ajuste aplicado: o `AGENTS.md` raiz agora documenta explicitamente que payloads do Codex App Server devem usar `read-only`, `workspace-write` ou `danger-full-access`, e nunca `workspaceWrite`, `readOnly` ou `dangerFullAccess` no campo `sandbox`.
+
+## 2026-06-23 21:40:04 UTC-3
+- Diagnóstico solicitado sobre falha na tela `/codex-chatgpt`: a execução chegou a iniciar no `sandbox-orchestrator` com perfil `CHATGPT_CODEX`, clonou o repositório e abriu `thread/start`/`turn/start` no Codex App Server.
+- Causa raiz identificada nos logs do container `ai-hub-6-sandbox-orchestrator-1`: o Codex App Server rejeitou o modelo `gpt-5.3-codex` para conta ChatGPT com erro 400 (`The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account.`).
+- Efeito colateral observado: o evento de erro do Codex App Server não foi tratado pelo `EventEmitter`, derrubando o processo Node do `sandbox-orchestrator`; por isso a UI passou a mostrar bloqueio/erro ao consultar conta e execuções após a queda do container.
+- Observação adicional: o backend também registrou `500 Internal Server Error` por falha de conexão MySQL (`Connection reset`) em endpoints de listagem, mas isso não explica o bloqueio inicial da execução CHATGPT_CODEX; o gatilho da execução foi a incompatibilidade de modelo.
+
+## 2026-06-23 21:46:12 UTC-3
+- Pergunta de causa raiz: por que a execução CHATGPT_CODEX voltou a falhar ao iniciar? A combo da tela `/codex-chatgpt` carregava modelos do cadastro geral (`/codex/models`), permitindo selecionar `gpt-5.3-codex`, que o Codex App Server rejeita para conta ChatGPT.
+- Ajuste aplicado: a combo de modelos específica do fluxo `CHATGPT_CODEX` passou a usar uma lista fixa e compatível com ChatGPT, limitada a `gpt-5.5` e `gpt-5.4`.
+- Também foi garantido que, se houver um modelo selecionado fora dessa lista, o frontend volta automaticamente para `gpt-5.5`, evitando persistência de seleção incompatível.
