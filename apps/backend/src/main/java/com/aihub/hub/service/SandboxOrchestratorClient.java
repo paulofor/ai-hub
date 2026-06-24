@@ -119,6 +119,7 @@ public class SandboxOrchestratorClient {
         Optional.ofNullable(request.profile()).ifPresent(value -> body.put("profile", value));
         Optional.ofNullable(request.model()).ifPresent(value -> body.put("model", value));
         Optional.ofNullable(request.accessToken()).ifPresent(value -> body.put("accessToken", value));
+        Optional.ofNullable(request.githubToken()).ifPresent(value -> body.put("githubToken", value));
 
         Optional.ofNullable(request.database()).ifPresent(database -> {
             Map<String, Object> dbPayload = new HashMap<>();

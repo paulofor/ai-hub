@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CiFixJobRecord;
 import com.aihub.hub.domain.Project;
 import com.aihub.hub.dto.CiFixJobView;
 import com.aihub.hub.dto.CreateCiFixJobRequest;
+import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.repository.CiFixJobRepository;
 import com.aihub.hub.repository.ProjectRepository;
 import org.springframework.stereotype.Service;
@@ -20,15 +21,18 @@ public class CiFixJobService {
     private final CiFixJobRepository jobRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final AuditService auditService;
+    private final GithubAppAuth githubAppAuth;
 
     public CiFixJobService(ProjectRepository projectRepository,
                            CiFixJobRepository jobRepository,
                            SandboxOrchestratorClient sandboxOrchestratorClient,
-                           AuditService auditService) {
+                           AuditService auditService,
+                           GithubAppAuth githubAppAuth) {
         this.projectRepository = projectRepository;
         this.jobRepository = jobRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.auditService = auditService;
+        this.githubAppAuth = githubAppAuth;
     }
 
     @Transactional
@@ -65,6 +69,7 @@ public class CiFixJobService {
             null,
             null,
             null,
+            githubAppAuth.getInstallationToken(),
             null,
             null,
             null,

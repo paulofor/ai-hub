@@ -858,3 +858,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `sandbox-orchestrator` enviava `sandbox: workspace-write` fixo ao `thread/start`; esse modo aciona o sandbox Linux interno do Codex App Server, mas o ambiente observado não permite criação de namespace pelo `bwrap`, gerando `bwrap: No permissions to create a new namespace` antes de o agente conseguir ler/escrever arquivos.
 - Correção aplicada: criado `CODEX_APP_SERVER_SANDBOX_MODE` com validação estrita dos valores kebab-case aceitos (`read-only`, `workspace-write`, `danger-full-access`) e padrão `danger-full-access`, mantendo o isolamento no container/workspace do AI Hub e evitando a camada `bwrap` incompatível por padrão.
 - Validação: suíte `npm --prefix apps/sandbox-orchestrator test` executada com sucesso, incluindo cobertura do padrão `danger-full-access` e da configuração explícita `workspace-write`.
+
+## 2026-06-24 - Investigação últimas execuções ChatGPT
+- Investigado relato de que as últimas execuções sumiram na página Codex ChatGPT.
+- Causa observada nos logs: execução 723 / job 18a622ce-e8c0-4c26-b195-e03fed292ad0 concluiu no sandbox às 02:26:05 UTC, mas o callback para o backend falhou com HTTP 500 às 02:26:21 UTC.
+- Efeito observado: o backend continuou consultando o job do sandbox repetidamente e retornando payloads grandes (~1,79 MB) para atualização automática; a listagem `/api/codex/requests?page=0&size=10` chegou a exceder timeout de 25s durante a investigação.
+- Causa raiz provável: persistência/sincronização do resultado final no callback do sandbox falhou, deixando a tela dependente de refresh por polling pesado em vez de carregar a lista de execuções normalmente.
+
+## 2026-06-24 - Correção da criação de PR nas execuções ChatGPT Codex
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução alterava arquivos e concluía no `sandbox-orchestrator`, mas o orquestrador só criava PR quando recebia token GitHub por variáveis locais (`GITHUB_CLONE_TOKEN`, `GITHUB_TOKEN`, `GITHUB_PR_TOKEN`) ou pela `repoUrl`; no fluxo disparado pelo backend, o token da GitHub App ficava disponível apenas no backend e não era enviado no payload do job, levando ao log `nenhum token GitHub disponível; ignorando criação de PR`.
+- Correção aplicada: o backend agora obtém o installation token da GitHub App e envia ao sandbox no campo `githubToken`, separado do `accessToken` OAuth/OpenAI; o sandbox aceita esse campo, usa-o como primeira fonte de credencial para clone/push/PR e remove o token das respostas sanitizadas de jobs.
+- Cobertura: adicionados testes no sandbox para aceitar `githubToken` sem expor em respostas e para criar PR usando o token do payload; adicionadas asserções no backend garantindo envio do token para jobs CI Fix e ChatGPT Codex sem reintroduzir `accessToken` OAuth no perfil `CHATGPT_CODEX`.

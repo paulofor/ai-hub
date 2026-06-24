@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
@@ -13,6 +14,7 @@ import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -48,6 +50,7 @@ class CodexRequestServiceTest {
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
+    private final GithubAppAuth githubAppAuth = mock(GithubAppAuth.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
     private final PlatformTransactionManager transactionManager = new PlatformTransactionManager() {
         @Override
@@ -78,6 +81,7 @@ class CodexRequestServiceTest {
             environmentRepository,
             problemRepository,
             sandboxOrchestratorClient,
+            githubAppAuth,
             tokenCostCalculator,
             transactionManager,
             "gpt-5-codex",
@@ -93,6 +97,7 @@ class CodexRequestServiceTest {
     @BeforeEach
     void setup() {
         when(environmentRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+        when(githubAppAuth.getInstallationToken()).thenReturn("github-installation-token");
     }
 
     @Test
@@ -376,7 +381,10 @@ class CodexRequestServiceTest {
 
         assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.PENDING);
         verify(sandboxOrchestratorClient).readCodexAccount();
-        verify(sandboxOrchestratorClient).createJob(any());
+        ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().accessToken()).isNull();
+        assertThat(requestCaptor.getValue().githubToken()).isEqualTo("github-installation-token");
     }
 
 

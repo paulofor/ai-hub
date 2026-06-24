@@ -48,6 +48,7 @@ export interface SandboxJob {
   profile?: SandboxProfile;
   model?: string;
   accessToken?: string;
+  githubToken?: string;
   callbackUrl?: string;
   callbackSecret?: string;
   status: JobStatus;
