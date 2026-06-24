@@ -13,6 +13,7 @@ public record SandboxJobRequest(
     String profile,
     String model,
     String accessToken,
+    String githubToken,
     DatabaseConnection database,
     String callbackUrl,
     String callbackSecret,

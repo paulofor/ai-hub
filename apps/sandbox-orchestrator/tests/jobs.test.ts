@@ -79,6 +79,139 @@ test('accepts a job request and processes asynchronously', async () => {
   assert.deepEqual(stored!.changedFiles, ['README.md']);
 });
 
+test('accepts github token for PR creation without exposing it in job responses', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  const payload = {
+    jobId: 'job-github-token',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'fix failing tests',
+    githubToken: 'secret-github-token',
+  };
+
+  const creation = await request(app).post('/jobs').send(payload).expect(201);
+  assert.equal(creation.body.githubToken, undefined);
+
+  const stored = registry.get(payload.jobId);
+  assert.equal(stored?.githubToken, 'secret-github-token');
+
+  const details = await request(app).get(`/jobs/${payload.jobId}`).expect(200);
+  assert.equal(details.body.githubToken, undefined);
+});
+
+test('uses github token from job payload when creating a pull request', async () => {
+  const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-payload-token-remote-'));
+  execSync('git init --bare', { cwd: bareRepo });
+
+  const seedRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-payload-token-seed-'));
+  execSync('git init', { cwd: seedRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: seedRepo });
+  execSync('git config user.name "CI Bot"', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "init"', { cwd: seedRepo });
+  execSync('git branch -M main', { cwd: seedRepo });
+  execSync(`git remote add origin ${bareRepo}`, { cwd: seedRepo });
+  execSync('git push origin main', { cwd: seedRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-pr-payload-token',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'updated with payload token' }),
+              },
+              { type: 'message', id: 'msg-pr-payload-token', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-pr-payload-token-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'pr ready with payload token', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({ html_url: 'https://github.com/example/repo/pull/9' }),
+      text: async () => 'ok',
+    } as any;
+  };
+
+  const originalPrToken = process.env.GITHUB_PR_TOKEN;
+  const originalCloneToken = process.env.GITHUB_CLONE_TOKEN;
+  const originalGithubToken = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_PR_TOKEN;
+  delete process.env.GITHUB_CLONE_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+    const job: SandboxJob = {
+      jobId: 'job-pr-payload-token',
+      repoSlug: 'example/repo',
+      repoUrl: bareRepo,
+      branch: 'main',
+      taskDescription: 'update readme',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+      githubToken: 'payload-token',
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    assert.equal(job.pullRequestUrl, 'https://github.com/example/repo/pull/9');
+    assert.ok(fetchCalls.length > 0, 'fetch não foi chamado para criar PR');
+    assert.equal(fetchCalls[0].init?.headers?.Authorization, 'Bearer payload-token');
+    assert.ok(job.logs.some((entry) => entry.includes('payload.githubToken')), 'origem do token deve aparecer no log');
+  } finally {
+    if (originalPrToken === undefined) {
+      delete process.env.GITHUB_PR_TOKEN;
+    } else {
+      process.env.GITHUB_PR_TOKEN = originalPrToken;
+    }
+    if (originalCloneToken === undefined) {
+      delete process.env.GITHUB_CLONE_TOKEN;
+    } else {
+      process.env.GITHUB_CLONE_TOKEN = originalCloneToken;
+    }
+    if (originalGithubToken === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = originalGithubToken;
+    }
+    await fs.rm(bareRepo, { recursive: true, force: true });
+    await fs.rm(seedRepo, { recursive: true, force: true });
+  }
+});
+
 test('returns existing job idempotently', async () => {
   const registry = new Map<string, SandboxJob>();
   const processor = new StubProcessor();

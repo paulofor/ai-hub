@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CiFixJobRecord;
 import com.aihub.hub.domain.Project;
 import com.aihub.hub.dto.CiFixJobView;
 import com.aihub.hub.dto.CreateCiFixJobRequest;
+import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.repository.CiFixJobRepository;
 import com.aihub.hub.repository.ProjectRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,7 +27,13 @@ class CiFixJobServiceTest {
     private final CiFixJobRepository jobRepository = mock(CiFixJobRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final AuditService auditService = mock(AuditService.class);
+    private final GithubAppAuth githubAppAuth = mock(GithubAppAuth.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private CiFixJobService buildService() {
+        when(githubAppAuth.getInstallationToken()).thenReturn("github-installation-token");
+        return new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService, githubAppAuth);
+    }
 
     @Test
     void createJobPersistsAndPropagatesToOrchestrator() {
@@ -49,7 +56,7 @@ class CiFixJobServiceTest {
         when(sandboxOrchestratorClient.createJob(org.mockito.ArgumentMatchers.any()))
             .thenReturn(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(orchestratorPayload));
 
-        CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
+        CiFixJobService service = buildService();
         CreateCiFixJobRequest request = new CreateCiFixJobRequest();
         request.setProjectId(42L);
         request.setTaskDescription("look into failure");
@@ -70,6 +77,10 @@ class CiFixJobServiceTest {
         assertThat(view.pullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/99");
         assertThat(persisted.getCommitHash()).isEqualTo("abc123");
         assertThat(persisted.getCreatedAt()).isBeforeOrEqualTo(Instant.now());
+
+        ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().githubToken()).isEqualTo("github-installation-token");
     }
 
     @Test
@@ -93,7 +104,7 @@ class CiFixJobServiceTest {
         when(sandboxOrchestratorClient.getJob("job-refresh"))
             .thenReturn(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(refreshPayload));
 
-        CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
+        CiFixJobService service = buildService();
         CiFixJobView view = service.refreshFromOrchestrator("job-refresh");
 
         assertThat(view.status()).isEqualTo("COMPLETED");
@@ -122,7 +133,7 @@ class CiFixJobServiceTest {
         when(sandboxOrchestratorClient.getJob("job-refresh-snake"))
             .thenReturn(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(payload));
 
-        CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
+        CiFixJobService service = buildService();
         CiFixJobView view = service.refreshFromOrchestrator("job-refresh-snake");
 
         assertThat(view.pullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/202");
@@ -141,7 +152,7 @@ class CiFixJobServiceTest {
         when(sandboxOrchestratorClient.createJob(org.mockito.ArgumentMatchers.any()))
             .thenThrow(new RuntimeException("timeout creating job"));
 
-        CiFixJobService service = new CiFixJobService(projectRepository, jobRepository, sandboxOrchestratorClient, auditService);
+        CiFixJobService service = buildService();
         CreateCiFixJobRequest request = new CreateCiFixJobRequest();
         request.setProjectId(99L);
         request.setTaskDescription("run analysis");

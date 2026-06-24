@@ -13,6 +13,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
+import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
@@ -65,6 +66,7 @@ public class CodexRequestService {
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
+    private final GithubAppAuth githubAppAuth;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
     private final String economyModel;
@@ -83,6 +85,7 @@ public class CodexRequestService {
                                EnvironmentRepository environmentRepository,
                                ProblemRepository problemRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
+                               GithubAppAuth githubAppAuth,
                                TokenCostCalculator tokenCostCalculator,
                                PlatformTransactionManager transactionManager,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
@@ -100,6 +103,7 @@ public class CodexRequestService {
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
+        this.githubAppAuth = githubAppAuth;
         this.tokenCostCalculator = tokenCostCalculator;
         this.defaultModel = defaultModel;
         this.economyModel = economyModel;
@@ -612,6 +616,7 @@ public class CodexRequestService {
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
             request.getModel(),
             accessToken,
+            githubAppAuth.getInstallationToken(),
             resolveDatabase(request.getEnvironment()),
             callbackUrl,
             callbackSecret,

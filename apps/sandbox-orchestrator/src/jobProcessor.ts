@@ -814,6 +814,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private resolveGithubAuth(job: SandboxJob): { token?: string; username: string; source: string } {
     const username = process.env.GITHUB_CLONE_USERNAME ?? 'x-access-token';
     const candidates: Array<{ token?: string; source: string }> = [
+      { token: job.githubToken, source: 'payload.githubToken' },
       { token: process.env.GITHUB_CLONE_TOKEN, source: 'GITHUB_CLONE_TOKEN' },
       { token: process.env.GITHUB_TOKEN, source: 'GITHUB_TOKEN' },
       { token: process.env.GITHUB_PR_TOKEN, source: 'GITHUB_PR_TOKEN' },
