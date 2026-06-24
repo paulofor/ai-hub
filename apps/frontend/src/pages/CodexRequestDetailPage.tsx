@@ -452,11 +452,16 @@ export default function CodexRequestDetailPage() {
             {request.profile === 'CHATGPT_CODEX' && (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-900 dark:border-indigo-900/60 dark:bg-indigo-900/20 dark:text-indigo-100">
                 <p className="font-semibold">Modo Codex (ChatGPT)</p>
+                <p className="mt-2">
+                  Orientações do perfil Codex adicionadas ao prompt inicial. Elas continuam válidas como boas práticas,
+                  mas worktrees, squads e checkpoints de custo só são necessários quando a tarefa justificar coordenação
+                  paralela ou investigação longa.
+                </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
-                  <li>Trate o fluxo como o command center multiagente do chatgpt.com/codex, registrando squads, owners e metas paralelas.</li>
-                  <li>Abra worktrees ou diretórios codex/&lt;squad&gt; para dividir iniciativas e sincronize checkpoints curtos entre elas.</li>
-                  <li>Execute verificações rápidas em ambientes em nuvem e compacte logs em relatos objetivos para segurar o custo.</li>
-                  <li>Publique checkpoints com progresso, riscos e o custo estimado de cada frente.</li>
+                  <li>Use o fluxo de command center multiagente em demandas com várias frentes, owners ou entregas paralelas.</li>
+                  <li>Abra worktrees ou diretórios codex/&lt;squad&gt; apenas quando houver benefício real de isolamento entre iniciativas.</li>
+                  <li>Prefira verificações curtas e logs compactos para controlar custo e manter rastreabilidade.</li>
+                  <li>Em tarefas simples, responda de forma objetiva; em tarefas longas, registre progresso, riscos e próximos passos.</li>
                 </ul>
                 <p className="mt-2 text-xs text-indigo-700 dark:text-indigo-200">Referência: docs/estrategia-token/chatgpt-codex.md</p>
               </div>
