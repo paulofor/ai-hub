@@ -38,6 +38,7 @@ const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const CHATGPT_CODEX_MODELS: ModelOption[] = [
+  { id: 56, modelName: 'gpt-5.5-pro' },
   { id: 55, modelName: 'gpt-5.5' },
   { id: 54, modelName: 'gpt-5.4' }
 ];
