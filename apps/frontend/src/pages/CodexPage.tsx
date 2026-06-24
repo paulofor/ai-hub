@@ -632,7 +632,7 @@ export default function CodexPage() {
                 <span>
                   Codex (ChatGPT)
                   <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Replica o command center multiagente do chatgpt.com/codex: organize squads paralelos, use worktrees/diretórios temáticos e sincronize checkpoints curtos conforme descrito em docs/estrategia-token/chatgpt-codex.md.
+                    Adiciona ao prompt inicial as orientações do perfil Codex. Use squads, worktrees e checkpoints quando a tarefa exigir coordenação paralela; para demandas simples, mantenha o fluxo objetivo.
                   </span>
                 </span>
               </label>
