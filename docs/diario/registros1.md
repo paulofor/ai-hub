@@ -847,3 +847,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta de causa raiz: por que a execução CHATGPT_CODEX voltou a falhar ao iniciar? A combo da tela `/codex-chatgpt` carregava modelos do cadastro geral (`/codex/models`), permitindo selecionar `gpt-5.3-codex`, que o Codex App Server rejeita para conta ChatGPT.
 - Ajuste aplicado: a combo de modelos específica do fluxo `CHATGPT_CODEX` passou a usar uma lista fixa e compatível com ChatGPT, limitada a `gpt-5.5` e `gpt-5.4`.
 - Também foi garantido que, se houver um modelo selecionado fora dessa lista, o frontend volta automaticamente para `gpt-5.5`, evitando persistência de seleção incompatível.
+
+## 2026-06-23 22:55:37 UTC-3
+- Solicitação 722: analisada a saída informada pelo usuário sobre a tentativa anterior de ajuste na tela OPRM `pipeline-v2`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução anterior não falhou por causa do código do AI Hub nem por ausência de endpoint; ela foi interrompida por uma falha de infraestrutura/sandbox do executor (`bwrap: No permissions to create a new namespace`), impedindo comandos básicos de leitura/escrita e também o `apply_patch`.
+- Conclusão operacional: como o agente anterior não conseguia acessar o workspace local, ele recorreu a consulta externa/connector para localizar a tela e preparar uma hipótese de patch, mas não aplicou nem validou alteração no branch local. A indicação de `docs/registros/oprm1.md` também diverge da instrução vigente do projeto, que exige registro em `docs/diario/registros1.md`.
+
+## 2026-06-23 22:59:46 UTC-3
+- Solicitação 722: ajuste efetivo no sandbox-orchestrator para permitir que execuções `CHATGPT_CODEX` via Codex App Server trabalhem no workspace mesmo quando o sandbox Linux interno baseado em `bwrap` não consegue criar namespace dentro do container/host.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `sandbox-orchestrator` enviava `sandbox: workspace-write` fixo ao `thread/start`; esse modo aciona o sandbox Linux interno do Codex App Server, mas o ambiente observado não permite criação de namespace pelo `bwrap`, gerando `bwrap: No permissions to create a new namespace` antes de o agente conseguir ler/escrever arquivos.
+- Correção aplicada: criado `CODEX_APP_SERVER_SANDBOX_MODE` com validação estrita dos valores kebab-case aceitos (`read-only`, `workspace-write`, `danger-full-access`) e padrão `danger-full-access`, mantendo o isolamento no container/workspace do AI Hub e evitando a camada `bwrap` incompatível por padrão.
+- Validação: suíte `npm --prefix apps/sandbox-orchestrator test` executada com sucesso, incluindo cobertura do padrão `danger-full-access` e da configuração explícita `workspace-write`.
