@@ -878,3 +878,23 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Causa raiz identificada: a tela da Fase 2 tratava cada envio como uma execução isolada, sem estado de conversa, sem refletir a resposta do modelo na própria página e sem ação dedicada para solicitar PR ao final do diálogo.
 - Ajustada a tela `CodexChatgptPage` para manter uma conversa local entre usuário e modelo, montar o prompt com o histórico antes de cada nova mensagem, acompanhar a execução ativa por polling e atualizar a resposta quando a solicitação terminar.
 - Adicionado botão `Pedir PR` para acionar a criação de PR a partir da última resposta concluída, evitando misturar a conversa iterativa com a etapa final de publicação.
+
+## 2026-06-24 17:37:33 UTC — Confirmação de modelo no Codex ChatGPT
+- Verificada a tela `/codex-chatgpt` e a implementação atual do frontend: o fluxo `CHATGPT_CODEX` expõe a lista fixa de modelos compatíveis com ChatGPT contendo `gpt-5.5` e `gpt-5.4`.
+- Conclusão: é possível usar `gpt-5.5` nessa tela, selecionando-o no campo de modelo antes de enviar a mensagem, desde que a conta ChatGPT esteja conectada/executável e o backend/sandbox consigam iniciar a execução normalmente.
+- Observação: não há uma opção separada chamada `gpt-5.5 pro` no código; o identificador disponível é `gpt-5.5`.
+
+## 2026-06-24 17:40:01 UTC — Diferença entre GPT-5.5 e GPT-5.5 Pro
+- Investigada a dúvida sobre `gpt-5.5` versus `gpt-5.5 pro` usando referências oficiais da OpenAI e o estado atual do AI Hub.
+- Conclusão funcional para o projeto: a tela `/codex-chatgpt` hoje disponibiliza apenas o identificador `gpt-5.5` na lista fixa do fluxo `CHATGPT_CODEX`; para usar a variante Pro seria necessário expor/enviar explicitamente o identificador de modelo `gpt-5.5-pro`, se a conta/plano e o backend/sandbox suportarem esse modelo.
+- Diferença conceitual: `gpt-5.5` é o modelo recomendado para a maioria das tarefas Codex e trabalho profissional complexo; `gpt-5.5-pro` usa mais computação/tempo de raciocínio, tende a respostas mais precisas para tarefas difíceis e longas, mas é mais lento e tem custo/limites maiores.
+
+## 2026-06-24 17:42:46 UTC — Viabilidade de adicionar GPT-5.5 Pro na combo
+- Pergunta explícita de causa raiz: “por que adicionar na combo poderia ou não funcionar?”. Resposta: no fluxo atual, a combo do frontend é a única lista fixa observada para o perfil `CHATGPT_CODEX`; o backend persiste o `model` recebido e o sandbox repassa esse valor diretamente ao Codex App Server em `thread/start`.
+- Conclusão técnica: se `gpt-5.5-pro` for adicionado à lista do frontend e selecionado, o valor deve trafegar pelo backend até o sandbox sem bloqueio local adicional de allowlist no caminho analisado.
+- Risco/condição externa: isso só funcionará de ponta a ponta se o Codex App Server e a conta ChatGPT conectada aceitarem `gpt-5.5-pro`; caso contrário a execução deve falhar no `thread/start` com erro de modelo não suportado/autorização/plano, como já ocorreu anteriormente com modelo incompatível.
+
+## 2026-06-24 17:49:14 UTC — Teste controlado do GPT-5.5 Pro na combo
+- Pergunta explícita de causa raiz: “por que testar adicionando na combo é suficiente para validar o caminho local?”. Resposta: a combo `CHATGPT_CODEX_MODELS` é o ponto local que limita os modelos selecionáveis; após a seleção, o valor de `model` já é enviado pelo frontend, persistido pelo backend e repassado ao Codex App Server pelo sandbox.
+- Ajuste aplicado: adicionado `gpt-5.5-pro` à lista fixa de modelos do fluxo `CHATGPT_CODEX` antes de `gpt-5.5`, permitindo seleção na tela `/codex-chatgpt` para teste real contra a conta/plano conectada.
+- Critério de validação: build do frontend confirma que a alteração é válida localmente; a validação final de suporte depende de uma execução real, pois a autorização do modelo é decidida pelo Codex App Server/conta ChatGPT no `thread/start`.
