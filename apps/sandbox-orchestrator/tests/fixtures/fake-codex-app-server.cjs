@@ -55,6 +55,11 @@ rl.on('line', (line) => {
     setTimeout(() => send({ id: message.id, result: { method: message.method } }), 5);
     return;
   }
+  if (message.method === 'test/error-notification') {
+    send({ id: message.id, result: { ok: true } });
+    setTimeout(() => send({ method: 'error', params: { error: { message: 'fake codex app server error' }, willRetry: false } }), 5);
+    return;
+  }
   if (message.method === 'test/never') {
     return;
   }

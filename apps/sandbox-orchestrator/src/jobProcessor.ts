@@ -1044,6 +1044,11 @@ export class SandboxJobProcessor implements JobProcessor {
         }
         completed = true;
       }),
+      client.onNotification('error', (params) => {
+        firstEventAt = firstEventAt ?? Date.now();
+        failedReason = this.extractCodexErrorMessage(params) ?? 'CODEX_APP_SERVER_ERROR';
+        this.log(job, `Codex App Server error ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
+      }),
     ];
 
     try {
@@ -1139,6 +1144,25 @@ export class SandboxJobProcessor implements JobProcessor {
     const record = value as Record<string, unknown>;
     const status = record.status ?? record.outcome;
     return typeof status === 'string' ? status.toLowerCase() : undefined;
+  }
+
+  private extractCodexErrorMessage(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const directMessage = record.message;
+    if (typeof directMessage === 'string' && directMessage.trim()) {
+      return directMessage.trim();
+    }
+    const error = record.error;
+    if (error && typeof error === 'object') {
+      const nestedMessage = (error as Record<string, unknown>).message;
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        return nestedMessage.trim();
+      }
+    }
+    return undefined;
   }
 
   private sanitizeCodexEvent(value: unknown): unknown {

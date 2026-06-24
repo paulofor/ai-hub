@@ -898,3 +898,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que testar adicionando na combo é suficiente para validar o caminho local?”. Resposta: a combo `CHATGPT_CODEX_MODELS` é o ponto local que limita os modelos selecionáveis; após a seleção, o valor de `model` já é enviado pelo frontend, persistido pelo backend e repassado ao Codex App Server pelo sandbox.
 - Ajuste aplicado: adicionado `gpt-5.5-pro` à lista fixa de modelos do fluxo `CHATGPT_CODEX` antes de `gpt-5.5`, permitindo seleção na tela `/codex-chatgpt` para teste real contra a conta/plano conectada.
 - Critério de validação: build do frontend confirma que a alteração é válida localmente; a validação final de suporte depende de uma execução real, pois a autorização do modelo é decidida pelo Codex App Server/conta ChatGPT no `thread/start`.
+
+## 2026-06-24 18:10:59 UTC — Resultado do teste GPT-5.5 Pro em produção
+- Pergunta explícita de causa raiz: “por que a execução com GPT-5.5 Pro não deu certo?”. Resposta: o valor `gpt-5.5-pro` foi selecionado, chegou ao `sandbox-orchestrator`, abriu `thread/start` com sucesso, mas o Codex App Server rejeitou o turno com erro 400 informando que o modelo não é suportado ao usar Codex com conta ChatGPT.
+- Causa raiz confirmada nos logs: incompatibilidade externa do modelo `gpt-5.5-pro` com o fluxo Codex via conta ChatGPT; não foi falha de combo, backend, token GitHub ou clone.
+- Correção aplicada: removido `gpt-5.5-pro` da combo do `CodexChatgptPage` para não oferecer uma opção comprovadamente rejeitada nesse fluxo, mantendo `gpt-5.5` e `gpt-5.4`.
+- Correção preventiva adicional: tratado evento `error` do Codex App Server no sandbox para que rejeições futuras não derrubem o processo Node por `ERR_UNHANDLED_ERROR`, registrando o erro e encerrando o job como falha controlada.
+
+## 2026-06-24 18:17:40 UTC — Pesquisa sobre habilitar GPT-5.5 Pro na conta
+- Pesquisadas fontes oficiais da OpenAI sobre disponibilidade do GPT-5.5 Pro em ChatGPT, Codex e API.
+- Conclusão: GPT-5.5 Pro pode existir para planos ChatGPT Pro/Business/Enterprise/Edu e também como modelo de API Responses, mas a documentação de Codex para login com ChatGPT recomenda/expõe GPT-5.5 para Codex; o teste real do AI Hub confirmou que o Codex App Server rejeita `gpt-5.5-pro` quando usado com conta ChatGPT.
+- Direção operacional: trocar configurações da conta pode liberar GPT-5.5 Pro no ChatGPT normal, mas não há evidência oficial de configuração de conta que force `gpt-5.5-pro` no Codex via ChatGPT sign-in. Para usar Pro programaticamente, o caminho mais plausível é integração por API/Responses com chave e modelo `gpt-5.5-pro`, não o fluxo atual do Codex App Server autenticado por ChatGPT.
