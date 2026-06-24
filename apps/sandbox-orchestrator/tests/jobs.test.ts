@@ -2971,10 +2971,74 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal(job.summary, 'resumo via app server');
     const threadStartCall = calls.find((call) => call.method === 'thread/start');
     assert.ok(threadStartCall);
-    assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'workspace-write');
+    assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');
     assert.ok(calls.some((call) => call.method === 'turn/start'));
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
   } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test('permite configurar sandbox mode do Codex App Server em kebab-case', async () => {
+  const previous = process.env.CODEX_APP_SERVER_SANDBOX_MODE;
+  process.env.CODEX_APP_SERVER_SANDBOX_MODE = 'workspace-write';
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-codex-app-server-mode-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: unknown }> = [];
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') return { authMode: 'chatgpt', planType: 'plus' };
+      if (method === 'thread/start') return { id: 'thread-123' };
+      if (method === 'turn/start') {
+        setTimeout(() => {
+          for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-123' });
+        }, 5);
+        return { id: 'turn-123' };
+      }
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+    const job: SandboxJob = {
+      jobId: 'job-chatgpt-codex-app-server-mode',
+      repoUrl: tempRepo,
+      branch: 'main',
+      taskDescription: 'use app server',
+      profile: 'CHATGPT_CODEX',
+      status: 'PENDING',
+      logs: [],
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+    const threadStartCall = calls.find((call) => call.method === 'thread/start');
+    assert.ok(threadStartCall);
+    assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'workspace-write');
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_APP_SERVER_SANDBOX_MODE;
+    else process.env.CODEX_APP_SERVER_SANDBOX_MODE = previous;
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
 });

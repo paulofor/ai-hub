@@ -296,6 +296,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly runnerEnvironmentStates: WeakMap<SandboxJob, RunnerEnvironmentState> = new WeakMap();
   private readonly codexAppServerClient?: CodexAppServerClient;
   private readonly codexTurnTimeoutMs: number;
+  private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
 
   constructor(
     apiKey?: string,
@@ -313,6 +314,7 @@ export class SandboxJobProcessor implements JobProcessor {
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
     this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 10 * 60 * 1000);
+    this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
     this.toolOutputStringLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_STRING_LIMIT, 12_000);
@@ -957,6 +959,19 @@ export class SandboxJobProcessor implements JobProcessor {
     return this.openai;
   }
 
+  private resolveCodexAppServerSandboxMode(value: string | undefined): 'read-only' | 'workspace-write' | 'danger-full-access' {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return 'danger-full-access';
+    }
+    if (normalized === 'read-only' || normalized === 'workspace-write' || normalized === 'danger-full-access') {
+      return normalized;
+    }
+    throw new Error(
+      `CODEX_APP_SERVER_SANDBOX_MODE inválido: ${normalized}. Use read-only, workspace-write ou danger-full-access.`,
+    );
+  }
+
   private async runWithOpenAIResponsesApi(job: SandboxJob, repoPath: string, model: string): Promise<string> {
     const openai = this.resolveOpenAIClient(job);
     return this.runCodexLoop(job, repoPath, model, openai);
@@ -978,13 +993,13 @@ export class SandboxJobProcessor implements JobProcessor {
 
     this.recordInteraction(job, 'OUTBOUND', this.safeStringify({
       method: 'thread/start',
-      params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: 'workspace-write', serviceName: 'ai_hub' },
+      params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: this.codexAppServerSandboxMode, serviceName: 'ai_hub' },
     }));
     const thread = await client.request<Record<string, unknown>>('thread/start', {
       model,
       cwd: repoPath,
       approvalPolicy: 'never',
-      sandbox: 'workspace-write',
+      sandbox: this.codexAppServerSandboxMode,
       serviceName: 'ai_hub',
     });
     const threadId = this.extractCodexId(thread, ['threadId', 'id'], 'thread.id');

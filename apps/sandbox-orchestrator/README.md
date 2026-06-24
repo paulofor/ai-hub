@@ -31,6 +31,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `CODEX_APP_SERVER_ENABLED` | Quando `true`, inicia o supervisor local do `codex app-server --listen stdio://` e inclui seu estado no healthcheck. | `false` |
 | `CODEX_HOME` | Diretório persistente do Codex App Server para cache de autenticação gerenciado pelo próprio Codex. Deve ser tratado como segredo quando usar storage em arquivo. | `/var/lib/ai-hub/codex` na imagem |
 | `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX` via App Server. | `600000` |
+| `CODEX_APP_SERVER_SANDBOX_MODE` | Modo de sandbox enviado ao `thread/start` do Codex App Server. Aceita apenas `read-only`, `workspace-write` ou `danger-full-access`; o padrão evita o sandbox Linux interno (`bwrap`) porque o job já roda dentro do sandbox-orchestrator/container do AI Hub. | `danger-full-access` |
 | `SANDBOX_SLUG_PREFIX` | Prefixo aplicado antes do slug original | *(vazio)* |
 | `SANDBOX_SLUG_SUFFIX` | Sufixo aplicado após o slug original | `-sandbox` |
 | `SANDBOX_IMAGE` | Imagem base utilizada para provisionar o contêiner/VM efêmero | `ghcr.io/ai-hub-6/sandbox:latest` |
