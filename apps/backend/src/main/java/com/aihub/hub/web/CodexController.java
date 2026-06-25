@@ -2,6 +2,7 @@ package com.aihub.hub.web;
 
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
@@ -211,6 +212,11 @@ public class CodexController {
                                         @RequestHeader(value = "X-User", defaultValue = "unknown") String actor) {
         assertOwner(role);
         CodexRequest request = codexRequestService.find(id);
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (status != CodexRequestStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Só é possível criar PR para uma solicitação concluída com sucesso");
+        }
+
         RepoCoordinates coordinates = RepoCoordinates.from(request.getEnvironment());
         if (coordinates == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente da solicitação não está no formato owner/repo");

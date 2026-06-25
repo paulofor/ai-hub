@@ -462,7 +462,16 @@ export default function CodexChatgptPage() {
     }
     setPrLoading(true);
     try {
-      const response = await client.post(`/codex/requests/${lastCompleted.requestId}/create-pr`);
+      const response = await client.post(
+        `/codex/requests/${lastCompleted.requestId}/create-pr`,
+        {},
+        {
+          headers: {
+            'X-Role': 'owner',
+            'X-User': 'codex-ui'
+          }
+        }
+      );
       setPrResult({ url: response.data?.url, title: response.data?.title });
       setError(null);
     } catch (err) {
