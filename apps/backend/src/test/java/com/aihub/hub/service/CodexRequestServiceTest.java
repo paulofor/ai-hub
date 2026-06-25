@@ -174,6 +174,26 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void listDoesNotRefreshTerminalRequestThatAlreadyHasResponseEvenWhenUsageMetadataIsMissing() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-terminal-with-response");
+        request.setStatus(CodexRequestStatus.COMPLETED);
+        request.setResponseText("feito");
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
+
+        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request));
+        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
+
+        CodexRequestService service = buildService();
+
+        List<CodexRequest> listed = service.list();
+
+        assertThat(listed).containsExactly(request);
+        verify(sandboxOrchestratorClient, never()).getJob("job-terminal-with-response");
+        verify(codexRequestRepository, never()).save(any(CodexRequest.class));
+    }
+
+    @Test
     void handleSandboxCallbackUpdatesRequestWhenJobExists() {
         CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
         request.setExternalId("job-999");
