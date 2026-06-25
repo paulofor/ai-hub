@@ -924,3 +924,18 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: após o botão passar a enviar os headers corretos, o backend aceitava `create-pr` sem conferir se a solicitação alvo terminou com `COMPLETED`; assim uma execução `FAILED` ainda podia disparar a criação de PR usando uma resposta reaproveitada pela busca por ambiente/repositório.
 - Correção aplicada: o endpoint de criação de PR agora valida o status da solicitação e retorna `400` quando ela não está concluída com sucesso, antes de buscar resposta/patch ou chamar o serviço de Pull Request.
 - Validação local: adicionado teste de controller garantindo que uma solicitação `FAILED` é rejeitada e que nenhum serviço de resposta/PR é acionado nesse caso.
+
+## 2026-06-25 15:41:19 UTC-3
+- Consulta solicitada da resposta do modelo na solicitação Codex `#727` via endpoint público `GET https://iahub.xyz/api/codex/requests/727`.
+- Confirmado que a solicitação `#727` está `COMPLETED`, com modelo `gpt-5.5`, perfil `CHATGPT_CODEX`, PR vinculado `https://github.com/paulofor/marketing-hub/pull/3965` e resposta registrada em `responseText`.
+
+## 2026-06-25 15:47:24 UTC-3
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela mostrava um texto longo vindo das interações outbound do sandbox/Codex App Server, mas o registro principal da solicitação (`codex_requests.response_text`) dependia apenas de `summary`/`error`; assim havia risco de perder ou substituir o transcript completo por um resumo menor no registro da solicitação.
+- Correção aplicada: `CodexRequestService` agora deriva `responseText` preferencialmente do transcript completo das interações outbound retornadas pelo sandbox, mantendo fallback para `error` e depois `summary`, e usa essa regra em criação, callback/refresh e cancelamento.
+- Validação local: adicionado teste unitário cobrindo callback com interações inbound/outbound e garantindo que apenas o transcript outbound completo é salvo em `CodexRequest.responseText`.
+
+## 2026-06-25 15:55:13 UTC-3
+- Correção da correção anterior após esclarecimento: o usuário e commits/PRs devem continuar recebendo apenas o resumo final em `responseText`, enquanto o transcript completo do modelo deve ficar preservado no registro da solicitação para auditoria.
+- Causa raiz refinada: usar `responseText` para armazenar o transcript completo misturava a saída operacional/auditável com a resposta resumida de consumo humano, fazendo a UI e fluxos de commit poderem exibir conteúdo longo demais.
+- Ajuste aplicado: adicionado campo persistido `model_transcript` em `codex_requests` e mapeado em `CodexRequest.modelTranscript`; `CodexRequestService` mantém `responseText` em `error`/`summary` e grava as interações outbound completas em `modelTranscript`.
+- Validação local: teste unitário atualizado para garantir que o resumo permanece em `responseText` e o transcript completo fica em `modelTranscript`.

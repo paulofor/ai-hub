@@ -220,6 +220,75 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void handleSandboxCallbackKeepsSummaryForUserAndPersistsFullOutboundTranscript() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "verifique esse erro");
+        request.setExternalId("job-transcript");
+        request.setCreatedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        when(codexRequestRepository.findByExternalId("job-transcript")).thenReturn(Optional.of(request));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
+                "job-transcript",
+                "COMPLETED",
+                "Resumo final menor",
+                null,
+                null,
+                null,
+                null,
+                10,
+                0,
+                5,
+                15,
+                BigDecimal.ZERO,
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:06:00Z",
+                300000L,
+                0,
+                0,
+                0,
+                0,
+                List.of(
+                    new SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction(
+                        "in-1",
+                        "INBOUND",
+                        "verifique esse erro",
+                        null,
+                        "2024-01-01T00:01:10Z",
+                        1
+                    ),
+                    new SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction(
+                        "out-1",
+                        "OUTBOUND",
+                        "Vou rastrear esse erro pelo fluxo completo.",
+                        null,
+                        "2024-01-01T00:01:20Z",
+                        2
+                    ),
+                    new SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction(
+                        "out-2",
+                        "OUTBOUND",
+                        "Verifiquei e corrigi a causa-raiz.",
+                        null,
+                        "2024-01-01T00:06:00Z",
+                        3
+                    )
+                ),
+                null
+            );
+
+        CodexRequestService service = buildService();
+        boolean updated = service.handleSandboxCallback(response);
+
+        assertThat(updated).isTrue();
+        assertThat(request.getResponseText()).isEqualTo("Resumo final menor");
+        assertThat(request.getModelTranscript())
+            .isEqualTo("Vou rastrear esse erro pelo fluxo completo.\n\nVerifiquei e corrigi a causa-raiz.");
+        verify(codexRequestRepository).save(request);
+    }
+
+    @Test
     void smartEconomyUsesEconomyModelWhenFootprintIsBelowThreshold() {
         CodexRequestService service = buildService();
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));

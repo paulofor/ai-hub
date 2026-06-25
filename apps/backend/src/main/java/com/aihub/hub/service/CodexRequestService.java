@@ -639,14 +639,7 @@ public class CodexRequestService {
             .orElse(jobId);
         request.setExternalId(resolvedExternalId);
         applySandboxMetadata(request, response);
-        Optional.ofNullable(response)
-            .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse::summary)
-            .filter(StringUtils::hasText)
-            .ifPresent(summary -> request.setResponseText(summary.trim()));
-        Optional.ofNullable(response)
-            .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse::error)
-            .filter(StringUtils::hasText)
-            .ifPresent(error -> request.setResponseText(error.trim()));
+        applySandboxResponseContent(request, response);
         applyUsageMetadata(request, response);
 
         saveRequest(request);
@@ -781,14 +774,8 @@ public class CodexRequestService {
         }
 
         boolean updated = applySandboxMetadata(request, response);
-        if (response.summary() != null && !response.summary().isBlank()) {
-            log.info("Sandbox retornou resumo para CodexRequest {}", request.getId());
-            request.setResponseText(response.summary().trim());
-            updated = true;
-        }
-        if (response.error() != null && !response.error().isBlank()) {
-            log.info("Sandbox retornou erro para CodexRequest {}", request.getId());
-            request.setResponseText(response.error().trim());
+        if (applySandboxResponseContent(request, response)) {
+            log.info("Sandbox retornou conteúdo de resposta para CodexRequest {}", request.getId());
             updated = true;
         }
 
@@ -876,14 +863,10 @@ public class CodexRequestService {
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.cancelJob(request.getExternalId());
         if (response != null) {
             applySandboxMetadata(request, response);
-            if (StringUtils.hasText(response.error())) {
-                request.setResponseText(response.error().trim());
-            } else if (StringUtils.hasText(response.summary())) {
-                request.setResponseText(response.summary().trim());
-            }
+            applySandboxResponseContent(request, response);
             applyUsageMetadata(request, response);
             recordInteractions(request, response);
-        recordHttpRequests(request, response);
+            recordHttpRequests(request, response);
         } else {
             Instant finishedAt = Instant.now();
             request.setStatus(CodexRequestStatus.CANCELLED);
@@ -986,6 +969,63 @@ public class CodexRequestService {
         }
 
         return updated;
+    }
+
+    private boolean applySandboxResponseContent(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (request == null || response == null) {
+            return false;
+        }
+
+        boolean updated = false;
+        Optional<String> responseText = resolveUserFacingResponseTextFromSandbox(response);
+        if (responseText.isPresent() && !Objects.equals(request.getResponseText(), responseText.get())) {
+            request.setResponseText(responseText.get());
+            updated = true;
+        }
+
+        String transcript = buildOutboundInteractionTranscript(response.interactions());
+        if (StringUtils.hasText(transcript) && !Objects.equals(request.getModelTranscript(), transcript)) {
+            request.setModelTranscript(transcript);
+            updated = true;
+        }
+
+        return updated;
+    }
+
+    private Optional<String> resolveUserFacingResponseTextFromSandbox(SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (response == null) {
+            return Optional.empty();
+        }
+
+        if (StringUtils.hasText(response.error())) {
+            return Optional.of(response.error().trim());
+        }
+
+        if (StringUtils.hasText(response.summary())) {
+            return Optional.of(response.summary().trim());
+        }
+
+        return Optional.empty();
+    }
+
+    private String buildOutboundInteractionTranscript(List<SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction> interactions) {
+        if (interactions == null || interactions.isEmpty()) {
+            return null;
+        }
+
+        List<String> chunks = interactions.stream()
+            .filter(Objects::nonNull)
+            .filter(interaction -> CodexInteractionDirection.fromSandboxValue(interaction.direction()) == CodexInteractionDirection.OUTBOUND)
+            .map(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction::content)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .toList();
+
+        if (chunks.isEmpty()) {
+            return null;
+        }
+
+        return String.join("\n\n", chunks);
     }
 
     private Instant parseInstant(String value) {

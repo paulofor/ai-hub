@@ -62,6 +62,10 @@ public class CodexRequest {
     private String responseText;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "model_transcript", columnDefinition = "LONGTEXT")
+    private String modelTranscript;
+
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "user_comment", columnDefinition = "LONGTEXT")
     private String userComment;
 
@@ -224,6 +228,14 @@ public class CodexRequest {
 
     public void setResponseText(String responseText) {
         this.responseText = responseText;
+    }
+
+    public String getModelTranscript() {
+        return modelTranscript;
+    }
+
+    public void setModelTranscript(String modelTranscript) {
+        this.modelTranscript = modelTranscript;
     }
 
     public String getUserComment() {
