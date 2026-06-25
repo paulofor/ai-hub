@@ -914,3 +914,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend e o backend já transportavam anexos de imagem, mas o `sandbox-orchestrator` bloqueava qualquer `imageAttachments` no perfil `CHATGPT_CODEX` com `CODEX_INPUT_IMAGE_UNSUPPORTED`, embora o protocolo do Codex App Server aceite entrada de imagem no `turn/start` como item `{ type: "image", url: ... }`.
 - Correção aplicada: removido o bloqueio local e convertido cada data URL de imagem anexada para o formato aceito pelo Codex App Server no payload de `turn/start`, mantendo o texto como primeiro item da entrada.
 - Validação: ampliado o teste do fluxo `CHATGPT_CODEX` para cobrir anexo de imagem e confirmar que o `turn/start` recebe texto mais imagem, sem cair na Responses API.
+
+## 2026-06-25 15:20:00 UTC — Correção do botão Pedir PR no Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o endpoint `POST /api/codex/requests/{id}/create-pr` exige o header `X-Role: owner` via `assertOwner`, mas o botão `Pedir PR` da tela `/codex-chatgpt` chamava esse endpoint sem os headers de owner, diferentemente da tela de detalhe da solicitação; por isso o backend retornava `403 Forbidden` antes de tentar criar o PR.
+- Correção aplicada: alinhado o `CodexChatgptPage` ao fluxo já existente na tela de detalhe, enviando `X-Role: owner` e `X-User: codex-ui` na chamada de criação de PR.
+- Validação local: build do frontend executado para confirmar que a alteração TypeScript/React compila.
+
+## 2026-06-25 15:36:00 UTC — Bloqueio de PR para execução Codex ChatGPT com falha
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: após o botão passar a enviar os headers corretos, o backend aceitava `create-pr` sem conferir se a solicitação alvo terminou com `COMPLETED`; assim uma execução `FAILED` ainda podia disparar a criação de PR usando uma resposta reaproveitada pela busca por ambiente/repositório.
+- Correção aplicada: o endpoint de criação de PR agora valida o status da solicitação e retorna `400` quando ela não está concluída com sucesso, antes de buscar resposta/patch ou chamar o serviço de Pull Request.
+- Validação local: adicionado teste de controller garantindo que uma solicitação `FAILED` é rejeitada e que nenhum serviço de resposta/PR é acionado nesse caso.
