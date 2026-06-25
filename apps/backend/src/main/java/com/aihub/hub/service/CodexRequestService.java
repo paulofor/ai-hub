@@ -47,8 +47,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -57,6 +59,7 @@ public class CodexRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
+    private static final Set<Long> SANDBOX_REFRESHES_IN_PROGRESS = ConcurrentHashMap.newKeySet();
 
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
@@ -345,7 +348,7 @@ public class CodexRequestService {
         boolean hasResponse = StringUtils.hasText(request.getResponseText());
         boolean hasUsageMetadata = hasUsageMetadata(request);
 
-        if (status.isTerminal() && hasResponse && hasUsageMetadata) {
+        if (status.isTerminal() && hasResponse) {
             if (hasSandboxNotFoundFallback(request)) {
                 return RefreshDecision.skip("sandbox já informou ausência do job");
             }
@@ -748,6 +751,11 @@ public class CodexRequestService {
             return synchronizeRequestWithSandbox(request, response);
         }
 
+        if (!SANDBOX_REFRESHES_IN_PROGRESS.add(request.getId())) {
+            log.info("Atualização do CodexRequest {} ignorada: já existe refresh em andamento", request.getId());
+            return false;
+        }
+
         AtomicBoolean updated = new AtomicBoolean(false);
         try {
             sandboxRefreshTemplate.executeWithoutResult(status ->
@@ -760,6 +768,8 @@ public class CodexRequestService {
             );
         } catch (Exception ex) {
             log.error("Falha ao atualizar CodexRequest {} a partir do sandbox", request.getId(), ex);
+        } finally {
+            SANDBOX_REFRESHES_IN_PROGRESS.remove(request.getId());
         }
         return updated.get();
     }
