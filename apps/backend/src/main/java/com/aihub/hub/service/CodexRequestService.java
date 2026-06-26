@@ -277,12 +277,35 @@ public class CodexRequestService {
 
     @Transactional(readOnly = true)
     public List<CodexInteractionRecord> listInteractions(Long requestId) {
-        find(requestId);
+        findWithoutRefresh(requestId);
         return codexInteractionRepository.findAllByCodexRequestIdOrderBySequenceAscIdAsc(requestId);
     }
 
-    @Transactional(readOnly = true)
     public CodexRequest find(Long id) {
+        CodexRequest request = findWithoutRefresh(id);
+        if (request.getExternalId() == null) {
+            return request;
+        }
+
+        RefreshDecision decision = evaluateRefresh(request, Instant.now().minus(Duration.ofHours(1)));
+        if (!decision.shouldRefresh()) {
+            return request;
+        }
+
+        log.info(
+            "Atualizando CodexRequest {} a partir do sandbox ao abrir detalhe ({})",
+            request.getId(),
+            decision.reason()
+        );
+        boolean updated = refreshFromSandbox(request);
+        if (updated) {
+            return findWithoutRefresh(id);
+        }
+        return request;
+    }
+
+    @Transactional(readOnly = true)
+    private CodexRequest findWithoutRefresh(Long id) {
         CodexRequest request = codexRequestRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
         request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(id));
