@@ -240,67 +240,37 @@ jobs:
             export FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest && \
             export SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest && \
             export MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest && \
-            docker compose pull && docker compose up -d"
-      - name: Clean up GHCR images for this build
-        env:
-          GHCR_OWNER: paulofor
-          GHCR_SHA: ${{ github.sha }}
-          GHCR_TOKEN: ${{ github.token }}
+            docker compose pull && docker compose up -d --remove-orphans"
+      - name: Verify production services
         run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE_CHECK'
           set -euo pipefail
-          if [ -z "${GHCR_TOKEN}" ]; then
-            echo "GHCR_TOKEN is empty. Configure GHCR_TOKEN or provide GHCR_USERNAME/GHCR_TOKEN secrets with access to ghcr.io" >&2
-            exit 1
-          fi
+          cd /root/ai-hub-6
 
-          if ! command -v jq >/dev/null 2>&1; then
-            echo "jq is required for cleaning up GHCR images" >&2
-            exit 1
-          fi
+          echo "== docker compose ps =="
+          docker compose ps
 
-          api_request() {
-            local method="$1"
-            local path="$2"
-            local data="${3:-}"
-            if [ -n "$data" ]; then
-              curl -fsSL -X "$method" \
-                -H "Authorization: Bearer ${GHCR_TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                -d "$data" \
-                "https://api.github.com/${path}"
-            else
-              curl -fsSL -X "$method" \
-                -H "Authorization: Bearer ${GHCR_TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/${path}"
+          echo "== waiting for internal services =="
+          for attempt in $(seq 1 30); do
+            frontend_status=$(docker compose exec -T caddy wget -q -O /dev/null http://frontend/ && echo ok || echo fail)
+            backend_status=$(docker compose exec -T caddy wget -q -O /dev/null http://backend:8081/actuator/health && echo ok || echo fail)
+            mcp_status=$(docker compose exec -T caddy wget -q -O /dev/null http://mcp-server:8084/actuator/health && echo ok || echo fail)
+
+            if [ "${frontend_status}" = ok ] && [ "${backend_status}" = ok ] && [ "${mcp_status}" = ok ]; then
+              break
             fi
-          }
 
-          owner_type=$(api_request GET "users/${GHCR_OWNER}" | jq -r '.type')
-          if [ "${owner_type}" = "Organization" ]; then
-            owner_path="orgs/${GHCR_OWNER}"
-          else
-            owner_path="users/${GHCR_OWNER}"
-          fi
-
-          delete_tag() {
-            local package_name="$1"
-            local tag="$2"
-            local versions
-            versions=$(api_request GET "${owner_path}/packages/container/${package_name}/versions?per_page=100") || return 0
-            version_ids=$(echo "${versions}" | jq -r --arg TAG "$tag" '.[] | select(.metadata.container.tags[]? == $TAG) | .id')
-            if [ -z "${version_ids}" ]; then
-              echo "No versions found for ${package_name}:${tag}, skipping"
-              return 0
+            if [ "${attempt}" = 30 ]; then
+              echo "Internal service check failed after ${attempt} attempts" >&2
+              docker compose logs --tail 120 frontend backend mcp-server caddy >&2
+              exit 1
             fi
-            for version_id in ${version_ids}; do
-              echo "Deleting ${package_name} version ${version_id} (tag ${tag})"
-              api_request DELETE "${owner_path}/packages/container/${package_name}/versions/${version_id}"
-            done
-          }
 
-          delete_tag "ai-hub-6-caddy" "${GHCR_SHA}"
-          delete_tag "ai-hub-6-backend" "${GHCR_SHA}"
-          delete_tag "ai-hub-6-frontend" "${GHCR_SHA}"
-          delete_tag "ai-hub-6-sandbox" "${GHCR_SHA}"
-          delete_tag "ai-hub-6-mcp-server" "${GHCR_SHA}"
+            sleep 2
+          done
+
+          echo "== checking public reverse proxy =="
+          curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/mcp >/tmp/mcp-health.json
+          cat /tmp/mcp-health.json
+          curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/ >/dev/null
+          REMOTE_CHECK
