@@ -193,6 +193,31 @@ class CodexRequestServiceTest {
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
 
+
+    @Test
+    void findRefreshesStaleRunningRequestWhenDetailIsOpened() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "continue conversation");
+        request.setExternalId("job-detail-missing");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(30)));
+
+        when(codexRequestRepository.findById(728L)).thenReturn(Optional.of(request));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexInteractionRepository.countByCodexRequestId(728L)).thenReturn(2);
+        when(sandboxOrchestratorClient.getJob("job-detail-missing")).thenReturn(null);
+
+        CodexRequestService service = buildService(true);
+
+        CodexRequest found = service.find(728L);
+
+        assertThat(found.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(found.getResponseText()).contains("Sandbox não encontrou o job job-detail-missing");
+        assertThat(found.getFinishedAt()).isNotNull();
+        assertThat(found.getInteractionCount()).isEqualTo(2);
+        verify(sandboxOrchestratorClient).getJob("job-detail-missing");
+        verify(codexRequestRepository).save(request);
+    }
+
     @Test
     void handleSandboxCallbackUpdatesRequestWhenJobExists() {
         CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
