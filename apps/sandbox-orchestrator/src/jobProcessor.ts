@@ -1008,6 +1008,8 @@ export class SandboxJobProcessor implements JobProcessor {
     let completed = false;
     let failedReason: string | undefined;
     let summary = '';
+    let finalAgentMessage = '';
+    let streamingAgentMessage = '';
     let firstEventAt: number | undefined;
     const startedAt = Date.now();
     const unsubscribeCallbacks = [
@@ -1015,12 +1017,18 @@ export class SandboxJobProcessor implements JobProcessor {
         firstEventAt = firstEventAt ?? Date.now();
         const delta = this.extractCodexText(params) ?? '';
         if (delta) {
-          summary += delta;
+          streamingAgentMessage += delta;
           this.recordInteraction(job, 'INBOUND', delta);
         }
       }),
       client.onNotification('item/completed', (params) => {
         firstEventAt = firstEventAt ?? Date.now();
+        const text = this.extractCodexAgentMessageText(params);
+        if (text) {
+          finalAgentMessage = text;
+          summary = text;
+          this.recordInteraction(job, 'INBOUND', text);
+        }
         this.log(job, `Codex App Server item/completed ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
       client.onNotification('item/started', (params) => {
@@ -1070,7 +1078,7 @@ export class SandboxJobProcessor implements JobProcessor {
       }
       const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
       this.log(job, `Codex App Server turn/completed recebido threadId=${threadId} turnId=${turnId}${firstEventMs !== undefined ? ` firstEventMs=${firstEventMs}` : ''}`);
-      return summary.trim() || 'Codex App Server concluiu o turno sem mensagem final.';
+      return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
     } finally {
       unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
     }
@@ -1120,6 +1128,23 @@ export class SandboxJobProcessor implements JobProcessor {
         if (typeof candidate === 'string' && candidate.trim()) {
           return candidate.trim();
         }
+      }
+    }
+    return undefined;
+  }
+
+  private extractCodexAgentMessageText(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const item = record.item;
+    if (item && typeof item === 'object') {
+      const itemRecord = item as Record<string, unknown>;
+      const type = typeof itemRecord.type === 'string' ? itemRecord.type.toLowerCase() : '';
+      const text = itemRecord.text;
+      if ((!type || type === 'agentmessage' || type === 'agent_message') && typeof text === 'string' && text.trim()) {
+        return text.trim();
       }
     }
     return undefined;
