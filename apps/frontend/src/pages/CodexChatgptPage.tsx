@@ -1,4 +1,4 @@
-import { ChangeEvent, ClipboardEvent, FormEvent, useCallback, useEffect, useState } from 'react';
+import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
@@ -37,6 +37,62 @@ const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+const stripModelThinking = (content: string): string => {
+  const trimmed = content.trim();
+  if (!trimmed) return content;
+  const validationIndex = trimmed.search(/(?:^|\n)Valida(?:ç|c)[aã]o executada com sucesso:/i);
+  if (validationIndex > 0) {
+    const beforeValidation = trimmed.slice(0, validationIndex).trimEnd();
+    const paragraphStart = beforeValidation.lastIndexOf('\n\n');
+    if (paragraphStart >= 0) {
+      return `${beforeValidation.slice(paragraphStart + 2).trim()}\n\n${trimmed.slice(validationIndex).trimStart()}`;
+    }
+  }
+  return trimmed;
+};
+
+const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
+  const nodes: ReactNode[] = [];
+  const pattern = /(`([^`]+)`|\*\*([^*]+)\*\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    if (match[2] !== undefined) {
+      nodes.push(<code key={`${keyPrefix}-code-${match.index}`} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.95em] text-slate-900 dark:bg-slate-800 dark:text-slate-100">{match[2]}</code>);
+    } else if (match[3] !== undefined) {
+      nodes.push(<strong key={`${keyPrefix}-strong-${match.index}`}>{match[3]}</strong>);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
+};
+
+const MarkdownMessage = ({ content }: { content: string }) => {
+  const normalized = stripModelThinking(content);
+  const blocks = normalized.split(/(```[\s\S]*?```)/g).filter((block) => block.length > 0);
+  return <div className="space-y-2 whitespace-normal break-words">
+    {blocks.map((block, blockIndex) => {
+      const codeMatch = block.match(/^```([^\n`]*)\n?([\s\S]*?)```$/);
+      if (codeMatch) {
+        return <pre key={`code-${blockIndex}`} className="overflow-x-auto rounded-md border border-slate-200 bg-slate-950 p-3 text-xs text-slate-50 dark:border-slate-700"><code>{codeMatch[2].trimEnd()}</code></pre>;
+      }
+      return block.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0).map((paragraph, paragraphIndex) => {
+        const lines = paragraph.split('\n');
+        const listItems = lines.filter((line) => /^\s*[-*]\s+/.test(line));
+        if (listItems.length === lines.length && listItems.length > 0) {
+          return <ul key={`list-${blockIndex}-${paragraphIndex}`} className="list-disc space-y-1 pl-5">
+            {listItems.map((line, lineIndex) => <li key={lineIndex}>{renderInlineMarkdown(line.replace(/^\s*[-*]\s+/, ''), `li-${blockIndex}-${paragraphIndex}-${lineIndex}`)}</li>)}
+          </ul>;
+        }
+        return <p key={`p-${blockIndex}-${paragraphIndex}`} className="whitespace-pre-wrap">{renderInlineMarkdown(paragraph, `p-${blockIndex}-${paragraphIndex}`)}</p>;
+      });
+    })}
+  </div>;
+};
+
 const CHATGPT_CODEX_MODELS: ModelOption[] = [
   { id: 56, modelName: 'gpt-5.5-pro' },
   { id: 55, modelName: 'gpt-5.5' },
@@ -519,7 +575,7 @@ export default function CodexChatgptPage() {
                 <span>{message.role === 'user' ? 'Usuário' : 'Modelo'}</span>
                 {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
               </div>
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <MarkdownMessage content={message.content} />
             </article>
           ))}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
