@@ -238,7 +238,7 @@ public class CodexController {
             "main",
             title,
             diff,
-            Optional.ofNullable(response.getFixPlan()).orElse("PR criado a partir da resposta registrada na tabela responses.")
+            buildPrExplanation(request, response)
         );
 
         String htmlUrl = pr != null && pr.hasNonNull("html_url") ? pr.get("html_url").asText() : null;
@@ -249,6 +249,16 @@ public class CodexController {
         payload.put("title", title);
         payload.put("createdAt", Instant.now().toString());
         return payload;
+    }
+
+    private String buildPrExplanation(CodexRequest request, ResponseRecord response) {
+        return Optional.ofNullable(request.getResponseText())
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .or(() -> Optional.ofNullable(response.getFixPlan())
+                .map(String::trim)
+                .filter(value -> !value.isBlank()))
+            .orElse("PR criado a partir da resposta final registrada pelo AI Hub.");
     }
 
     private byte[] zipSingleEntry(String entryName, byte[] data) {

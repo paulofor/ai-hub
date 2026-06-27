@@ -642,7 +642,7 @@ public class CodexRequestService {
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
             request.getModel(),
             accessToken,
-            githubAppAuth.getInstallationToken(),
+            chatgptCodexProfile ? null : githubAppAuth.getInstallationToken(),
             resolveDatabase(request.getEnvironment()),
             callbackUrl,
             callbackSecret,

@@ -68,13 +68,21 @@ public class PullRequestService {
             String updated = diffApplier.apply(existing, fileDiff);
             githubApiClient.uploadContent(owner, repo, path, title + " (AI Hub)", updated, newBranch, sha);
         }
-        JsonNode pr = githubApiClient.createPullRequest(owner, repo, title, newBranch, baseBranch, "Correção automatizada com base na análise de logs.");
+        String prBody = buildPrBody(explanation);
+        JsonNode pr = githubApiClient.createPullRequest(owner, repo, title, newBranch, baseBranch, prBody);
         auditService.record(actor, "create_fix_pr", owner + "/" + repo, Map.of("branch", newBranch, "title", title));
         if (pr != null && pr.has("number")) {
             PullRequestExplanationRecord record = new PullRequestExplanationRecord(owner + "/" + repo, pr.get("number").asInt(), explanation);
             explanationRepository.save(record);
         }
         return pr;
+    }
+
+    private String buildPrBody(String explanation) {
+        if (explanation == null || explanation.isBlank()) {
+            return "Correção automatizada criada pelo AI Hub.";
+        }
+        return explanation.trim();
     }
 
     public PullRequestExplanationView getExplanation(String owner, String repo, int number) {
