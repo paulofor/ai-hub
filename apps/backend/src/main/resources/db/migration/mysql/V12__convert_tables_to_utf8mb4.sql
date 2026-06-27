@@ -1,7 +1,6 @@
 -- Ensure MySQL stores 4-byte UTF-8 characters such as emojis
 ALTER DATABASE CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-ALTER TABLE blueprints CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE projects CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE events CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE runs CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

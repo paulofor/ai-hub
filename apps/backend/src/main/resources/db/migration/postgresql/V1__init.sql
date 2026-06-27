@@ -1,16 +1,7 @@
-CREATE TABLE blueprints (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(150) NOT NULL UNIQUE,
-    description TEXT,
-    templates JSONB NOT NULL DEFAULT '{}'::JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE projects (
     id SERIAL PRIMARY KEY,
     org VARCHAR(120) NOT NULL,
     repo VARCHAR(200) NOT NULL UNIQUE,
-    blueprint_id INTEGER REFERENCES blueprints(id),
     is_private BOOLEAN NOT NULL DEFAULT TRUE,
     repo_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

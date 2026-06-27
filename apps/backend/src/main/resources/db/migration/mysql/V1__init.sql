@@ -1,20 +1,10 @@
-CREATE TABLE blueprints (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(150) NOT NULL UNIQUE,
-    description TEXT,
-    templates LONGTEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE projects (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     org VARCHAR(120) NOT NULL,
     repo VARCHAR(200) NOT NULL UNIQUE,
-    blueprint_id BIGINT,
     is_private BOOLEAN NOT NULL DEFAULT TRUE,
     repo_url TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_projects_blueprint FOREIGN KEY (blueprint_id) REFERENCES blueprints(id)
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE events (

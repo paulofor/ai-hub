@@ -999,3 +999,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade Summaries continuava registrada como rota e item de menu no frontend e como controller/service/repository/entity/DTO no backend, além de manter a tabela `summaries` nas migrações iniciais, embora o produto não use mais esse módulo.
 - Correção aplicada: removidos a tela `/summaries`, o link lateral e a rota React; removidos os beans e classes backend específicos de Summaries; removida a criação/alteração da tabela `summaries` das migrações.
 - Validação local prevista: busca por referências específicas do módulo e builds/testes do frontend/backend para confirmar que não ficaram imports, rotas ou beans quebrados.
+
+
+## 2026-06-27 00:00:00 UTC — Remoção do módulo Blueprint não utilizado
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade Blueprint continuava exposta como rota `/blueprints`, item no menu lateral, card no dashboard e também permanecia registrada no backend com controller/service/repository/entity/DTO e migrações iniciais, mesmo não sendo mais usada pelo produto.
+- Correção aplicada: removidos a rota, página e navegação de Blueprints no frontend; removidos os componentes backend específicos de Blueprint; removido o vínculo `projects.blueprint_id` e a criação/alteração da tabela `blueprints` nas migrações iniciais; atualizado o texto do dashboard e do README para refletir o escopo atual.
+- Validação local prevista: busca por referências específicas de Blueprint e builds/testes do frontend/backend para confirmar que não ficaram imports, rotas ou beans quebrados.
