@@ -69,15 +69,6 @@ CREATE TABLE responses (
 );
 CREATE INDEX idx_responses_repo ON responses(repo);
 
-CREATE TABLE summaries (
-    id SERIAL PRIMARY KEY,
-    repo VARCHAR(200),
-    range_start DATE NOT NULL,
-    range_end DATE NOT NULL,
-    granularity VARCHAR(20) NOT NULL,
-    content TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 CREATE TABLE audit_log (
     id SERIAL PRIMARY KEY,

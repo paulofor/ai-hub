@@ -71,15 +71,6 @@ CREATE TABLE responses (
 );
 CREATE INDEX idx_responses_repo ON responses(repo);
 
-CREATE TABLE summaries (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    repo VARCHAR(200),
-    range_start DATE NOT NULL,
-    range_end DATE NOT NULL,
-    granularity VARCHAR(20) NOT NULL,
-    content LONGTEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 
 CREATE TABLE audit_log (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
