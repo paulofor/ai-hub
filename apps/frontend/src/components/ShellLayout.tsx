@@ -7,7 +7,6 @@ const links = [
   { to: '/blueprints', label: 'Blueprints' },
   { to: '/prompts', label: 'Prompts' },
   { to: '/prompt-hints', label: 'Itens do Prompt' },
-  { to: '/video/projects', label: 'Vídeos' },
   { to: '/environments', label: 'Ambientes' },
   { to: '/problems', label: 'Problemas' },
   { to: '/logs', label: 'Interpretador de Logs' },

@@ -989,3 +989,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 ## 2026-06-27 - Favicon do AI Hub
 - Criei um favicon SVG para o frontend em `apps/frontend/public/favicon.svg`, com identidade visual em gradiente azul/índigo/roxo e símbolo central inspirado em hub de IA.
 - Atualizei `apps/frontend/index.html` para declarar o favicon via `<link rel="icon" type="image/svg+xml" href="/favicon.svg" />`, permitindo que o Chrome exiba o ícone na aba.
+
+## 2026-06-27 00:00:00 UTC — Remoção do módulo de vídeo não utilizado
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade de vídeo ainda estava exposta no menu lateral e na rota `/video/projects` porque o módulo completo havia permanecido registrado no frontend, no backend, nas migrações/changelog e na documentação, apesar de não estar em uso pelo produto.
+- Correção aplicada: removidos o item de navegação e a rota/página de projetos de vídeo no frontend; removidos controller, service, DTOs, entidades, repositórios e teste do módulo de vídeo no backend; removidos os changelogs/migrações e a documentação específica do módulo para evitar que novas instalações recriem essa superfície.
+- Validação local prevista: build do frontend e testes do backend para confirmar que não ficaram imports, rotas ou beans quebrados após a remoção.
