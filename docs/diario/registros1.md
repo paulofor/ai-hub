@@ -994,3 +994,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade de vídeo ainda estava exposta no menu lateral e na rota `/video/projects` porque o módulo completo havia permanecido registrado no frontend, no backend, nas migrações/changelog e na documentação, apesar de não estar em uso pelo produto.
 - Correção aplicada: removidos o item de navegação e a rota/página de projetos de vídeo no frontend; removidos controller, service, DTOs, entidades, repositórios e teste do módulo de vídeo no backend; removidos os changelogs/migrações e a documentação específica do módulo para evitar que novas instalações recriem essa superfície.
 - Validação local prevista: build do frontend e testes do backend para confirmar que não ficaram imports, rotas ou beans quebrados após a remoção.
+
+## 2026-06-27 00:00:00 UTC — Remoção do módulo Summaries não utilizado
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade Summaries continuava registrada como rota e item de menu no frontend e como controller/service/repository/entity/DTO no backend, além de manter a tabela `summaries` nas migrações iniciais, embora o produto não use mais esse módulo.
+- Correção aplicada: removidos a tela `/summaries`, o link lateral e a rota React; removidos os beans e classes backend específicos de Summaries; removida a criação/alteração da tabela `summaries` das migrações.
+- Validação local prevista: busca por referências específicas do módulo e builds/testes do frontend/backend para confirmar que não ficaram imports, rotas ou beans quebrados.
