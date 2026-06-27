@@ -985,3 +985,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada: jobs `CHATGPT_CODEX` deixam de receber `githubToken` no despacho para o sandbox, impedindo PR automático durante a conversa; o token continua disponível para os demais perfis que dependem do comportamento automático.
 - Ajuste complementar: o endpoint manual `Pedir PR` passa a usar a resposta final (`responseText`) como explicação completa do PR, com fallback para `fixPlan`, e o corpo do PR criado pelo `PullRequestService` agora recebe essa explicação em vez de texto genérico.
 - Validação local: testes unitários confirmam que `CHATGPT_CODEX` é enviado ao sandbox sem token GitHub e que o endpoint manual usa a resposta final completa como explicação do PR.
+
+## 2026-06-27 - Favicon do AI Hub
+- Criei um favicon SVG para o frontend em `apps/frontend/public/favicon.svg`, com identidade visual em gradiente azul/índigo/roxo e símbolo central inspirado em hub de IA.
+- Atualizei `apps/frontend/index.html` para declarar o favicon via `<link rel="icon" type="image/svg+xml" href="/favicon.svg" />`, permitindo que o Chrome exiba o ícone na aba.
