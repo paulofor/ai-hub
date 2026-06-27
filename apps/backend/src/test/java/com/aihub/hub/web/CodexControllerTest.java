@@ -1,12 +1,17 @@
 package com.aihub.hub.web;
 
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,8 +20,53 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 
 class CodexControllerTest {
+
+
+    @Test
+    void createPrUsesFinalAssistantResponseAsCompleteExplanation() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, objectMapper);
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/marketing-hub", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(completedRequest, "id", 730L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setResponseText("Resumo final completo do modelo para o PR.");
+
+        ResponseRecord response = new ResponseRecord();
+        response.setUnifiedDiff("diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1 +1 @@\n-antigo\n+novo");
+        response.setFixPlan("Plano resumido antigo");
+
+        when(codexRequestService.find(730L)).thenReturn(completedRequest);
+        when(codexRequestService.findLatestResponseForEnvironment("paulofor/marketing-hub")).thenReturn(Optional.of(response));
+        when(pullRequestService.createFixPr(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("AI Hub: Correção da solicitação #730"),
+            eq(response.getUnifiedDiff()),
+            org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(objectMapper.createObjectNode().put("html_url", "https://github.com/paulofor/marketing-hub/pull/1").put("number", 1));
+
+        controller.createPr(730L, "owner", "codex-ui");
+
+        ArgumentCaptor<String> explanationCaptor = ArgumentCaptor.forClass(String.class);
+        verify(pullRequestService).createFixPr(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("AI Hub: Correção da solicitação #730"),
+            eq(response.getUnifiedDiff()),
+            explanationCaptor.capture()
+        );
+        assertThat(explanationCaptor.getValue()).isEqualTo("Resumo final completo do modelo para o PR.");
+    }
 
     @Test
     void createPrRejectsFailedRequestBeforeLookingForReusableResponse() {

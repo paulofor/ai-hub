@@ -498,7 +498,7 @@ class CodexRequestServiceTest {
         ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
         verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
         assertThat(requestCaptor.getValue().accessToken()).isNull();
-        assertThat(requestCaptor.getValue().githubToken()).isEqualTo("github-installation-token");
+        assertThat(requestCaptor.getValue().githubToken()).isNull();
     }
 
 
