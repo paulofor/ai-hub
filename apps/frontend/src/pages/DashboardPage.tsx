@@ -21,11 +21,6 @@ export default function DashboardPage() {
     <section className="space-y-6">
       <h2 className="text-2xl font-semibold">Visão geral</h2>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <DashboardCard title="Blueprints" description="Gerencie templates para stacks completas">
-          <Link to="/blueprints" className="text-sm font-semibold text-emerald-600">
-            Ver blueprints →
-          </Link>
-        </DashboardCard>
         <DashboardCard title="Prompts" description="Acompanhe análises de falhas e respostas do modelo">
           <Link to="/prompts" className="text-sm font-semibold text-emerald-600">
             Abrir análises →
@@ -74,7 +69,7 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-4 space-y-3">
           <h3 className="text-lg font-semibold">Próximos passos</h3>
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            O módulo de projetos foi removido. A interface passa a focar nas experiências de blueprints, análise de falhas
+            O módulo de projetos foi removido. A interface passa a focar em prompts, análise de falhas
             e Codex enquanto preparamos novas funcionalidades.
           </p>
           <p className="text-sm text-slate-600 dark:text-slate-300">

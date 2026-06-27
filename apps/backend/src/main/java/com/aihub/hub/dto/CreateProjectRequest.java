@@ -11,9 +11,6 @@ public class CreateProjectRequest {
     @NotBlank
     private String name;
 
-    @NotBlank
-    private String blueprint;
-
     @NotNull
     private Boolean isPrivate;
 
@@ -39,14 +36,6 @@ public class CreateProjectRequest {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getBlueprint() {
-        return blueprint;
-    }
-
-    public void setBlueprint(String blueprint) {
-        this.blueprint = blueprint;
     }
 
     public Boolean getIsPrivate() {

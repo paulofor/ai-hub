@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
-import BlueprintsPage from './pages/BlueprintsPage';
 import PromptsPage from './pages/PromptsPage';
 import AuditLogPage from './pages/AuditLogPage';
 import ShellLayout from './components/ShellLayout';
@@ -20,7 +19,6 @@ function App() {
     <ShellLayout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/blueprints" element={<BlueprintsPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/prompt-hints" element={<PromptHintsPage />} />
         <Route path="/problems" element={<ProblemsPage />} />
