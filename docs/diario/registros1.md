@@ -219,6 +219,11 @@
 - Ajustada a etapa `Resolve GHCR credentials` para sempre definir `GHCR_TOKEN=${{ github.token }}` e falhar cedo se `GHCR_USERNAME` divergir de `github.repository_owner`, evitando combinações inválidas de owner/token.
 - Com isso, todos os pontos do workflow que autenticam/chamam GHCR passam a usar o mesmo token nativo do run, eliminando inconsistência de credenciais entre jobs.
 
+## 2026-06-28 09:38:44 UTC-3
+- Iniciado ajuste para criar o item de menu `Codex ChatGPT MKT`.
+- Causa raiz técnica identificada: o fluxo especial do ChatGPT Codex estava acoplado ao perfil único `CHATGPT_CODEX` em frontend, backend e sandbox-orchestrator, então uma tela nova sem perfil próprio cairia no comportamento de programação ou perderia as garantias do Codex App Server.
+- Direção de correção: criar perfil dedicado `CHATGPT_CODEX_MKT`, reutilizar autenticação/sandbox/PR do Codex ChatGPT e alterar apenas as instruções de análise para relatórios Markdown de marketing digital.
+
 ## 2026-05-15 01:45:26 UTC
 - Correção de causa raiz no publish/deploy: defaults locais ainda apontavam para `paulodb` em partes do stack, o que quebrava `docker compose pull` para imagens inexistentes nesse owner (ex.: `ai-hub-6-caddy` e `ai-hub-6-mcp-server`).
 - Atualizado `docker-compose.yml` para fallback único `GHCR_USERNAME:-paulofor` em todos os serviços publicados (`caddy`, `backend`, `frontend`, `sandbox-orchestrator`, `mcp-server`), eliminando namespace legado divergente no pull.
@@ -1052,3 +1057,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução #743 estourou o limite operacional de 10 minutos aguardando `turn/completed`; para tarefas de código maiores, principalmente quando o App Server tenta investigar, editar e validar, esse limite era curto demais e transformava execuções ainda ativas em `CODEX_TURN_INTERRUPTED`.
 - Ajuste aplicado: aumentado o timeout padrão de `CODEX_APP_SERVER_TURN_TIMEOUT_MS` para 30 minutos (`1800000` ms) tanto no fallback do `sandbox-orchestrator` quanto no `.env.example` usado pelo Compose, e atualizada a documentação do serviço.
 - Observação: esse ajuste reduz interrupções prematuras, mas não substitui correções separadas para falhas internas de `exec_command` do Codex App Server ou para a condição de corrida de interações duplicadas observada no callback da #743.
+
+## 2026-06-28 09:44:21 UTC-3
+- Correção de registro: a entrada `2026-06-28 09:38:44 UTC-3` foi adicionada antes de registros posteriores já existentes; mantida por política append-only, e esta entrada registra a conclusão no final correto do arquivo.
+- Implementado o novo menu `Codex ChatGPT MKT` com rota `/codex-chatgpt-mkt`, reutilizando a tela do Codex ChatGPT com configuração própria.
+- Adicionado perfil dedicado `CHATGPT_CODEX_MKT` no frontend, backend e sandbox-orchestrator para usar o mesmo Codex App Server/sandbox do ChatGPT Codex, sem token OAuth legado no payload.
+- Orientação MKT aplicada ao fluxo: analisar principalmente relatórios Markdown de marketing digital no repositório, campanhas, estratégias, resultados e oportunidades, gerando recomendações de melhoria e mantendo PR somente sob solicitação explícita.
+- Validação executada: build do frontend, testes do sandbox-orchestrator e teste focado do backend `CodexRequestServiceTest`.

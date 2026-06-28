@@ -502,7 +502,7 @@ public class CodexRequestService {
             || profile == CodexIntegrationProfile.ECO_2
             || profile == CodexIntegrationProfile.ECO_3
             || profile == CodexIntegrationProfile.ECO_30
-            || profile == CodexIntegrationProfile.CHATGPT_CODEX)
+            || isChatgptCodexProfile(profile))
             && StringUtils.hasText(economyModel)) {
             return economyModel.trim();
         }
@@ -620,7 +620,7 @@ public class CodexRequestService {
 
         String callbackUrl = this.sandboxCallbackUrl;
         String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
-        boolean chatgptCodexProfile = request.getProfile() == CodexIntegrationProfile.CHATGPT_CODEX;
+        boolean chatgptCodexProfile = isChatgptCodexProfile(request.getProfile());
         if (chatgptCodexProfile && !ensureChatgptCodexExecutable(request)) {
             return;
         }
@@ -739,6 +739,11 @@ public class CodexRequestService {
         request.setCompletionTokens(Optional.ofNullable(request.getCompletionTokens()).orElse(0));
         request.setTotalTokens(Optional.ofNullable(request.getTotalTokens()).orElse(0));
         saveRequest(request);
+    }
+
+    private boolean isChatgptCodexProfile(CodexIntegrationProfile profile) {
+        return profile == CodexIntegrationProfile.CHATGPT_CODEX
+            || profile == CodexIntegrationProfile.CHATGPT_CODEX_MKT;
     }
 
 

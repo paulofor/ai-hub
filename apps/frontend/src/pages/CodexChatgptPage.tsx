@@ -1,7 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
+import { CodexProfile, CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -116,6 +116,51 @@ interface ChatMessage {
   createdAt: string;
 }
 
+interface CodexChatgptPageProps {
+  variant?: 'default' | 'marketing';
+}
+
+interface CodexChatgptVariantConfig {
+  profile: CodexProfile;
+  title: string;
+  formTitle: string;
+  description: string;
+  historyTitle: string;
+  placeholder: string;
+  promptModeLine: string;
+  promptExtraLines: string[];
+}
+
+const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
+  profile: 'CHATGPT_CODEX',
+  title: 'Codex ChatGPT Managed',
+  formTitle: 'Conversa interativa (Fase 2)',
+  description: 'Envie uma solicitação, aguarde a resposta do modelo, continue conversando e peça o PR somente quando estiver satisfeito.',
+  historyTitle: 'Últimas execuções ChatGPT',
+  placeholder: 'Digite sua mensagem para o modelo... Cole prints com Ctrl+V. Quando estiver pronto, use Pedir PR.',
+  promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
+  promptExtraLines: []
+};
+
+const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
+  profile: 'CHATGPT_CODEX_MKT',
+  title: 'Codex ChatGPT MKT',
+  formTitle: 'Análise de relatórios de marketing',
+  description: 'Envie uma solicitação, aguarde a análise dos relatórios Markdown do repositório, continue conversando e peça o PR somente quando estiver satisfeito.',
+  historyTitle: 'Últimas execuções ChatGPT MKT',
+  placeholder: 'Digite sua solicitação de análise de marketing... Ex.: avalie campanhas, estratégias, canais, resultados e gere orientações de melhoria.',
+  promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed no modo MKT.',
+  promptExtraLines: [
+    'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
+    'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
+    'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
+    'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.'
+  ]
+};
+
+const resolveVariantConfig = (variant: CodexChatgptPageProps['variant']): CodexChatgptVariantConfig =>
+  variant === 'marketing' ? MARKETING_VARIANT_CONFIG : DEFAULT_VARIANT_CONFIG;
+
 interface TelemetryEvent {
   id: string;
   type: 'poll_success' | 'poll_error' | 'login_started' | 'login_failed' | 'logout_success' | 'logout_failed' | 'execution_success' | 'execution_failed';
@@ -164,7 +209,8 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   };
 };
 
-export default function CodexChatgptPage() {
+export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPageProps) {
+  const config = resolveVariantConfig(variant);
   const [account, setAccount] = useState<ChatgptAccountStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -225,12 +271,12 @@ export default function CodexChatgptPage() {
     setRequestsLoading(true);
     try {
       const response = await client.get('/codex/requests', { params: { page: 0, size: 10 } });
-      const parsed = parseCodexRequests(response.data).filter((item) => item.profile === 'CHATGPT_CODEX');
+      const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       setRequests(parsed);
     } finally {
       setRequestsLoading(false);
     }
-  }, []);
+  }, [config.profile]);
 
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
@@ -438,13 +484,14 @@ export default function CodexChatgptPage() {
   const buildConversationPrompt = useCallback((message: string) => {
     const history = conversation.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
     return [
-      'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
+      config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
+      ...config.promptExtraLines,
       history ? `Histórico da conversa:\n${history}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [conversation]);
+  }, [config.promptExtraLines, config.promptModeLine, conversation]);
 
   const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
 
@@ -470,7 +517,7 @@ export default function CodexChatgptPage() {
         prompt: requestPrompt,
         environment,
         model,
-        profile: 'CHATGPT_CODEX',
+        profile: config.profile,
         imageAttachments: imageAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
       const created = parseCodexRequest(response.data);
@@ -482,7 +529,7 @@ export default function CodexChatgptPage() {
       setPrompt('');
       setImageAttachments([]);
       await loadRequests();
-      registerTelemetry('execution_success', 'Execução enviada com profile CHATGPT_CODEX.');
+      registerTelemetry('execution_success', `Execução enviada com profile ${config.profile}.`);
       setError(null);
     } catch (err) {
       registerTelemetry('execution_failed', `Falha ao executar requisição: ${(err as Error).message}`);
@@ -490,7 +537,7 @@ export default function CodexChatgptPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, environment, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
+  }, [buildConversationPrompt, config.profile, environment, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
 
 
   useEffect(() => {
@@ -539,7 +586,7 @@ export default function CodexChatgptPage() {
 
   return (
     <section className="space-y-6">
-      <h2 className="text-2xl font-semibold">Codex ChatGPT Managed</h2>
+      <h2 className="text-2xl font-semibold">{config.title}</h2>
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-4">
         <h3 className="text-lg font-semibold">Estado da conta (tempo real)</h3>
         {loading ? <p className="text-sm text-slate-500">Carregando status...</p> : null}
@@ -566,8 +613,8 @@ export default function CodexChatgptPage() {
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
-        <h3 className="text-lg font-semibold">Conversa interativa (Fase 2)</h3>
-        <p className="text-sm text-slate-500">Envie uma solicitação, aguarde a resposta do modelo, continue conversando e peça o PR somente quando estiver satisfeito.</p>
+        <h3 className="text-lg font-semibold">{config.formTitle}</h3>
+        <p className="text-sm text-slate-500">{config.description}</p>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           {conversation.map((message) => (
             <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
@@ -587,7 +634,7 @@ export default function CodexChatgptPage() {
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.modelName}</option>)}
           </select>
         </div>
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder="Digite sua mensagem para o modelo... Cole prints com Ctrl+V. Quando estiver pronto, use Pedir PR." className="w-full rounded-md border px-3 py-2 text-sm" required />
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
             Anexar imagens
@@ -616,7 +663,7 @@ export default function CodexChatgptPage() {
       </form>
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
-        <h3 className="text-lg font-semibold">Últimas execuções ChatGPT</h3>
+        <h3 className="text-lg font-semibold">{config.historyTitle}</h3>
         <ul className="space-y-2">
           {requests.map((item) => (
             <li key={item.id} className="rounded-md border px-3 py-2 text-sm">

@@ -467,6 +467,22 @@ export default function CodexRequestDetailPage() {
               </div>
             )}
 
+            {request.profile === 'CHATGPT_CODEX_MKT' && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-900 dark:border-indigo-900/60 dark:bg-indigo-900/20 dark:text-indigo-100">
+                <p className="font-semibold">Modo Codex ChatGPT MKT</p>
+                <p className="mt-2">
+                  Perfil direcionado para análise de relatórios Markdown de marketing digital no repositório. O fluxo usa
+                  o mesmo sandbox e Codex App Server do Codex ChatGPT, mas orienta a resposta para campanhas, estratégias,
+                  resultados e recomendações acionáveis.
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Priorize arquivos .md com relatórios, resultados, campanhas, canais, funis e aprendizados.</li>
+                  <li>Relacione recomendações a evidências encontradas no repositório sempre que possível.</li>
+                  <li>Prepare alterações para PR somente quando o usuário solicitar explicitamente.</li>
+                </ul>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />
