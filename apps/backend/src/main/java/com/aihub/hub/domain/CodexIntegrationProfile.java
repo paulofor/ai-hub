@@ -10,7 +10,8 @@ public enum CodexIntegrationProfile {
     ECO_2,
     ECO_3,
     ECO_30,
-    CHATGPT_CODEX;
+    CHATGPT_CODEX,
+    CHATGPT_CODEX_MKT;
 
     @JsonCreator
     public static CodexIntegrationProfile fromString(String value) {
