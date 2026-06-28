@@ -503,6 +503,35 @@ class CodexRequestServiceTest {
 
 
     @Test
+    void chatgptCodexMktDispatchesViaAppServerWithoutOauthToken() {
+        CodexRequestService service = buildService(true);
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.readCodexAccount()).thenReturn(Map.of(
+            "connected", true,
+            "status", "connected",
+            "authMode", "chatgpt",
+            "executable", true
+        ));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@main");
+        payload.setPrompt("analise relatorios md de marketing");
+        payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
+
+        CodexRequest created = service.create(payload);
+
+        assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.PENDING);
+        ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().profile()).isEqualTo("CHATGPT_CODEX_MKT");
+        assertThat(requestCaptor.getValue().accessToken()).isNull();
+        assertThat(requestCaptor.getValue().githubToken()).isNull();
+    }
+
+
+    @Test
     void chatgptCodexUsesEconomyModelWhenAvailable() {
         CodexRequestService service = buildService();
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
