@@ -273,6 +273,26 @@ test('não persiste accessToken em jobs CHATGPT_CODEX', async () => {
   assert.equal(stored?.accessToken, undefined);
 });
 
+test('não persiste accessToken em jobs CHATGPT_CODEX_MKT', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  const payload = {
+    jobId: 'job-chatgpt-mkt-token',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'analise relatorios md de marketing',
+    profile: 'CHATGPT_CODEX_MKT',
+    accessToken: 'sess-token-123',
+  };
+
+  const creation = await request(app).post('/jobs').send(payload).expect(201);
+  assert.equal(creation.body.jobId, payload.jobId);
+  assert.equal(creation.body.profile, 'CHATGPT_CODEX_MKT');
+
+  const stored = registry.get(payload.jobId);
+  assert.equal(stored?.accessToken, undefined);
+});
+
 test('permite cancelar um job em execução', async () => {
   const registry = new Map<string, SandboxJob>();
   const processor = new SleepingProcessor();
@@ -503,6 +523,71 @@ test('configura prompt cache retention e chave estável na Responses API', async
     } else {
       process.env.OPENAI_PROMPT_CACHE_KEY_PREFIX = originalKeyPrefix;
     }
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
+
+test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketing', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-codex-app-server-mkt-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'relatorio.md'), '# Campanha\nresultado');
+  execSync('git add relatorio.md', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: unknown }> = [];
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') return { authMode: 'chatgpt', planType: 'plus' };
+      if (method === 'thread/start') return { id: 'thread-mkt' };
+      if (method === 'turn/start') {
+        setTimeout(() => {
+          for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-mkt' });
+        }, 5);
+        return { id: 'turn-mkt' };
+      }
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+  const job: SandboxJob = {
+    jobId: 'job-chatgpt-codex-mkt-app-server',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'avalie campanhas',
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+
+    assert.equal(job.status, 'COMPLETED');
+    const turnStartCall = calls.find((call) => call.method === 'turn/start');
+    assert.ok(turnStartCall);
+    const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
+    assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
+    assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
+    assert.ok(input?.[0]?.text?.includes('avalie campanhas'));
+  } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
 });
