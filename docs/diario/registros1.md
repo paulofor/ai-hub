@@ -1079,3 +1079,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta respondida: registrar em `docs/melhorias` as opções discutidas para hospedar repositórios fora do GitHub e usá-los com o Codex App Server/AI Hub.
 - Ação aplicada: criado `docs/melhorias/repositorios-git-proprios-codex.md` com alternativas Git bare em VPS, Gitea/Forgejo, GitLab self-hosted, suporte genérico por `repoUrl`, camada de provedores Git, cuidados de segurança e ordem sugerida de implementação.
 - Decisão registrada: priorizar suporte genérico por `repoUrl` e clone/diff/patch antes de automatizar PR/MR, comentários, webhooks e pipelines por provedor.
+
+## 2026-06-28 - Remoção do modelo Pro da combo ChatGPT Codex
+- Investigação da causa raiz: a opção `gpt-5.5-pro` aparecia porque estava cadastrada na lista fallback hardcoded `CHATGPT_CODEX_MODELS` da página `CodexChatgptPage`, usada para preencher a combo quando a tela inicializa.
+- Correção: removido `gpt-5.5-pro` dessa lista fallback, mantendo apenas modelos permitidos para uso na combo.

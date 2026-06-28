@@ -94,7 +94,6 @@ const MarkdownMessage = ({ content }: { content: string }) => {
 };
 
 const CHATGPT_CODEX_MODELS: ModelOption[] = [
-  { id: 56, modelName: 'gpt-5.5-pro' },
   { id: 55, modelName: 'gpt-5.5' },
   { id: 54, modelName: 'gpt-5.4' }
 ];
