@@ -703,10 +703,10 @@ export class SandboxJobProcessor implements JobProcessor {
           job,
           `modo ECO-3: auto-compact=${this.ecoThreeAutoCompactTokenLimit} tokens, histórico alvo=${this.ecoThreeHistoryTargetTokens}, toolOutput=${this.ecoThreeToolOutputStringLimit}, http_get=${this.ecoThreeHttpToolMaxResponseChars}, turns=${this.ecoThreeMaxTurns}, tokens_max=${this.ecoThreeMaxTotalTokens}`,
         );
-      } else if (this.isChatgptCodex(job)) {
+      } else if (this.isChatgptCodexFamily(job)) {
         this.log(
           job,
-          `modo ChatGPT Codex: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
+          `modo ${this.isChatgptCodexMarketing(job) ? 'ChatGPT Codex MKT' : 'ChatGPT Codex'}: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
         );
       }
 
@@ -731,7 +731,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
       this.ensureNotCancelled(job);
       this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
-      const summary = this.isChatgptCodex(job)
+      const summary = this.isChatgptCodexFamily(job)
         ? await this.runWithCodexAppServer(job, repoPath!, resolvedModel)
         : await this.runWithOpenAIResponsesApi(job, repoPath!, resolvedModel);
       job.summary = summary;
@@ -950,8 +950,8 @@ export class SandboxJobProcessor implements JobProcessor {
 
 
   private resolveOpenAIClient(job: SandboxJob): OpenAI {
-    if (this.isChatgptCodex(job)) {
-      throw new Error('CHATGPT_CODEX deve executar exclusivamente via Codex App Server, sem OpenAI Responses API');
+    if (this.isChatgptCodexFamily(job)) {
+      throw new Error(`${job.profile} deve executar exclusivamente via Codex App Server, sem OpenAI Responses API`);
     }
 
     if (!this.openai) {
@@ -1085,8 +1085,11 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
+    const taskDescription = this.isChatgptCodexMarketing(job)
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente.\n\n${job.taskDescription}`
+      : job.taskDescription;
     return [
-      { type: 'text', text: job.taskDescription },
+      { type: 'text', text: taskDescription },
       ...(job.imageAttachments ?? []).map((attachment) => ({
         type: 'image',
         url: attachment.dataUrl,
@@ -1223,6 +1226,9 @@ Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2
             : this.isEcoThree(job)
               ? `
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
+              : this.isChatgptCodexMarketing(job)
+              ? `
+Modo ChatGPT Codex MKT ativo: use a sandbox para baixar e analisar o repositório como base documental de marketing. Foque principalmente em arquivos .md com relatórios de marketing digital, campanhas, estratégias, resultados, métricas, canais, criativos e aprendizados. Gere relatórios de orientação com melhorias acionáveis para o usuário, preserve evidências dos arquivos analisados e só crie/prepare PR quando solicitado explicitamente pelo usuário.`
               : this.isChatgptCodex(job)
               ? `
 Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos.`
@@ -4533,7 +4539,7 @@ grep -R -n -- "$@"
     if (candidate) {
       return candidate;
     }
-    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isEcoThree(job) || this.isChatgptCodex(job)) && this.economyModel) {
+    if ((this.isEconomy(job) || this.isSmartEconomy(job) || this.isEcoOne(job) || this.isEcoTwo(job) || this.isEcoThree(job) || this.isChatgptCodexFamily(job)) && this.economyModel) {
       return this.economyModel;
     }
     return this.model;
@@ -4563,6 +4569,14 @@ grep -R -n -- "$@"
     return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX';
   }
 
+  private isChatgptCodexMarketing(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX_MKT';
+  }
+
+  private isChatgptCodexFamily(job: SandboxJob): boolean {
+    return this.isChatgptCodex(job) || this.isChatgptCodexMarketing(job);
+  }
+
   private resolveTaskDescriptionLimit(job: SandboxJob): number {
     if (this.isEconomy(job)) {
       return this.economyMaxTaskDescriptionChars;
@@ -4573,7 +4587,7 @@ grep -R -n -- "$@"
     if (this.isEcoOne(job)) {
       return this.ecoOneMaxTaskDescriptionChars;
     }
-    if (this.isChatgptCodex(job)) {
+    if (this.isChatgptCodexFamily(job)) {
       return this.chatgptCodexMaxTaskDescriptionChars;
     }
     return this.maxTaskDescriptionChars;
@@ -4595,7 +4609,7 @@ grep -R -n -- "$@"
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputStringLimit;
     }
-    if (this.isChatgptCodex(job)) {
+    if (this.isChatgptCodexFamily(job)) {
       return this.chatgptCodexToolOutputStringLimit;
     }
     return this.toolOutputStringLimit;
@@ -4617,7 +4631,7 @@ grep -R -n -- "$@"
     if (this.isEcoOne(job)) {
       return this.ecoOneToolOutputSerializedLimit;
     }
-    if (this.isChatgptCodex(job)) {
+    if (this.isChatgptCodexFamily(job)) {
       return this.chatgptCodexToolOutputSerializedLimit;
     }
     return this.toolOutputSerializedLimit;
@@ -4639,7 +4653,7 @@ grep -R -n -- "$@"
     if (this.isEcoOne(job)) {
       return this.ecoOneHttpToolMaxResponseChars;
     }
-    if (this.isChatgptCodex(job)) {
+    if (this.isChatgptCodexFamily(job)) {
       return this.chatgptCodexHttpToolMaxResponseChars;
     }
     return this.httpToolMaxResponseChars;
