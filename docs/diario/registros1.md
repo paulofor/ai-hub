@@ -1064,3 +1064,18 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Adicionado perfil dedicado `CHATGPT_CODEX_MKT` no frontend, backend e sandbox-orchestrator para usar o mesmo Codex App Server/sandbox do ChatGPT Codex, sem token OAuth legado no payload.
 - Orientação MKT aplicada ao fluxo: analisar principalmente relatórios Markdown de marketing digital no repositório, campanhas, estratégias, resultados e oportunidades, gerando recomendações de melhoria e mantendo PR somente sob solicitação explícita.
 - Validação executada: build do frontend, testes do sandbox-orchestrator e teste focado do backend `CodexRequestServiceTest`.
+
+## 2026-06-28 13:33:40 UTC — Análise sobre Codex App Server com repositórios não GitHub
+- Pergunta respondida: se o Codex App Server, integrado ao AI Hub, pode operar com outro provedor Git além do GitHub, como GitLab.
+- Conclusão técnica: o `sandbox-orchestrator` já aceita `repoUrl` direto e clona via `git clone`, portanto a execução do Codex em um workspace Git não depende conceitualmente do GitHub; porém o fluxo atual do backend/UI do AI Hub monta jobs a partir de `owner/repo`, transforma isso em URL GitHub quando `repoUrl` não é enviado e mantém automações de token/PR baseadas na API do GitHub.
+- Limitação prática: para GitLab hoje seria necessário enviar/implementar `repoUrl` e credenciais adequadas para clone, e criar suporte específico para merge request/comentários/webhooks/token GitLab se o objetivo for paridade com PRs e automações GitHub.
+
+## 2026-06-28 13:36:02 UTC — Orientação sobre repositório Git próprio em VPS
+- Pergunta respondida: se é viável criar um repositório de fontes próprio em uma VPS para uso com o Codex App Server/AI Hub.
+- Conclusão: é viável e não é tecnicamente complicado para uso básico com Git remoto via SSH ou HTTPS; a complexidade aumenta apenas se o objetivo for reproduzir recursos de plataforma como interface web, pull/merge requests, revisão, webhooks, permissões granulares e CI/CD.
+- Recomendação: começar com um repositório Git bare na VPS acessado por SSH para clone/push; se precisar de experiência parecida com GitHub/GitLab, considerar Gitea/Forgejo na própria VPS antes de implementar uma plataforma própria do zero.
+
+## 2026-06-28 13:40:38 UTC — Documento de melhoria futura para repositórios Git próprios
+- Pergunta respondida: registrar em `docs/melhorias` as opções discutidas para hospedar repositórios fora do GitHub e usá-los com o Codex App Server/AI Hub.
+- Ação aplicada: criado `docs/melhorias/repositorios-git-proprios-codex.md` com alternativas Git bare em VPS, Gitea/Forgejo, GitLab self-hosted, suporte genérico por `repoUrl`, camada de provedores Git, cuidados de segurança e ordem sugerida de implementação.
+- Decisão registrada: priorizar suporte genérico por `repoUrl` e clone/diff/patch antes de automatizar PR/MR, comentários, webhooks e pipelines por provedor.
