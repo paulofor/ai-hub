@@ -1006,6 +1006,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada: removidos a rota, página e navegação de Blueprints no frontend; removidos os componentes backend específicos de Blueprint; removido o vínculo `projects.blueprint_id` e a criação/alteração da tabela `blueprints` nas migrações iniciais; atualizado o texto do dashboard e do README para refletir o escopo atual.
 - Validação local prevista: busca por referências específicas de Blueprint e builds/testes do frontend/backend para confirmar que não ficaram imports, rotas ou beans quebrados.
 
+## 2026-06-28 00:00:00 UTC — Novo favicon AI Hub 6
+- Ajuste aplicado: preservei o favicon anterior em `apps/frontend/public/favicon-legacy-aihub.svg` para manter o histórico visual disponível no projeto.
+- Novo favicon: substituí `apps/frontend/public/favicon.svg` por uma versão SVG baseada no número 6, mantendo a paleta azul/índigo/roxo do AI Hub e reforçando a identidade do AIHUB 6 na aba do navegador.
+- Integração: a página já referencia `/favicon.svg` em `apps/frontend/index.html`, então o novo arquivo passa a ser exibido sem mudança adicional no HTML.
 ## 2026-06-27 23:52:00 UTC — Análise sobre Docker daemon na sandbox
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a sessão de sandbox atual não tem Docker CLI disponível (`docker: command not found`) e também não há processo `dockerd`/`containerd` em execução visível, portanto a falha não é apenas de publicação da porta 5173; falta o runtime Docker dentro da sandbox.
 - Conclusão: não é algo que possa ser corrigido apenas dentro do repositório em tempo de execução. Para suportar Docker real na sandbox seria necessário alterar a imagem/base e a política de execução do ambiente para incluir Docker CLI/daemon e permissões privilegiadas ou, preferencialmente, montar o socket Docker do host de forma controlada. Para o AI Hub, o caminho mais seguro continua sendo executar comandos Docker no host via MCP Server autenticado.
