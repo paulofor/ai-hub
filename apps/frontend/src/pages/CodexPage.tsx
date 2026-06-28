@@ -624,6 +624,22 @@ export default function CodexPage() {
                 <input
                   type="radio"
                   name="codex-profile"
+                  value="CHATGPT_CODEX_MKT"
+                  checked={profile === 'CHATGPT_CODEX_MKT'}
+                  onChange={() => setProfile('CHATGPT_CODEX_MKT')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Codex ChatGPT MKT
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Usa o Codex App Server para analisar relatórios Markdown de marketing digital e gerar orientações de melhoria.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
                   value="CHATGPT_CODEX"
                   checked={profile === 'CHATGPT_CODEX'}
                   onChange={() => setProfile('CHATGPT_CODEX')}
