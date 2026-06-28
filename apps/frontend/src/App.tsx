@@ -27,6 +27,7 @@ function App() {
         <Route path="/logs" element={<LogInterpreterPage />} />
         <Route path="/codex" element={<CodexPage />} />
         <Route path="/codex-chatgpt" element={<CodexChatgptPage />} />
+        <Route path="/codex-chatgpt-mkt" element={<CodexChatgptPage variant="marketing" />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
