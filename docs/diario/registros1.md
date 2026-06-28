@@ -1034,3 +1034,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a proposta anterior sobre `host-operation` poderia ser confundida com implementação imediata; o objetivo correto é registrar a necessidade percebida na solicitação #739 como melhoria futura, sem alterar o runtime agora.
 - Ação aplicada: criado `docs/melhorias/operacoes-host-sandbox.md` descrevendo o contexto da #739, o problema operacional, uma proposta futura de ferramenta controlada via MCP Server e os guardrails necessários.
 - Decisão: não implementar Docker-in-Docker nem `host-operation` neste momento; manter apenas como documentação de melhoria futura para planejamento posterior.
+
+## 2026-06-28 00:39:00 UTC — Correção de carregamento do novo favicon
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o novo SVG já estava publicado em `/favicon.svg`, mas o HTML continuava apontando para a mesma URL estável. Navegadores tratam favicons com cache persistente e podem manter o ícone antigo mesmo após o arquivo no servidor ser substituído.
+- Correção aplicada: adicionado versionamento na URL do favicon (`/favicon.svg?v=aihub6-20260628`) para forçar uma nova requisição do navegador e atualizado o título da aba para `AI Hub 6`, alinhando a identidade visual com o novo ícone.
+- Validação local/remota: confirmado via `curl` que `https://iahub.xyz/favicon.svg` já retorna o SVG novo; a mudança no HTML evita que o navegador reutilize a entrada antiga do cache do favicon.
