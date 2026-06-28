@@ -1,4 +1,4 @@
-export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'ECO_30' | 'CHATGPT_CODEX';
+export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'ECO_30' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT';
 
 export type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
@@ -75,6 +75,9 @@ const parseProfile = (value: unknown): CodexProfile => {
     }
     if (normalized === 'CHATGPT_CODEX' || normalized === 'CODEX_UI') {
       return 'CHATGPT_CODEX';
+    }
+    if (normalized === 'CHATGPT_CODEX_MKT' || normalized === 'CODEX_UI_MKT') {
+      return 'CHATGPT_CODEX_MKT';
     }
   }
   return 'STANDARD';
@@ -324,6 +327,8 @@ export const formatProfile = (profile: CodexProfile) => {
       return 'Modo ECO-30';
     case 'CHATGPT_CODEX':
       return 'Codex (ChatGPT)';
+    case 'CHATGPT_CODEX_MKT':
+      return 'Codex ChatGPT MKT';
     case 'STANDARD':
     default:
       return 'Padrão';
