@@ -1034,3 +1034,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a proposta anterior sobre `host-operation` poderia ser confundida com implementação imediata; o objetivo correto é registrar a necessidade percebida na solicitação #739 como melhoria futura, sem alterar o runtime agora.
 - Ação aplicada: criado `docs/melhorias/operacoes-host-sandbox.md` descrevendo o contexto da #739, o problema operacional, uma proposta futura de ferramenta controlada via MCP Server e os guardrails necessários.
 - Decisão: não implementar Docker-in-Docker nem `host-operation` neste momento; manter apenas como documentação de melhoria futura para planejamento posterior.
+
+## 2026-06-28 — Reforço de causa raiz no prompt do sandbox
+- Investigada a lacuna observada na solicitação #741: o modelo conseguia identificar o problema e propor solução para o CTA do anúncio, mas o prompt do runner não exigia que a resposta explicitasse por que o erro aconteceu nem aprofundasse a cadeia causal antes da proposta.
+- Ajustado o prompt sistêmico do `sandbox-orchestrator` para obrigar a pergunta “Por que esse erro aconteceu?”, diferenciar sintoma de causa, explorar hipóteses/proteções ausentes na etapa `LOCALIZAR_CAUSA` e incluir uma seção final “Causa raiz” mesmo em tarefas apenas diagnósticas.
