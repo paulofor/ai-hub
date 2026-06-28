@@ -108,6 +108,9 @@ export function createApp(options: AppOptions = {}) {
     if (normalized === 'CHATGPT_CODEX' || normalized === 'CODEX_UI') {
       return 'CHATGPT_CODEX';
     }
+    if (normalized === 'CHATGPT_CODEX_MKT' || normalized === 'CODEX_UI_MKT') {
+      return 'CHATGPT_CODEX_MKT';
+    }
     return 'STANDARD';
   };
 
@@ -252,7 +255,7 @@ export function createApp(options: AppOptions = {}) {
       testCommand,
       profile,
       model: model ?? undefined,
-      accessToken: profile === 'CHATGPT_CODEX' ? undefined : accessToken ?? undefined,
+      accessToken: (profile === 'CHATGPT_CODEX' || profile === 'CHATGPT_CODEX_MKT') ? undefined : accessToken ?? undefined,
       githubToken: githubToken ?? undefined,
       database,
       callbackUrl: callbackUrl ?? undefined,
