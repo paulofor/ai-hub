@@ -11,6 +11,7 @@ const links = [
   { to: '/logs', label: 'Interpretador de Logs' },
   { to: '/codex', label: 'Codex' },
   { to: '/codex-chatgpt', label: 'Codex ChatGPT' },
+  { to: '/codex-chatgpt-mkt', label: 'Codex ChatGPT MKT' },
   { to: '/codex/models', label: 'Modelos Codex' },
   { to: '/audit', label: 'Audit Log' }
 ];
