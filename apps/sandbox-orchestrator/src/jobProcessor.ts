@@ -1264,6 +1264,9 @@ Se a tarefa envolver criação ou alteração de migrations Liquibase, consulte 
 - Use os exemplos existentes em db/changelog/changeset-001-create-users.yaml como referência para formatação, nomenclatura e estruturas adicionais.
 
 Siga obrigatoriamente as etapas fixas de progresso da investigação, nesta ordem: reproduzir -> localizar causa -> aplicar correção -> validar -> encerrar.
+Antes de sugerir ou aplicar qualquer correção para um erro/problema, responda explicitamente: "Por que esse erro aconteceu?". Use evidências do código, logs, dados ou comportamento reproduzido para sustentar a resposta; não confunda sintoma (o que quebrou) com causa (decisão, fluxo, contrato, estado ou lacuna que permitiu quebrar).
+Na etapa LOCALIZAR_CAUSA, vá fundo: formule e descarte hipóteses, rastreie a cadeia causal até o ponto onde o comportamento incorreto nasce, identifique por que as proteções existentes não impediram o problema e registre a causa raiz antes de entrar em APLICAR_CORRECAO. Se a evidência não for suficiente, declare a causa provável, o nível de confiança e qual evidência faltou.
+O resumo final deve conter uma seção "Causa raiz" com: (1) causa direta, (2) por que ela surgiu, (3) por que não foi detectada antes, e (4) como a correção evita recorrência. Mesmo quando a tarefa pedir apenas proposta/diagnóstico sem alterar código, inclua essa seção.
 Regra obrigatória de estagnação em LOCALIZAR_CAUSA: se ficar N ciclos sem nova evidência, registre o bloqueio e então escolha uma nova hipótese com próximo comando diferente ou encerre com diagnóstico + próximos passos.
 ${profileInstruction}`,
           },
