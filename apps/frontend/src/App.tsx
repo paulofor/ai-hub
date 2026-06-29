@@ -9,6 +9,7 @@ import CodexRequestDetailPage from './pages/CodexRequestDetailPage';
 import EnvironmentsPage from './pages/EnvironmentsPage';
 import LogInterpreterPage from './pages/LogInterpreterPage';
 import PromptHintsPage from './pages/PromptHintsPage';
+import PromptListsPage from './pages/PromptListsPage';
 import ProblemsPage from './pages/ProblemsPage';
 import ProblemDetailPage from './pages/ProblemDetailPage';
 import CodexChatgptPage from './pages/CodexChatgptPage';
@@ -21,6 +22,7 @@ function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/prompt-hints" element={<PromptHintsPage />} />
+        <Route path="/prompt-lists" element={<PromptListsPage />} />
         <Route path="/problems" element={<ProblemsPage />} />
         <Route path="/problems/:id" element={<ProblemDetailPage />} />
         <Route path="/environments" element={<EnvironmentsPage />} />
