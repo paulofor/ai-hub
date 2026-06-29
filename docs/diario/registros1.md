@@ -1093,3 +1093,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 ## 2026-06-29 - Orientação de melhor resposta e timeout de 1 hora no Codex ChatGPT
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os perfis `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT` não recebiam uma instrução explícita para priorizar a melhor resposta sem encurtar a análise por limites de tempo/interações; além disso, o timeout padrão do turno do Codex App Server estava em 30 minutos, menor que a janela de 1 hora solicitada.
 - Ajuste aplicado: o input enviado ao `turn/start` agora inclui orientação de melhor resposta para os modos Codex ChatGPT e Codex ChatGPT MKT, e o timeout padrão `CODEX_APP_SERVER_TURN_TIMEOUT_MS` passou para 1 hora (`3600000` ms), mantendo override por variável de ambiente.
+
+## 2026-06-29 — Prompt do Codex ChatGPT MKT com alternativas de decisão
+- Solicitação recebida: reforçar o prompt do perfil Codex ChatGPT MKT para que o modelo, nos pontos mais importantes do fluxo de solução, gere pelo menos 3 alternativas boas, compare e siga pela melhor.
+- Pergunta de causa raiz aplicada antes do ajuste: por que esse comportamento não acontecia de forma consistente? Porque o prompt do perfil MKT orientava foco documental/marketing e qualidade geral da resposta, mas não especificava um protocolo explícito de tomada de decisão com múltiplas alternativas.
+- Ajuste aplicado no `sandbox-orchestrator`: o prompt enviado via Codex App Server e o prompt de perfil do runner agora instruem o modelo a elaborar pelo menos 3 alternativas boas, comparar benefícios, riscos, custo/esforço e aderência ao objetivo, escolher a melhor e justificar objetivamente.
+- Teste do perfil MKT atualizado para garantir que a instrução de 3 alternativas e comparação esteja presente no payload `turn/start` enviado ao Codex App Server.
