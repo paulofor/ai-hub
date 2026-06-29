@@ -1086,8 +1086,9 @@ export class SandboxJobProcessor implements JobProcessor {
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
+    const marketingDecisionInstruction = 'Nos pontos mais importantes do fluxo de solução, aplique um mecanismo explícito de raciocínio: elabore pelo menos 3 alternativas boas, compare benefícios, riscos, custo/esforço e aderência ao objetivo do usuário, escolha a melhor para a situação e siga por ela registrando a justificativa de forma objetiva.';
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente. ${bestAnswerInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente. ${bestAnswerInstruction} ${marketingDecisionInstruction}
 
 ${job.taskDescription}`
       : this.isChatgptCodex(job)
@@ -1235,7 +1236,7 @@ Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
               : this.isChatgptCodexMarketing(job)
               ? `
-Modo ChatGPT Codex MKT ativo: use a sandbox para baixar e analisar o repositório como base documental de marketing. Foque principalmente em arquivos .md com relatórios de marketing digital, campanhas, estratégias, resultados, métricas, canais, criativos e aprendizados. Gere relatórios de orientação com melhorias acionáveis para o usuário, preserve evidências dos arquivos analisados e só crie/prepare PR quando solicitado explicitamente pelo usuário.`
+Modo ChatGPT Codex MKT ativo: use a sandbox para baixar e analisar o repositório como base documental de marketing. Foque principalmente em arquivos .md com relatórios de marketing digital, campanhas, estratégias, resultados, métricas, canais, criativos e aprendizados. Gere relatórios de orientação com melhorias acionáveis para o usuário, preserve evidências dos arquivos analisados e só crie/prepare PR quando solicitado explicitamente pelo usuário. Nos pontos mais importantes do fluxo de solução, elabore pelo menos 3 alternativas boas, compare benefícios, riscos, custo/esforço e aderência ao objetivo, escolha a melhor para a situação e siga por ela com justificativa objetiva.`
               : this.isChatgptCodex(job)
               ? `
 Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos.`
