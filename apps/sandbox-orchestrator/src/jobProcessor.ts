@@ -313,7 +313,7 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
-    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 30 * 60 * 1000);
+    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 60 * 60 * 1000);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
@@ -1085,9 +1085,16 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
+    const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente.\n\n${job.taskDescription}`
-      : job.taskDescription;
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente. ${bestAnswerInstruction}
+
+${job.taskDescription}`
+      : this.isChatgptCodex(job)
+        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction}
+
+${job.taskDescription}`
+        : job.taskDescription;
     return [
       { type: 'text', text: taskDescription },
       ...(job.imageAttachments ?? []).map((attachment) => ({
