@@ -1089,3 +1089,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Adicionado menu "Lista de Prompts" no frontend e rota dedicada para listar listas cadastradas.
 - Implementada tela de importação de arquivo `.md`, onde cada linha iniciada com `*` é tratada como um prompt.
 - Criados endpoint, serviço, entidades, repositório e migrations para persistir listas de prompts e seus itens no banco de dados.
+
+## 2026-06-29 - Orientação de melhor resposta e timeout de 1 hora no Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os perfis `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT` não recebiam uma instrução explícita para priorizar a melhor resposta sem encurtar a análise por limites de tempo/interações; além disso, o timeout padrão do turno do Codex App Server estava em 30 minutos, menor que a janela de 1 hora solicitada.
+- Ajuste aplicado: o input enviado ao `turn/start` agora inclui orientação de melhor resposta para os modos Codex ChatGPT e Codex ChatGPT MKT, e o timeout padrão `CODEX_APP_SERVER_TURN_TIMEOUT_MS` passou para 1 hora (`3600000` ms), mantendo override por variável de ambiente.

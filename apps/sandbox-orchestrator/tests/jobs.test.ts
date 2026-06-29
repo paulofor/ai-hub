@@ -586,6 +586,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
+    assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
+    assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
     assert.ok(input?.[0]?.text?.includes('avalie campanhas'));
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
@@ -3198,10 +3200,12 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
-    assert.deepEqual((turnStartCall.params as { input?: unknown }).input, [
-      { type: 'text', text: 'use app server' },
-      { type: 'image', url: 'data:image/png;base64,QUJD' },
-    ]);
+    const input = (turnStartCall.params as { input?: Array<{ text?: string; type?: string; url?: string }> }).input;
+    assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT ativo'));
+    assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
+    assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
+    assert.ok(input?.[0]?.text?.includes('use app server'));
+    assert.deepEqual(input?.[1], { type: 'image', url: 'data:image/png;base64,QUJD' });
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
