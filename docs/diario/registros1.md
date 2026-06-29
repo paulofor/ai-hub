@@ -1099,3 +1099,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta de causa raiz aplicada antes do ajuste: por que esse comportamento não acontecia de forma consistente? Porque o prompt do perfil MKT orientava foco documental/marketing e qualidade geral da resposta, mas não especificava um protocolo explícito de tomada de decisão com múltiplas alternativas.
 - Ajuste aplicado no `sandbox-orchestrator`: o prompt enviado via Codex App Server e o prompt de perfil do runner agora instruem o modelo a elaborar pelo menos 3 alternativas boas, comparar benefícios, riscos, custo/esforço e aderência ao objetivo, escolher a melhor e justificar objetivamente.
 - Teste do perfil MKT atualizado para garantir que a instrução de 3 alternativas e comparação esteja presente no payload `turn/start` enviado ao Codex App Server.
+
+## 2026-06-29 — Atualização de Lista de Prompts por reenvio
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o endpoint de importação sempre criava um novo `PromptListRecord` a cada envio e o frontend sempre inseria o retorno no topo da lista; não havia busca por lista existente nem substituição transacional dos itens vinculados.
+- Ajuste aplicado: o backend agora localiza uma lista existente pelo mesmo nome, apaga seus itens antigos via `orphanRemoval` e reconstrói os prompts a partir do novo arquivo `.md`, atualizando também o nome do arquivo de origem.
+- Ajuste aplicado no frontend: a tela passou a comunicar o comportamento de criar ou atualizar lista e substitui o item retornado no estado local quando o backend reutiliza a mesma lista.
+- Validação planejada: teste unitário do serviço para confirmar que reenviar arquivo para a mesma lista remove prompts antigos e mantém apenas os novos.

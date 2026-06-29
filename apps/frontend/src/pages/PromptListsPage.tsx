@@ -64,14 +64,14 @@ export default function PromptListsPage() {
     setSaving(true);
     try {
       const response = await client.post<PromptList>('/prompt-lists', formData);
-      setPromptLists((prev) => [response.data, ...prev]);
+      setPromptLists((prev) => [response.data, ...prev.filter((list) => list.id !== response.data.id)]);
       setName('');
       setFile(null);
       const input = document.getElementById('prompt-list-file') as HTMLInputElement | null;
       if (input) {
         input.value = '';
       }
-      setSuccess(`Lista criada com ${response.data.itemCount} prompt(s).`);
+      setSuccess(`Lista salva com ${response.data.itemCount} prompt(s). Prompts anteriores da mesma lista foram substituídos.`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -85,7 +85,7 @@ export default function PromptListsPage() {
         <div>
           <h2 className="text-2xl font-semibold">Lista de Prompts</h2>
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            Importe arquivos Markdown com itens iniciados por <code>*</code>. Cada item é armazenado como um prompt da lista.
+            Importe arquivos Markdown com itens iniciados por <code>*</code>. Ao reenviar um arquivo para uma lista de mesmo nome, os prompts antigos são apagados e reconstruídos.
           </p>
         </div>
         <div className="text-right text-xs text-slate-500 dark:text-slate-400">
@@ -95,7 +95,7 @@ export default function PromptListsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white/70 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-        <h3 className="mb-4 text-lg font-semibold">Criar nova lista</h3>
+        <h3 className="mb-4 text-lg font-semibold">Criar ou atualizar lista</h3>
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <div className="flex flex-col gap-2">
             <label htmlFor="prompt-list-name" className="text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -126,7 +126,7 @@ export default function PromptListsPage() {
             disabled={saving}
             className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {saving ? 'Importando...' : 'Criar lista'}
+            {saving ? 'Importando...' : 'Salvar lista'}
           </button>
         </form>
         {error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
