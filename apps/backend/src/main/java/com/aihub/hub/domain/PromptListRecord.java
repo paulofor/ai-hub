@@ -48,6 +48,17 @@ public class PromptListRecord {
         items.add(new PromptListItemRecord(this, prompt, position));
     }
 
+    public void replaceItems(List<String> prompts) {
+        items.clear();
+        for (int i = 0; i < prompts.size(); i++) {
+            addItem(prompts.get(i), i + 1);
+        }
+    }
+
+    public void setSourceFilename(String sourceFilename) {
+        this.sourceFilename = sourceFilename;
+    }
+
     public Long getId() {
         return id;
     }

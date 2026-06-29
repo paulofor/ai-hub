@@ -45,10 +45,11 @@ public class PromptListService {
             throw new IllegalArgumentException("O arquivo .md precisa conter pelo menos um item iniciado com '*'.");
         }
 
-        PromptListRecord record = new PromptListRecord(listName, originalFilename);
-        for (int i = 0; i < prompts.size(); i++) {
-            record.addItem(prompts.get(i), i + 1);
-        }
+        PromptListRecord record = promptListRepository.findByNameWithItems(listName)
+            .orElseGet(() -> new PromptListRecord(listName, originalFilename));
+        record.setSourceFilename(originalFilename);
+        record.replaceItems(prompts);
+
         return toView(promptListRepository.save(record));
     }
 
