@@ -6,6 +6,7 @@ const links = [
   { to: '/', label: 'Dashboard' },
   { to: '/prompts', label: 'Prompts' },
   { to: '/prompt-hints', label: 'Itens do Prompt' },
+  { to: '/prompt-lists', label: 'Lista de Prompts' },
   { to: '/environments', label: 'Ambientes' },
   { to: '/problems', label: 'Problemas' },
   { to: '/logs', label: 'Interpretador de Logs' },

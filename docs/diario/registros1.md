@@ -1083,3 +1083,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 ## 2026-06-28 - Remoção do modelo Pro da combo ChatGPT Codex
 - Investigação da causa raiz: a opção `gpt-5.5-pro` aparecia porque estava cadastrada na lista fallback hardcoded `CHATGPT_CODEX_MODELS` da página `CodexChatgptPage`, usada para preencher a combo quando a tela inicializa.
 - Correção: removido `gpt-5.5-pro` dessa lista fallback, mantendo apenas modelos permitidos para uso na combo.
+
+## 2026-06-29 - Lista de Prompts
+
+- Adicionado menu "Lista de Prompts" no frontend e rota dedicada para listar listas cadastradas.
+- Implementada tela de importação de arquivo `.md`, onde cada linha iniciada com `*` é tratada como um prompt.
+- Criados endpoint, serviço, entidades, repositório e migrations para persistir listas de prompts e seus itens no banco de dados.
