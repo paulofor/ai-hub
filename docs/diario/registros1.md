@@ -1105,3 +1105,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado: o backend agora localiza uma lista existente pelo mesmo nome, apaga seus itens antigos via `orphanRemoval` e reconstrói os prompts a partir do novo arquivo `.md`, atualizando também o nome do arquivo de origem.
 - Ajuste aplicado no frontend: a tela passou a comunicar o comportamento de criar ou atualizar lista e substitui o item retornado no estado local quando o backend reutiliza a mesma lista.
 - Validação planejada: teste unitário do serviço para confirmar que reenviar arquivo para a mesma lista remove prompts antigos e mantém apenas os novos.
+
+## 2026-06-30 — Ambiente local em desenvolvimentos complexos no Codex ChatGPT
+- Solicitação recebida: incluir nos prompts dos perfis Codex ChatGPT e Codex ChatGPT MKT a orientação de que, em desenvolvimentos mais complexos, o modelo deve montar um ambiente local, executar o que pretende desenvolver e ajustar iterativamente até alcançar o funcionamento desejado.
+- Pergunta explícita de causa raiz: por que esse comportamento precisava ser reforçado? Porque as instruções atuais priorizavam qualidade da resposta, análise e tomada de decisão, mas não exigiam de forma direta a validação prática em ambiente local durante desenvolvimentos complexos.
+- Ajuste aplicado no `sandbox-orchestrator`: o input enviado ao Codex App Server e as instruções de perfil do runner agora incluem a orientação de montar ambiente local, executar e iterar até o funcionamento desejado para os perfis `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
+- Testes atualizados para garantir que a instrução de ambiente local e iteração esteja presente no payload `turn/start` dos dois perfis.
