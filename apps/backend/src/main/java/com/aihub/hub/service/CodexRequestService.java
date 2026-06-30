@@ -772,10 +772,9 @@ public class CodexRequestService {
     }
 
     private boolean refreshFromSandbox(CodexRequest request) {
-        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
-            sandboxOrchestratorClient.getJob(request.getExternalId());
-
         if (request.getId() == null) {
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+                sandboxOrchestratorClient.getJob(request.getExternalId());
             return synchronizeRequestWithSandbox(request, response);
         }
 
@@ -786,6 +785,8 @@ public class CodexRequestService {
 
         AtomicBoolean updated = new AtomicBoolean(false);
         try {
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+                sandboxOrchestratorClient.getJob(request.getExternalId());
             sandboxRefreshTemplate.executeWithoutResult(status ->
                 codexRequestRepository.findById(request.getId()).ifPresent(managed -> {
                     boolean changed = synchronizeRequestWithSandbox(managed, response);
