@@ -588,6 +588,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
     assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
     assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
+    assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
+    assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
     assert.ok(input?.[0]?.text?.includes('avalie campanhas'));
@@ -3206,6 +3208,8 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT ativo'));
     assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
     assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
+    assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
+    assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('use app server'));
     assert.deepEqual(input?.[1], { type: 'image', url: 'data:image/png;base64,QUJD' });
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
