@@ -115,6 +115,102 @@ interface ChatMessage {
   createdAt: string;
 }
 
+
+const RESPONSE_READY_TITLE_PREFIX = '● ';
+
+const getFaviconLink = (): HTMLLinkElement | null => document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+
+const buildUnreadFaviconHref = (baseHref: string): string => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  if (!context) return baseHref;
+
+  context.fillStyle = '#0f172a';
+  context.fillRect(0, 0, 64, 64);
+  context.fillStyle = '#10b981';
+  context.beginPath();
+  context.arc(32, 32, 30, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = '#ffffff';
+  context.font = 'bold 42px sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText('!', 32, 35);
+
+  return canvas.toDataURL('image/png');
+};
+
+const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) => {
+  const originalTitleRef = useRef<string | null>(null);
+  const originalFaviconHrefRef = useRef<string | null>(null);
+  const notifiedRequestIdsRef = useRef<Set<number>>(new Set());
+  const previousStatusesRef = useRef<Map<number, CodexRequest['status']>>(new Map());
+
+  const clearMarker = useCallback(() => {
+    if (originalTitleRef.current) {
+      document.title = originalTitleRef.current;
+    }
+    const favicon = getFaviconLink();
+    if (favicon && originalFaviconHrefRef.current) {
+      favicon.href = originalFaviconHrefRef.current;
+    }
+  }, []);
+
+  const showMarker = useCallback(() => {
+    originalTitleRef.current ??= document.title;
+    const favicon = getFaviconLink();
+    if (favicon) {
+      originalFaviconHrefRef.current ??= favicon.href;
+      favicon.href = buildUnreadFaviconHref(originalFaviconHrefRef.current);
+    }
+    document.title = `${RESPONSE_READY_TITLE_PREFIX}Resposta pronta — ${title}`;
+  }, [title]);
+
+  useEffect(() => {
+    if (document.visibilityState === 'visible') {
+      clearMarker();
+    }
+  }, [clearMarker]);
+
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        clearMarker();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearMarker();
+    };
+  }, [clearMarker]);
+
+  useEffect(() => {
+    const nextStatuses = new Map<number, CodexRequest['status']>();
+    let shouldNotify = false;
+
+    conversation.forEach((message) => {
+      if (message.role !== 'assistant' || !message.requestId || !message.status) return;
+      nextStatuses.set(message.requestId, message.status);
+      const previousStatus = previousStatusesRef.current.get(message.requestId);
+      const becameTerminal = previousStatus && !isTerminalStatus(previousStatus) && isTerminalStatus(message.status);
+      if (becameTerminal && document.visibilityState === 'hidden' && !notifiedRequestIdsRef.current.has(message.requestId)) {
+        notifiedRequestIdsRef.current.add(message.requestId);
+        shouldNotify = true;
+      }
+    });
+
+    previousStatusesRef.current = nextStatuses;
+    if (shouldNotify) {
+      showMarker();
+    }
+  }, [conversation, showMarker]);
+};
+
 interface CodexChatgptPageProps {
   variant?: 'default' | 'marketing';
 }
@@ -230,6 +326,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const activeRequestPollInFlight = useRef(false);
+
+  useModelResponseTabMarker(conversation, config.title);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
