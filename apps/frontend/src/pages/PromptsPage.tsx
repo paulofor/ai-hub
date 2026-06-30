@@ -19,15 +19,20 @@ export default function PromptsPage() {
   );
   const [query, setQuery] = useState('');
 
-  const filtered = useMemo(() => {
+  const recentPrompts = useMemo(() => {
     if (!data) return [];
+
     const q = query.toLowerCase();
-    return data.filter(
-      (prompt) =>
-        prompt.repo.toLowerCase().includes(q) ||
-        prompt.prompt.toLowerCase().includes(q) ||
-        prompt.model.toLowerCase().includes(q)
-    );
+
+    return [...data]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .filter(
+        (prompt) =>
+          prompt.repo.toLowerCase().includes(q) ||
+          prompt.prompt.toLowerCase().includes(q) ||
+          prompt.model.toLowerCase().includes(q)
+      )
+      .slice(0, 10);
   }, [data, query]);
 
   return (
@@ -72,7 +77,7 @@ export default function PromptsPage() {
                 </td>
               </tr>
             )}
-            {filtered.map((prompt) => (
+            {recentPrompts.map((prompt) => (
               <tr key={prompt.id}>
                 <td className="px-4 py-3 font-medium">{prompt.repo}</td>
                 <td className="px-4 py-3">{prompt.model}</td>
@@ -89,7 +94,7 @@ export default function PromptsPage() {
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && !loading && !error && (
+            {recentPrompts.length === 0 && !loading && !error && (
               <tr>
                 <td colSpan={4} className="px-4 py-3 text-center text-slate-500">
                   Nenhum prompt encontrado
