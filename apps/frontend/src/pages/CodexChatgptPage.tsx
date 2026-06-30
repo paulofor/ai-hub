@@ -1,4 +1,4 @@
-import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
+import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { CodexProfile, CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
@@ -229,6 +229,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
+  const activeRequestPollInFlight = useRef(false);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -542,6 +543,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   useEffect(() => {
     if (!activeRequestId) return undefined;
     const refreshActiveRequest = () => {
+      if (activeRequestPollInFlight.current) {
+        return;
+      }
+      activeRequestPollInFlight.current = true;
       client.get(`/codex/requests/${activeRequestId}`)
         .then((response) => {
           const parsed = parseCodexRequest(response.data);
@@ -549,7 +554,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           updateAssistantFromRequest(parsed);
           if (isTerminalStatus(parsed.status)) setActiveRequestId(null);
         })
-        .catch((err: Error) => registerTelemetry('poll_error', `Falha ao atualizar conversa: ${err.message}`));
+        .catch((err: Error) => registerTelemetry('poll_error', `Falha ao atualizar conversa: ${err.message}`))
+        .finally(() => {
+          activeRequestPollInFlight.current = false;
+        });
     };
     refreshActiveRequest();
     const intervalId = window.setInterval(refreshActiveRequest, POLL_INTERVAL_MS);

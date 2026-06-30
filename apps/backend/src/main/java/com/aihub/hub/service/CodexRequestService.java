@@ -762,13 +762,24 @@ public class CodexRequestService {
         }
 
         CodexRequest managed = optional.get();
-        boolean updated = synchronizeRequestWithSandbox(managed, response);
-        if (updated) {
-            log.info("CodexRequest {} atualizado via callback do sandbox", managed.getId());
-        } else {
-            log.info("Callback do sandbox recebido para CodexRequest {} sem alterações", managed.getId());
+        if (managed.getId() != null && !SANDBOX_REFRESHES_IN_PROGRESS.add(managed.getId())) {
+            log.info("Callback do sandbox para CodexRequest {} ignorado temporariamente: já existe sincronização em andamento", managed.getId());
+            return false;
         }
-        return updated;
+
+        try {
+            boolean updated = synchronizeRequestWithSandbox(managed, response);
+            if (updated) {
+                log.info("CodexRequest {} atualizado via callback do sandbox", managed.getId());
+            } else {
+                log.info("Callback do sandbox recebido para CodexRequest {} sem alterações", managed.getId());
+            }
+            return updated;
+        } finally {
+            if (managed.getId() != null) {
+                SANDBOX_REFRESHES_IN_PROGRESS.remove(managed.getId());
+            }
+        }
     }
 
     private boolean refreshFromSandbox(CodexRequest request) {
