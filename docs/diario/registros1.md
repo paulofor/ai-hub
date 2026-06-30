@@ -1116,3 +1116,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitação recebida: alterar a tela de Prompts para mostrar somente as 10 interações mais recentes.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a página `PromptsPage` renderizava todos os registros retornados por `/prompts` após o filtro de busca, sem ordenar por `createdAt` em ordem decrescente e sem limitar a quantidade exibida; por isso registros antigos continuavam aparecendo na tela.
 - Ajuste aplicado: a lista exibida agora é ordenada pela data de criação mais recente primeiro e limitada aos 10 primeiros registros após o filtro de busca.
+
+## 2026-06-30 - Investigação de lentidão na tela de detalhe Codex #789
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhe disparava consultas repetidas ao sandbox para a mesma solicitação enquanto um refresh ainda estava em andamento, porque o bloqueio de concorrência em `refreshFromSandbox` só era aplicado depois da chamada externa `getJob`; assim, várias requisições simultâneas ainda aguardavam o sandbox e mantinham a tela em carregamento. Os logs do backend em produção também mostraram a execução #789 sendo atualizada repetidamente e a listagem de solicitações passando por `findAllByOrderByCreatedAtDesc`.
+- Ajuste aplicado: o controle `SANDBOX_REFRESHES_IN_PROGRESS` passou a ser adquirido antes da chamada ao sandbox para evitar chamadas externas duplicadas para a mesma solicitação.
+- Criados índices de banco para os acessos mais usados na tela/listagem Codex: busca por `external_id`, filtro por `rating` ordenado por criação e contagem/listagem de interações por solicitação.
