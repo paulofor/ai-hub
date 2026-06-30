@@ -1111,3 +1111,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: por que esse comportamento precisava ser reforçado? Porque as instruções atuais priorizavam qualidade da resposta, análise e tomada de decisão, mas não exigiam de forma direta a validação prática em ambiente local durante desenvolvimentos complexos.
 - Ajuste aplicado no `sandbox-orchestrator`: o input enviado ao Codex App Server e as instruções de perfil do runner agora incluem a orientação de montar ambiente local, executar e iterar até o funcionamento desejado para os perfis `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
 - Testes atualizados para garantir que a instrução de ambiente local e iteração esteja presente no payload `turn/start` dos dois perfis.
+
+## 2026-06-30 — Limite de prompts recentes na tela Prompts
+- Solicitação recebida: alterar a tela de Prompts para mostrar somente as 10 interações mais recentes.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a página `PromptsPage` renderizava todos os registros retornados por `/prompts` após o filtro de busca, sem ordenar por `createdAt` em ordem decrescente e sem limitar a quantidade exibida; por isso registros antigos continuavam aparecendo na tela.
+- Ajuste aplicado: a lista exibida agora é ordenada pela data de criação mais recente primeiro e limitada aos 10 primeiros registros após o filtro de busca.
