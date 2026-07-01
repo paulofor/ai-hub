@@ -1140,3 +1140,6 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o marcador anterior atuava apenas sobre título e favicon, então o aviso dependia de o usuário notar a aba visualmente; não existia um canal auditivo complementar e navegadores exigem desbloqueio de áudio por interação do usuário antes de tocar sons automaticamente.
 - Ajuste aplicado no frontend: o hook de marcador da conversa Codex ChatGPT agora prepara/desbloqueia um `AudioContext` em interações de ponteiro ou teclado e, na mesma transição que marca a aba como “Resposta pronta”, toca um beep curto e discreto quando o áudio já foi liberado pelo navegador.
 - Validação executada: build de produção do frontend concluído com sucesso.
+
+## 2026-07-01 — Evidência de reboot do host
+- Causa raiz identificada nos logs: `qemu-ga` registrou `guest-shutdown called, mode: powerdown` e o logind informou `hypervisor initiated shutdown` às 04:21:44; os containers caíram por powerdown iniciado pelo hypervisor/provedor, não por app, Docker, OOM ou apt upgrade. Orientação operacional: após reboot, subir em `/root/ai-hub-6` com `docker compose up -d` e validar `docker compose ps`/logs.
