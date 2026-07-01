@@ -117,6 +117,56 @@ interface ChatMessage {
 
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
+const RESPONSE_READY_BEEP_FREQUENCY_HZ = 880;
+const RESPONSE_READY_BEEP_DURATION_MS = 180;
+const RESPONSE_READY_BEEP_VOLUME = 0.08;
+
+type WindowWithWebkitAudioContext = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+let responseReadyAudioContext: AudioContext | null = null;
+let responseReadyAudioUnlocked = false;
+
+const getResponseReadyAudioContext = (): AudioContext | null => {
+  const AudioContextConstructor = window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext;
+  if (!AudioContextConstructor) return null;
+  responseReadyAudioContext ??= new AudioContextConstructor();
+  return responseReadyAudioContext;
+};
+
+const unlockResponseReadyAudio = () => {
+  if (responseReadyAudioUnlocked) return;
+  const audioContext = getResponseReadyAudioContext();
+  if (!audioContext) return;
+  void audioContext.resume().then(() => {
+    responseReadyAudioUnlocked = true;
+  }).catch(() => {
+    responseReadyAudioUnlocked = false;
+  });
+};
+
+const playResponseReadyBeep = () => {
+  const audioContext = getResponseReadyAudioContext();
+  if (!audioContext || !responseReadyAudioUnlocked) return;
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const now = audioContext.currentTime;
+  const endTime = now + RESPONSE_READY_BEEP_DURATION_MS / 1000;
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(RESPONSE_READY_BEEP_FREQUENCY_HZ, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(RESPONSE_READY_BEEP_VOLUME, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(endTime);
+};
+
 
 const getFaviconLink = (): HTMLLinkElement | null => document.querySelector<HTMLLinkElement>("link[rel~='icon']");
 
@@ -175,6 +225,15 @@ const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) =
   }, [clearMarker]);
 
   useEffect(() => {
+    window.addEventListener('pointerdown', unlockResponseReadyAudio);
+    window.addEventListener('keydown', unlockResponseReadyAudio);
+    return () => {
+      window.removeEventListener('pointerdown', unlockResponseReadyAudio);
+      window.removeEventListener('keydown', unlockResponseReadyAudio);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         clearMarker();
@@ -207,6 +266,7 @@ const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) =
     previousStatusesRef.current = nextStatuses;
     if (shouldNotify) {
       showMarker();
+      playResponseReadyBeep();
     }
   }, [conversation, showMarker]);
 };
