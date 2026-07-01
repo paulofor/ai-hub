@@ -1,4 +1,4 @@
-import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { CodexProfile, CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
@@ -37,7 +37,6 @@ const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const CONVERSATION_STORAGE_PREFIX = 'ai-hub.codex-chatgpt.conversation';
 
 const stripModelThinking = (content: string): string => {
   const trimmed = content.trim();
@@ -116,33 +115,6 @@ interface ChatMessage {
   createdAt: string;
 }
 
-const isValidChatMessage = (value: unknown): value is ChatMessage => {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.id === 'string'
-    && (record.role === 'user' || record.role === 'assistant')
-    && typeof record.content === 'string'
-    && typeof record.createdAt === 'string'
-    && (record.requestId === undefined || typeof record.requestId === 'number')
-    && (record.status === undefined || typeof record.status === 'string');
-};
-
-const loadStoredConversation = (storageKey: string): ChatMessage[] => {
-  try {
-    const stored = window.localStorage.getItem(storageKey);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isValidChatMessage);
-  } catch {
-    return [];
-  }
-};
-
-const findActiveRequestId = (messages: ChatMessage[]): number | null => {
-  const activeMessage = [...messages].reverse().find((message) => message.role === 'assistant' && message.requestId && message.status && !isTerminalStatus(message.status));
-  return activeMessage?.requestId ?? null;
-};
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 
@@ -334,7 +306,6 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
 
 export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPageProps) {
   const config = resolveVariantConfig(variant);
-  const conversationStorageKey = useMemo(() => `${CONVERSATION_STORAGE_PREFIX}.${config.profile}`, [config.profile]);
   const [account, setAccount] = useState<ChatgptAccountStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -350,25 +321,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
-  const [conversation, setConversation] = useState<ChatMessage[]>(() => loadStoredConversation(conversationStorageKey));
-  const [activeRequestId, setActiveRequestId] = useState<number | null>(() => findActiveRequestId(loadStoredConversation(conversationStorageKey)));
+  const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const activeRequestPollInFlight = useRef(false);
 
   useModelResponseTabMarker(conversation, config.title);
-
-  useEffect(() => {
-    window.localStorage.setItem(conversationStorageKey, JSON.stringify(conversation));
-  }, [conversation, conversationStorageKey]);
-
-  const handleResetConversation = useCallback(() => {
-    setConversation([]);
-    setActiveRequestId(null);
-    setPrResult(null);
-    setError(null);
-    window.localStorage.removeItem(conversationStorageKey);
-  }, [conversationStorageKey]);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -760,10 +719,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
         <h3 className="text-lg font-semibold">{config.formTitle}</h3>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <p className="text-sm text-slate-500">{config.description}</p>
-          <button type="button" onClick={handleResetConversation} disabled={conversation.length === 0 && !activeRequestId} className="rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Reiniciar diálogo</button>
-        </div>
+        <p className="text-sm text-slate-500">{config.description}</p>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           {conversation.map((message) => (
             <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
