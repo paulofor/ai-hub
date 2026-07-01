@@ -33,13 +33,6 @@ interface ModelOption {
   modelName: string;
 }
 
-interface PrReadiness {
-  eligible: boolean;
-  hasChanges: boolean;
-  changedFiles: string[];
-  reason?: string;
-}
-
 const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
@@ -151,49 +144,6 @@ const findActiveRequestId = (messages: ChatMessage[]): number | null => {
   return activeMessage?.requestId ?? null;
 };
 
-const extractLatestUserPrompt = (prompt: string): string => {
-  const lastMessageMatch = prompt.match(/(?:^|\n)Última mensagem do usuário:\n([\s\S]*)$/);
-  if (lastMessageMatch?.[1]?.trim()) {
-    return lastMessageMatch[1].trim();
-  }
-  return prompt.trim();
-};
-
-const extractAssistantContentFromRequest = (request: CodexRequest): string =>
-  request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.');
-
-const buildConversationFromRequests = (requests: CodexRequest[]): ChatMessage[] => {
-  const orderedRequests = [...requests].sort((left, right) => {
-    const leftTime = new Date(left.createdAt).getTime();
-    const rightTime = new Date(right.createdAt).getTime();
-    return (Number.isNaN(leftTime) ? 0 : leftTime) - (Number.isNaN(rightTime) ? 0 : rightTime);
-  });
-
-  return orderedRequests.flatMap((request): ChatMessage[] => {
-    const createdAt = request.createdAt || new Date().toISOString();
-    const assistantContent = isTerminalStatus(request.status)
-      ? extractAssistantContentFromRequest(request)
-      : `Aguardando resposta do modelo... (${formatStatus(request.status)})`;
-
-    return [
-      {
-        id: `request-${request.id}-user`,
-        role: 'user',
-        content: extractLatestUserPrompt(request.prompt) || 'Mensagem enviada anteriormente.',
-        createdAt
-      },
-      {
-        id: `request-${request.id}-assistant`,
-        role: 'assistant',
-        content: assistantContent,
-        requestId: request.id,
-        status: request.status,
-        createdAt: request.finishedAt || request.startedAt || createdAt
-      }
-    ];
-  });
-};
-
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 
 const getFaviconLink = (): HTMLLinkElement | null => document.querySelector<HTMLLinkElement>("link[rel~='icon']");
@@ -220,62 +170,6 @@ const buildUnreadFaviconHref = (baseHref: string): string => {
   return canvas.toDataURL('image/png');
 };
 
-type BrowserAudioContextConstructor = new () => AudioContext;
-
-let responseReadyAudioContext: AudioContext | null = null;
-
-const getAudioContextConstructor = (): BrowserAudioContextConstructor | null =>
-  window.AudioContext ?? (window as Window & { webkitAudioContext?: BrowserAudioContextConstructor }).webkitAudioContext ?? null;
-
-const getResponseReadyAudioContext = (): AudioContext | null => {
-  if (responseReadyAudioContext) {
-    return responseReadyAudioContext;
-  }
-  const AudioContextConstructor = getAudioContextConstructor();
-  if (!AudioContextConstructor) {
-    return null;
-  }
-  responseReadyAudioContext = new AudioContextConstructor();
-  return responseReadyAudioContext;
-};
-
-const unlockResponseReadyAudio = () => {
-  const audioContext = getResponseReadyAudioContext();
-  if (audioContext?.state === 'suspended') {
-    void audioContext.resume().catch(() => undefined);
-  }
-};
-
-const playResponseReadyBeep = () => {
-  const audioContext = getResponseReadyAudioContext();
-  if (!audioContext) {
-    return;
-  }
-
-  const playTone = () => {
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    const now = audioContext.currentTime;
-
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-
-    oscillator.connect(gain);
-    gain.connect(audioContext.destination);
-    oscillator.start(now);
-    oscillator.stop(now + 0.24);
-  };
-
-  if (audioContext.state === 'suspended') {
-    void audioContext.resume().then(playTone).catch(() => undefined);
-    return;
-  }
-  playTone();
-};
-
 const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) => {
   const originalTitleRef = useRef<string | null>(null);
   const originalFaviconHrefRef = useRef<string | null>(null);
@@ -300,7 +194,6 @@ const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) =
       favicon.href = buildUnreadFaviconHref(originalFaviconHrefRef.current);
     }
     document.title = `${RESPONSE_READY_TITLE_PREFIX}Resposta pronta — ${title}`;
-    playResponseReadyBeep();
   }, [title]);
 
   useEffect(() => {
@@ -317,13 +210,9 @@ const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) =
     };
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
-    window.addEventListener('pointerdown', unlockResponseReadyAudio);
-    window.addEventListener('keydown', unlockResponseReadyAudio);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
-      window.removeEventListener('pointerdown', unlockResponseReadyAudio);
-      window.removeEventListener('keydown', unlockResponseReadyAudio);
       clearMarker();
     };
   }, [clearMarker]);
@@ -443,19 +332,6 @@ const parseStatus = (payload: unknown): ChatgptAccountStatus => {
   };
 };
 
-const parsePrReadiness = (payload: unknown): PrReadiness => {
-  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-  const changedFiles = Array.isArray(record.changedFiles)
-    ? record.changedFiles.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    : [];
-  return {
-    eligible: record.eligible === true,
-    hasChanges: record.hasChanges === true,
-    changedFiles,
-    reason: typeof record.reason === 'string' ? record.reason : undefined
-  };
-};
-
 export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPageProps) {
   const config = resolveVariantConfig(variant);
   const conversationStorageKey = useMemo(() => `${CONVERSATION_STORAGE_PREFIX}.${config.profile}`, [config.profile]);
@@ -478,8 +354,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [activeRequestId, setActiveRequestId] = useState<number | null>(() => findActiveRequestId(loadStoredConversation(conversationStorageKey)));
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
-  const [prReadiness, setPrReadiness] = useState<PrReadiness | null>(null);
-  const [prReadinessLoading, setPrReadinessLoading] = useState(false);
   const activeRequestPollInFlight = useRef(false);
 
   useModelResponseTabMarker(conversation, config.title);
@@ -492,7 +366,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setConversation([]);
     setActiveRequestId(null);
     setPrResult(null);
-    setPrReadiness(null);
     setError(null);
     window.localStorage.removeItem(conversationStorageKey);
   }, [conversationStorageKey]);
@@ -539,15 +412,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const response = await client.get('/codex/requests', { params: { page: 0, size: 10 } });
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       setRequests(parsed);
-      setConversation((current) => {
-        if (current.length > 0 || parsed.length === 0) {
-          return current;
-        }
-        const restoredConversation = buildConversationFromRequests(parsed);
-        const restoredActiveRequestId = findActiveRequestId(restoredConversation);
-        setActiveRequestId(restoredActiveRequestId);
-        return restoredConversation;
-      });
     } finally {
       setRequestsLoading(false);
     }
@@ -601,41 +465,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const isConnected = Boolean(account?.connected) && account?.status === 'connected';
   const isExecutable = Boolean(account?.executable) && isConnected;
-  const lastCompletedRequestId = useMemo(() => {
-    const lastCompleted = [...conversation].reverse().find((message) => message.role === 'assistant' && message.requestId && message.status === 'COMPLETED');
-    return lastCompleted?.requestId ?? null;
-  }, [conversation]);
-
-  useEffect(() => {
-    if (!lastCompletedRequestId || activeRequestId) {
-      setPrReadiness(null);
-      setPrReadinessLoading(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-    setPrReadinessLoading(true);
-    client.get(`/codex/requests/${lastCompletedRequestId}/pr-readiness`)
-      .then((response) => {
-        if (!cancelled) {
-          setPrReadiness(parsePrReadiness(response.data));
-        }
-      })
-      .catch((err: Error) => {
-        if (!cancelled) {
-          setPrReadiness({ eligible: false, hasChanges: false, changedFiles: [], reason: `Não foi possível verificar mudanças para PR: ${err.message}` });
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setPrReadinessLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeRequestId, lastCompletedRequestId]);
 
   const handleConnect = useCallback(async () => {
     setActionLoading(true);
@@ -803,7 +632,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     ].filter(Boolean).join('\n\n');
   }, [config.promptExtraLines, config.promptModeLine, conversation]);
 
-  const extractAssistantContent = useCallback(extractAssistantContentFromRequest, []);
+  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     setConversation((current) => current.map((message) => {
@@ -834,7 +663,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       if (created) {
         setActiveRequestId(created.id);
         setPrResult(null);
-        setPrReadiness(null);
         setConversation((current) => [...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: `Aguardando resposta do modelo... (${formatStatus(created.status)})`, requestId: created.id, status: created.status, createdAt: new Date().toISOString() }]);
       }
       setPrompt('');
@@ -876,14 +704,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [activeRequestId, registerTelemetry, updateAssistantFromRequest]);
 
   const handleCreatePr = useCallback(async () => {
-    if (!lastCompletedRequestId) {
+    const lastCompleted = [...conversation].reverse().find((message) => message.role === 'assistant' && message.requestId && message.status === 'COMPLETED');
+    if (!lastCompleted?.requestId) {
       setError('Ainda não há resposta concluída para criar PR.');
       return;
     }
     setPrLoading(true);
     try {
       const response = await client.post(
-        `/codex/requests/${lastCompletedRequestId}/create-pr`,
+        `/codex/requests/${lastCompleted.requestId}/create-pr`,
         {},
         {
           headers: {
@@ -899,7 +728,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setPrLoading(false);
     }
-  }, [lastCompletedRequestId]);
+  }, [conversation]);
 
   return (
     <section className="space-y-6">
@@ -976,19 +805,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model || Boolean(activeRequestId)} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
-          <div className="flex flex-col gap-1">
-            <button type="button" onClick={handleCreatePr} disabled={prLoading || Boolean(activeRequestId) || !lastCompletedRequestId} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
-            {lastCompletedRequestId ? <p className={`max-w-md text-xs ${prReadiness?.eligible ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'}`}>
-              {prReadinessLoading
-                ? 'Verificando se há mudanças de arquivos para PR...'
-                : prReadiness?.eligible
-                  ? `Mudanças detectadas em ${prReadiness.changedFiles.length} arquivo(s). PR recomendado.`
-                  : prReadiness?.reason || 'Sem mudanças de arquivos detectadas para PR.'}
-            </p> : null}
-            {prReadiness?.changedFiles.length ? <p className="max-w-md truncate text-[11px] text-slate-500 dark:text-slate-400" title={prReadiness.changedFiles.join(', ')}>
-              Arquivos: {prReadiness.changedFiles.slice(0, 3).join(', ')}{prReadiness.changedFiles.length > 3 ? ` +${prReadiness.changedFiles.length - 3}` : ''}
-            </p> : null}
-          </div>
+          <button type="button" onClick={handleCreatePr} disabled={prLoading || Boolean(activeRequestId) || !conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED')} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
         </div>
         {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
