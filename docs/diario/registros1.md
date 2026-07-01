@@ -1134,3 +1134,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitação recebida: criar uma marca na aba do navegador para avisar quando o modelo responder, evitando precisar abrir a aba do AI Hub 6 repetidamente.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa do Codex ChatGPT atualizava a resposta por polling interno, mas não havia nenhum sinal fora do conteúdo da página quando a aba estava em segundo plano; assim, o usuário só percebia a conclusão ao voltar manualmente para a aba.
 - Ajuste aplicado no frontend: a página de conversa agora detecta a transição de uma mensagem do modelo de status em andamento para status terminal enquanto a aba está oculta, altera o título para indicar “Resposta pronta” e troca temporariamente o favicon por um ícone com destaque; ao focar/visualizar a aba, o marcador é limpo e o favicon/título originais são restaurados.
+
+## 2026-07-01 — Beep sonoro quando o modelo responde
+- Solicitação recebida: além do indicador visual na aba do navegador, emitir um pequeno beep sonoro para avisar o usuário quando a resposta do modelo ficar pronta.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o marcador anterior atuava apenas sobre título e favicon, então o aviso dependia de o usuário notar a aba visualmente; não existia um canal auditivo complementar e navegadores exigem desbloqueio de áudio por interação do usuário antes de tocar sons automaticamente.
+- Ajuste aplicado no frontend: o hook de marcador da conversa Codex ChatGPT agora prepara/desbloqueia um `AudioContext` em interações de ponteiro ou teclado e, na mesma transição que marca a aba como “Resposta pronta”, toca um beep curto e discreto quando o áudio já foi liberado pelo navegador.
+- Validação executada: build de produção do frontend concluído com sucesso.
