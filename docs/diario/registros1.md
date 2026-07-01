@@ -1139,3 +1139,22 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitação recebida: manter o diálogo da tela Codex ChatGPT MKT ao sair e voltar para a página, reiniciando somente por ação explícita do usuário com um botão de reiniciar diálogo.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa e a execução ativa ficavam apenas em estados React (`conversation` e `activeRequestId`); ao desmontar a tela durante navegação/reload, esses estados eram perdidos e a página voltava a exibir o placeholder de conversa vazia, mesmo com a execução ainda existindo no histórico.
 - Ajuste aplicado no frontend: o diálogo agora é persistido no `localStorage` por perfil Codex ChatGPT, a execução ativa é restaurada a partir da última mensagem do modelo ainda não terminal, e foi adicionado o botão `Reiniciar diálogo` para limpar conversa, execução ativa e resultado de PR somente quando o usuário pedir.
+
+## 2026-07-01 — Restauração do diálogo Codex ChatGPT MKT ao voltar para a tela
+- Solicitação recebida: o diálogo da tela `Codex ChatGPT MKT` continua sumindo quando o usuário sai e volta para a tela.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela dependia do `localStorage` do navegador para remontar a conversa; quando esse armazenamento não continha o estado esperado, ou quando o usuário voltava em um contexto onde o estado local estava vazio, o frontend exibia a mensagem inicial mesmo existindo histórico de execuções no backend.
+- Ajuste aplicado: além de persistir no `localStorage`, a tela agora reconstrói o diálogo a partir das últimas `CodexRequest` do perfil ativo quando a conversa local está vazia, incluindo a última mensagem do usuário extraída do prompt, a resposta/status do modelo e a retomada do polling se a execução ainda estiver em andamento.
+- Validação local: executado build do frontend para confirmar tipagem e empacotamento após o ajuste.
+
+## 2026-07-01 — Beep sonoro quando a resposta do Codex ChatGPT fica pronta
+- Solicitação recebida: além do indicador visual na aba do navegador, emitir um pequeno beep sonoro quando a resposta do modelo ficar pronta.
+- Pergunta explícita de causa raiz: “por que o indicador visual pode não ser suficiente?”. Resposta: o aviso anterior dependia de o usuário perceber a mudança no título/favicon da aba; quando ele está olhando outra tela ou sem foco visual na aba, a conclusão da resposta pode passar despercebida mesmo com a marcação visual correta.
+- Ajuste aplicado: o hook de marcação da aba agora também tenta tocar um beep curto via Web Audio API quando uma execução muda para status terminal com a aba oculta, e prepara/desbloqueia o contexto de áudio em interações do usuário (`pointerdown`/`keydown`) para respeitar as políticas de autoplay dos navegadores.
+- Observação: se o navegador bloquear áudio por política de autoplay ou ausência de interação prévia, o erro é ignorado e o indicador visual continua funcionando.
+
+## 2026-07-01 — Indicação de PR recomendado quando há mudanças de arquivos
+- Solicitação recebida: como o PR depende de ação do usuário, mostrar perto do botão `Pedir PR` uma indicação quando houver mudanças de arquivos e um PR for interessante.
+- Pergunta explícita de causa raiz: “por que esse aviso não aparecia?”. Resposta: o frontend só sabia se existia uma resposta concluída para habilitar o botão, mas não tinha um contrato para saber se a execução gerou patch/diff com arquivos alterados; assim o usuário precisava decidir às cegas se valia pedir PR.
+- Ajuste aplicado no backend: criado `GET /api/codex/requests/{id}/pr-readiness`, que reaproveita a mesma fonte de diff usada pela criação de PR, valida se a solicitação está concluída e identifica arquivos alterados a partir das linhas `diff --git`.
+- Ajuste aplicado no frontend: a tela busca a prontidão do último pedido concluído e exibe perto do botão `Pedir PR` uma mensagem de “PR recomendado” com contagem/lista resumida de arquivos ou o motivo de não haver mudanças detectadas.
+- Cobertura: adicionado teste unitário para o endpoint de prontidão extraindo arquivos do diff.

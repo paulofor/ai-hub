@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -93,5 +95,39 @@ class CodexControllerTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString()
         );
+    }
+
+    @Test
+    void prReadinessReportsChangedFilesFromAvailableDiff() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/marketing-hub", "gpt-5.5", null, "prompt");
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        ResponseRecord response = new ResponseRecord();
+        response.setUnifiedDiff("""
+            diff --git a/src/App.tsx b/src/App.tsx
+            --- a/src/App.tsx
+            +++ b/src/App.tsx
+            @@ -1 +1 @@
+            -old
+            +new
+            diff --git a/docs/readme.md b/docs/readme.md
+            --- a/docs/readme.md
+            +++ b/docs/readme.md
+            @@ -1 +1 @@
+            -old
+            +new
+            """);
+
+        when(codexRequestService.find(731L)).thenReturn(completedRequest);
+        when(codexRequestService.findLatestResponseForEnvironment("paulofor/marketing-hub")).thenReturn(Optional.of(response));
+
+        Map<String, Object> readiness = controller.prReadiness(731L);
+
+        assertThat(readiness.get("eligible")).isEqualTo(true);
+        assertThat(readiness.get("hasChanges")).isEqualTo(true);
+        assertThat(readiness.get("changedFiles")).isEqualTo(List.of("src/App.tsx", "docs/readme.md"));
     }
 }
