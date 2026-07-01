@@ -33,11 +33,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -206,6 +208,55 @@ public class CodexController {
         return codexRequestService.cancel(id);
     }
 
+    @GetMapping("/{id}/pr-readiness")
+    public Map<String, Object> prReadiness(@PathVariable Long id) {
+        CodexRequest request = codexRequestService.find(id);
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (status != CodexRequestStatus.COMPLETED) {
+            return Map.of(
+                "eligible", false,
+                "hasChanges", false,
+                "changedFiles", List.of(),
+                "reason", "A solicitação ainda não foi concluída com sucesso."
+            );
+        }
+
+        RepoCoordinates coordinates = RepoCoordinates.from(request.getEnvironment());
+        if (coordinates == null) {
+            return Map.of(
+                "eligible", false,
+                "hasChanges", false,
+                "changedFiles", List.of(),
+                "reason", "O ambiente da solicitação não está no formato owner/repo."
+            );
+        }
+
+        Optional<ResponseRecord> response = codexRequestService.findLatestResponseForEnvironment(request.getEnvironment());
+        String diff = response
+            .map(ResponseRecord::getUnifiedDiff)
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .orElse("");
+        if (diff.isBlank()) {
+            return Map.of(
+                "eligible", false,
+                "hasChanges", false,
+                "changedFiles", List.of(),
+                "reason", "Nenhum patch/diff foi encontrado para criar PR."
+            );
+        }
+
+        List<String> changedFiles = extractChangedFilesFromDiff(diff);
+        return Map.of(
+            "eligible", true,
+            "hasChanges", !changedFiles.isEmpty(),
+            "changedFiles", changedFiles,
+            "reason", changedFiles.isEmpty()
+                ? "Há patch disponível, mas os arquivos não puderam ser identificados automaticamente."
+                : "Foram detectadas mudanças de arquivos; um PR pode ser útil."
+        );
+    }
+
     @PostMapping("/{id}/create-pr")
     public Map<String, Object> createPr(@PathVariable Long id,
                                         @RequestHeader(value = "X-Role", defaultValue = "viewer") String role,
@@ -278,6 +329,26 @@ public class CodexController {
         if (!"owner".equalsIgnoreCase(role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Ação requer confirmação de um owner");
         }
+    }
+
+    private static List<String> extractChangedFilesFromDiff(String diff) {
+        if (diff == null || diff.isBlank()) {
+            return List.of();
+        }
+        Set<String> files = new LinkedHashSet<>();
+        for (String line : diff.split("\\R")) {
+            if (!line.startsWith("diff --git ")) {
+                continue;
+            }
+            String[] parts = line.split("\\s+");
+            if (parts.length >= 4) {
+                String candidate = parts[3].startsWith("b/") ? parts[3].substring(2) : parts[3];
+                if (!candidate.isBlank() && !candidate.equals("/dev/null")) {
+                    files.add(candidate);
+                }
+            }
+        }
+        return List.copyOf(files);
     }
 
     private record RepoCoordinates(String owner, String repo) {
