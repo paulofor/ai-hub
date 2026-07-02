@@ -1143,3 +1143,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 
 ## 2026-07-01 — Evidência de reboot do host
 - Causa raiz identificada nos logs: `qemu-ga` registrou `guest-shutdown called, mode: powerdown` e o logind informou `hypervisor initiated shutdown` às 04:21:44; os containers caíram por powerdown iniciado pelo hypervisor/provedor, não por app, Docker, OOM ou apt upgrade. Orientação operacional: após reboot, subir em `/root/ai-hub-6` com `docker compose up -d` e validar `docker compose ps`/logs.
+
+## 2026-07-02 — Melodia sonora de resposta pronta
+- Por que o aviso passava despercebido: o alerta anterior era apenas um beep senoidal curto, com volume baixo, então a causa raiz estava na baixa saliência sonora do próprio padrão de notificação.
+- Ajuste aplicado no frontend: o aviso de resposta pronta agora agenda uma melodia de 14 notas com tons diferentes, volume maior, timbre mais presente e repetição da sequência 3 vezes para tornar o fim da tarefa mais perceptível.

@@ -117,9 +117,27 @@ interface ChatMessage {
 
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
-const RESPONSE_READY_BEEP_FREQUENCY_HZ = 880;
-const RESPONSE_READY_BEEP_DURATION_MS = 180;
-const RESPONSE_READY_BEEP_VOLUME = 0.08;
+const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
+  784,
+  988,
+  1175,
+  988,
+  1319,
+  1175,
+  988,
+  880,
+  1047,
+  1319,
+  1568,
+  1319,
+  1175,
+  1568,
+] as const;
+const RESPONSE_READY_MELODY_REPETITIONS = 3;
+const RESPONSE_READY_NOTE_DURATION_MS = 95;
+const RESPONSE_READY_NOTE_GAP_MS = 18;
+const RESPONSE_READY_MELODY_REPEAT_GAP_MS = 180;
+const RESPONSE_READY_BEEP_VOLUME = 0.22;
 
 type WindowWithWebkitAudioContext = Window & {
   webkitAudioContext?: typeof AudioContext;
@@ -150,21 +168,35 @@ const playResponseReadyBeep = () => {
   const audioContext = getResponseReadyAudioContext();
   if (!audioContext || !responseReadyAudioUnlocked) return;
 
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
   const now = audioContext.currentTime;
-  const endTime = now + RESPONSE_READY_BEEP_DURATION_MS / 1000;
+  const noteDurationSeconds = RESPONSE_READY_NOTE_DURATION_MS / 1000;
+  const noteStepSeconds = (RESPONSE_READY_NOTE_DURATION_MS + RESPONSE_READY_NOTE_GAP_MS) / 1000;
+  const repeatStepSeconds =
+    RESPONSE_READY_MELODY_FREQUENCIES_HZ.length * noteStepSeconds + RESPONSE_READY_MELODY_REPEAT_GAP_MS / 1000;
 
-  oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(RESPONSE_READY_BEEP_FREQUENCY_HZ, now);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(RESPONSE_READY_BEEP_VOLUME, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
+  for (let repetition = 0; repetition < RESPONSE_READY_MELODY_REPETITIONS; repetition += 1) {
+    RESPONSE_READY_MELODY_FREQUENCIES_HZ.forEach((frequency, noteIndex) => {
+      const startTime = now + repetition * repeatStepSeconds + noteIndex * noteStepSeconds;
+      const endTime = startTime + noteDurationSeconds;
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
 
-  oscillator.connect(gain);
-  gain.connect(audioContext.destination);
-  oscillator.start(now);
-  oscillator.stop(endTime);
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(frequency, startTime);
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(RESPONSE_READY_BEEP_VOLUME, startTime + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(startTime);
+      oscillator.stop(endTime);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    });
+  }
 };
 
 
