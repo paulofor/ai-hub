@@ -1,6 +1,7 @@
 package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
+import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
@@ -330,7 +331,10 @@ class CodexRequestServiceTest {
         assertThat(request.getResponseText()).isEqualTo("Resumo final menor");
         assertThat(request.getModelTranscript())
             .isEqualTo("Vou rastrear esse erro pelo fluxo completo.\n\nVerifiquei e corrigi a causa-raiz.");
+        assertThat(request.getInteractionCount()).isEqualTo(3);
         verify(codexRequestRepository).save(request);
+        verify(codexInteractionRepository, never()).save(any(CodexInteractionRecord.class));
+        verify(codexInteractionRepository, never()).existsBySandboxInteractionId(anyString());
     }
 
     @Test

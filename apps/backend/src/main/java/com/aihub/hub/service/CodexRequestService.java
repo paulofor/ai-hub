@@ -308,7 +308,9 @@ public class CodexRequestService {
     private CodexRequest findWithoutRefresh(Long id) {
         CodexRequest request = codexRequestRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
-        request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(id));
+        if (request.getInteractionCount() == null) {
+            request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(id));
+        }
         return request;
     }
 
@@ -667,12 +669,12 @@ public class CodexRequestService {
         applySandboxMetadata(request, response);
         applySandboxResponseContent(request, response);
         applyUsageMetadata(request, response);
+        applyInteractionSummary(request, response);
 
         saveRequest(request);
         log.info("CodexRequest {} atualizado com externalId {}", request.getId(), resolvedExternalId);
 
         recordResponse(metadata, response);
-        recordInteractions(request, response);
         recordHttpRequests(request, response);
     }
 
@@ -830,17 +832,17 @@ public class CodexRequestService {
         }
 
         boolean usageUpdated = applyUsageMetadata(request, response);
+        boolean interactionSummaryUpdated = applyInteractionSummary(request, response);
 
-        if (updated || usageUpdated) {
+        if (updated || usageUpdated || interactionSummaryUpdated) {
             saveRequest(request);
             log.info("CodexRequest {} atualizado a partir do sandbox", request.getId());
         }
 
         recordResponse(extractMetadata(request.getEnvironment()), response);
-        recordInteractions(request, response);
         recordHttpRequests(request, response);
 
-        return updated || usageUpdated;
+        return updated || usageUpdated || interactionSummaryUpdated;
     }
 
     private boolean handleMissingSandboxResponse(CodexRequest request) {
@@ -906,7 +908,7 @@ public class CodexRequestService {
             }
             request.setDurationMs(Duration.between(request.getStartedAt(), finishedAt).toMillis());
             CodexRequest saved = saveRequest(request);
-            saved.setInteractionCount(codexInteractionRepository.countByCodexRequestId(saved.getId()));
+            updateInteractionCount(saved);
             return saved;
         }
 
@@ -915,7 +917,7 @@ public class CodexRequestService {
             applySandboxMetadata(request, response);
             applySandboxResponseContent(request, response);
             applyUsageMetadata(request, response);
-            recordInteractions(request, response);
+            applyInteractionSummary(request, response);
             recordHttpRequests(request, response);
         } else {
             Instant finishedAt = Instant.now();
@@ -937,7 +939,7 @@ public class CodexRequestService {
         }
 
         CodexRequest saved = saveRequest(request);
-        saved.setInteractionCount(codexInteractionRepository.countByCodexRequestId(saved.getId()));
+        updateInteractionCount(saved);
         return saved;
     }
 
@@ -1386,58 +1388,20 @@ public class CodexRequestService {
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
-    private void recordInteractions(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
-        if (request == null || request.getId() == null || response == null || response.interactions() == null) {
-            return;
+    private boolean applyInteractionSummary(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (request == null || response == null || response.interactions() == null) {
+            return false;
         }
-
-        int baseCount = request.getInteractionCount() != null
-            ? request.getInteractionCount()
-            : codexInteractionRepository.countByCodexRequestId(request.getId());
-        int inserted = 0;
-
-        for (SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction interaction : response.interactions()) {
-            if (interaction == null) {
-                continue;
-            }
-
-            String sandboxInteractionId = Optional.ofNullable(interaction.id())
-                .map(String::trim)
-                .filter(StringUtils::hasText)
-                .orElse(null);
-            if (sandboxInteractionId == null) {
-                continue;
-            }
-            if (codexInteractionRepository.existsBySandboxInteractionId(sandboxInteractionId)) {
-                continue;
-            }
-
-            String content = Optional.ofNullable(interaction.content()).map(String::trim).orElse("");
-            Integer sequence = interaction.sequence();
-            if (sequence == null) {
-                sequence = baseCount + inserted + 1;
-            }
-            Instant createdAt = parseInstant(interaction.createdAt());
-            CodexInteractionRecord record = new CodexInteractionRecord(
-                request,
-                sandboxInteractionId,
-                CodexInteractionDirection.fromSandboxValue(interaction.direction()),
-                content,
-                interaction.tokenCount(),
-                sequence,
-                createdAt
-            );
-            codexInteractionRepository.save(record);
-            inserted++;
+        int interactionCount = response.interactions().size();
+        if (Objects.equals(request.getInteractionCount(), interactionCount)) {
+            return false;
         }
-
-        if (inserted > 0 || request.getInteractionCount() == null) {
-            updateInteractionCount(request);
-        }
+        request.setInteractionCount(interactionCount);
+        return true;
     }
 
     private void updateInteractionCount(CodexRequest request) {
-        if (request == null || request.getId() == null) {
+        if (request == null || request.getInteractionCount() != null || request.getId() == null) {
             return;
         }
         request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(request.getId()));
@@ -1450,6 +1414,9 @@ public class CodexRequestService {
 
         List<Long> ids = new ArrayList<>();
         for (CodexRequest request : requests) {
+            if (request.getInteractionCount() != null) {
+                continue;
+            }
             if (request.getId() != null) {
                 ids.add(request.getId());
             } else {
@@ -1484,7 +1451,7 @@ public class CodexRequestService {
 
         for (CodexRequest request : requests) {
             Long requestId = request.getId();
-            if (requestId == null) {
+            if (request.getInteractionCount() != null || requestId == null) {
                 continue;
             }
             request.setInteractionCount(counts.getOrDefault(requestId, 0));
