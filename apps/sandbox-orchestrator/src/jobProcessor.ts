@@ -205,6 +205,7 @@ interface RunnerEnvironmentState {
   branch: string;
   permissionProfile: 'read-write-execute';
   essentialTools: string[];
+  browserTools: string[];
   supplementalBinPath?: string;
   validatedAt: string;
   repeatedErrorBySignature: Map<string, { errorSignature: string; count: number }>;
@@ -1261,7 +1262,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. O sandbox possui Chromium headless em /usr/bin/chromium e as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use esse navegador para validar localmente e gerar screenshot automatizado sempre que possível. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
@@ -3709,6 +3710,7 @@ ${stderr}`);
     await fs.access(realRepoPath, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
 
     const essentialTools = ['bash', 'git', 'rg'];
+    const browserTools = ['chromium'];
     const hardRequirements = ['bash', 'git'];
     for (const tool of hardRequirements) {
       const available = await this.isCommandAvailable(tool);
@@ -3733,6 +3735,7 @@ ${stderr}`);
       branch: job.branch,
       permissionProfile: 'read-write-execute',
       essentialTools,
+      browserTools,
       supplementalBinPath,
       validatedAt: new Date().toISOString(),
       repeatedErrorBySignature: new Map(),
@@ -3759,6 +3762,7 @@ ${stderr}`);
       `- [x] branch validada: ${state.branch}`,
       `- [x] permissões: ${state.permissionProfile}`,
       `- [x] tools essenciais: ${state.essentialTools.join(', ')}`,
+      `- [x] navegador headless disponível para screenshots: ${state.browserTools.join(', ')} (/usr/bin/chromium; CHROME_BIN/CHROMIUM_BIN/PUPPETEER_EXECUTABLE_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)`,
       `- [x] estado validado em: ${state.validatedAt}`,
     ].join('\n');
   }

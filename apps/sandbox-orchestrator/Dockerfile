@@ -22,7 +22,7 @@ RUN apt-get update \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker.io bash google-cloud-cli \
+  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker.io bash google-cloud-cli chromium \
   && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
@@ -65,5 +65,9 @@ COPY --from=builder /app/dist ./dist
 ENV NODE_ENV=production
 ENV PORT=8083
 ENV CODEX_HOME=/var/lib/ai-hub/codex
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMIUM_BIN=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 EXPOSE 8083
 CMD ["node", "dist/src/index.js"]

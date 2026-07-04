@@ -36,4 +36,5 @@ O fluxo de automação agora centraliza a execução das correções no `sandbox
 ## Ferramentas disponíveis no sandbox
 
 - O contêiner do sandbox agora inclui o utilitário `apply_patch` (wrapper para `patch`/`gpatch`) em `/usr/local/bin`. Ele aceita patches com o marcador `*** Begin Patch` ou diffs tradicionais, permitindo edições segmentadas sem reescrever arquivos completos.
+- O contêiner do sandbox também inclui `chromium` do Debian e exporta `CHROME_BIN`, `CHROMIUM_BIN`, `PUPPETEER_EXECUTABLE_PATH` e `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` apontando para `/usr/bin/chromium`, permitindo que agentes validem alterações visuais e gerem screenshots automatizados quando o projeto usar Playwright, Puppeteer ou scripts equivalentes. O prompt inicial do runner informa explicitamente essa capacidade ao modelo e orienta o uso do navegador em tarefas de UI/layout/mudança visual.
 - O Docker CLI vem pré-instalado para permitir workflows que dependem de contêineres; basta expor o socket do host ou usar uma engine acessível via rede.
