@@ -1,7 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { CodexProfile, CodexRequest, codexStatusStyles, formatDateTime, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
+import { CodexProfile, CodexRequest, codexStatusStyles, formatDateTime, formatDuration, formatStatus, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -37,6 +37,15 @@ const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_VISIBLE_CONVERSATION_MESSAGES = 10;
+
+
+const formatInteractionCount = (count?: number) => {
+  if (count === undefined || count === null || !Number.isFinite(count)) {
+    return '—';
+  }
+  return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'interação' : 'interações'}`;
+};
 
 const stripModelThinking = (content: string): string => {
   const trimmed = content.trim();
@@ -115,6 +124,8 @@ interface ChatMessage {
   createdAt: string;
 }
 
+
+const trimConversationMessages = (messages: ChatMessage[]) => messages.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
@@ -686,10 +697,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
-    setConversation((current) => current.map((message) => {
+    setConversation((current) => trimConversationMessages(current.map((message) => {
       if (message.role !== 'assistant' || message.requestId !== request.id) return message;
       return { ...message, status: request.status, content: isTerminalStatus(request.status) ? extractAssistantContent(request) : `Aguardando resposta do modelo... (${formatStatus(request.status)})` };
-    }));
+    })));
   }, [extractAssistantContent]);
 
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -702,7 +713,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     try {
       const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: prompt, createdAt: new Date().toISOString() };
       const requestPrompt = buildConversationPrompt(prompt);
-      setConversation((current) => [...current, userMessage]);
+      setConversation((current) => trimConversationMessages([...current, userMessage]));
       const response = await client.post('/codex/requests', {
         prompt: requestPrompt,
         environment,
@@ -714,7 +725,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       if (created) {
         setActiveRequestId(created.id);
         setPrResult(null);
-        setConversation((current) => [...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: `Aguardando resposta do modelo... (${formatStatus(created.status)})`, requestId: created.id, status: created.status, createdAt: new Date().toISOString() }]);
+        setConversation((current) => trimConversationMessages([...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: `Aguardando resposta do modelo... (${formatStatus(created.status)})`, requestId: created.id, status: created.status, createdAt: new Date().toISOString() }]));
       }
       setPrompt('');
       setImageAttachments([]);
@@ -813,6 +824,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <h3 className="text-lg font-semibold">{config.formTitle}</h3>
         <p className="text-sm text-slate-500">{config.description}</p>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <p className="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">Mantemos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} interações nesta conversa para evitar peso no navegador.</p>
           {conversation.map((message) => (
             <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
               <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -869,6 +881,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              {item.status === 'COMPLETED' ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+                <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span>
+                <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span>
+              </div> : null}
               <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
             </li>
           ))}

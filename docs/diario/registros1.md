@@ -1165,3 +1165,18 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: sim, o backend recebia `interactions` do sandbox-orchestrator e `recordInteractions` tentava inserir cada item novo em `codex_interactions`, usando `sandbox_interaction_id` para deduplicar. Em execuções longas do Codex App Server, eventos de streaming/modelo podem passar de 2.400 itens, gerando milhares de inserts para uma única solicitação sem necessidade operacional para a tela principal.
 - Ajuste aplicado: o backend deixou de persistir cada interação em `codex_interactions`; agora grava apenas o resumo agregado `interactionCount` em `codex_requests`, mantém `modelTranscript` consolidado a partir das mensagens outbound e preserva a leitura legada da tabela somente como fallback para registros antigos sem `interactionCount` preenchido.
 - Teste atualizado para garantir que callbacks com interações atualizam o contador e transcript, mas não chamam `codexInteractionRepository.save` nem `existsBySandboxInteractionId`.
+
+## 2026-07-04 — Métricas nos cards de solicitações concluídas
+- Solicitação recebida: exibir nos cards de solicitações concluídas o tempo gasto e a quantidade de interações.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend e o parser do frontend já disponibilizavam `durationMs` e `interactionCount`, mas a lista de histórico da página Codex ChatGPT renderizava apenas identificador, modelo, data e status; portanto a informação existia no contrato de dados e faltava ser apresentada no card.
+- Ajuste aplicado no frontend: cards com status `COMPLETED` agora exibem “Tempo gasto” usando o formatador de duração existente e “Interações” com pluralização em pt-BR, mantendo os demais status sem essas métricas para evitar valores incompletos.
+
+## 2026-07-04 — Limite visual no histórico do diálogo Codex
+- Solicitação recebida: manter na tela de diálogo um histórico de somente 10 interações para evitar que a tela fique muito grande.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa era renderizada com `conversation.map(...)` sobre todo o estado acumulado; cada nova pergunta e resposta permanecia visível indefinidamente, fazendo a área de diálogo crescer sem limite apesar de o histórico completo ainda ser útil para contexto e ações como pedir PR.
+- Ajuste aplicado no frontend: a tela agora calcula uma janela visual com as últimas 10 mensagens, oculta as anteriores apenas na renderização e informa quantas interações antigas foram escondidas, preservando o estado completo para contexto interno da conversa.
+
+## 2026-07-04 — Poda real do histórico do diálogo no navegador
+- Solicitação recebida: avaliar se apenas ocultar mensagens antigas deixaria o browser pesado e ajustar para evitar esse risco.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a correção anterior reduzia o DOM renderizado, mas ainda preservava todo o array `conversation` em memória e continuava usando esse histórico completo ao montar o prompt; assim conversas longas poderiam continuar pesando no navegador e aumentando payloads internos.
+- Ajuste aplicado no frontend: o estado da conversa agora é podado para as últimas 10 mensagens sempre que novas mensagens são adicionadas ou atualizadas, e a tela informa que somente essa janela recente é mantida para evitar peso no navegador.
