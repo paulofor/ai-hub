@@ -993,7 +993,7 @@ test('processes tool calls inside a sandbox', async () => {
   assert.ok(firstCall.tools, 'tools ausente na chamada inicial');
   assert.deepEqual(
     firstCall.tools.map((tool: any) => tool.name ?? tool.function?.name).filter(Boolean),
-    ['run_shell', 'read_file', 'write_file', 'http_get', 'WebSearch', 'db_query']
+    ['run_shell', 'read_file', 'read_image', 'fetch_image', 'write_file', 'http_get', 'WebSearch', 'db_query']
   );
 
   assert.equal(job.status, 'COMPLETED', job.error);
@@ -1016,6 +1016,84 @@ test('processes tool calls inside a sandbox', async () => {
   await fs.rm(tempRepo, { recursive: true, force: true });
 });
 
+
+test('read_image reenvia imagem local como input_image multimodal', async () => {
+  const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-read-image-'));
+  execSync('git init', { cwd: tempRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
+  execSync('git config user.name "CI Bot"', { cwd: tempRepo });
+  await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  await fs.mkdir(path.join(tempRepo, 'screenshots'), { recursive: true });
+  await fs.writeFile(
+    path.join(tempRepo, 'screenshots', 'pixel.png'),
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
+  );
+  execSync('git add README.md screenshots/pixel.png', { cwd: tempRepo });
+  execSync('git commit -m "init"', { cwd: tempRepo });
+  execSync('git branch -M main', { cwd: tempRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-read-image',
+                name: 'read_image',
+                arguments: JSON.stringify({ path: 'screenshots/pixel.png' }),
+              },
+              { type: 'message', id: 'msg-read-image', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-read-image-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'imagem analisada', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI);
+  const job: SandboxJob = {
+    jobId: 'job-read-image',
+    repoUrl: tempRepo,
+    branch: 'main',
+    taskDescription: 'analise screenshot local',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  try {
+    await processor.process(job);
+    assert.equal(job.status, 'COMPLETED', job.error);
+    const secondCall = fakeOpenAI.calls[1];
+    const imageMessage = secondCall.input.find((item: any) => item.type === 'message' && item.role === 'user'
+      && item.content?.some((content: any) => content.type === 'input_image'));
+    assert.ok(imageMessage, 'imagem local não foi reenviada como input_image');
+    const imageContent = imageMessage.content.find((content: any) => content.type === 'input_image');
+    assert.match(imageContent.image_url, /^data:image\/png;base64,/);
+    assert.equal(imageContent.detail, 'high');
+  } finally {
+    await fs.rm(tempRepo, { recursive: true, force: true });
+  }
+});
 
 
 test('bloqueia LOCALIZAR_CAUSA após N ciclos sem nova evidência', async () => {
@@ -2396,6 +2474,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     const promptText = firstSystem?.content?.[0]?.text ?? '';
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
+    assert.match(promptText, /Chromium headless em \/usr\/bin\/chromium/i);
+    assert.match(promptText, /navegador headless disponível para screenshots: chromium/i);
     assert.ok(job.logs.some((entry) => entry.includes('preflight do runner concluído com sucesso')));
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });

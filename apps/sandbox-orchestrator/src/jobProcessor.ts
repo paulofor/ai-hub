@@ -71,6 +71,7 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 const exec = promisify(execCallback);
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
+const IMAGE_TOOL_ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const INSPECTION_SHELL_EXECUTABLES = new Set([
   'cat',
   'sed',
@@ -90,6 +91,17 @@ interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+}
+
+interface ImageToolResult {
+  type: 'image';
+  source: 'read_image' | 'fetch_image';
+  path?: string;
+  url?: string;
+  mimeType: string;
+  sizeBytes: number;
+  dataUrl: string;
+  note: string;
 }
 
 interface TokenUsage {
@@ -205,6 +217,7 @@ interface RunnerEnvironmentState {
   branch: string;
   permissionProfile: 'read-write-execute';
   essentialTools: string[];
+  browserTools: string[];
   supplementalBinPath?: string;
   validatedAt: string;
   repeatedErrorBySignature: Map<string, { errorSignature: string; count: number }>;
@@ -874,6 +887,39 @@ export class SandboxJobProcessor implements JobProcessor {
       },
       {
         type: 'function' as const,
+        name: 'read_image',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Caminho relativo de uma imagem PNG/JPG/WebP/GIF dentro do repositório clonado' },
+          },
+          required: ['path'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Lê uma imagem local do sandbox e a reenvia ao modelo como input visual multimodal',
+      },
+      {
+        type: 'function' as const,
+        name: 'fetch_image',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL pública de uma imagem PNG/JPG/WebP/GIF externa' },
+            headers: {
+              type: 'object',
+              additionalProperties: { type: 'string' },
+              description: 'Cabeçalhos opcionais; Authorization é ignorado',
+            },
+          },
+          required: ['url'],
+          additionalProperties: false,
+        },
+        strict: true,
+        description: 'Baixa uma imagem pública externa e a reenvia ao modelo como input visual multimodal',
+      },
+      {
+        type: 'function' as const,
         name: 'write_file',
         parameters: {
           type: 'object',
@@ -1261,7 +1307,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. O sandbox possui Chromium headless em /usr/bin/chromium e as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
@@ -1408,6 +1454,7 @@ ${profileInstruction}`,
       messages.push(...normalizedOutput);
 
       const toolMessages: ResponseFunctionToolCallOutputItem[] = [];
+      const imageMessages: ResponseItem[] = [];
       for (const [index, call] of toolCalls.entries()) {
         this.ensureNotCancelled(job);
         const parsedArgs = this.parseArguments(call.arguments);
@@ -1468,6 +1515,10 @@ ${profileInstruction}`,
           this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
           this.captureContextFromTool(job, toolCall, result);
           const preparedOutput = this.prepareToolOutput(result, job);
+          const imageMessage = this.buildImageToolMessage(result);
+          if (imageMessage) {
+            imageMessages.push(imageMessage);
+          }
           toolMessages.push({
             id: outputId,
             call_id: callId,
@@ -1497,7 +1548,7 @@ ${profileInstruction}`,
         }
       }
 
-      messages.push(...toolMessages);
+      messages.push(...toolMessages, ...imageMessages);
       this.enforceEcoAutoCompaction(job, messages);
     }
   }
@@ -2553,7 +2604,7 @@ ${stderr}`);
         createdAt: now,
       };
     }
-    if (call.name === 'http_get' || call.name === 'WebSearch') {
+    if (call.name === 'http_get' || call.name === 'WebSearch' || call.name === 'fetch_image') {
       const urlValue = args.url;
       const urlArg = typeof urlValue === 'string' ? urlValue : undefined;
       const body = typeof (result as any).body === 'string' ? (result as any).body : '';
@@ -2748,6 +2799,12 @@ ${stderr}`);
       case 'read_file':
         result = await this.handleReadFile(call.arguments, repoPath);
         break;
+      case 'read_image':
+        result = await this.handleReadImage(call.arguments, repoPath, job);
+        break;
+      case 'fetch_image':
+        result = await this.handleFetchImage(call, job);
+        break;
       case 'write_file':
         result = await this.handleWriteFile(call.arguments, repoPath, job);
         break;
@@ -2831,13 +2888,13 @@ ${stderr}`);
 
   private buildToolSimilarityKey(call: ToolCall): string {
     const args = (call.arguments ?? {}) as Record<string, unknown>;
-    if (call.name === 'read_file' || call.name === 'write_file') {
+    if (call.name === 'read_file' || call.name === 'write_file' || call.name === 'read_image') {
       return `${call.name}:${String(args.path ?? '')}`;
     }
     if (call.name === 'run_shell') {
       return `${call.name}:${String(args.command ?? '')}:${String(args.cwd ?? '')}`;
     }
-    if (call.name === 'http_get' || call.name === 'WebSearch') {
+    if (call.name === 'http_get' || call.name === 'WebSearch' || call.name === 'fetch_image') {
       return `${call.name}:${String(args.url ?? '')}`;
     }
     if (call.name === 'db_query') {
@@ -3709,6 +3766,7 @@ ${stderr}`);
     await fs.access(realRepoPath, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
 
     const essentialTools = ['bash', 'git', 'rg'];
+    const browserTools = ['chromium'];
     const hardRequirements = ['bash', 'git'];
     for (const tool of hardRequirements) {
       const available = await this.isCommandAvailable(tool);
@@ -3733,6 +3791,7 @@ ${stderr}`);
       branch: job.branch,
       permissionProfile: 'read-write-execute',
       essentialTools,
+      browserTools,
       supplementalBinPath,
       validatedAt: new Date().toISOString(),
       repeatedErrorBySignature: new Map(),
@@ -3759,6 +3818,7 @@ ${stderr}`);
       `- [x] branch validada: ${state.branch}`,
       `- [x] permissões: ${state.permissionProfile}`,
       `- [x] tools essenciais: ${state.essentialTools.join(', ')}`,
+      `- [x] navegador headless disponível para screenshots: ${state.browserTools.join(', ')} (/usr/bin/chromium; CHROME_BIN/CHROMIUM_BIN/PUPPETEER_EXECUTABLE_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)`,
       `- [x] estado validado em: ${state.validatedAt}`,
     ].join('\n');
   }
@@ -3974,6 +4034,187 @@ grep -R -n -- "$@"
 
     const shell = process.env.SHELL || '/bin/sh';
     return { shell, args: ['-c', command] };
+  }
+
+  private async handleReadImage(args: Record<string, unknown>, repoPath: string, job: SandboxJob): Promise<ImageToolResult> {
+    const { absolute, relative } = this.normalizeRepoPath(
+      repoPath,
+      typeof args.path === 'string' ? args.path : undefined,
+    );
+    const stat = await fs.stat(absolute);
+    const maxBytes = this.resolveImageToolMaxBytes();
+    if (!stat.isFile()) {
+      throw new Error('read_image aceita apenas arquivos');
+    }
+    if (stat.size > maxBytes) {
+      throw new Error(`imagem excede limite de ${maxBytes} bytes`);
+    }
+    const buffer = await fs.readFile(absolute);
+    return this.buildImageToolResult({
+      source: 'read_image',
+      buffer,
+      fallbackName: relative,
+      path: relative,
+      job,
+    });
+  }
+
+  private async handleFetchImage(call: ToolCall, job: SandboxJob): Promise<ImageToolResult> {
+    if (!this.fetchImpl) {
+      throw new Error('fetch indisponível para fetch_image');
+    }
+
+    const args = call?.arguments ?? {};
+    const urlArg = typeof args.url === 'string' ? args.url : undefined;
+    if (!urlArg) {
+      throw new Error('url é obrigatório para fetch_image');
+    }
+
+    const url = this.validateExternalUrl(urlArg);
+    const headers = this.sanitizeHeaders((args as Record<string, unknown>).headers);
+    const requestedAt = new Date().toISOString();
+    this.log(job, `fetch_image: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs}, maxBytes=${this.resolveImageToolMaxBytes()})`);
+
+    let response: any;
+    try {
+      response = await this.fetchImpl(url.toString(), { method: 'GET', headers, signal: AbortSignal.timeout(this.httpToolTimeoutMs) });
+    } catch (err) {
+      if (this.isTimeoutError(err)) {
+        job.timeoutCount = (job.timeoutCount ?? 0) + 1;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`falha ao buscar imagem: ${message}`);
+    }
+
+    const status = typeof response?.status === 'number' ? response.status : undefined;
+    const success = this.isSuccessfulHttpResponse(response);
+    this.recordHttpRequest(job, {
+      callId: call.id,
+      url: url.toString(),
+      status,
+      success,
+      toolName: call.name,
+      requestedAt,
+    });
+    if (!success) {
+      throw new Error(`falha ao buscar imagem: status ${status ?? 'desconhecido'}`);
+    }
+
+    const contentLength = Number(response.headers?.get?.('content-length'));
+    const maxBytes = this.resolveImageToolMaxBytes();
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error(`imagem excede limite de ${maxBytes} bytes`);
+    }
+
+    let buffer: Buffer;
+    try {
+      const arrayBuffer = await response.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+    } catch (err) {
+      if (this.isTimeoutError(err)) {
+        job.timeoutCount = (job.timeoutCount ?? 0) + 1;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`falha ao ler imagem: ${message}`);
+    }
+    if (buffer.byteLength > maxBytes) {
+      throw new Error(`imagem excede limite de ${maxBytes} bytes`);
+    }
+
+    return this.buildImageToolResult({
+      source: 'fetch_image',
+      buffer,
+      fallbackName: path.basename(url.pathname),
+      url: url.toString(),
+      job,
+    });
+  }
+
+  private buildImageToolResult(input: {
+    source: 'read_image' | 'fetch_image';
+    buffer: Buffer;
+    fallbackName: string;
+    path?: string;
+    url?: string;
+    job: SandboxJob;
+  }): ImageToolResult {
+    const mimeType = this.detectImageMimeType(input.buffer, input.fallbackName);
+    if (!mimeType || !IMAGE_TOOL_ALLOWED_MIME_TYPES.has(mimeType)) {
+      throw new Error('formato de imagem não suportado; use PNG, JPG, WebP ou GIF');
+    }
+    const dataUrl = `data:${mimeType};base64,${input.buffer.toString('base64')}`;
+    this.log(input.job, `${input.source}: imagem preparada para visão multimodal (${mimeType}, ${input.buffer.byteLength} bytes)`);
+    return {
+      type: 'image',
+      source: input.source,
+      path: input.path,
+      url: input.url,
+      mimeType,
+      sizeBytes: input.buffer.byteLength,
+      dataUrl,
+      note: 'Imagem anexada ao próximo turno como input_image para inspeção visual multimodal.',
+    };
+  }
+
+  private buildImageToolMessage(result: unknown): ResponseItem | undefined {
+    if (!this.isImageToolResult(result)) {
+      return undefined;
+    }
+    const label = result.path ?? result.url ?? 'imagem';
+    return {
+      type: 'message',
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: `Imagem carregada por ${result.source}: ${label}. Analise visualmente esta imagem antes de concluir a tarefa.`,
+        },
+        {
+          type: 'input_image',
+          image_url: result.dataUrl,
+          detail: 'high',
+        },
+      ],
+    } as ResponseItem;
+  }
+
+  private isImageToolResult(result: unknown): result is ImageToolResult {
+    return Boolean(
+      result
+        && typeof result === 'object'
+        && (result as Record<string, unknown>).type === 'image'
+        && typeof (result as Record<string, unknown>).dataUrl === 'string'
+        && typeof (result as Record<string, unknown>).mimeType === 'string',
+    );
+  }
+
+  private detectImageMimeType(buffer: Buffer, fallbackName: string): string | undefined {
+    if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      return 'image/png';
+    }
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+      return 'image/webp';
+    }
+    if (buffer.length >= 6) {
+      const signature = buffer.subarray(0, 6).toString('ascii');
+      if (signature === 'GIF87a' || signature === 'GIF89a') {
+        return 'image/gif';
+      }
+    }
+    const ext = path.extname(fallbackName).toLowerCase();
+    if (ext === '.png') return 'image/png';
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+    if (ext === '.webp') return 'image/webp';
+    if (ext === '.gif') return 'image/gif';
+    return undefined;
+  }
+
+  private resolveImageToolMaxBytes(): number {
+    const maxBytes = Number(process.env.IMAGE_TOOL_MAX_BYTES);
+    return Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : 5 * 1024 * 1024;
   }
 
   private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
