@@ -1190,3 +1190,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta recebida: se o modelo entenderia sozinho que o sandbox possui Chromium ou se seria necessário informar isso no prompt inicial.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: apenas instalar Chromium melhora a capacidade do ambiente, mas não garante que o modelo descubra essa capacidade sem gastar ciclos; o prompt inicial não anunciava navegador/headless nem orientava screenshot em tarefas visuais.
 - Ajustado o prompt inicial do runner para declarar Chromium em `/usr/bin/chromium`, variáveis compatíveis com Playwright/Puppeteer e orientação para usar screenshot automatizado quando houver UI, layout ou mudança visual; também foi adicionada cobertura de teste para essa instrução.
+
+## 2026-07-04 12:17:37 UTC-3
+- Solicitação recebida: implementar a opção C para imagens externas e locais, combinando visualização de arquivos gerados no sandbox com busca de imagens públicas por URL.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o sandbox já conseguia receber anexos de imagem do usuário e gerar screenshots com Chromium, mas imagens externas ou arquivos PNG/JPG/WebP/GIF produzidos no filesystem ficavam presos em fluxos textuais (`http_get`/shell), sem serem reinjetados no modelo como entrada visual multimodal.
+- Implementadas as tools `read_image` e `fetch_image` no runner Responses API: elas validam caminho/URL, bloqueiam acesso fora do sandbox ou URLs internas via validação existente, limitam tamanho, detectam MIME PNG/JPG/WebP/GIF e reenviam a imagem ao próximo turno como `input_image` com detalhe alto.
+- Atualizados prompt inicial, documentação e testes para orientar o modelo a usar `read_image` em screenshots/imagens locais e `fetch_image` em imagens externas públicas.
