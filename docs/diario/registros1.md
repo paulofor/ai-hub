@@ -1180,3 +1180,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitação recebida: avaliar se apenas ocultar mensagens antigas deixaria o browser pesado e ajustar para evitar esse risco.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a correção anterior reduzia o DOM renderizado, mas ainda preservava todo o array `conversation` em memória e continuava usando esse histórico completo ao montar o prompt; assim conversas longas poderiam continuar pesando no navegador e aumentando payloads internos.
 - Ajuste aplicado no frontend: o estado da conversa agora é podado para as últimas 10 mensagens sempre que novas mensagens são adicionadas ou atualizadas, e a tela informa que somente essa janela recente é mantida para evitar peso no navegador.
+
+## 2026-07-04 11:56:11 UTC-3
+- Diagnóstico de causa raiz da limitação de screenshot no sandbox: a imagem `apps/sandbox-orchestrator` instalava ferramentas de build/teste, mas não incluía um navegador headless; por isso agentes que precisavam gerar screenshots não encontravam Chrome/Chromium.
+- Atualizado o Dockerfile do sandbox-orchestrator para instalar `chromium` via apt e publicar variáveis de ambiente compatíveis com Playwright/Puppeteer (`CHROME_BIN`, `CHROMIUM_BIN`, `PUPPETEER_EXECUTABLE_PATH`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`).
+- Documentada a capacidade de screenshots automatizados na arquitetura do sandbox.
+
+## 2026-07-04 12:00:40 UTC-3
+- Pergunta recebida: se o modelo entenderia sozinho que o sandbox possui Chromium ou se seria necessário informar isso no prompt inicial.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: apenas instalar Chromium melhora a capacidade do ambiente, mas não garante que o modelo descubra essa capacidade sem gastar ciclos; o prompt inicial não anunciava navegador/headless nem orientava screenshot em tarefas visuais.
+- Ajustado o prompt inicial do runner para declarar Chromium em `/usr/bin/chromium`, variáveis compatíveis com Playwright/Puppeteer e orientação para usar screenshot automatizado quando houver UI, layout ou mudança visual; também foi adicionada cobertura de teste para essa instrução.
