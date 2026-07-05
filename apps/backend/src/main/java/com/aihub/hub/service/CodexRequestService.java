@@ -1389,10 +1389,17 @@ public class CodexRequestService {
     }
 
     private boolean applyInteractionSummary(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
-        if (request == null || response == null || response.interactions() == null) {
+        if (request == null || response == null) {
             return false;
         }
-        int interactionCount = response.interactions().size();
+        Integer responseInteractionCount = response.interactionCount();
+        if (responseInteractionCount == null && response.interactions() != null) {
+            responseInteractionCount = response.interactions().size();
+        }
+        if (responseInteractionCount == null) {
+            return false;
+        }
+        int interactionCount = responseInteractionCount;
         if (Objects.equals(request.getInteractionCount(), interactionCount)) {
             return false;
         }

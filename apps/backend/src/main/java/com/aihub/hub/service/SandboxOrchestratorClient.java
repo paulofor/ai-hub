@@ -198,6 +198,7 @@ public class SandboxOrchestratorClient {
         Integer httpGetCount,
         Integer httpGetSuccessCount,
         Integer dbQueryCount,
+        Integer interactionCount,
         List<Interaction> interactions,
         List<HttpRequest> httpRequests
     ) {
@@ -288,6 +289,7 @@ public class SandboxOrchestratorClient {
                 readInt(node, "httpGetCount", "http_get_count"),
                 readInt(node, "httpGetSuccessCount", "http_get_success_count"),
                 readInt(node, "dbQueryCount", "db_query_count"),
+                resolveInteractionCount(node, interactions),
                 interactions,
                 httpRequests
             );
@@ -350,6 +352,14 @@ public class SandboxOrchestratorClient {
                 return topLevel;
             }
             return readDecimal(node.path("usage"), "cost", "total_cost");
+        }
+
+        private static Integer resolveInteractionCount(JsonNode node, java.util.List<Interaction> interactions) {
+            Integer explicitCount = readInt(node, "interactionCount", "interaction_count", "interactionSequence", "interaction_sequence");
+            if (explicitCount != null) {
+                return explicitCount;
+            }
+            return interactions == null ? null : interactions.size();
         }
 
         private static String resolvePullRequestUrl(JsonNode node) {

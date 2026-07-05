@@ -71,7 +71,15 @@ function normalizeDatabaseConfig(raw: unknown): SandboxDatabaseConfig | undefine
 }
 
 function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
-  const sanitized: SandboxJob = { ...job, accessToken: undefined, githubToken: undefined, callbackSecret: undefined };
+  const sanitized: SandboxJob = {
+    ...job,
+    accessToken: undefined,
+    githubToken: undefined,
+    callbackSecret: undefined,
+    interactionCount: Number.isFinite(job.interactionCount)
+      ? job.interactionCount
+      : (Number.isFinite(job.interactionSequence) ? job.interactionSequence : job.interactions.length),
+  };
   if (job.database) {
     const { password: _password, ...database } = job.database;
     sanitized.database = database;
