@@ -253,6 +253,7 @@ class CodexRequestServiceTest {
                 1,
                 0,
                 null,
+                null,
                 null
             );
 
@@ -295,6 +296,7 @@ class CodexRequestServiceTest {
                 0,
                 0,
                 0,
+                3,
                 List.of(
                     new SandboxOrchestratorClient.SandboxOrchestratorJobResponse.Interaction(
                         "in-1",
@@ -332,6 +334,51 @@ class CodexRequestServiceTest {
         assertThat(request.getModelTranscript())
             .isEqualTo("Vou rastrear esse erro pelo fluxo completo.\n\nVerifiquei e corrigi a causa-raiz.");
         assertThat(request.getInteractionCount()).isEqualTo(3);
+        verify(codexRequestRepository).save(request);
+        verify(codexInteractionRepository, never()).save(any(CodexInteractionRecord.class));
+        verify(codexInteractionRepository, never()).existsBySandboxInteractionId(anyString());
+    }
+
+    @Test
+    void handleSandboxCallbackUsesExplicitInteractionCountWhenInteractionsAreNotReturned() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "investigue");
+        request.setExternalId("job-count-only");
+        request.setCreatedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        when(codexRequestRepository.findByExternalId("job-count-only")).thenReturn(Optional.of(request));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
+                "job-count-only",
+                "COMPLETED",
+                "Concluído",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:06:00Z",
+                300000L,
+                0,
+                0,
+                0,
+                0,
+                42,
+                null,
+                null
+            );
+
+        CodexRequestService service = buildService();
+        boolean updated = service.handleSandboxCallback(response);
+
+        assertThat(updated).isTrue();
+        assertThat(request.getInteractionCount()).isEqualTo(42);
         verify(codexRequestRepository).save(request);
         verify(codexInteractionRepository, never()).save(any(CodexInteractionRecord.class));
         verify(codexInteractionRepository, never()).existsBySandboxInteractionId(anyString());

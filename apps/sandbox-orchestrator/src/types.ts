@@ -55,6 +55,7 @@ export interface SandboxJob {
   summary?: string;
   interactions: SandboxInteraction[];
   interactionSequence: number;
+  interactionCount?: number;
   changedFiles?: string[];
   patch?: string;
   pullRequestUrl?: string;

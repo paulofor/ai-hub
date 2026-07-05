@@ -225,7 +225,7 @@ jobs:
             sed -i '/^BACKEND_IMAGE=/d; /^FRONTEND_IMAGE=/d; /^SANDBOX_ORCHESTRATOR_IMAGE=/d; /^CADDY_IMAGE=/d; /^MCP_SERVER_IMAGE=/d' .env && \
             printf '%s\n' \
               'CODEX_APP_SERVER_ENABLED=true' \
-              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=3600000' \
+              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000' \
               'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest' \
               'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest' \
               'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest' \

@@ -326,7 +326,7 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
-    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 60 * 60 * 1000);
+    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 120 * 60 * 1000);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
@@ -1762,6 +1762,7 @@ ${profileInstruction}`,
     const createdAt = new Date().toISOString();
     const currentSequence = Number.isFinite(job.interactionSequence) ? job.interactionSequence + 1 : 1;
     job.interactionSequence = currentSequence;
+    job.interactionCount = currentSequence;
     const sequence = currentSequence;
     const identifier = `${job.jobId}-${String(sequence).padStart(4, '0')}-${direction.toLowerCase()}`;
     const interaction: SandboxInteraction = {
