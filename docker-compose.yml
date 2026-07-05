@@ -68,11 +68,19 @@ services:
       CODEX_HOME: /var/lib/ai-hub/codex
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
+      - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
       - codex-auth-data:/var/lib/ai-hub/codex
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
         export OPENAI_API_KEY=$(cat /run/secrets/openai-token/openai_api_key);
+      fi;
+      if [ -f /run/secrets/github-packages/github_actor ]; then
+        export GITHUB_ACTOR=$(cat /run/secrets/github-packages/github_actor);
+      fi;
+      if [ -f /run/secrets/github-packages/github_token ]; then
+        export GITHUB_TOKEN=$(cat /run/secrets/github-packages/github_token);
+        export GITHUB_CLONE_TOKEN=${GITHUB_CLONE_TOKEN:-$GITHUB_TOKEN};
       fi;
       exec node dist/src/index.js"
     networks:
