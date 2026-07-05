@@ -79,6 +79,28 @@ const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
   return nodes;
 };
 
+const splitMarkdownTableRow = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+
+const isMarkdownTableDivider = (line: string) => {
+  const cells = splitMarkdownTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+};
+
+const parseMarkdownTable = (paragraph: string) => {
+  const lines = paragraph.split('\n').filter((line) => line.trim().length > 0);
+  if (lines.length < 2 || !lines.every((line) => line.includes('|')) || !isMarkdownTableDivider(lines[1])) {
+    return null;
+  }
+
+  const headers = splitMarkdownTableRow(lines[0]);
+  const rows = lines.slice(2).map(splitMarkdownTableRow);
+  if (headers.length < 2 || rows.some((row) => row.length !== headers.length)) {
+    return null;
+  }
+
+  return { headers, rows };
+};
+
 const MarkdownMessage = ({ content }: { content: string }) => {
   const normalized = stripModelThinking(content);
   const blocks = normalized.split(/(```[\s\S]*?```)/g).filter((block) => block.length > 0);
@@ -90,6 +112,21 @@ const MarkdownMessage = ({ content }: { content: string }) => {
       }
       return block.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0).map((paragraph, paragraphIndex) => {
         const lines = paragraph.split('\n');
+        const table = parseMarkdownTable(paragraph);
+        if (table) {
+          return <div key={`table-${blockIndex}-${paragraphIndex}`} className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-left text-sm">
+              <thead className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <tr>{table.headers.map((header, cellIndex) => <th key={cellIndex} className="border border-slate-200 px-3 py-2 font-semibold dark:border-slate-700">{renderInlineMarkdown(header, `th-${blockIndex}-${paragraphIndex}-${cellIndex}`)}</th>)}</tr>
+              </thead>
+              <tbody>
+                {table.rows.map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-white even:bg-slate-50 dark:odd:bg-slate-900 dark:even:bg-slate-950/40">
+                  {row.map((cell, cellIndex) => <td key={cellIndex} className="border border-slate-200 px-3 py-2 align-top dark:border-slate-700">{renderInlineMarkdown(cell, `td-${blockIndex}-${paragraphIndex}-${rowIndex}-${cellIndex}`)}</td>)}
+                </tr>)}
+              </tbody>
+            </table>
+          </div>;
+        }
         const listItems = lines.filter((line) => /^\s*[-*]\s+/.test(line));
         if (listItems.length === lines.length && listItems.length > 0) {
           return <ul key={`list-${blockIndex}-${paragraphIndex}`} className="list-disc space-y-1 pl-5">
