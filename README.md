@@ -44,6 +44,13 @@ infra/
 - Caso prefira armazenar o arquivo em outro diretório, defina `OPENAI_TOKEN_HOST_DIR` no `.env` apontando para a pasta que contém o `openai_api_key` antes de executar `docker-compose up`.
 - Caso o arquivo não esteja presente, o comportamento permanece igual ao anterior: as variáveis de ambiente definidas em `.env` continuam sendo usadas.
 
+### Armazenamento de credenciais GitHub Packages para a sandbox
+
+- Para dependências privadas do GitHub Packages usadas por comandos executados pelo modelo (ex.: Maven), prefira guardar as credenciais fora do repositório em `/root/infra/github-packages`.
+- Crie dois arquivos nesse diretório: `github_actor` com o usuário/owner autorizado e `github_token` com um PAT que tenha `read:packages` e acesso ao repositório/pacote privado.
+- O `sandbox-orchestrator` monta esse diretório como somente leitura e, se os arquivos existirem, exporta `GITHUB_ACTOR`, `GITHUB_TOKEN` e `GITHUB_CLONE_TOKEN` antes de iniciar o runner; assim o valor não depende de editar o `.env` versionado/sincronizado.
+- Caso prefira outro caminho no host, defina `GITHUB_PACKAGES_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém esses dois arquivos.
+
 ## Testes
 
 - Backend: `mvn -f apps/backend test`
