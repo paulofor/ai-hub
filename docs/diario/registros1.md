@@ -1212,3 +1212,24 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção da orientação após alerta do usuário sobre sobrescrita do `.env`: adicionada alternativa persistente fora do repositório para credenciais do GitHub Packages, montando `GITHUB_PACKAGES_TOKEN_HOST_DIR` no `sandbox-orchestrator` e exportando `GITHUB_ACTOR`/`GITHUB_TOKEN` a partir dos arquivos `github_actor` e `github_token` antes de iniciar o runner.
 - Complemento operacional para o host: orientar o operador a criar `/root/infra/github-packages`, gravar `github_actor` e `github_token` com permissões restritas, confirmar que o `docker-compose.yml` implantado já possui o mount de `/run/secrets/github-packages`, recriar o `sandbox-orchestrator` e validar as variáveis dentro do container sem imprimir o token.
 - Validação remota do host após o teste do usuário: o diretório `/root/infra/github-packages` já existe com `github_actor` e `github_token`, mas o `/root/ai-hub-6/docker-compose.yml` implantado ainda não contém o mount `/run/secrets/github-packages`; por isso o container ativo não recebe `GITHUB_ACTOR`/`GITHUB_TOKEN`. A ação correta é implantar a versão nova do compose ou aplicar temporariamente o patch no host e recriar o `sandbox-orchestrator`.
+
+## 2026-07-05 - Correção de renderização de tabelas Markdown no chat Codex
+
+- Pergunta de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o componente `MarkdownMessage` do chat renderizava somente blocos de código, listas simples e parágrafos; linhas de tabela Markdown eram tratadas como texto comum dentro de `<p>`, por isso a resposta do modelo aparecia com pipes em vez de uma tabela HTML.
+- Ajuste: adicionado parser local para tabelas Markdown simples com linha divisória (`|---|---|`) e renderização em `<table>` antes do fallback de listas/parágrafos.
+
+## 2026-07-05 - Proposta de cliente de e-mail para testes na sandbox
+
+- Solicitação recebida: explicar como oferecer um cliente de e-mail na sandbox para permitir testes.
+- Pergunta de causa raiz: por que hoje o modelo não consegue testar fluxos de e-mail de ponta a ponta?
+- Causa raiz: a sandbox já possui comandos, navegador headless e tools HTTP/imagem, mas não possui um SMTP/webmail/API descartável; por isso testes de e-mail dependem de mocks, serviços externos ou inspeção manual.
+- Proposta documentada: adicionar um serviço interno de captura de e-mail, preferencialmente Mailpit, expor SMTP/API somente na rede interna, informar as variáveis ao runner e evoluir para isolamento por job ou tool dedicada de leitura de mensagens.
+
+
+## 2026-07-05 - Implementação do cliente de e-mail na sandbox para Codex ChatGPT MKT
+
+- Solicitação recebida: implementar a proposta de cliente de e-mail na sandbox e comunicar essa capacidade ao modelo no perfil Codex ChatGPT MKT.
+- Pergunta de causa raiz: por que o modelo ainda não conseguiria testar e-mails mesmo com a documentação anterior?
+- Causa raiz: a proposta estava apenas documentada; faltavam um serviço SMTP/API real no compose, variáveis de ambiente estáveis no `sandbox-orchestrator` e instrução explícita no prompt do perfil `CHATGPT_CODEX_MKT`.
+- Ajuste aplicado: adicionado serviço interno `sandbox-mail` baseado em Mailpit, variáveis `SANDBOX_SMTP_HOST`, `SANDBOX_SMTP_PORT`, `SANDBOX_MAIL_WEB_URL` e `SANDBOX_MAIL_API_URL`, e instrução no perfil MKT para usar SMTP descartável e API/UI interna sem credenciais reais.

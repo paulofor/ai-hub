@@ -57,6 +57,14 @@ services:
       public-net:
         aliases:
           - aihub-frontend
+  sandbox-mail:
+    image: ${SANDBOX_MAIL_IMAGE:-axllent/mailpit:latest}
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - sandbox-mail
+
   sandbox-orchestrator:
     image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
     build:
@@ -64,8 +72,14 @@ services:
     env_file:
       - apps/sandbox-orchestrator/.env.example
       - .env
+    depends_on:
+      - sandbox-mail
     environment:
       CODEX_HOME: /var/lib/ai-hub/codex
+      SANDBOX_SMTP_HOST: ${SANDBOX_SMTP_HOST:-sandbox-mail}
+      SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}
+      SANDBOX_MAIL_WEB_URL: ${SANDBOX_MAIL_WEB_URL:-http://sandbox-mail:8025}
+      SANDBOX_MAIL_API_URL: ${SANDBOX_MAIL_API_URL:-http://sandbox-mail:8025/api/v1}
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
       - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
