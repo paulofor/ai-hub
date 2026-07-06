@@ -1233,3 +1233,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta de causa raiz: por que o modelo ainda não conseguiria testar e-mails mesmo com a documentação anterior?
 - Causa raiz: a proposta estava apenas documentada; faltavam um serviço SMTP/API real no compose, variáveis de ambiente estáveis no `sandbox-orchestrator` e instrução explícita no prompt do perfil `CHATGPT_CODEX_MKT`.
 - Ajuste aplicado: adicionado serviço interno `sandbox-mail` baseado em Mailpit, variáveis `SANDBOX_SMTP_HOST`, `SANDBOX_SMTP_PORT`, `SANDBOX_MAIL_WEB_URL` e `SANDBOX_MAIL_API_URL`, e instrução no perfil MKT para usar SMTP descartável e API/UI interna sem credenciais reais.
+
+## 2026-07-06 - Disponibilização da chave Gemini para o sandbox
+
+- Solicitação recebida: disponibilizar ao modelo, dentro do container do sandbox, a variável de ambiente `GEMINI_API_KEY` a partir do arquivo físico do host `/root/infra/gemini-token/gemini_api_key`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o `sandbox-orchestrator` já carregava segredos do host para OpenAI e GitHub Packages via mounts dedicados, mas não havia mount nem bootstrap para o diretório de token do Gemini; como os comandos do modelo herdam apenas o ambiente do processo Node, `GEMINI_API_KEY` nunca chegava ao runner.
+- Ajuste aplicado: adicionado mount somente leitura configurável por `GEMINI_TOKEN_HOST_DIR`, leitura do arquivo `gemini_api_key` no comando de inicialização do `sandbox-orchestrator` e documentação da variável para manter o segredo fora do repositório.

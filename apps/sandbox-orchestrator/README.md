@@ -48,6 +48,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `GITHUB_CLONE_TOKEN` | Token utilizado para todas as operações no GitHub (clone, push e criação de PR). Se ausente, o serviço tenta `GITHUB_TOKEN`, `GITHUB_PR_TOKEN` ou um token embutido em `repoUrl`. | *(vazio)* |
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
+| `GEMINI_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/gemini-token`; quando contém o arquivo `gemini_api_key`, o `docker-compose` exporta seu conteúdo como `GEMINI_API_KEY` antes de iniciar o runner, tornando a chave disponível aos comandos do modelo sem versionar o segredo. | `/root/infra/gemini-token` |
 
 ### Limites de contexto (`CONTEXT_*`)
 
