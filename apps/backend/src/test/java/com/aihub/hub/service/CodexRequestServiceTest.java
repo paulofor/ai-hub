@@ -17,6 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -106,13 +108,13 @@ class CodexRequestServiceTest {
     }
 
     @Test
-    void appliesFallbackAndStopsRefreshingWhenSandboxJobIsMissing() {
+    void findAppliesFallbackAndStopsRefreshingWhenSandboxJobIsMissing() {
         CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
         request.setExternalId("job-123");
         request.setStatus(CodexRequestStatus.FAILED);
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(20)));
 
-        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenAnswer(invocation -> List.of(request));
+        when(codexRequestRepository.findById(123L)).thenReturn(Optional.of(request));
         when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(promptRepository.findTopByRepoOrderByCreatedAtDesc(anyString())).thenReturn(Optional.empty());
         when(promptRepository.findTopByRepoAndRunIdAndPrNumberOrderByCreatedAtDesc(anyString(), anyLong(), anyInt())).thenReturn(Optional.empty());
@@ -123,15 +125,15 @@ class CodexRequestServiceTest {
 
         CodexRequestService service = buildService();
 
-        List<CodexRequest> firstRefresh = service.list();
-        assertThat(firstRefresh).containsExactly(request);
+        CodexRequest firstRefresh = service.find(123L);
+        assertThat(firstRefresh).isSameAs(request);
         assertThat(request.getResponseText()).contains("Sandbox não encontrou o job job-123");
         assertThat(request.getPromptTokens()).isZero();
         verify(codexRequestRepository).save(request);
         verify(sandboxOrchestratorClient).getJob("job-123");
 
-        List<CodexRequest> secondRefresh = service.list();
-        assertThat(secondRefresh).containsExactly(request);
+        CodexRequest secondRefresh = service.find(123L);
+        assertThat(secondRefresh).isSameAs(request);
         verify(sandboxOrchestratorClient, times(1)).getJob("job-123");
     }
 
@@ -198,6 +200,44 @@ class CodexRequestServiceTest {
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
 
+
+
+    @Test
+    void listDoesNotRefreshRunningRequestDuringPolling() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-running-list");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
+
+        when(codexRequestRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(request));
+        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
+
+        CodexRequestService service = buildService();
+
+        List<CodexRequest> listed = service.list();
+
+        assertThat(listed).containsExactly(request);
+        verify(sandboxOrchestratorClient, never()).getJob("job-running-list");
+        verify(codexRequestRepository, never()).save(any(CodexRequest.class));
+    }
+
+    @Test
+    void listPageDoesNotRefreshRunningRequestDuringPolling() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-running-page");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
+
+        when(codexRequestRepository.findAllByOrderByCreatedAtDesc(any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(request)));
+        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
+
+        CodexRequestService service = buildService();
+
+        assertThat(service.listPage(0, 5, null).getContent()).containsExactly(request);
+        verify(sandboxOrchestratorClient, never()).getJob("job-running-page");
+        verify(codexRequestRepository, never()).save(any(CodexRequest.class));
+    }
 
     @Test
     void findRefreshesStaleRunningRequestWhenDetailIsOpened() {
