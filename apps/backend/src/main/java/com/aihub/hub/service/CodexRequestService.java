@@ -13,12 +13,14 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
-import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
@@ -60,6 +62,7 @@ public class CodexRequestService {
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
     private static final Set<Long> SANDBOX_REFRESHES_IN_PROGRESS = ConcurrentHashMap.newKeySet();
+    private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
 
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
@@ -79,6 +82,7 @@ public class CodexRequestService {
     private final String sandboxCallbackSecret;
     private final int smartEconomyEconomyTokenCeiling;
     private final boolean codexAppServerEnabled;
+    private final ObjectMapper objectMapper;
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -90,6 +94,7 @@ public class CodexRequestService {
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                GithubAppAuth githubAppAuth,
                                TokenCostCalculator tokenCostCalculator,
+                               ObjectMapper objectMapper,
                                PlatformTransactionManager transactionManager,
                                @Value("${hub.codex.model:gpt-5-codex}") String defaultModel,
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
@@ -108,6 +113,7 @@ public class CodexRequestService {
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.githubAppAuth = githubAppAuth;
         this.tokenCostCalculator = tokenCostCalculator;
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is required");
         this.defaultModel = defaultModel;
         this.economyModel = economyModel;
         this.defaultBranch = defaultBranch;
@@ -151,6 +157,7 @@ public class CodexRequestService {
         codexRequest.setTimeoutCount(0);
         codexRequest.setHttpGetCount(0);
         codexRequest.setDbQueryCount(0);
+        codexRequest.setImageAttachmentsJson(serializeImageAttachments(request.getImageAttachments()));
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
         PromptRecord promptRecord = new PromptRecord(
@@ -164,10 +171,52 @@ public class CodexRequestService {
         promptRepository.save(promptRecord);
 
         CodexRequest saved = saveRequest(codexRequest);
-        log.info("CodexRequest {} salvo, enviando para sandbox se aplicável", saved.getId());
+        log.info("CodexRequest {} salvo, avaliando fila de execução", saved.getId());
         saved.setInteractionCount(0);
+        if (hasActiveRequest(saved.getProfile())) {
+            log.info("CodexRequest {} mantida em fila: já existe execução ativa para o perfil {}", saved.getId(), saved.getProfile());
+            return saved;
+        }
         dispatchToSandbox(saved, request.getImageAttachments());
         return saved;
+    }
+
+    private String serializeImageAttachments(List<CreateCodexRequest.ImageAttachment> imageAttachments) {
+        if (imageAttachments == null || imageAttachments.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(imageAttachments);
+        } catch (JsonProcessingException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Não foi possível salvar as imagens anexadas da solicitação", ex);
+        }
+    }
+
+    private List<CreateCodexRequest.ImageAttachment> deserializeImageAttachments(CodexRequest request) {
+        if (request == null || !StringUtils.hasText(request.getImageAttachmentsJson())) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(request.getImageAttachmentsJson(), new TypeReference<List<CreateCodexRequest.ImageAttachment>>() { });
+        } catch (JsonProcessingException ex) {
+            log.error("Falha ao ler imagens anexadas da CodexRequest {} em fila", request.getId(), ex);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível recuperar as imagens da solicitação em fila", ex);
+        }
+    }
+
+    private boolean hasActiveRequest(CodexIntegrationProfile profile) {
+        return codexRequestRepository.existsByProfileAndStatusInAndExternalIdIsNotNull(profile, ACTIVE_QUEUE_STATUSES);
+    }
+
+    private void dispatchNextQueuedRequest(CodexIntegrationProfile profile) {
+        if (profile == null || hasActiveRequest(profile)) {
+            return;
+        }
+        codexRequestRepository.findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(profile, CodexRequestStatus.PENDING)
+            .ifPresent(next -> {
+                log.info("Despachando próxima CodexRequest {} da fila do perfil {}", next.getId(), profile);
+                dispatchToSandbox(next, deserializeImageAttachments(next));
+            });
     }
 
     public Optional<ResponseRecord> findLatestResponseForEnvironment(String environment) {
@@ -776,6 +825,9 @@ public class CodexRequestService {
             } else {
                 log.info("Callback do sandbox recebido para CodexRequest {} sem alterações", managed.getId());
             }
+            if (Optional.ofNullable(managed.getStatus()).orElse(CodexRequestStatus.PENDING).isTerminal()) {
+                dispatchNextQueuedRequest(managed.getProfile());
+            }
             return updated;
         } finally {
             if (managed.getId() != null) {
@@ -837,6 +889,10 @@ public class CodexRequestService {
         if (updated || usageUpdated || interactionSummaryUpdated) {
             saveRequest(request);
             log.info("CodexRequest {} atualizado a partir do sandbox", request.getId());
+        }
+
+        if (Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING).isTerminal()) {
+            dispatchNextQueuedRequest(request.getProfile());
         }
 
         recordResponse(extractMetadata(request.getEnvironment()), response);

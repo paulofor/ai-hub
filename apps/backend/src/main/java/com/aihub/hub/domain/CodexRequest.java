@@ -84,6 +84,11 @@ public class CodexRequest {
     @Column(name = "external_id")
     private String externalId;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "image_attachments_json", columnDefinition = "LONGTEXT")
+    @JsonIgnore
+    private String imageAttachmentsJson;
+
     @Column(name = "pull_request_url")
     private String pullRequestUrl;
 
@@ -276,6 +281,14 @@ public class CodexRequest {
 
     public void setExternalId(String externalId) {
         this.externalId = externalId;
+    }
+
+    public String getImageAttachmentsJson() {
+        return imageAttachmentsJson;
+    }
+
+    public void setImageAttachmentsJson(String imageAttachmentsJson) {
+        this.imageAttachmentsJson = imageAttachmentsJson;
     }
 
     public String getPullRequestUrl() {
