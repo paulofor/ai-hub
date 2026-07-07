@@ -1254,3 +1254,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: por que esse erro aconteceu?
 - Causa raiz: o checkout atual não continha as alterações descritas no histórico da conversa; além disso, o aviso de conclusão tratava toda transição terminal como fim da fila, então acionava marcador visual e três repetições sonoras mesmo quando outra solicitação ainda estava `PENDING` ou `RUNNING`.
 - Ajuste aplicado: a UI agora verifica se ainda há solicitação não terminal antes de marcar a aba; quando há próxima solicitação, toca somente uma repetição sonora. O prompt Codex MKT recebeu o objetivo principal de gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub no frontend e nos dois caminhos do sandbox-orchestrator.
+
+## 2026-07-07 - Draft PR para ajustes do chat Codex
+
+- Solicitação recebida: gerar como draft o PR dos ajustes do chat Codex.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: a branch remota `agent/codex-chat-20-interacoes-pendentes` existia, mas apontava para o mesmo commit de `main`, e o commit local citado no histórico não estava disponível neste checkout; portanto não havia diff real para abrir PR.
+- Alternativas avaliadas: abrir PR vazio para preservar o fluxo, reconstruir somente as mudanças solicitadas, ou abandonar o draft até recuperar o commit original. A melhor opção foi reconstruir o ajuste mínimo, pois evita PR sem valor e atende ao pedido atual sem depender de estado local perdido.
+- Ajuste reaplicado: a tela Codex ChatGPT carrega 20 itens, mantém até 20 mensagens visíveis, mostra data e hora nos balões de usuário/modelo e oferece apagar solicitações `PENDING` antes do envio. O backend expõe `DELETE /api/codex/requests/{id}` limitado a solicitações `PENDING` sem `externalId`.
