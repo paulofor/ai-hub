@@ -7,6 +7,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
+import com.aihub.hub.dto.UpdatePendingCodexRequest;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -22,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -205,6 +207,11 @@ public class CodexController {
     @PostMapping("/{id}/cancel")
     public CodexRequest cancel(@PathVariable Long id) {
         return codexRequestService.cancel(id);
+    }
+
+    @PatchMapping("/{id}")
+    public CodexRequest updatePending(@PathVariable Long id, @Valid @RequestBody UpdatePendingCodexRequest request) {
+        return codexRequestService.updatePendingBeforeDispatch(id, request);
     }
 
     @DeleteMapping("/{id}")

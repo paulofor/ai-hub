@@ -13,6 +13,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
+import com.aihub.hub.dto.UpdatePendingCodexRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -997,6 +998,21 @@ public class CodexRequestService {
         CodexRequest saved = saveRequest(request);
         updateInteractionCount(saved);
         return saved;
+    }
+
+    @Transactional
+    public CodexRequest updatePendingBeforeDispatch(Long id, UpdatePendingCodexRequest payload) {
+        CodexRequest request = codexRequestRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (status != CodexRequestStatus.PENDING || StringUtils.hasText(request.getExternalId())) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Só é possível editar solicitações pendentes antes do envio"
+            );
+        }
+        request.setPrompt(payload.getPrompt().trim());
+        return saveRequest(request);
     }
 
     @Transactional

@@ -164,6 +164,14 @@ interface ChatMessage {
 
 const trimConversationMessages = (messages: ChatMessage[]) => messages.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
 
+const resolveAssistantMessageTimestamp = (request: CodexRequest, currentCreatedAt?: string) => {
+  if (!isTerminalStatus(request.status)) {
+    return currentCreatedAt ?? request.createdAt ?? new Date().toISOString();
+  }
+
+  return request.finishedAt ?? currentCreatedAt ?? new Date().toISOString();
+};
+
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
   784,
@@ -470,6 +478,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
+  const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
+  const [editingDraft, setEditingDraft] = useState('');
+  const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
   const conversationPollInFlight = useRef(false);
 
   useModelResponseTabMarker(conversation, config.title);
@@ -724,8 +735,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setImageAttachments((current) => current.filter((item) => item.id !== id));
   }, []);
 
-  const buildConversationPrompt = useCallback((message: string) => {
-    const history = conversation.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
+  const buildConversationPromptFromHistory = useCallback((message: string, historyMessages: ChatMessage[]) => {
+    const history = historyMessages.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
     return [
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
@@ -734,14 +745,24 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       history ? `Histórico da conversa:\n${history}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, conversation]);
+  }, [config.promptExtraLines, config.promptModeLine]);
+
+  const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
   const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     setConversation((current) => trimConversationMessages(current.map((message) => {
       if (message.role !== 'assistant' || message.requestId !== request.id) return message;
-      return { ...message, status: request.status, content: isTerminalStatus(request.status) ? extractAssistantContent(request) : `Aguardando resposta do modelo... (${formatStatus(request.status)})` };
+      const becameTerminal = !message.status || !isTerminalStatus(message.status);
+      return {
+        ...message,
+        status: request.status,
+        content: isTerminalStatus(request.status) ? extractAssistantContent(request) : `Aguardando resposta do modelo... (${formatStatus(request.status)})`,
+        createdAt: isTerminalStatus(request.status) && becameTerminal
+          ? resolveAssistantMessageTimestamp(request)
+          : resolveAssistantMessageTimestamp(request, message.createdAt)
+      };
     })));
   }, [extractAssistantContent]);
 
@@ -766,7 +787,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const created = parseCodexRequest(response.data);
       if (created) {
         setPrResult(null);
-        setConversation((current) => trimConversationMessages([...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: `Aguardando resposta do modelo... (${formatStatus(created.status)})`, requestId: created.id, status: created.status, createdAt: new Date().toISOString() }]));
+        setConversation((current) => trimConversationMessages([...current, {
+          id: `${Date.now()}-assistant`,
+          role: 'assistant',
+          content: isTerminalStatus(created.status) ? extractAssistantContent(created) : `Aguardando resposta do modelo... (${formatStatus(created.status)})`,
+          requestId: created.id,
+          status: created.status,
+          createdAt: resolveAssistantMessageTimestamp(created)
+        }]));
       }
       setPrompt('');
       setImageAttachments([]);
@@ -779,7 +807,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, environment, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
+  }, [buildConversationPrompt, config.profile, environment, extractAssistantContent, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
 
 
   useEffect(() => {
@@ -837,12 +865,93 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [conversation]);
 
+  const findUserMessageIndexForRequest = useCallback((requestId: number) => {
+    const assistantIndex = conversation.findIndex((message) => message.role === 'assistant' && message.requestId === requestId);
+    if (assistantIndex <= 0) return -1;
+    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+      if (conversation[index].role === 'user') return index;
+    }
+    return -1;
+  }, [conversation]);
+
+  const handleStartEditPendingRequest = useCallback((requestId: number) => {
+    const userIndex = findUserMessageIndexForRequest(requestId);
+    if (userIndex < 0) {
+      setError('Não foi possível localizar a mensagem do usuário para editar esta solicitação.');
+      return;
+    }
+    setEditingRequestId(requestId);
+    setEditingDraft(conversation[userIndex].content);
+    setError(null);
+  }, [conversation, findUserMessageIndexForRequest]);
+
+  const handleCancelEditPendingRequest = useCallback(() => {
+    setEditingRequestId(null);
+    setEditingDraft('');
+  }, []);
+
+  const handleSaveEditPendingRequest = useCallback(async (requestId: number) => {
+    if (savingEditRequestId) return;
+    const nextMessage = editingDraft.trim();
+    if (!nextMessage) {
+      setError('Informe o novo texto da solicitação antes de salvar.');
+      return;
+    }
+    const userIndex = findUserMessageIndexForRequest(requestId);
+    if (userIndex < 0) {
+      setError('Não foi possível localizar a mensagem do usuário para editar esta solicitação.');
+      return;
+    }
+    const userMessageId = conversation[userIndex].id;
+    const requestPrompt = buildConversationPromptFromHistory(nextMessage, conversation.slice(0, userIndex));
+    setSavingEditRequestId(requestId);
+    try {
+      const response = await client.patch(`/codex/requests/${requestId}`, { prompt: requestPrompt });
+      const updated = parseCodexRequest(response.data);
+      setConversation((current) => trimConversationMessages(current.map((message) => {
+        if (message.id === userMessageId && message.role === 'user') {
+          return { ...message, content: nextMessage };
+        }
+        if (updated && message.role === 'assistant' && message.requestId === requestId) {
+          return {
+            ...message,
+            status: updated.status,
+            content: isTerminalStatus(updated.status) ? extractAssistantContent(updated) : `Aguardando resposta do modelo... (${formatStatus(updated.status)})`,
+            createdAt: resolveAssistantMessageTimestamp(updated, message.createdAt)
+          };
+        }
+        return message;
+      })));
+      setEditingRequestId(null);
+      setEditingDraft('');
+      await loadRequests();
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingEditRequestId(null);
+    }
+  }, [buildConversationPromptFromHistory, conversation, editingDraft, extractAssistantContent, findUserMessageIndexForRequest, loadRequests, savingEditRequestId]);
+
   const handleDeletePendingRequest = useCallback(async (requestId: number) => {
     if (deletingRequestId) return;
     setDeletingRequestId(requestId);
     try {
       await client.delete(`/codex/requests/${requestId}`);
-      setConversation((current) => current.filter((message) => message.requestId !== requestId));
+      setConversation((current) => trimConversationMessages(current.map((message) => {
+        if (message.role !== 'assistant' || message.requestId !== requestId) return message;
+        return {
+          ...message,
+          content: `Solicitação #${requestId} apagada antes do envio ao modelo. Nenhuma resposta será gerada para esta mensagem.`,
+          requestId: undefined,
+          status: undefined,
+          createdAt: new Date().toISOString()
+        };
+      })));
+      if (editingRequestId === requestId) {
+        setEditingRequestId(null);
+        setEditingDraft('');
+      }
       await loadRequests();
       setError(null);
     } catch (err) {
@@ -850,7 +959,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setDeletingRequestId(null);
     }
-  }, [deletingRequestId, loadRequests]);
+  }, [deletingRequestId, editingRequestId, loadRequests]);
 
   return (
     <section className="space-y-6">
@@ -885,18 +994,27 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <p className="text-sm text-slate-500">{config.description}</p>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <p className="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">Mantemos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} interações nesta conversa para evitar peso no navegador.</p>
-          {conversation.map((message) => (
-            <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
+          {conversation.map((message, messageIndex) => {
+            const nextMessage = conversation[messageIndex + 1];
+            const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
+            return <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
               <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <span>{message.role === 'user' ? 'Usuário' : 'Modelo'} · {formatDateTime(message.createdAt)}</span>
                 <span className="flex items-center gap-2">
+                  {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
-              <MarkdownMessage content={message.content} />
-            </article>
-          ))}
+              {isEditingUserMessage ? <div className="space-y-2">
+                <textarea value={editingDraft} onChange={(event) => setEditingDraft(event.target.value)} rows={4} className="w-full rounded-md border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100" />
+                <div className="flex flex-wrap justify-end gap-2 text-xs">
+                  <button type="button" onClick={handleCancelEditPendingRequest} disabled={savingEditRequestId === editingRequestId} className="rounded-md border border-slate-300 px-3 py-1 font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Cancelar</button>
+                  <button type="button" onClick={() => editingRequestId ? handleSaveEditPendingRequest(editingRequestId) : undefined} disabled={!editingRequestId || savingEditRequestId === editingRequestId} className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white disabled:opacity-50">Salvar edição</button>
+                </div>
+              </div> : <MarkdownMessage content={message.content} />}
+            </article>;
+          })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
         <div className="grid gap-3 md:grid-cols-2">
           <select value={environment} onChange={(e) => setEnvironment(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
