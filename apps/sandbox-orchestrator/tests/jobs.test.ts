@@ -587,6 +587,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
     assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
+    assert.ok(input?.[0]?.text?.includes('Nosso objetivo principal é gerar vendas em larga escala'));
     assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));

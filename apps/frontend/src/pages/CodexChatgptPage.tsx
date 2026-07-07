@@ -182,6 +182,7 @@ const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
   1568,
 ] as const;
 const RESPONSE_READY_MELODY_REPETITIONS = 3;
+const RESPONSE_READY_MELODY_QUEUED_REPETITIONS = 1;
 const RESPONSE_READY_NOTE_DURATION_MS = 95;
 const RESPONSE_READY_NOTE_GAP_MS = 18;
 const RESPONSE_READY_MELODY_REPEAT_GAP_MS = 180;
@@ -212,7 +213,7 @@ const unlockResponseReadyAudio = () => {
   });
 };
 
-const playResponseReadyBeep = () => {
+const playResponseReadyBeep = (repetitions = RESPONSE_READY_MELODY_REPETITIONS) => {
   const audioContext = getResponseReadyAudioContext();
   if (!audioContext || !responseReadyAudioUnlocked) return;
 
@@ -222,7 +223,7 @@ const playResponseReadyBeep = () => {
   const repeatStepSeconds =
     RESPONSE_READY_MELODY_FREQUENCIES_HZ.length * noteStepSeconds + RESPONSE_READY_MELODY_REPEAT_GAP_MS / 1000;
 
-  for (let repetition = 0; repetition < RESPONSE_READY_MELODY_REPETITIONS; repetition += 1) {
+  for (let repetition = 0; repetition < repetitions; repetition += 1) {
     RESPONSE_READY_MELODY_FREQUENCIES_HZ.forEach((frequency, noteIndex) => {
       const startTime = now + repetition * repeatStepSeconds + noteIndex * noteStepSeconds;
       const endTime = startTime + noteDurationSeconds;
@@ -345,8 +346,11 @@ const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) =
 
     previousStatusesRef.current = nextStatuses;
     if (shouldNotify) {
-      showMarker();
-      playResponseReadyBeep();
+      const hasQueuedOrRunningRequest = Array.from(nextStatuses.values()).some((status) => !isTerminalStatus(status));
+      if (!hasQueuedOrRunningRequest) {
+        showMarker();
+      }
+      playResponseReadyBeep(hasQueuedOrRunningRequest ? RESPONSE_READY_MELODY_QUEUED_REPETITIONS : RESPONSE_READY_MELODY_REPETITIONS);
     }
   }, [conversation, showMarker]);
 };
@@ -386,6 +390,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   placeholder: 'Digite sua solicitação de análise de marketing... Ex.: avalie campanhas, estratégias, canais, resultados e gere orientações de melhoria.',
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed no modo MKT.',
   promptExtraLines: [
+    'Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub.',
     'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
