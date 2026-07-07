@@ -462,10 +462,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
-  const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
-  const activeRequestPollInFlight = useRef(false);
+  const conversationPollInFlight = useRef(false);
 
   useModelResponseTabMarker(conversation, config.title);
 
@@ -760,7 +759,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       });
       const created = parseCodexRequest(response.data);
       if (created) {
-        setActiveRequestId(created.id);
         setPrResult(null);
         setConversation((current) => trimConversationMessages([...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: `Aguardando resposta do modelo... (${formatStatus(created.status)})`, requestId: created.id, status: created.status, createdAt: new Date().toISOString() }]));
       }
@@ -779,28 +777,32 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
 
   useEffect(() => {
-    if (!activeRequestId) return undefined;
-    const refreshActiveRequest = () => {
-      if (activeRequestPollInFlight.current) {
+    const pendingRequestIds = conversation
+      .filter((message) => message.role === 'assistant' && message.requestId && message.status && !isTerminalStatus(message.status))
+      .map((message) => message.requestId as number);
+    if (pendingRequestIds.length === 0) return undefined;
+
+    const refreshPendingRequests = () => {
+      if (conversationPollInFlight.current) {
         return;
       }
-      activeRequestPollInFlight.current = true;
-      client.get(`/codex/requests/${activeRequestId}`)
-        .then((response) => {
-          const parsed = parseCodexRequest(response.data);
-          if (!parsed) return;
-          updateAssistantFromRequest(parsed);
-          if (isTerminalStatus(parsed.status)) setActiveRequestId(null);
+      conversationPollInFlight.current = true;
+      Promise.all(pendingRequestIds.map((requestId) => client.get(`/codex/requests/${requestId}`)))
+        .then((responses) => {
+          responses.forEach((response) => {
+            const parsed = parseCodexRequest(response.data);
+            if (parsed) updateAssistantFromRequest(parsed);
+          });
         })
         .catch((err: Error) => registerTelemetry('poll_error', `Falha ao atualizar conversa: ${err.message}`))
         .finally(() => {
-          activeRequestPollInFlight.current = false;
+          conversationPollInFlight.current = false;
         });
     };
-    refreshActiveRequest();
-    const intervalId = window.setInterval(refreshActiveRequest, POLL_INTERVAL_MS);
+    refreshPendingRequests();
+    const intervalId = window.setInterval(refreshPendingRequests, POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [activeRequestId, registerTelemetry, updateAssistantFromRequest]);
+  }, [conversation, registerTelemetry, updateAssistantFromRequest]);
 
   const handleCreatePr = useCallback(async () => {
     const lastCompleted = [...conversation].reverse().find((message) => message.role === 'assistant' && message.requestId && message.status === 'COMPLETED');
@@ -901,8 +903,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </ul> : null}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model || Boolean(activeRequestId)} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
-          <button type="button" onClick={handleCreatePr} disabled={prLoading || Boolean(activeRequestId) || !conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED')} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
+          <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
+          <button type="button" onClick={handleCreatePr} disabled={prLoading || conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status)) || !conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED')} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
         </div>
         {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}

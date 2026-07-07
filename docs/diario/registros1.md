@@ -1240,3 +1240,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: por que esse erro aconteceu?
 - Causa raiz: o `sandbox-orchestrator` já carregava segredos do host para OpenAI e GitHub Packages via mounts dedicados, mas não havia mount nem bootstrap para o diretório de token do Gemini; como os comandos do modelo herdam apenas o ambiente do processo Node, `GEMINI_API_KEY` nunca chegava ao runner.
 - Ajuste aplicado: adicionado mount somente leitura configurável por `GEMINI_TOKEN_HOST_DIR`, leitura do arquivo `gemini_api_key` no comando de inicialização do `sandbox-orchestrator` e documentação da variável para manter o segredo fora do repositório.
+
+## 2026-07-07 - Fila backend para solicitações Codex ChatGPT
+
+- Solicitação recebida: permitir que o usuário escreva e salve a próxima solicitação do Codex ChatGPT MKT enquanto a atual ainda está em execução, com controle de fila no backend e preservação das imagens anexadas.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: a tela bloqueava novos envios enquanto havia `activeRequestId` e o backend despachava toda solicitação imediatamente para o sandbox, sem persistir anexos em uma estrutura reutilizável para execução posterior; assim não havia uma fila confiável no servidor e imagens de uma solicitação futura poderiam ficar apenas no estado do navegador.
+- Ajuste aplicado: o backend agora salva os anexos serializados na própria `codex_requests`, mantém novas solicitações como `PENDING` sem `external_id` quando já existe execução ativa para o perfil, e despacha automaticamente a próxima solicitação pendente ao detectar término da atual. A UI passou a permitir novos envios durante execuções pendentes/em andamento e monitora todas as respostas não terminais da conversa.

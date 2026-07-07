@@ -13,6 +13,7 @@ import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ResponseRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -84,6 +85,7 @@ class CodexRequestServiceTest {
             sandboxOrchestratorClient,
             githubAppAuth,
             tokenCostCalculator,
+            new ObjectMapper(),
             transactionManager,
             "gpt-5-codex",
             "gpt-4.1-mini",
