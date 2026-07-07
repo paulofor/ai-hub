@@ -1000,6 +1000,20 @@ public class CodexRequestService {
     }
 
     @Transactional
+    public void deletePendingBeforeDispatch(Long id) {
+        CodexRequest request = codexRequestRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        if (status != CodexRequestStatus.PENDING || StringUtils.hasText(request.getExternalId())) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Só é possível apagar solicitações pendentes antes do envio"
+            );
+        }
+        codexRequestRepository.delete(request);
+    }
+
+    @Transactional
     public CodexRequest rate(Long id, RateCodexRequest payload) {
         CodexRequest request = codexRequestRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação Codex não encontrada"));

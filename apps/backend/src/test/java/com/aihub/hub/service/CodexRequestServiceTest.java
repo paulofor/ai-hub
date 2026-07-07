@@ -21,6 +21,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -219,6 +221,36 @@ class CodexRequestServiceTest {
         assertThat(found.getInteractionCount()).isEqualTo(2);
         verify(sandboxOrchestratorClient).getJob("job-detail-missing");
         verify(codexRequestRepository).save(request);
+    }
+
+    @Test
+    void deletesPendingRequestBeforeDispatch() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "next task");
+        request.setStatus(CodexRequestStatus.PENDING);
+
+        when(codexRequestRepository.findById(42L)).thenReturn(Optional.of(request));
+
+        CodexRequestService service = buildService(true);
+
+        service.deletePendingBeforeDispatch(42L);
+
+        verify(codexRequestRepository).delete(request);
+    }
+
+    @Test
+    void refusesToDeletePendingRequestAlreadyDispatched() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "running task");
+        request.setStatus(CodexRequestStatus.PENDING);
+        request.setExternalId("job-123");
+
+        when(codexRequestRepository.findById(43L)).thenReturn(Optional.of(request));
+
+        CodexRequestService service = buildService(true);
+
+        assertThatThrownBy(() -> service.deletePendingBeforeDispatch(43L))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("Só é possível apagar solicitações pendentes antes do envio");
+        verify(codexRequestRepository, never()).delete(any(CodexRequest.class));
     }
 
     @Test

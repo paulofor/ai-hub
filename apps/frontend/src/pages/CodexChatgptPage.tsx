@@ -37,7 +37,7 @@ const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const MAX_VISIBLE_CONVERSATION_MESSAGES = 10;
+const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 
 
 const formatInteractionCount = (count?: number) => {
@@ -469,6 +469,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
+  const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
   const conversationPollInFlight = useRef(false);
 
   useModelResponseTabMarker(conversation, config.title);
@@ -512,7 +513,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
     try {
-      const response = await client.get('/codex/requests', { params: { page: 0, size: 10 } });
+      const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       setRequests(parsed);
     } finally {
@@ -836,6 +837,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [conversation]);
 
+  const handleDeletePendingRequest = useCallback(async (requestId: number) => {
+    if (deletingRequestId) return;
+    setDeletingRequestId(requestId);
+    try {
+      await client.delete(`/codex/requests/${requestId}`);
+      setConversation((current) => current.filter((message) => message.requestId !== requestId));
+      await loadRequests();
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeletingRequestId(null);
+    }
+  }, [deletingRequestId, loadRequests]);
+
   return (
     <section className="space-y-6">
       <h2 className="text-2xl font-semibold">{config.title}</h2>
@@ -872,8 +888,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {conversation.map((message) => (
             <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
               <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <span>{message.role === 'user' ? 'Usuário' : 'Modelo'}</span>
-                {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
+                <span>{message.role === 'user' ? 'Usuário' : 'Modelo'} · {formatDateTime(message.createdAt)}</span>
+                <span className="flex items-center gap-2">
+                  {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
+                  {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
+                </span>
               </div>
               <MarkdownMessage content={message.content} />
             </article>
@@ -929,7 +948,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span>
                 <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span>
               </div> : null}
-              <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
+              <div className="mt-1 flex flex-wrap gap-3">
+                <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
+                {item.status === 'PENDING' && !item.externalId ? <button type="button" onClick={() => handleDeletePendingRequest(item.id)} disabled={deletingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
+              </div>
             </li>
           ))}
         </ul>
