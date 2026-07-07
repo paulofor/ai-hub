@@ -1247,3 +1247,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: por que esse erro aconteceu?
 - Causa raiz: a tela bloqueava novos envios enquanto havia `activeRequestId` e o backend despachava toda solicitação imediatamente para o sandbox, sem persistir anexos em uma estrutura reutilizável para execução posterior; assim não havia uma fila confiável no servidor e imagens de uma solicitação futura poderiam ficar apenas no estado do navegador.
 - Ajuste aplicado: o backend agora salva os anexos serializados na própria `codex_requests`, mantém novas solicitações como `PENDING` sem `external_id` quando já existe execução ativa para o perfil, e despacha automaticamente a próxima solicitação pendente ao detectar término da atual. A UI passou a permitir novos envios durante execuções pendentes/em andamento e monitora todas as respostas não terminais da conversa.
+
+## 2026-07-07 12:21:17 UTC - PR de avisos da fila e objetivo Codex MKT
+
+- Solicitação recebida: gerar PR com os ajustes de aviso de final de execução e prompt do perfil Codex MKT.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o checkout atual não continha as alterações descritas no histórico da conversa; além disso, o aviso de conclusão tratava toda transição terminal como fim da fila, então acionava marcador visual e três repetições sonoras mesmo quando outra solicitação ainda estava `PENDING` ou `RUNNING`.
+- Ajuste aplicado: a UI agora verifica se ainda há solicitação não terminal antes de marcar a aba; quando há próxima solicitação, toca somente uma repetição sonora. O prompt Codex MKT recebeu o objetivo principal de gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub no frontend e nos dois caminhos do sandbox-orchestrator.
