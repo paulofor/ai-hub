@@ -1944,6 +1944,7 @@ test('pushes changes and opens a pull request when credentials are present', asy
     repoSlug: 'example/repo',
     repoUrl: bareRepo,
     branch: 'main',
+    workBranch: 'ai-hub/codex-example-repo-main-chatgpt',
     taskDescription: 'update readme',
     status: 'PENDING',
     logs: [],
@@ -1959,8 +1960,8 @@ test('pushes changes and opens a pull request when credentials are present', asy
 
   await processor.process(job);
 
-  const heads = execSync(`git ls-remote ${bareRepo} refs/heads/ai-hub/cifix-${job.jobId}`);
-  assert.ok(heads.toString().includes(`ai-hub/cifix-${job.jobId}`));
+  const heads = execSync(`git ls-remote ${bareRepo} refs/heads/${job.workBranch}`);
+  assert.ok(heads.toString().includes(job.workBranch ?? ''));
   assert.equal(job.pullRequestUrl, 'https://github.com/example/repo/pull/1');
   assert.ok(fetchCalls.length > 0, 'fetch não foi chamado para criar PR');
   assert.ok(

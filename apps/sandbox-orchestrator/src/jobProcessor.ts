@@ -4404,11 +4404,16 @@ grep -R -n -- "$@"
       return;
     }
 
-    const branchName = `ai-hub/cifix-${job.jobId}`;
+    const branchName = this.resolveWorkBranch(job);
     try {
       await exec('git config user.email "ai-hub-bot@example.com"', { cwd: repoPath });
       await exec('git config user.name "AI Hub Bot"', { cwd: repoPath });
-      await exec(`git checkout -B ${branchName}`, { cwd: repoPath });
+      const existingRemoteBranch = await this.checkoutWorkBranch(repoPath, branchName);
+      if (existingRemoteBranch) {
+        this.log(job, `branch de trabalho existente reutilizada: ${branchName}`);
+      } else {
+        this.log(job, `branch de trabalho criada: ${branchName}`);
+      }
       await exec('git add -A', { cwd: repoPath });
       await exec('git commit -m "Correção automática do AI Hub"', { cwd: repoPath });
 
@@ -4430,7 +4435,7 @@ grep -R -n -- "$@"
 
       const prTitle = this.buildPrTitle(job.summary);
       const prBody = this.buildPrBody(job.summary, job.taskDescription);
-      const pr = await this.createPullRequestWithRetry(
+      const pr = await this.createOrReusePullRequest(
         job,
         repoSlug,
         token,
@@ -4447,6 +4452,83 @@ grep -R -n -- "$@"
       const message = err instanceof Error ? err.message : String(err);
       this.log(job, `falha ao criar pull request: ${message}`);
     }
+  }
+
+
+  private resolveWorkBranch(job: SandboxJob): string {
+    const fallback = `ai-hub/cifix-${job.jobId}`;
+    const branch = job.workBranch?.trim();
+    if (!branch) {
+      return fallback;
+    }
+    if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/')) {
+      this.log(job, `workBranch inválida ignorada: ${branch}`);
+      return fallback;
+    }
+    return branch;
+  }
+
+  private async checkoutWorkBranch(repoPath: string, branchName: string): Promise<boolean> {
+    try {
+      await exec(`git fetch origin ${branchName}:refs/remotes/origin/${branchName}`, { cwd: repoPath });
+      await exec(`git checkout -B ${branchName} refs/remotes/origin/${branchName}`, { cwd: repoPath });
+      return true;
+    } catch {
+      await exec(`git checkout -B ${branchName}`, { cwd: repoPath });
+      return false;
+    }
+  }
+
+  private async createOrReusePullRequest(
+    job: SandboxJob,
+    repoSlug: string,
+    token: string,
+    head: string,
+    baseBranch: string,
+    title: string,
+    body: string,
+  ): Promise<any> {
+    try {
+      return await this.createPullRequestWithRetry(job, repoSlug, token, head, baseBranch, title, body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('Falha ao criar PR: 422')) {
+        throw error;
+      }
+      const existing = await this.findOpenPullRequest(job, repoSlug, token, head, baseBranch);
+      if (existing) {
+        this.log(job, `pull request existente reutilizado para branch ${head}`);
+        return existing;
+      }
+      throw error;
+    }
+  }
+
+  private async findOpenPullRequest(
+    job: SandboxJob,
+    repoSlug: string,
+    token: string,
+    head: string,
+    baseBranch: string,
+  ): Promise<any | null> {
+    if (!this.fetchImpl) {
+      return null;
+    }
+    const [owner] = repoSlug.split('/');
+    const url = `${this.githubApiBase}/repos/${repoSlug}/pulls?state=open&head=${encodeURIComponent(`${owner}:${head}`)}&base=${encodeURIComponent(baseBranch)}`;
+    const response = await this.fetchImpl(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (!response.ok) {
+      this.log(job, `falha ao consultar PR existente: ${response.status}`);
+      return null;
+    }
+    const pulls = await response.json().catch(() => []);
+    return Array.isArray(pulls) && pulls.length > 0 ? pulls[0] : null;
   }
 
 

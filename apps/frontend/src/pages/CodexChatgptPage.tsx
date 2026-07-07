@@ -481,9 +481,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const conversationPollInFlight = useRef(false);
+  const copiedMessageTimeoutRef = useRef<number | null>(null);
 
   useModelResponseTabMarker(conversation, config.title);
+
+  useEffect(() => () => {
+    if (copiedMessageTimeoutRef.current) {
+      window.clearTimeout(copiedMessageTimeoutRef.current);
+    }
+  }, []);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -933,6 +941,39 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [buildConversationPromptFromHistory, conversation, editingDraft, extractAssistantContent, findUserMessageIndexForRequest, loadRequests, savingEditRequestId]);
 
+
+  const handleCopyConversationMessage = useCallback(async (message: ChatMessage) => {
+    try {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(message.content);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = message.content;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!copied) {
+          throw new Error('document.execCommand(copy) retornou falso');
+        }
+      }
+
+      setCopiedMessageId(message.id);
+      setError(null);
+      if (copiedMessageTimeoutRef.current) {
+        window.clearTimeout(copiedMessageTimeoutRef.current);
+      }
+      copiedMessageTimeoutRef.current = window.setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch {
+      setError('Não foi possível copiar a mensagem. Em HTTP simples, use um navegador que permita cópia por interação do usuário.');
+    }
+  }, []);
+
   const handleDeletePendingRequest = useCallback(async (requestId: number) => {
     if (deletingRequestId) return;
     setDeletingRequestId(requestId);
@@ -1001,6 +1042,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <span>{message.role === 'user' ? 'Usuário' : 'Modelo'} · {formatDateTime(message.createdAt)}</span>
                 <span className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyConversationMessage(message)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/70 text-slate-600 transition hover:border-emerald-400 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
+                    title={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : 'modelo'}`}
+                    aria-label={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : 'modelo'}`}
+                  >
+                    {copiedMessageId === message.id ? '✓' : '⧉'}
+                  </button>
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}

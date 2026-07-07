@@ -644,6 +644,24 @@ public class CodexRequestService {
         return null;
     }
 
+    private String buildGroupedWorkBranch(String repoSlug, String baseBranch, CodexIntegrationProfile profile) {
+        String normalizedRepoSlug = Optional.ofNullable(repoSlug).orElse("repo").replaceAll("@.*$", "");
+        String raw = String.join("-",
+            "codex",
+            normalizedRepoSlug,
+            Optional.ofNullable(baseBranch).orElse(defaultBranch),
+            Optional.ofNullable(profile).map(Enum::name).orElse("standard")
+        ).toLowerCase();
+        String slug = raw.replaceAll("[^a-z0-9._/-]+", "-")
+            .replaceAll("/", "-")
+            .replaceAll("-+", "-")
+            .replaceAll("^-|-$", "");
+        if (slug.length() > 80) {
+            slug = slug.substring(0, 80).replaceAll("-$", "");
+        }
+        return "ai-hub/" + slug;
+    }
+
     private void dispatchToSandbox(CodexRequest request) {
         dispatchToSandbox(request, List.of());
     }
@@ -683,11 +701,14 @@ public class CodexRequestService {
             log.info("CodexRequest {} será executado sem sessão OAuth HTTP legada; credenciais de execução pertencem ao sandbox-orchestrator", request.getId());
         }
 
+        String repoSlug = coordinates.owner() + "/" + coordinates.repo();
+        String workBranch = buildGroupedWorkBranch(repoSlug, defaultBranch, request.getProfile());
         SandboxJobRequest jobRequest = new SandboxJobRequest(
             jobId,
-            coordinates.owner() + "/" + coordinates.repo(),
+            repoSlug,
             null,
             defaultBranch,
+            workBranch,
             request.getPrompt(),
             null,
             null,

@@ -63,6 +63,7 @@ public class CiFixJobService {
             project.getRepo(),
             project.getRepoUrl(),
             branch,
+            null,
             request.getTaskDescription(),
             request.getCommitHash(),
             request.getTestCommand(),
