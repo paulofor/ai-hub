@@ -113,6 +113,7 @@ public class SandboxOrchestratorClient {
         Optional.ofNullable(request.repoSlug()).ifPresent(value -> body.put("repoSlug", value));
         Optional.ofNullable(request.repoUrl()).ifPresent(value -> body.put("repoUrl", value));
         body.put("branch", request.branch());
+        Optional.ofNullable(request.workBranch()).ifPresent(value -> body.put("workBranch", value));
         body.put("taskDescription", request.taskDescription());
         Optional.ofNullable(request.commitHash()).ifPresent(value -> body.put("commit", value));
         Optional.ofNullable(request.testCommand()).ifPresent(value -> body.put("testCommand", value));

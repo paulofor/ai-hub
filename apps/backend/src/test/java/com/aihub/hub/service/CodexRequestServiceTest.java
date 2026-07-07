@@ -584,6 +584,7 @@ class CodexRequestServiceTest {
         verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
         assertThat(requestCaptor.getValue().accessToken()).isNull();
         assertThat(requestCaptor.getValue().githubToken()).isNull();
+        assertThat(requestCaptor.getValue().workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex");
     }
 
 
@@ -611,6 +612,7 @@ class CodexRequestServiceTest {
         ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
         verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
         assertThat(requestCaptor.getValue().profile()).isEqualTo("CHATGPT_CODEX_MKT");
+        assertThat(requestCaptor.getValue().workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
         assertThat(requestCaptor.getValue().accessToken()).isNull();
         assertThat(requestCaptor.getValue().githubToken()).isNull();
     }

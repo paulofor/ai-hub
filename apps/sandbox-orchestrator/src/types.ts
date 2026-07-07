@@ -41,6 +41,7 @@ export interface SandboxJob {
   repoSlug?: string;
   repoUrl: string;
   branch: string;
+  workBranch?: string;
   taskDescription: string;
   imageAttachments?: SandboxImageAttachment[];
   testCommand?: string;

@@ -7,6 +7,7 @@ public record SandboxJobRequest(
     String repoSlug,
     String repoUrl,
     String branch,
+    String workBranch,
     String taskDescription,
     String commitHash,
     String testCommand,

@@ -224,6 +224,7 @@ export function createApp(options: AppOptions = {}) {
     const repoUrl = validateString(req.body?.repoUrl);
     const repoSlug = validateString(req.body?.repoSlug);
     const branch = validateString(req.body?.branch);
+    const workBranch = validateString(req.body?.workBranch);
     const taskDescription = validateString(req.body?.taskDescription ?? req.body?.task);
     const commitHash = validateString(req.body?.commit);
     const testCommand = validateString(req.body?.testCommand);
@@ -257,6 +258,7 @@ export function createApp(options: AppOptions = {}) {
       repoSlug: repoSlug,
       repoUrl: repoUrl ?? `https://github.com/${repoSlug}.git`,
       branch,
+      workBranch,
       taskDescription,
       imageAttachments,
       commitHash,

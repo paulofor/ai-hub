@@ -1268,3 +1268,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - 2026-07-07 UTC — Adicionada opção para editar solicitação Codex ChatGPT/MKT ainda pendente. Pergunta explícita de causa raiz: “por que não era possível editar uma solicitação enviada e pendente?”. Resposta: o fluxo só oferecia apagar antes do envio e o backend só expunha exclusão para `PENDING` sem `externalId`; não havia contrato de atualização antes do despacho. A correção adiciona `PATCH /api/codex/requests/{id}` limitado a solicitações pendentes não despachadas e botão/textarea de edição no chat, preservando o histórico reconstruído antes da mensagem editada.
 
 - 2026-07-07 UTC — Ajustada a exclusão de solicitações pendentes no diálogo Codex ChatGPT/MKT. Pergunta explícita de causa raiz: “por que o usuário não via claramente que o item apagado antes de enviar tinha sido apagado?”. Resposta: o frontend removia o placeholder do modelo com `filter`, deixando apenas a mensagem do usuário no histórico visual, sem marcador de exclusão. A correção substitui o placeholder por uma mensagem explícita informando que a solicitação foi apagada antes do envio ao modelo e que nenhuma resposta será gerada.
+
+## 2026-07-07 19:16:40 UTC-3
+- Analisada a causa raiz do cenário relatado em que múltiplas solicitações acabam em branches separadas e apenas a última parece receber PR: o fluxo atual despacha cada `CodexRequest` como job independente, gera `jobId` novo, cria branch `ai-hub/cifix-${job.jobId}` por job e não possui agrupador/batch transacional para consolidar solicitações relacionadas antes de abrir PR.
+- Proposta melhoria de desenho: introduzir agrupamento explícito de solicitações por repositório/branch base, uma branch de trabalho compartilhada por grupo e criação/atualização incremental de um PR único por grupo, preservando opção de PR isolado quando solicitado.
+
+## 2026-07-07 19:21:41 UTC-3
+- Implementada correção da causa raiz para solicitações Codex relacionadas não ficarem necessariamente presas ao padrão `1 job = 1 branch`: o backend passa a enviar uma `workBranch` estável por repositório, branch base e perfil, permitindo acumular entregas relacionadas em uma branch compartilhada.
+- Ajustado o sandbox-orchestrator para aceitar `workBranch`, reutilizar a branch remota existente quando houver, commitar novas alterações por cima dela e reutilizar PR aberto quando a criação retornar conflito de PR já existente.
+- Mantida compatibilidade com fluxos antigos: jobs sem `workBranch` continuam usando `ai-hub/cifix-${jobId}`.
+
+## 2026-07-07 19:33:13 UTC-3
+- Implementado botão/ícone de cópia em cada item do diálogo Codex ChatGPT/MKT (mensagens do usuário e do modelo).
+- Pergunta explícita de causa raiz: “por que a cópia precisava de fallback?”. Resposta: `navigator.clipboard.writeText` depende de contexto seguro em muitos navegadores e o ambiente informado usa HTTP simples; por isso a correção usa Clipboard API apenas em `window.isSecureContext` e recorre a `textarea` + `document.execCommand('copy')` durante a interação do usuário.
+- Adicionado feedback visual temporário no botão copiado e mensagem de erro orientativa quando a cópia não for permitida pelo navegador.
