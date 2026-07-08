@@ -1434,3 +1434,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado: `CodexController.createPr` agora bloqueia lote com solicitacao `PENDING`/`RUNNING`, lote sem diff e lote cujo diff contem apenas o diario obrigatorio, antes de chamar a criacao de draft PR.
 - Ajuste aplicado: a extracao de repo no fechamento de PR agora remove o sufixo `@branch`, evitando chamadas GitHub para repositorios invalidos como `ai-hub@main`.
 - Ajuste aplicado no frontend: a tela Codex ChatGPT informa que o PR depende de diff funcional acumulado validado pelo backend e mostra motivo de bloqueio enquanto houver pendencias.
+
+## 2026-07-08 19:07:25 UTC - Geracao de PR da pre-validacao de lote
+- Solicitacao recebida: gerar PR com a implementacao que torna o fluxo `Pedir PR` mais seguro para lotes mistos de analise e implementacao.
+- Verificacao antes do PR: branch `ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt` possui diff funcional contra `main`, incluindo backend, testes e frontend; nao e um lote apenas de diario.
+- Acao planejada: publicar a branch atualizada e abrir PR em modo draft para revisao.
