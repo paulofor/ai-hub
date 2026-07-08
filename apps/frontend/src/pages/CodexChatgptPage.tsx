@@ -39,6 +39,12 @@ const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 
+const isClosedBatchRequest = (request: CodexRequest): boolean =>
+  request.status === 'COMPLETED' && Boolean(request.pullRequestUrl);
+
+const isOpenBatchRequest = (request: CodexRequest): boolean =>
+  Boolean(request.workBatchKey || request.workBranch) && !isClosedBatchRequest(request);
+
 const formatInteractionCount = (count?: number) => {
   if (count === undefined || count === null || !Number.isFinite(count)) {
     return '—';
@@ -852,10 +858,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     try {
       const latestRequests = await loadRequests();
       const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === environment);
-      const currentBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
-      const currentBatchRequests = currentBatchBranch
-        ? latestRequests.filter((item) => item.workBranch === currentBatchBranch)
-        : currentEnvironmentRequests;
+      const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
+        ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
+      const currentBatchRequests = currentBatchKey
+        ? latestRequests.filter((item) => !isClosedBatchRequest(item) && (item.workBatchKey === currentBatchKey || item.workBranch === currentBatchKey))
+        : currentEnvironmentRequests.filter((item) => !isClosedBatchRequest(item));
       const existingPrUrl = currentBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
 
       if (existingPrUrl) {
@@ -1037,21 +1044,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     try {
       const latestRequests = await loadRequests();
       const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === environment);
-      const currentBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
-      const batchRequests = (currentBatchBranch
-        ? latestRequests.filter((item) => item.workBranch === currentBatchBranch)
-        : currentEnvironmentRequests)
+      const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
+        ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
+      const batchRequests = (currentBatchKey
+        ? latestRequests.filter((item) => item.workBatchKey === currentBatchKey || item.workBranch === currentBatchKey)
+        : [])
         .filter((item) => item.profile === config.profile);
       const requestsToDiscard = batchRequests.filter((item) => item.status === 'PENDING' || item.status === 'RUNNING');
 
-      if (currentBatchBranch && batchRequests.length > 0) {
+      if (currentBatchKey && batchRequests.length > 0) {
         const confirmed = window.confirm(`Zerar este lote com ${batchRequests.length} solicitação(ões)? Solicitações pendentes/em execução serão descartadas e solicitações concluídas sairão do lote atual.`);
         if (!confirmed) return;
 
         await client.post('/codex/requests/batch/discard', {
           environment,
           profile: config.profile,
-          workBatchKey: currentBatchBranch
+          workBatchKey: currentBatchKey
         });
         registerTelemetry('execution_success', `${batchRequests.length} solicitação(ões) removida(s) do lote atual; ${requestsToDiscard.length} pendente(s)/em execução descartada(s).`);
       }
@@ -1071,14 +1079,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [bulkDiscardLoading, config.profile, environment, loadRequests, registerTelemetry]);
 
   const currentEnvironmentRequests = requests.filter((item) => item.environment === environment);
-  const activeBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
-  const activeBatchRequests = activeBatchBranch
-    ? requests.filter((item) => item.workBranch === activeBatchBranch)
+  const activeBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
+    ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
+  const activeBatchRequests = activeBatchKey
+    ? requests.filter((item) => !isClosedBatchRequest(item) && (item.workBatchKey === activeBatchKey || item.workBranch === activeBatchKey))
     : [];
   const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
-  const activeBatchDiscardableRequests = (activeBatchBranch ? activeBatchRequests : currentEnvironmentRequests)
+  const activeBatchDiscardableRequests = (activeBatchKey ? activeBatchRequests : [])
     .filter((item) => item.profile === config.profile);
   const activeBatchDiscardable = activeBatchDiscardableRequests.length;
   const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
@@ -1132,8 +1141,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar lote'}</button>
           </div>
         </div>
-        {activeBatchBranch ? <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-          <p className="min-w-0 rounded-md bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-950 dark:text-slate-200">{activeBatchBranch}</p>
+        {activeBatchKey ? <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <p className="min-w-0 rounded-md bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-950 dark:text-slate-200">{activeBatchKey}</p>
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-800">{activeBatchCompleted} concluída(s)</span>
             <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">{activeBatchRunning} em execução</span>
