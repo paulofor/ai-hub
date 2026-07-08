@@ -1347,3 +1347,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Causa raiz: o backend atualizava `interactionCount` com qualquer valor vindo do sandbox em callbacks posteriores; quando o payload terminal chegava sem as interações detalhadas e com contador explícito zerado/defasado, ele podia sobrescrever a maior contagem já persistida durante a execução.
 - Ajuste aplicado: `applyInteractionSummary` agora trata o contador como métrica monotônica e não deixa um callback posterior reduzir o total já conhecido, preservando a contagem maior vista ao longo do job.
 - Validação: adicionado teste unitário cobrindo callback terminal `COMPLETED` com `interactionCount=0` depois de a solicitação já ter `42` interações persistidas.
+
+## 2026-07-08 - Botão para zerar e descartar solicitações Codex ChatGPT
+- Investigação da causa raiz: a tela Codex ChatGPT MKT exibia contadores do lote e ações individuais para apagar pendentes, mas não havia uma ação agregada para limpar a conversa e descartar todas as solicitações pendentes/em execução do lote atual.
+- Implementado botão "Zerar e descartar lote" no card de lote atual e botão equivalente no formulário.
+- A ação recarrega as solicitações, identifica o lote ativo do ambiente/profile, apaga pendentes ainda não enviados e cancela solicitações já enviadas/em execução; em seguida limpa a conversa local e estado de PR/edição.
