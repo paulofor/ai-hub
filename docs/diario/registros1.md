@@ -1391,3 +1391,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
   - Tratar `COMPLETED + pullRequestUrl` como lote fechado, filtrar esses registros do lote ativo e limpar `workBranch/workBatchKey` ao registrar PR: esforço moderado, corrige a raiz e preserva a URL de PR no histórico individual.
 - Ajuste escolhido: backend passa a ignorar solicitações já fechadas por PR ao montar o lote de uma nova solicitação e, ao registrar PR do lote, grava a URL e fecha o lote limpando `workBranch/workBatchKey`; frontend passa a contar/exibir apenas solicitações de lote aberto.
 - Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 32 testes; `npm run lint` e `npm run build` em `apps/frontend` passaram.
+
+## 2026-07-08 18:40:06 UTC - Analise do fluxo das linhas 1332 a 1337
+- Solicitação recebida: analisar a sequencia `1332` a `1337` e responder se essa e a melhor forma de trabalhar no AIHub e se sempre vai dar certo.
+- Evidencia analisada: o trecho do diario mostra que a primeira abordagem colocou o `Pedir PR` no fim da fila como nova `CodexRequest` textual quando havia pendencias, mas a correcao seguinte identificou que isso podia abrir outro workspace limpo e contornar o endpoint deterministico de PR sobre a branch acumulada.
+- Conclusao de processo: a forma mais confiavel para o AIHub nao e transformar fechamento de lote em prompt textual para o modelo; o melhor fluxo e acumular mudancas em lote/branch de trabalho, bloquear PR enquanto houver pendencias e criar/abrir PR por endpoint deterministico quando o lote estiver concluido.
+- Risco registrado: esse fluxo tende a funcionar quando o lote, a branch acumulada e o endpoint de PR sao a fonte de verdade; nao vai sempre dar certo se o agente puder criar PR manualmente, se houver pendencias ainda executando, se a branch remota for apagada/inacessivel, ou se o estado de lote fechado continuar contaminando um novo lote.
