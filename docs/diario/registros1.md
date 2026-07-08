@@ -1314,3 +1314,20 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
   - Persistir `workBranch`/lote por solicitação e criar PR a partir da branch acumulada: maior esforço, mas preserva o estado real e alinha UI, backend e sandbox.
 - Implementação escolhida: adicionar campos `work_branch` e `work_batch_key` em `codex_requests`, calcular branch de trabalho por repositório/branch/perfil, exibir lote atual na tela ChatGPT Codex e fazer o endpoint de PR priorizar draft PR a partir da branch acumulada.
 - Objetivo de produto: permitir várias solicitações sequenciais no Marketing Hub sem perder alterações anteriores antes de pedir PR.
+
+## 2026-07-08 - Diagnóstico das solicitações 1276, 1277 e PR 1278
+
+- Solicitação recebida: explicar por que a solicitação 1276 foi feita antes da 1277, o PR foi pedido na 1278, mas o merge resultante trouxe apenas o conteúdo da 1277.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Evidências coletadas: os registros públicos `/api/codex/requests/1276`, `/1277` e `/1278` indicam que as três solicitações usaram o mesmo `workBranch`/`workBatchKey` (`ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt`), porém o PR criado pela 1278 foi `https://github.com/paulofor/marketing-hub/pull/4295` com head `agent/sincroniza-catalogo-openai-diario`, não a branch acumulada `ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt`.
+- Evidências do PR 4295: a API do GitHub retornou apenas dois arquivos no PR (`OpenAiModelPricingScheduler.java` e `OpenAiModelPricingSchedulerTest.java`), ambos relacionados ao escopo da 1277; não apareceu o arquivo citado pela 1276 (`ExperimentDetailPage.tsx`).
+- Causa raiz provável: o fluxo real da 1278 não passou pelo endpoint manual do AI Hub que cria draft PR a partir da `workBranch` acumulada; em vez disso, o próprio agente/modelo criou uma branch temática nova e um PR manual com o escopo que estava ativo no contexto da 1277. Assim, a alteração da 1276 ficou fora do head branch do PR 4295, mesmo as solicitações estando marcadas com o mesmo lote no banco.
+- Observação importante: o código atual do backend já prioriza `workBranch` no endpoint `/api/codex/requests/{id}/create-pr`; portanto o ponto frágil observado é a instrução/execução do agente conseguir criar PR por conta própria dentro da sandbox, contornando o endpoint acumulador do AI Hub.
+
+## 2026-07-08 - Enfileiramento do botão Pedir PR no Codex ChatGPT
+
+- Solicitação recebida: permitir que o botão `Pedir PR` também coloque a solicitação de PR como pendente na fila de tratamento quando ainda houver itens pendentes ou em execução.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: a tela desabilitava `Pedir PR` enquanto existia qualquer mensagem de assistente em estado não terminal e também exigia ao menos uma resposta `COMPLETED`; assim o usuário só conseguia pedir PR depois de esvaziar a fila, embora o backend já aceite salvar novas `CodexRequest` como `PENDING` quando há execução ativa no perfil.
+- Ajuste aplicado: o botão `Pedir PR` permanece disponível quando há lote/conversa existente; se houver solicitação `PENDING` ou `RUNNING`, ele cria uma nova `CodexRequest` com prompt específico de PR, sem anexos, para entrar no fim da fila. Quando não há pendência, mantém o fluxo imediato de criação de PR para a última solicitação concluída.
+- Ajuste visual: o card de lote atual informa que `Pedir PR` entra no fim da fila quando ainda houver item pendente/em execução, e a conversa exibe o placeholder do pedido de PR enfileirado.

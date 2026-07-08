@@ -38,6 +38,13 @@ const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
 const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
+const PR_REQUEST_USER_MESSAGE = 'Pedir PR';
+const PR_REQUEST_PROMPT = [
+  'O usuário clicou no botão Pedir PR.',
+  'Não implemente novas alterações funcionais.',
+  'Use a branch de trabalho acumulada deste lote e solicite/crie o Pull Request reunindo as alterações já feitas nas solicitações anteriores da fila.',
+  'Inclua no retorno o link do PR e um resumo objetivo do escopo incluído.'
+].join('\n');
 
 
 const formatInteractionCount = (count?: number) => {
@@ -411,7 +418,7 @@ const resolveVariantConfig = (variant: CodexChatgptPageProps['variant']): CodexC
 
 interface TelemetryEvent {
   id: string;
-  type: 'poll_success' | 'poll_error' | 'login_started' | 'login_failed' | 'logout_success' | 'logout_failed' | 'execution_success' | 'execution_failed';
+  type: 'poll_success' | 'poll_error' | 'login_started' | 'login_failed' | 'logout_success' | 'logout_failed' | 'execution_success' | 'execution_failed' | 'pr_queued';
   message: string;
   createdAt: string;
 }
@@ -847,6 +854,57 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [conversation, registerTelemetry, updateAssistantFromRequest]);
 
   const handleCreatePr = useCallback(async () => {
+    const currentEnvironmentRequests = requests.filter((item) => item.environment === environment);
+    const currentBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
+    const currentBatchRequests = currentBatchBranch
+      ? requests.filter((item) => item.workBranch === currentBatchBranch)
+      : currentEnvironmentRequests;
+    const hasQueuedOrRunningRequest = currentBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING')
+      || conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
+
+    if (hasQueuedOrRunningRequest) {
+      setPrLoading(true);
+      try {
+        const userMessage: ChatMessage = {
+          id: `${Date.now()}-user-pr`,
+          role: 'user',
+          content: PR_REQUEST_USER_MESSAGE,
+          createdAt: new Date().toISOString()
+        };
+        const requestPrompt = buildConversationPromptFromHistory(PR_REQUEST_PROMPT, [...conversation, userMessage]);
+        setConversation((current) => trimConversationMessages([...current, userMessage]));
+        const response = await client.post('/codex/requests', {
+          prompt: requestPrompt,
+          environment,
+          model,
+          profile: config.profile,
+          imageAttachments: []
+        });
+        const created = parseCodexRequest(response.data);
+        if (created) {
+          setConversation((current) => trimConversationMessages([...current, {
+            id: `${Date.now()}-assistant-pr`,
+            role: 'assistant',
+            content: isTerminalStatus(created.status) ? extractAssistantContent(created) : `Pedido de PR enfileirado... (${formatStatus(created.status)})`,
+            requestId: created.id,
+            status: created.status,
+            createdAt: resolveAssistantMessageTimestamp(created)
+          }]));
+          setPrResult({ title: `Pedido de PR enfileirado na solicitação #${created.id}` });
+        } else {
+          setPrResult({ title: 'Pedido de PR enviado para a fila.' });
+        }
+        await loadRequests();
+        registerTelemetry('pr_queued', 'Pedido de PR enfileirado para execução após solicitações pendentes.');
+        setError(null);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setPrLoading(false);
+      }
+      return;
+    }
+
     const lastCompleted = [...conversation].reverse().find((message) => message.role === 'assistant' && message.requestId && message.status === 'COMPLETED');
     if (!lastCompleted?.requestId) {
       setError('Ainda não há resposta concluída para criar PR.');
@@ -871,7 +929,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setPrLoading(false);
     }
-  }, [conversation]);
+  }, [buildConversationPromptFromHistory, config.profile, conversation, environment, extractAssistantContent, loadRequests, model, registerTelemetry, requests]);
 
   const findUserMessageIndexForRequest = useCallback((requestId: number) => {
     const assistantIndex = conversation.findIndex((message) => message.role === 'assistant' && message.requestId === requestId);
@@ -1011,6 +1069,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
   const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
+  const hasConversationRequest = conversation.some((message) => message.role === 'assistant' && Boolean(message.requestId));
+  const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
+  const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
+  const canRequestPr = Boolean(
+    environment
+    && model
+    && (hasCompletedConversationRequest || hasQueuedConversationRequest || activeBatchRequests.length > 0 || hasConversationRequest)
+  );
 
   return (
     <section className="space-y-6">
@@ -1044,7 +1110,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">Lote atual</h3>
-            <p className="mt-1 text-slate-500">As próximas solicitações deste ambiente entram na mesma branch acumulada até você usar Pedir PR.</p>
+            <p className="mt-1 text-slate-500">As próximas solicitações deste ambiente entram na mesma branch acumulada; se ainda houver item pendente/em execução, Pedir PR entra no fim da fila.</p>
           </div>
           {activeBatchPrUrl ? <a href={activeBatchPrUrl} target="_blank" rel="noreferrer" className="rounded-md border border-emerald-600 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Abrir PR do lote</a> : null}
         </div>
@@ -1124,7 +1190,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
-          <button type="button" onClick={handleCreatePr} disabled={prLoading || conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status)) || !conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED')} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
+          <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
         </div>
         {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
