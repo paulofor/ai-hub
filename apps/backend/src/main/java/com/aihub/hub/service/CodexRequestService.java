@@ -310,6 +310,62 @@ public class CodexRequestService {
         saveRequest(request);
     }
 
+    @Transactional
+    public Map<String, Object> discardBatch(String environment, CodexIntegrationProfile profile, String workBatchKey) {
+        if (!StringUtils.hasText(environment)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente é obrigatório para descartar lote");
+        }
+        if (profile == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Perfil é obrigatório para descartar lote");
+        }
+        if (!StringUtils.hasText(workBatchKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lote é obrigatório para descartar lote");
+        }
+
+        List<CodexRequest> batchRequests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey.trim()).stream()
+            .filter(item -> environment.equals(item.getEnvironment()))
+            .filter(item -> profile.equals(item.getProfile()))
+            .toList();
+
+        int deleted = 0;
+        int cancelled = 0;
+        int detached = 0;
+        List<CodexRequest> requestsToDetach = new ArrayList<>();
+        for (CodexRequest item : batchRequests) {
+            CodexRequestStatus status = Optional.ofNullable(item.getStatus()).orElse(CodexRequestStatus.PENDING);
+            if (status == CodexRequestStatus.PENDING && !StringUtils.hasText(item.getExternalId())) {
+                codexRequestRepository.delete(item);
+                deleted++;
+                continue;
+            }
+            if ((status == CodexRequestStatus.PENDING || status == CodexRequestStatus.RUNNING) && StringUtils.hasText(item.getExternalId())) {
+                try {
+                    cancel(item.getId());
+                    cancelled++;
+                } catch (ResponseStatusException ex) {
+                    throw ex;
+                } catch (Exception ex) {
+                    throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao cancelar solicitação do lote no sandbox", ex);
+                }
+            }
+            requestsToDetach.add(item);
+        }
+
+        for (CodexRequest item : requestsToDetach) {
+            item.setWorkBranch(null);
+            item.setWorkBatchKey(null);
+            saveRequest(item);
+            detached++;
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("deleted", deleted);
+        result.put("cancelled", cancelled);
+        result.put("detached", detached);
+        result.put("total", deleted + detached);
+        return result;
+    }
+
     public CodexRequest find(Long id) {
         CodexRequest request = findWithoutRefresh(id);
         if (request.getExternalId() == null) {

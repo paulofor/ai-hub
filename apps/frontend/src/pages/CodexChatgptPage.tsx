@@ -1038,22 +1038,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const latestRequests = await loadRequests();
       const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === environment);
       const currentBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
-      const requestsToDiscard = (currentBatchBranch
+      const batchRequests = (currentBatchBranch
         ? latestRequests.filter((item) => item.workBranch === currentBatchBranch)
         : currentEnvironmentRequests)
-        .filter((item) => item.profile === config.profile && (item.status === 'PENDING' || item.status === 'RUNNING'));
+        .filter((item) => item.profile === config.profile);
+      const requestsToDiscard = batchRequests.filter((item) => item.status === 'PENDING' || item.status === 'RUNNING');
 
-      if (requestsToDiscard.length > 0) {
-        const confirmed = window.confirm(`Descartar ${requestsToDiscard.length} solicitação(ões) pendente(s)/em execução deste lote? Solicitações já enviadas serão canceladas e solicitações pendentes antes do envio serão apagadas.`);
+      if (currentBatchBranch && batchRequests.length > 0) {
+        const confirmed = window.confirm(`Zerar este lote com ${batchRequests.length} solicitação(ões)? Solicitações pendentes/em execução serão descartadas e solicitações concluídas sairão do lote atual.`);
         if (!confirmed) return;
 
-        await Promise.all(requestsToDiscard.map((item) => {
-          if (item.status === 'PENDING' && !item.externalId) {
-            return client.delete(`/codex/requests/${item.id}`);
-          }
-          return client.post(`/codex/requests/${item.id}/cancel`);
-        }));
-        registerTelemetry('execution_success', `${requestsToDiscard.length} solicitação(ões) descartada(s) do lote atual.`);
+        await client.post('/codex/requests/batch/discard', {
+          environment,
+          profile: config.profile,
+          workBatchKey: currentBatchBranch
+        });
+        registerTelemetry('execution_success', `${batchRequests.length} solicitação(ões) removida(s) do lote atual; ${requestsToDiscard.length} pendente(s)/em execução descartada(s).`);
       }
 
       setConversation([]);
@@ -1079,7 +1079,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
   const activeBatchDiscardableRequests = (activeBatchBranch ? activeBatchRequests : currentEnvironmentRequests)
-    .filter((item) => item.profile === config.profile && (item.status === 'PENDING' || item.status === 'RUNNING'));
+    .filter((item) => item.profile === config.profile);
   const activeBatchDiscardable = activeBatchDiscardableRequests.length;
   const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');

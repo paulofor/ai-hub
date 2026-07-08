@@ -1,6 +1,7 @@
 package com.aihub.hub.web;
 
 import com.aihub.hub.domain.CodexInteractionRecord;
+import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
@@ -19,6 +20,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -214,6 +216,25 @@ public class CodexController {
     @PostMapping("/{id}/cancel")
     public CodexRequest cancel(@PathVariable Long id) {
         return codexRequestService.cancel(id);
+    }
+
+    @PostMapping("/batch/discard")
+    public Map<String, Object> discardBatch(@RequestBody Map<String, Object> payload) {
+        String environment = payload.get("environment") instanceof String value ? value : null;
+        String workBatchKey = payload.get("workBatchKey") instanceof String value ? value : null;
+        if (!StringUtils.hasText(workBatchKey) && payload.get("work_batch_key") instanceof String value) {
+            workBatchKey = value;
+        }
+        String profileValue = payload.get("profile") instanceof String value ? value : null;
+        CodexIntegrationProfile profile;
+        try {
+            profile = StringUtils.hasText(profileValue)
+                ? CodexIntegrationProfile.valueOf(profileValue.trim().toUpperCase(Locale.ROOT).replace('-', '_'))
+                : null;
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Perfil inválido para descartar lote");
+        }
+        return codexRequestService.discardBatch(environment, profile, workBatchKey);
     }
 
     @PatchMapping("/{id}")
