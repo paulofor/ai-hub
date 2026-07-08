@@ -1289,3 +1289,15 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: por que esse erro aconteceu?
 - Causa raiz: o sandbox clonava sempre a branch base (`main`) antes de chamar o modelo e só tentava reutilizar a `workBranch` existente no fim, durante a criação automática do PR; assim uma solicitação posterior de “criar PR” começava em um checkout limpo da base, sem carregar as alterações acumuladas na branch de trabalho remota.
 - Ajuste aplicado: o sandbox agora captura o commit base logo após o clone, carrega a `workBranch` remota existente antes da execução do modelo e mantém o diff calculado contra a base original, permitindo que o modelo veja alterações anteriores e que o PR contenha o acumulado correto.
+
+## 2026-07-08 - Análise conceitual de sandbox sem clone obrigatório
+
+- Solicitação recebida: avaliar se é possível usar o conceito do sistema com sandbox sem baixar um repositório, em uma API que recebe uma requisição e um callback, permite ao modelo simular situações, pesquisar na internet, baixar elementos quando necessário e ao final responder via callback.
+- Resposta técnica resumida: sim, é possível; o repositório deve ser opcional, e o job pode iniciar uma sandbox efêmera vazia com política de rede/ferramentas, limites de execução, armazenamento temporário, coleta de artefatos e chamada de callback assinada ao terminar.
+- Observação de arquitetura: quando houver necessidade de alterar código versionado, o clone continua sendo útil; quando a tarefa for pesquisa, análise, simulação, geração de relatório ou processamento de insumos enviados no payload, a sandbox pode operar sem checkout de repositório.
+
+## 2026-07-08 - Viabilidade de alto paralelismo em sandboxes sem repositório
+
+- Solicitação recebida: avaliar se é viável executar uma grande quantidade de requisições em paralelo usando sandboxes efêmeras sem baixar repositório.
+- Resposta técnica resumida: sim, é viável, desde que o sistema seja desenhado como uma plataforma assíncrona com fila, workers autoscaláveis, quotas por cliente, limites de concorrência, timeouts, isolamento por job, controle de custos e backpressure; não é recomendável executar tudo diretamente no ciclo HTTP síncrono da requisição.
+- Recomendações principais: responder a criação do job imediatamente com `jobId`, processar em fila, separar workloads leves e pesados, aplicar rate limit e orçamento por tenant, usar callbacks idempotentes assinados, persistir estados do job e coletar métricas de fila, duração, falhas, custo e uso de recursos.
