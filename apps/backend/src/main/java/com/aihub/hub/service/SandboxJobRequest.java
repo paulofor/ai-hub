@@ -18,7 +18,8 @@ public record SandboxJobRequest(
     DatabaseConnection database,
     String callbackUrl,
     String callbackSecret,
-    List<ImageAttachment> imageAttachments
+    List<ImageAttachment> imageAttachments,
+    Boolean createPullRequest
 ) {
     public record ImageAttachment(
         String name,

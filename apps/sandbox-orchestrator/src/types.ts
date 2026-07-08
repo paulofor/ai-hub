@@ -50,6 +50,7 @@ export interface SandboxJob {
   model?: string;
   accessToken?: string;
   githubToken?: string;
+  createPullRequest?: boolean;
   callbackUrl?: string;
   callbackSecret?: string;
   status: JobStatus;
