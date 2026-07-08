@@ -236,6 +236,19 @@ public class CodexController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente da solicitação não está no formato owner/repo");
         }
 
+        Optional<String> existingPullRequestUrl = Optional.ofNullable(request.getPullRequestUrl())
+            .map(String::trim)
+            .filter(value -> !value.isBlank());
+        if (existingPullRequestUrl.isPresent()) {
+            String title = "AI Hub: Correção da solicitação #" + request.getId();
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("number", extractPullRequestNumber(existingPullRequestUrl.get()));
+            payload.put("url", existingPullRequestUrl.get());
+            payload.put("title", title);
+            payload.put("createdAt", Instant.now().toString());
+            return payload;
+        }
+
         ResponseRecord response = codexRequestService.findLatestResponseForEnvironment(request.getEnvironment())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nenhuma resposta encontrada na tabela responses para esta solicitação"));
 
@@ -263,6 +276,18 @@ public class CodexController {
         payload.put("title", title);
         payload.put("createdAt", Instant.now().toString());
         return payload;
+    }
+
+    private Integer extractPullRequestNumber(String pullRequestUrl) {
+        int lastSlash = pullRequestUrl.lastIndexOf('/');
+        if (lastSlash < 0 || lastSlash == pullRequestUrl.length() - 1) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(pullRequestUrl.substring(lastSlash + 1));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private String buildPrExplanation(CodexRequest request, ResponseRecord response) {

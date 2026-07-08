@@ -94,4 +94,32 @@ class CodexControllerTest {
             org.mockito.ArgumentMatchers.anyString()
         );
     }
+
+    @Test
+    void createPrReturnsExistingPullRequestWithoutRebuildingFromLatestResponse() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+        CodexRequest completedRequest = new CodexRequest("paulofor/marketing-hub", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(completedRequest, "id", 731L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setPullRequestUrl("https://github.com/paulofor/marketing-hub/pull/42");
+        when(codexRequestService.find(731L)).thenReturn(completedRequest);
+
+        var payload = controller.createPr(731L, "owner", "codex-ui");
+
+        assertThat(payload).containsEntry("number", 42);
+        assertThat(payload).containsEntry("url", "https://github.com/paulofor/marketing-hub/pull/42");
+        assertThat(payload).containsEntry("title", "AI Hub: Correção da solicitação #731");
+        verify(codexRequestService, never()).findLatestResponseForEnvironment("paulofor/marketing-hub");
+        verify(pullRequestService, never()).createFixPr(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString()
+        );
+    }
 }
