@@ -2072,6 +2072,108 @@ test('creates a pull request when only new files are added', async () => {
   await fs.rm(seedRepo, { recursive: true, force: true });
 });
 
+
+test('loads existing work branch before model execution and diffs against base branch', async () => {
+  const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-existing-work-remote-'));
+  execSync('git init --bare', { cwd: bareRepo });
+
+  const seedRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-existing-work-seed-'));
+  execSync('git init', { cwd: seedRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: seedRepo });
+  execSync('git config user.name "CI Bot"', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'base');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "init"', { cwd: seedRepo });
+  execSync('git branch -M main', { cwd: seedRepo });
+  execSync(`git remote add origin ${bareRepo}`, { cwd: seedRepo });
+  execSync('git push origin main', { cwd: seedRepo });
+  execSync('git checkout -B ai-hub/codex-example-repo-main-chatgpt', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'change from previous request');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "previous request"', { cwd: seedRepo });
+  execSync('git push origin ai-hub/codex-example-repo-main-chatgpt', { cwd: seedRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-read-existing-work',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'README.md' }),
+              },
+              { type: 'message', id: 'msg-existing-work', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-existing-work-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'existing branch inspected', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async () => {
+    fetchCalls.push({});
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({ html_url: 'https://github.com/example/repo/pull/5' }),
+      text: async () => 'ok',
+    } as any;
+  };
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const job: SandboxJob = {
+    jobId: 'job-existing-work',
+    repoSlug: 'example/repo',
+    repoUrl: bareRepo,
+    branch: 'main',
+    workBranch: 'ai-hub/codex-example-repo-main-chatgpt',
+    taskDescription: 'open pr for previous changes',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  const originalToken = process.env.GITHUB_PR_TOKEN;
+  process.env.GITHUB_PR_TOKEN = 'fake-token';
+
+  await processor.process(job);
+
+  const interactionText = JSON.stringify(job.interactions);
+  assert.ok(interactionText.includes('change from previous request'), 'modelo deve enxergar conteúdo da workBranch existente');
+  assert.ok(job.patch?.includes('change from previous request'), 'patch deve comparar workBranch contra a base main');
+  assert.equal(job.pullRequestUrl, 'https://github.com/example/repo/pull/5');
+  assert.ok(fetchCalls.length > 0, 'PR deve ser criado para mudanças acumuladas na workBranch');
+
+  if (originalToken === undefined) {
+    delete process.env.GITHUB_PR_TOKEN;
+  } else {
+    process.env.GITHUB_PR_TOKEN = originalToken;
+  }
+  await fs.rm(bareRepo, { recursive: true, force: true });
+  await fs.rm(seedRepo, { recursive: true, force: true });
+});
+
 test('limits pull request title and keeps full summary in body', async () => {
   const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-long-remote-'));
   execSync('git init --bare', { cwd: bareRepo });

@@ -738,9 +738,12 @@ export class SandboxJobProcessor implements JobProcessor {
       this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
       await this.cloneRepository(job, repoPath!, cloneUrl);
       this.ensureNotCancelled(job);
+      const baseCommit = await this.getHeadCommit(repoPath!);
+      this.ensureNotCancelled(job);
+      await this.checkoutExistingWorkBranchForContext(job, repoPath!);
+      this.ensureNotCancelled(job);
       await this.runRunnerPreflight(job, repoPath!);
       this.ensureNotCancelled(job);
-      const baseCommit = await this.getHeadCommit(repoPath!);
 
       this.ensureNotCancelled(job);
       this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
@@ -4415,7 +4418,12 @@ grep -R -n -- "$@"
         this.log(job, `branch de trabalho criada: ${branchName}`);
       }
       await exec('git add -A', { cwd: repoPath });
-      await exec('git commit -m "Correção automática do AI Hub"', { cwd: repoPath });
+      const statusLines = await this.getStatusLines(repoPath, job);
+      if (statusLines.length > 0) {
+        await exec('git commit -m "Correção automática do AI Hub"', { cwd: repoPath });
+      } else {
+        this.log(job, 'nenhuma alteração nova para commitar; mantendo commits existentes da branch de trabalho');
+      }
 
       const authenticatedRemote = buildAuthRepoUrl(
         job.repoUrl,
@@ -4461,7 +4469,7 @@ grep -R -n -- "$@"
     if (!branch) {
       return fallback;
     }
-    if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.includes('..') || branch.startsWith('/') || branch.endsWith('/')) {
+    if (!this.isValidWorkBranchName(branch)) {
       this.log(job, `workBranch inválida ignorada: ${branch}`);
       return fallback;
     }
@@ -4477,6 +4485,30 @@ grep -R -n -- "$@"
       await exec(`git checkout -B ${branchName}`, { cwd: repoPath });
       return false;
     }
+  }
+
+
+  private async checkoutExistingWorkBranchForContext(job: SandboxJob, repoPath: string): Promise<void> {
+    const branchName = job.workBranch?.trim();
+    if (!branchName) {
+      return;
+    }
+    if (!this.isValidWorkBranchName(branchName)) {
+      this.log(job, `workBranch inválida ignorada no preparo do contexto: ${branchName}`);
+      return;
+    }
+
+    try {
+      await exec(`git fetch origin ${branchName}:refs/remotes/origin/${branchName}`, { cwd: repoPath });
+      await exec(`git checkout -B ${branchName} refs/remotes/origin/${branchName}`, { cwd: repoPath });
+      this.log(job, `branch de trabalho existente carregada antes da execução: ${branchName}`);
+    } catch {
+      this.log(job, `nenhuma branch de trabalho remota encontrada antes da execução: ${branchName}`);
+    }
+  }
+
+  private isValidWorkBranchName(branch: string): boolean {
+    return /^[A-Za-z0-9._/-]+$/.test(branch) && !branch.includes('..') && !branch.startsWith('/') && !branch.endsWith('/');
   }
 
   private async createOrReusePullRequest(

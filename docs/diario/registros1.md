@@ -1282,3 +1282,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Implementado botão/ícone de cópia em cada item do diálogo Codex ChatGPT/MKT (mensagens do usuário e do modelo).
 - Pergunta explícita de causa raiz: “por que a cópia precisava de fallback?”. Resposta: `navigator.clipboard.writeText` depende de contexto seguro em muitos navegadores e o ambiente informado usa HTTP simples; por isso a correção usa Clipboard API apenas em `window.isSecureContext` e recorre a `textarea` + `document.execCommand('copy')` durante a interação do usuário.
 - Adicionado feedback visual temporário no botão copiado e mensagem de erro orientativa quando a cópia não for permitida pelo navegador.
+
+## 2026-07-07 - Reutilização da branch de trabalho antes de solicitar PR
+
+- Solicitação recebida: investigar por que, depois de várias alterações solicitadas, ao pedir PR o modelo respondeu que o repositório estava limpo e que não havia mudanças locais.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o sandbox clonava sempre a branch base (`main`) antes de chamar o modelo e só tentava reutilizar a `workBranch` existente no fim, durante a criação automática do PR; assim uma solicitação posterior de “criar PR” começava em um checkout limpo da base, sem carregar as alterações acumuladas na branch de trabalho remota.
+- Ajuste aplicado: o sandbox agora captura o commit base logo após o clone, carrega a `workBranch` remota existente antes da execução do modelo e mantém o diff calculado contra a base original, permitindo que o modelo veja alterações anteriores e que o PR contenha o acumulado correto.
