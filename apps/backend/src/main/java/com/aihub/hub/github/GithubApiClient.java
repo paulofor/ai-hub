@@ -167,7 +167,7 @@ public class GithubApiClient {
 
     public JsonNode getBranch(String owner, String repo, String branch) {
         return restClient.get()
-            .uri("/repos/{owner}/{repo}/git/ref/heads/{branch}", owner, repo, branch)
+            .uri(uriBuilder -> buildGitRefHeadsUri(uriBuilder, owner, repo, branch, false))
             .headers(headers -> headers.setAll(authHeaders()))
             .retrieve()
             .body(JsonNode.class);
@@ -247,7 +247,7 @@ public class GithubApiClient {
         body.put("sha", sha);
         body.put("force", false);
         restClient.patch()
-            .uri("/repos/{owner}/{repo}/git/refs/heads/{branch}", owner, repo, branch)
+            .uri(uriBuilder -> buildGitRefHeadsUri(uriBuilder, owner, repo, branch, true))
             .headers(headers -> headers.setAll(authHeaders()))
             .body(body)
             .retrieve()
@@ -256,10 +256,21 @@ public class GithubApiClient {
 
     public void deleteBranch(String owner, String repo, String branch) {
         restClient.delete()
-            .uri("/repos/{owner}/{repo}/git/refs/heads/{branch}", owner, repo, branch)
+            .uri(uriBuilder -> buildGitRefHeadsUri(uriBuilder, owner, repo, branch, true))
             .headers(headers -> headers.setAll(authHeaders()))
             .retrieve()
             .toBodilessEntity();
+    }
+
+    private URI buildGitRefHeadsUri(UriBuilder uriBuilder, String owner, String repo, String branch, boolean pluralRefs) {
+        UriBuilder builder = uriBuilder.path(pluralRefs
+            ? "/repos/{owner}/{repo}/git/refs/heads"
+            : "/repos/{owner}/{repo}/git/ref/heads");
+        String[] segments = splitPathSegments(branch);
+        if (segments.length > 0) {
+            builder = builder.pathSegment(segments);
+        }
+        return builder.build(owner, repo);
     }
 
     private URI buildContentsUri(UriBuilder uriBuilder, String owner, String repo, String path, String ref) {

@@ -1375,3 +1375,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ação anterior só apagava/cancelava solicitações `PENDING`/`RUNNING`; as solicitações `COMPLETED` continuavam com o mesmo `workBranch`/`workBatchKey`, e o card calcula o lote atual a partir de qualquer solicitação com `workBranch`, portanto o contador de concluídas permanecia apontando para o lote antigo.
 - Ajuste aplicado: criado endpoint de descarte de lote que cancela/apaga itens ativos e desvincula as solicitações restantes do `workBranch`/`workBatchKey`, permitindo que o card volte a zero/sem lote aberto após o descarte.
 - Ajuste aplicado no frontend: o botão passa a chamar o descarte agregado do backend e considera o lote inteiro, incluindo concluídas, ao decidir se a ação está disponível.
+
+## 2026-07-08 15:45:00 UTC - Descarte de lote apaga branch remota Codex
+- Solicitação recebida: ao solicitar descarte das solicitações, apagar também a branch de trabalho do lote para evitar reaproveitar alterações antigas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o descarte já desvinculava o lote no banco, mas a limpeza da branch remota era frágil porque o ambiente `owner/repo@branch` era convertido em repo `repo@branch` e branches com `/` eram montadas na URL da API do GitHub como `%2F`; assim o DELETE da ref remota podia mirar o repositório/ref errados.
+- Ajuste aplicado: `CodexRequestService` passa a extrair o repo sem o sufixo `@branch` antes de chamar o GitHub, e `GithubApiClient` monta URLs de refs usando segmentos de caminho para preservar branches como `ai-hub/codex-...`.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest,GithubApiClientTest` e `mvn test -Dtest=CodexControllerTest` em `apps/backend` passaram com sucesso.
