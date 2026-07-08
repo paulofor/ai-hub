@@ -44,6 +44,33 @@ class SandboxOrchestratorClientTest {
         }
     }
 
+
+    @Test
+    void getJobUsesLargestInteractionCounterWhenExplicitCountIsStaleZero() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                    {
+                      "jobId": "job-stale-count",
+                      "status": "COMPLETED",
+                      "interactionCount": 0,
+                      "interactionSequence": 2,
+                      "interactions": [
+                        {"id": "job-stale-count-0001-outbound", "direction": "OUTBOUND", "content": "thread/start", "sequence": 1},
+                        {"id": "job-stale-count-0002-outbound", "direction": "OUTBOUND", "content": "turn/start", "sequence": 2}
+                      ]
+                    }
+                    """));
+            SandboxOrchestratorClient client = clientFor(server);
+
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = client.getJob("job-stale-count");
+
+            assertThat(response.interactionCount()).isEqualTo(2);
+        }
+    }
+
     private SandboxOrchestratorClient clientFor(MockWebServer server) {
         RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())

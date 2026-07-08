@@ -4696,6 +4696,14 @@ grep -R -n -- "$@"
   private buildCallbackPayload(job: SandboxJob): SandboxJob {
     const { callbackSecret: _secret, ...rest } = job;
     const payload = { ...rest } as SandboxJob;
+    const interactionCountCandidates = [
+      payload.interactionCount,
+      Number.isFinite(job.interactionSequence) ? job.interactionSequence : undefined,
+      Array.isArray(job.interactions) ? job.interactions.length : undefined,
+    ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    payload.interactionCount = interactionCountCandidates.length > 0
+      ? Math.max(...interactionCountCandidates)
+      : undefined;
     if (job.database) {
       const { password: _password, ...database } = job.database;
       payload.database = database;
