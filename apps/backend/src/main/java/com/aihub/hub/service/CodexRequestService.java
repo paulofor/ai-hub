@@ -1527,7 +1527,15 @@ public class CodexRequestService {
             if (parts.length < 2) {
                 return null;
             }
-            return new RepoCoordinates(parts[0], parts[1]);
+            String repo = parts[1];
+            int branchSeparator = repo.indexOf('@');
+            if (branchSeparator >= 0) {
+                repo = repo.substring(0, branchSeparator);
+            }
+            if (!StringUtils.hasText(parts[0]) || !StringUtils.hasText(repo)) {
+                return null;
+            }
+            return new RepoCoordinates(parts[0], repo);
         }
     }
 
