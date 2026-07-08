@@ -475,6 +475,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [prLoading, setPrLoading] = useState(false);
+  const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
@@ -1029,6 +1030,46 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [deletingRequestId, editingRequestId, loadRequests]);
 
+  const handleDiscardBatchRequests = useCallback(async () => {
+    if (bulkDiscardLoading) return;
+
+    setBulkDiscardLoading(true);
+    try {
+      const latestRequests = await loadRequests();
+      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === environment);
+      const currentBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
+      const requestsToDiscard = (currentBatchBranch
+        ? latestRequests.filter((item) => item.workBranch === currentBatchBranch)
+        : currentEnvironmentRequests)
+        .filter((item) => item.profile === config.profile && (item.status === 'PENDING' || item.status === 'RUNNING'));
+
+      if (requestsToDiscard.length > 0) {
+        const confirmed = window.confirm(`Descartar ${requestsToDiscard.length} solicitação(ões) pendente(s)/em execução deste lote? Solicitações já enviadas serão canceladas e solicitações pendentes antes do envio serão apagadas.`);
+        if (!confirmed) return;
+
+        await Promise.all(requestsToDiscard.map((item) => {
+          if (item.status === 'PENDING' && !item.externalId) {
+            return client.delete(`/codex/requests/${item.id}`);
+          }
+          return client.post(`/codex/requests/${item.id}/cancel`);
+        }));
+        registerTelemetry('execution_success', `${requestsToDiscard.length} solicitação(ões) descartada(s) do lote atual.`);
+      }
+
+      setConversation([]);
+      setEditingRequestId(null);
+      setEditingDraft('');
+      setPrResult(null);
+      await loadRequests();
+      setError(null);
+    } catch (err) {
+      registerTelemetry('execution_failed', `Falha ao descartar solicitações do lote: ${(err as Error).message}`);
+      setError((err as Error).message);
+    } finally {
+      setBulkDiscardLoading(false);
+    }
+  }, [bulkDiscardLoading, config.profile, environment, loadRequests, registerTelemetry]);
+
   const currentEnvironmentRequests = requests.filter((item) => item.environment === environment);
   const activeBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
   const activeBatchRequests = activeBatchBranch
@@ -1037,6 +1078,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
+  const activeBatchDiscardableRequests = (activeBatchBranch ? activeBatchRequests : currentEnvironmentRequests)
+    .filter((item) => item.profile === config.profile && (item.status === 'PENDING' || item.status === 'RUNNING'));
+  const activeBatchDiscardable = activeBatchDiscardableRequests.length;
   const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
@@ -1083,7 +1127,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <h3 className="text-lg font-semibold">Lote atual</h3>
             <p className="mt-1 text-slate-500">As próximas solicitações deste ambiente entram na mesma branch acumulada; peça o PR quando o lote não tiver item pendente ou em execução.</p>
           </div>
-          {activeBatchPrUrl ? <a href={activeBatchPrUrl} target="_blank" rel="noreferrer" className="rounded-md border border-emerald-600 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Abrir PR do lote</a> : null}
+          <div className="flex flex-wrap gap-2">
+            {activeBatchPrUrl ? <a href={activeBatchPrUrl} target="_blank" rel="noreferrer" className="rounded-md border border-emerald-600 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Abrir PR do lote</a> : null}
+            <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar lote'}</button>
+          </div>
         </div>
         {activeBatchBranch ? <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
           <p className="min-w-0 rounded-md bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-950 dark:text-slate-200">{activeBatchBranch}</p>
@@ -1162,6 +1209,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
           <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
+          <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button>
         </div>
         {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
