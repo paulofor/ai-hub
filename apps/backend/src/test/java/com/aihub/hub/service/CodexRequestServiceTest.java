@@ -6,6 +6,7 @@ import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.github.GithubAppAuth;
+import com.aihub.hub.github.GithubApiClient;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
@@ -23,7 +24,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -41,6 +44,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -57,6 +61,7 @@ class CodexRequestServiceTest {
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final GithubAppAuth githubAppAuth = mock(GithubAppAuth.class);
+    private final GithubApiClient githubApiClient = mock(GithubApiClient.class);
     private final TokenCostCalculator tokenCostCalculator = mock(TokenCostCalculator.class);
     private final PlatformTransactionManager transactionManager = new PlatformTransactionManager() {
         @Override
@@ -88,6 +93,7 @@ class CodexRequestServiceTest {
             problemRepository,
             sandboxOrchestratorClient,
             githubAppAuth,
+            githubApiClient,
             tokenCostCalculator,
             new ObjectMapper(),
             transactionManager,
@@ -729,6 +735,50 @@ class CodexRequestServiceTest {
         verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
         assertThat(requestCaptor.getValue().branch()).isEqualTo("develop");
         assertThat(requestCaptor.getValue().workBranch()).isEqualTo(created.getWorkBranch());
+    }
+
+    @Test
+    void discardBatchDeletesRemoteWorkBranchAndDetachesCompletedRequests() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest completed = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "feito");
+        completed.setStatus(CodexRequestStatus.COMPLETED);
+        completed.setWorkBranch(workBranch);
+        completed.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(completed));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> result = service.discardBatch("owner/repo@main", CodexIntegrationProfile.CHATGPT_CODEX_MKT, workBranch);
+
+        assertThat(result).containsEntry("branchDeleted", true);
+        assertThat(result).containsEntry("detached", 1);
+        assertThat(completed.getWorkBranch()).isNull();
+        assertThat(completed.getWorkBatchKey()).isNull();
+        verify(githubApiClient).deleteBranch("owner", "repo", workBranch);
+        verify(codexRequestRepository).save(completed);
+    }
+
+    @Test
+    void discardBatchContinuesWhenRemoteWorkBranchIsAlreadyGone() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest completed = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "feito");
+        completed.setStatus(CodexRequestStatus.COMPLETED);
+        completed.setWorkBranch(workBranch);
+        completed.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(completed));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", null, null, null))
+            .when(githubApiClient).deleteBranch("owner", "repo", workBranch);
+
+        Map<String, Object> result = service.discardBatch("owner/repo@main", CodexIntegrationProfile.CHATGPT_CODEX_MKT, workBranch);
+
+        assertThat(result).containsEntry("branchDeleted", false);
+        assertThat(result).containsEntry("detached", 1);
+        assertThat(completed.getWorkBranch()).isNull();
+        assertThat(completed.getWorkBatchKey()).isNull();
     }
 
 

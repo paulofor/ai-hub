@@ -48,4 +48,24 @@ class GithubApiClientTest {
         assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer token");
         assertThat(recorded.getBody().readUtf8()).contains("SGVsbG8=");
     }
+
+    @Test
+    void deletesBranchRefWithSlashSeparatedName() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(204));
+        RestClient restClient = RestClient.builder().baseUrl(server.url("/").toString()).build();
+        GithubAppAuth auth = new GithubAppAuth(restClient, Clock.systemUTC(), "1", GithubAppAuthTest.TEST_KEY, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "token";
+            }
+        };
+        client = new GithubApiClient(restClient, auth);
+
+        client.deleteBranch("owner", "repo", "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
+
+        var recorded = server.takeRequest();
+        assertThat(recorded.getMethod()).isEqualTo("DELETE");
+        assertThat(recorded.getPath()).isEqualTo("/repos/owner/repo/git/refs/heads/ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
+        assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer token");
+    }
 }

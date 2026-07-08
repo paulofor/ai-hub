@@ -18,6 +18,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aihub.hub.github.GithubAppAuth;
+import com.aihub.hub.github.GithubApiClient;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
@@ -38,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -74,6 +76,7 @@ public class CodexRequestService {
     private final ProblemRepository problemRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final GithubAppAuth githubAppAuth;
+    private final GithubApiClient githubApiClient;
     private final TokenCostCalculator tokenCostCalculator;
     private final String defaultModel;
     private final String economyModel;
@@ -94,6 +97,7 @@ public class CodexRequestService {
                                ProblemRepository problemRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                GithubAppAuth githubAppAuth,
+                               GithubApiClient githubApiClient,
                                TokenCostCalculator tokenCostCalculator,
                                ObjectMapper objectMapper,
                                PlatformTransactionManager transactionManager,
@@ -113,6 +117,7 @@ public class CodexRequestService {
         this.problemRepository = problemRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.githubAppAuth = githubAppAuth;
+        this.githubApiClient = githubApiClient;
         this.tokenCostCalculator = tokenCostCalculator;
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is required");
         this.defaultModel = defaultModel;
@@ -327,6 +332,8 @@ public class CodexRequestService {
             .filter(item -> profile.equals(item.getProfile()))
             .toList();
 
+        boolean branchDeleted = deleteRemoteWorkBranch(environment, workBatchKey.trim());
+
         int deleted = 0;
         int cancelled = 0;
         int detached = 0;
@@ -362,8 +369,40 @@ public class CodexRequestService {
         result.put("deleted", deleted);
         result.put("cancelled", cancelled);
         result.put("detached", detached);
+        result.put("branchDeleted", branchDeleted);
         result.put("total", deleted + detached);
         return result;
+    }
+
+    private boolean deleteRemoteWorkBranch(String environment, String workBranch) {
+        RepoCoordinates coordinates = RepoCoordinates.from(environment);
+        if (coordinates == null || !StringUtils.hasText(workBranch)) {
+            return false;
+        }
+        String branch = workBranch.trim();
+        if (!branch.startsWith("ai-hub/") || !isValidWorkBranchName(branch)) {
+            log.warn("Branch de lote não será apagada por nome inválido ou fora do namespace AI Hub: {}", branch);
+            return false;
+        }
+        try {
+            githubApiClient.deleteBranch(coordinates.owner(), coordinates.repo(), branch);
+            log.info("Branch remota do lote apagada em {}/{}: {}", coordinates.owner(), coordinates.repo(), branch);
+            return true;
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 404) {
+                log.info("Branch remota do lote já não existia em {}/{}: {}", coordinates.owner(), coordinates.repo(), branch);
+                return false;
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao zerar branch remota do lote no GitHub", ex);
+        }
+    }
+
+    private boolean isValidWorkBranchName(String branch) {
+        return branch.matches("[A-Za-z0-9._/-]+")
+            && !branch.contains("..")
+            && !branch.startsWith("/")
+            && !branch.endsWith("/")
+            && !branch.endsWith(".lock");
     }
 
     public CodexRequest find(Long id) {
