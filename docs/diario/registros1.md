@@ -1369,3 +1369,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Causa raiz: o contrato entre backend e `sandbox-orchestrator` não tinha um sinal explícito para desativar criação automática de PR em jobs `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`; quando havia token GitHub disponível, o orquestrador fazia commit, push e criava PR ao término de cada job, antes do fechamento manual do lote.
 - Ajuste aplicado: `SandboxJobRequest` ganhou `createPullRequest`; o backend envia `false` para perfis ChatGPT Codex, e o orquestrador passa a publicar a branch de trabalho sem chamar a API de PR quando esse campo é falso.
 - Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 28 testes; `npm test` em `apps/sandbox-orchestrator` passou com 60 testes, incluindo regressão que confirma push da `workBranch` sem criação de PR.
+
+## 2026-07-08 14:58:54 UTC - Correção do zerar e descartar lote Codex ChatGPT MKT
+- Solicitação recebida: ao acionar `Zerar e descartar lote`, as quantidades do lote atual não mudavam na tela.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ação anterior só apagava/cancelava solicitações `PENDING`/`RUNNING`; as solicitações `COMPLETED` continuavam com o mesmo `workBranch`/`workBatchKey`, e o card calcula o lote atual a partir de qualquer solicitação com `workBranch`, portanto o contador de concluídas permanecia apontando para o lote antigo.
+- Ajuste aplicado: criado endpoint de descarte de lote que cancela/apaga itens ativos e desvincula as solicitações restantes do `workBranch`/`workBatchKey`, permitindo que o card volte a zero/sem lote aberto após o descarte.
+- Ajuste aplicado no frontend: o botão passa a chamar o descarte agregado do backend e considera o lote inteiro, incluindo concluídas, ao decidir se a ação está disponível.
