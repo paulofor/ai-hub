@@ -294,6 +294,11 @@ public class CodexRequestService {
             return List.of(request);
         }
         List<CodexRequest> requests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(request.getWorkBatchKey());
+        if (!StringUtils.hasText(request.getPullRequestUrl())) {
+            requests = requests.stream()
+                .filter(item -> !isClosedBatchRequest(item))
+                .toList();
+        }
         applyInteractionCounts(requests);
         return requests;
     }
@@ -305,14 +310,26 @@ public class CodexRequestService {
         }
         String trimmedUrl = pullRequestUrl.trim();
         if (StringUtils.hasText(request.getWorkBatchKey())) {
-            codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(request.getWorkBatchKey()).forEach(item -> {
+            listBatch(request).forEach(item -> {
                 item.setPullRequestUrl(trimmedUrl);
+                item.setWorkBranch(null);
+                item.setWorkBatchKey(null);
                 saveRequest(item);
             });
             return;
         }
         request.setPullRequestUrl(trimmedUrl);
+        request.setWorkBranch(null);
+        request.setWorkBatchKey(null);
         saveRequest(request);
+    }
+
+    private boolean isClosedBatchRequest(CodexRequest request) {
+        if (request == null) {
+            return false;
+        }
+        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
+        return status == CodexRequestStatus.COMPLETED && StringUtils.hasText(request.getPullRequestUrl());
     }
 
     @Transactional

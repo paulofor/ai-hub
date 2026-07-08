@@ -1381,3 +1381,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o descarte já desvinculava o lote no banco, mas a limpeza da branch remota era frágil porque o ambiente `owner/repo@branch` era convertido em repo `repo@branch` e branches com `/` eram montadas na URL da API do GitHub como `%2F`; assim o DELETE da ref remota podia mirar o repositório/ref errados.
 - Ajuste aplicado: `CodexRequestService` passa a extrair o repo sem o sufixo `@branch` antes de chamar o GitHub, e `GithubApiClient` monta URLs de refs usando segmentos de caminho para preservar branches como `ai-hub/codex-...`.
 - Validação: `mvn test -Dtest=CodexRequestServiceTest,GithubApiClientTest` e `mvn test -Dtest=CodexControllerTest` em `apps/backend` passaram com sucesso.
+
+## 2026-07-08 17:25:00 UTC - Lote Codex fechado não deve contaminar novo lote
+- Solicitação recebida: ao gerar/zerar lote, os contadores não zeravam e o botão `Abrir PR do lote` continuava apontando para um PR já mergeado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `workBatchKey` era determinístico pela branch acumulada (`ai-hub/codex-...`) e, depois que um lote recebia `pullRequestUrl`, as solicitações concluídas continuavam com `workBranch/workBatchKey`. Como frontend e backend inferiam “lote atual” por esses campos, um lote fechado por PR continuava parecendo aberto e podia ser reutilizado como se fosse o lote novo.
+- Alternativas avaliadas:
+  - Apenas limpar estado local da tela após o clique: baixo esforço, mas mascararia o problema e voltaria no próximo polling/reload.
+  - Consultar o estado do PR no GitHub para esconder PR mergeado: melhora a UI, mas mantém o lote fechado preso no banco e adiciona dependência externa para renderizar contadores.
+  - Tratar `COMPLETED + pullRequestUrl` como lote fechado, filtrar esses registros do lote ativo e limpar `workBranch/workBatchKey` ao registrar PR: esforço moderado, corrige a raiz e preserva a URL de PR no histórico individual.
+- Ajuste escolhido: backend passa a ignorar solicitações já fechadas por PR ao montar o lote de uma nova solicitação e, ao registrar PR do lote, grava a URL e fecha o lote limpando `workBranch/workBatchKey`; frontend passa a contar/exibir apenas solicitações de lote aberto.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 32 testes; `npm run lint` e `npm run build` em `apps/frontend` passaram.

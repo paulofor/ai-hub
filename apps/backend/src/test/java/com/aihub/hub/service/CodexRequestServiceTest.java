@@ -781,6 +781,53 @@ class CodexRequestServiceTest {
         assertThat(completed.getWorkBatchKey()).isNull();
     }
 
+    @Test
+    void listBatchIgnoresRequestsAlreadyClosedByPullRequestWhenCurrentRequestHasNoPr() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest closed = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "fechado");
+        closed.setStatus(CodexRequestStatus.COMPLETED);
+        closed.setWorkBranch(workBranch);
+        closed.setWorkBatchKey(workBranch);
+        closed.setPullRequestUrl("https://github.com/owner/repo/pull/10");
+        CodexRequest current = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "atual");
+        current.setStatus(CodexRequestStatus.COMPLETED);
+        current.setWorkBranch(workBranch);
+        current.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(closed, current));
+
+        assertThat(service.listBatch(current)).containsExactly(current);
+    }
+
+    @Test
+    void markPullRequestCreatedForBatchClosesOpenBatchRequests() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest first = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "um");
+        first.setStatus(CodexRequestStatus.COMPLETED);
+        first.setWorkBranch(workBranch);
+        first.setWorkBatchKey(workBranch);
+        CodexRequest second = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "dois");
+        second.setStatus(CodexRequestStatus.COMPLETED);
+        second.setWorkBranch(workBranch);
+        second.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(first, second));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.markPullRequestCreatedForBatch(first, "https://github.com/owner/repo/pull/11");
+
+        assertThat(first.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/11");
+        assertThat(second.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/11");
+        assertThat(first.getWorkBranch()).isNull();
+        assertThat(first.getWorkBatchKey()).isNull();
+        assertThat(second.getWorkBranch()).isNull();
+        assertThat(second.getWorkBatchKey()).isNull();
+        verify(codexRequestRepository).save(first);
+        verify(codexRequestRepository).save(second);
+    }
+
 
     @Test
     void chatgptCodexUsesEconomyModelWhenAvailable() {
