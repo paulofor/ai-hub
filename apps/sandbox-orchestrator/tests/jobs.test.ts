@@ -252,6 +252,32 @@ test('não expõe o callbackSecret nas respostas', async () => {
 });
 
 
+test('respostas de job usam maior contador de interações disponível quando interactionCount está defasado', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  registry.set('job-stale-interaction-count', {
+    jobId: 'job-stale-interaction-count',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'count interactions',
+    status: 'COMPLETED',
+    interactions: [
+      { id: 'job-stale-interaction-count-0001-outbound', direction: 'OUTBOUND', content: 'thread/start', createdAt: new Date().toISOString(), sequence: 1 },
+      { id: 'job-stale-interaction-count-0002-outbound', direction: 'OUTBOUND', content: 'turn/start', createdAt: new Date().toISOString(), sequence: 2 },
+    ],
+    interactionSequence: 2,
+    interactionCount: 0,
+    logs: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  });
+
+  const response = await request(app).get('/jobs/job-stale-interaction-count').expect(200);
+
+  assert.equal(response.body.interactionCount, 2);
+});
+
 test('não persiste accessToken em jobs CHATGPT_CODEX', async () => {
   const registry = new Map<string, SandboxJob>();
   const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });

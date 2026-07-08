@@ -76,9 +76,14 @@ function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
     accessToken: undefined,
     githubToken: undefined,
     callbackSecret: undefined,
-    interactionCount: Number.isFinite(job.interactionCount)
-      ? job.interactionCount
-      : (Number.isFinite(job.interactionSequence) ? job.interactionSequence : job.interactions.length),
+    interactionCount: Math.max(
+      ...[
+        job.interactionCount,
+        Number.isFinite(job.interactionSequence) ? job.interactionSequence : undefined,
+        Array.isArray(job.interactions) ? job.interactions.length : undefined,
+      ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+      0,
+    ),
   };
   if (job.database) {
     const { password: _password, ...database } = job.database;

@@ -356,11 +356,23 @@ public class SandboxOrchestratorClient {
         }
 
         private static Integer resolveInteractionCount(JsonNode node, java.util.List<Interaction> interactions) {
-            Integer explicitCount = readInt(node, "interactionCount", "interaction_count", "interactionSequence", "interaction_sequence");
-            if (explicitCount != null) {
-                return explicitCount;
+            Integer explicitCount = readInt(node, "interactionCount", "interaction_count");
+            Integer sequenceCount = readInt(node, "interactionSequence", "interaction_sequence");
+            Integer interactionsCount = interactions == null ? null : interactions.size();
+
+            Integer count = maxNullable(explicitCount, sequenceCount);
+            count = maxNullable(count, interactionsCount);
+            return count;
+        }
+
+        private static Integer maxNullable(Integer left, Integer right) {
+            if (left == null) {
+                return right;
             }
-            return interactions == null ? null : interactions.size();
+            if (right == null) {
+                return left;
+            }
+            return Math.max(left, right);
         }
 
         private static String resolvePullRequestUrl(JsonNode node) {
