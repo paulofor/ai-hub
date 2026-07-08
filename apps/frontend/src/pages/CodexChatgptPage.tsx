@@ -1094,6 +1094,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
+  const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
+    ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'
+    : !hasCompletedConversationRequest && activeBatchCompleted === 0 && !activeBatchPrUrl
+      ? 'Ainda não há solicitação concluída neste lote.'
+      : 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
   const canRequestPr = Boolean(
     environment
     && model
@@ -1134,7 +1139,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">Lote atual</h3>
-            <p className="mt-1 text-slate-500">As próximas solicitações deste ambiente entram na mesma branch acumulada; peça o PR quando o lote não tiver item pendente ou em execução.</p>
+            <p className="mt-1 text-slate-500">As próximas solicitações deste ambiente entram na mesma branch acumulada; o PR só é criado se o backend encontrar alteração funcional além do diário obrigatório.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {activeBatchPrUrl ? <a href={activeBatchPrUrl} target="_blank" rel="noreferrer" className="rounded-md border border-emerald-600 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Abrir PR do lote</a> : null}
@@ -1217,9 +1222,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
-          <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
+          <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} title={prBlockedReason} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
           <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button>
         </div>
+        <p className="text-xs text-slate-500">{prBlockedReason}</p>
         {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
       </form>

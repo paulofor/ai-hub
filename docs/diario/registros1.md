@@ -1391,3 +1391,51 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
   - Tratar `COMPLETED + pullRequestUrl` como lote fechado, filtrar esses registros do lote ativo e limpar `workBranch/workBatchKey` ao registrar PR: esforço moderado, corrige a raiz e preserva a URL de PR no histórico individual.
 - Ajuste escolhido: backend passa a ignorar solicitações já fechadas por PR ao montar o lote de uma nova solicitação e, ao registrar PR do lote, grava a URL e fecha o lote limpando `workBranch/workBatchKey`; frontend passa a contar/exibir apenas solicitações de lote aberto.
 - Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 32 testes; `npm run lint` e `npm run build` em `apps/frontend` passaram.
+
+## 2026-07-08 18:40:06 UTC - Analise do fluxo das linhas 1332 a 1337
+- Solicitação recebida: analisar a sequencia `1332` a `1337` e responder se essa e a melhor forma de trabalhar no AIHub e se sempre vai dar certo.
+- Evidencia analisada: o trecho do diario mostra que a primeira abordagem colocou o `Pedir PR` no fim da fila como nova `CodexRequest` textual quando havia pendencias, mas a correcao seguinte identificou que isso podia abrir outro workspace limpo e contornar o endpoint deterministico de PR sobre a branch acumulada.
+- Conclusao de processo: a forma mais confiavel para o AIHub nao e transformar fechamento de lote em prompt textual para o modelo; o melhor fluxo e acumular mudancas em lote/branch de trabalho, bloquear PR enquanto houver pendencias e criar/abrir PR por endpoint deterministico quando o lote estiver concluido.
+- Risco registrado: esse fluxo tende a funcionar quando o lote, a branch acumulada e o endpoint de PR sao a fonte de verdade; nao vai sempre dar certo se o agente puder criar PR manualmente, se houver pendencias ainda executando, se a branch remota for apagada/inacessivel, ou se o estado de lote fechado continuar contaminando um novo lote.
+
+## 2026-07-08 18:44:49 UTC - Orientacao operacional para uso de lote Codex no AIHub
+- Solicitação recebida: explicar de forma simples como o usuario deveria trabalhar no AIHub depois da analise das solicitacoes `1332` a `1337`.
+- Pergunta explicita de causa raiz: por que houve confusao no fluxo? Resposta: porque o usuario esperava que mensagens sequenciais e o botao `Pedir PR` fossem a mesma coisa operacionalmente, mas sao acoes diferentes; mensagens criam ou executam trabalhos do agente, enquanto `Pedir PR` deve fechar de forma deterministica o lote ja acumulado na branch de trabalho.
+- Orientacao registrada: o fluxo recomendado e abrir um lote, enviar ajustes relacionados um a um, esperar todos ficarem concluidos, validar o resultado no ambiente, pedir correcoes se necessario ainda no mesmo lote e somente depois clicar em `Pedir PR`.
+- Regra importante: nao tratar `Pedir PR` como mais uma solicitacao textual quando ainda houver pendencias; o correto e o sistema bloquear a acao ate o lote estar concluido e entao criar o PR a partir da `workBranch` acumulada.
+- Alternativas avaliadas: uma solicitacao por PR e simples mas fragmenta o trabalho; muitas solicitacoes sem lote organizado aumentam risco de mistura de escopos; lote acumulado com fechamento deterministico por botao e o melhor equilibrio entre velocidade, rastreabilidade e seguranca operacional.
+
+## 2026-07-08 19:05:00 UTC - Diagnostico de PR gerado incorretamente no lote Codex MKT
+- Solicitação recebida: usuario informou que pediu PR, mas ele nao gerou corretamente.
+- Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o lote atual do ambiente `paulofor/ai-hub` estava sendo usado para mensagens de analise/orientacao, nao para um lote real de implementacao; ao pedir PR, o sistema criou/reutilizou o PR 507 a partir da `workBranch` acumulada, mas essa branch continha somente a alteracao obrigatoria de diario e nao as mudancas funcionais esperadas.
+- Evidencias: as solicitacoes 1338 e 1339 aparecem como `COMPLETED`, com `pullRequestUrl=https://github.com/paulofor/ai-hub/pull/507`, mas ainda exibem `workBranch/workBatchKey=ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt`; a API do GitHub indica que o PR 507 esta aberto, nao draft, com head nessa branch e apenas um arquivo alterado: `docs/diario/registros1.md`.
+- Analise de alternativas: fechar PR para qualquer lote e simples, mas gera PRs sem valor quando o lote era apenas conversa; bloquear PR quando o diff contem somente diario reduz falsos positivos; separar lotes de analise/marketing de lotes de implementacao e exigir mudanca funcional antes de abrir PR e a opcao mais aderente ao objetivo.
+- Orientacao imediata: nao usar o PR 507 como PR funcional; fechar ou descartar esse lote e iniciar um novo lote apenas quando houver implementacao real a consolidar.
+
+## 2026-07-08 15:53:47 UTC-3
+- Solicitação recebida: analisar e simular uma forma menos complicada e menos sujeita a erro para o fluxo de conversa, lote e `Pedir PR` no AIHub.
+- Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o produto mistura tres estados diferentes na mesma experiencia: conversa/análise, lote de implementação e publicação via PR; o botão `Pedir PR` valida pendencias, mas ainda não valida se o lote e publicavel, se contem mudanca funcional ou se era apenas uma conversa cujo unico diff e o diario obrigatorio.
+- Evidencias de codigo: `CodexChatgptPage` decide o PR a partir da ultima resposta `COMPLETED` ou do lote ativo; `CodexController.createPr` cria draft PR a partir de `workBranch` quando existe branch, mas nao checa conteudo do diff; `CodexRequestService.listBatch` filtra lotes fechados por PR, mas nao diferencia lote de analise, lote de implementacao e lote sem diff funcional.
+- Simulacoes analisadas: lote com execucao pendente deve bloquear; lote apenas de orientacao deve nao oferecer PR; lote com diff somente em `docs/diario/registros1.md` deve bloquear com mensagem clara; lote com PR existente deve abrir/reutilizar o PR; lote fechado deve nao contaminar novo lote.
+- Proposta registrada: transformar o fechamento de PR em um fluxo de pre-publicacao com estado explicito (`rascunho de trabalho`, `pronto para revisar`, `publicavel`, `publicado`), validação backend do diff antes de criar PR, bloqueio para diff sem arquivos funcionais e separação clara entre conversas de analise MKT e lotes de implementação.
+
+## 2026-07-08 19:18:00 UTC - Lotes mistos com solicitacoes de implementacao e analise
+- Solicitação recebida: esclarecer se, em um fluxo com solicitacoes alternadas entre implementacao e nao implementacao, alguma entrega pode ser perdida no final.
+- Pergunta explicita de causa raiz: por que haveria risco de perder alguma entrega? Resposta: o risco aparece quando o sistema usa a conversa ou a ultima solicitacao como fonte de verdade do PR; em um lote misto, solicitacoes de analise podem nao alterar codigo, enquanto solicitacoes de implementacao alteram a branch acumulada. Se o fechamento olhar para a ultima mensagem ou para classificacao textual, pode concluir incorretamente que nao ha entrega funcional ou pode abrir PR com escopo errado.
+- Regra de produto recomendada: nenhuma implementacao deve ser perdida se a fonte de verdade for a branch/diff acumulado do lote, nao a sequencia textual das mensagens. Solicitacoes sem alteracao entram no historico e no diario, mas nao determinam sozinhas a publicacao.
+- Validacoes necessarias antes de permitir PR: listar todas as solicitacoes do lote, verificar pendencias, calcular diff contra a base, separar arquivos funcionais de arquivos apenas operacionais como `docs/diario/registros1.md`, exibir resumo de arquivos alterados e bloquear apenas quando nao houver diff funcional.
+- Conclusao operacional: lotes mistos sao aceitaveis, mas o botao `Pedir PR` precisa publicar o conjunto de mudancas funcionais acumuladas e mostrar claramente o que entra no PR; se nao houver essa pre-validacao, o usuario pode se confundir e o sistema pode gerar PR incompleto ou inutil.
+
+## 2026-07-08 19:01:11 UTC - Pre-validacao funcional antes de Pedir PR
+- Solicitacao recebida: implementar no AIHub o fluxo sugerido para reduzir erros ao alternar solicitacoes de implementacao e analise e evitar PR inutil.
+- Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o endpoint `create-pr` criava draft PR direto a partir da `workBranch` quando ela existia, sem validar se o lote tinha pendencias e sem comparar a branch acumulada contra a base para confirmar que havia alteracao funcional publicavel.
+- Alternativas avaliadas: esconder o botao no frontend reduz confusao mas e contornavel; classificar mensagens como analise/implementacao depende de texto e pode errar em lotes mistos; validar o diff real da branch no backend e a opcao mais robusta porque usa a fonte de verdade do lote.
+- Ajuste aplicado: `PullRequestService` passou a inspecionar o compare GitHub `base...workBranch`, separar arquivos alterados de arquivos funcionais e tratar `docs/diario/registros1.md` como diario obrigatorio nao publicavel sozinho.
+- Ajuste aplicado: `CodexController.createPr` agora bloqueia lote com solicitacao `PENDING`/`RUNNING`, lote sem diff e lote cujo diff contem apenas o diario obrigatorio, antes de chamar a criacao de draft PR.
+- Ajuste aplicado: a extracao de repo no fechamento de PR agora remove o sufixo `@branch`, evitando chamadas GitHub para repositorios invalidos como `ai-hub@main`.
+- Ajuste aplicado no frontend: a tela Codex ChatGPT informa que o PR depende de diff funcional acumulado validado pelo backend e mostra motivo de bloqueio enquanto houver pendencias.
+
+## 2026-07-08 19:07:25 UTC - Geracao de PR da pre-validacao de lote
+- Solicitacao recebida: gerar PR com a implementacao que torna o fluxo `Pedir PR` mais seguro para lotes mistos de analise e implementacao.
+- Verificacao antes do PR: branch `ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt` possui diff funcional contra `main`, incluindo backend, testes e frontend; nao e um lote apenas de diario.
+- Acao planejada: publicar a branch atualizada e abrir PR em modo draft para revisao.
