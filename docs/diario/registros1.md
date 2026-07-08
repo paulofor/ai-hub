@@ -1352,3 +1352,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Investigação da causa raiz: a tela Codex ChatGPT MKT exibia contadores do lote e ações individuais para apagar pendentes, mas não havia uma ação agregada para limpar a conversa e descartar todas as solicitações pendentes/em execução do lote atual.
 - Implementado botão "Zerar e descartar lote" no card de lote atual e botão equivalente no formulário.
 - A ação recarrega as solicitações, identifica o lote ativo do ambiente/profile, apaga pendentes ainda não enviados e cancela solicitações já enviadas/em execução; em seguida limpa a conversa local e estado de PR/edição.
+
+## 2026-07-08 03:59:56 UTC-3 - Correção do erro 500 ao fechar lote pelo botão Pedir PR
+
+- Solicitação recebida: criar PR para a correção do erro 500 ao tentar fechar lote pelo botão `Pedir PR`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o backend tentava criar um draft PR usando a `workBranch` do lote mesmo quando a resposta final já continha uma URL de PR criada anteriormente, mas `pullRequestUrl` não estava persistida no lote. Quando essa branch de origem não existia ou não estava acessível para o GitHub, a API retornava erro de validação de `head` e a exceção subia como 500 genérico.
+- Alternativas avaliadas: recriar branch ausente a partir da base teria risco de abrir PR sem as alterações do lote; ignorar a exceção e retornar sucesso ocultaria falhas reais; reaproveitar a URL de PR já registrada no texto do lote e traduzir falhas do GitHub em 400/502 preserva o PR real e melhora o diagnóstico.
+- Ajuste aplicado: `CodexController.createPr` agora procura URL de PR persistida e também URL de PR citada no texto das respostas do lote antes de chamar o GitHub, persiste a URL encontrada no lote e transforma rejeições do GitHub em mensagem clara em vez de 500.
+- Validação: `mvn test -Dtest=CodexControllerTest` em `apps/backend` passou com 4 testes, 0 falhas.

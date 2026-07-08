@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -41,12 +42,18 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api/codex/requests")
 public class CodexController {
+
+    private static final Pattern PULL_REQUEST_URL_PATTERN = Pattern.compile(
+        "https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/\\d+"
+    );
 
     private final CodexRequestService codexRequestService;
     private final PullRequestService pullRequestService;
@@ -240,10 +247,28 @@ public class CodexController {
         Optional<String> existingBatchPr = batchRequests.stream()
             .map(CodexRequest::getPullRequestUrl)
             .filter(value -> value != null && !value.isBlank())
-            .findFirst();
+            .map(String::trim)
+            .findFirst()
+            .or(() -> batchRequests.stream()
+                .map(CodexController::extractPullRequestUrl)
+                .flatMap(Optional::stream)
+                .findFirst());
         if (existingBatchPr.isPresent()) {
+            String pullRequestUrl = existingBatchPr.get();
+            codexRequestService.markPullRequestCreatedForBatch(request, pullRequestUrl);
             Map<String, Object> payload = new HashMap<>();
-            payload.put("url", existingBatchPr.get());
+            payload.put("url", pullRequestUrl);
+            payload.put("title", "AI Hub: lote Codex já possui PR");
+            payload.put("createdAt", Instant.now().toString());
+            return payload;
+        }
+
+        Optional<String> existingResponsePr = extractPullRequestUrl(request.getResponseText());
+        if (existingResponsePr.isPresent()) {
+            String pullRequestUrl = existingResponsePr.get();
+            codexRequestService.markPullRequestCreatedForBatch(request, pullRequestUrl);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("url", pullRequestUrl);
             payload.put("title", "AI Hub: lote Codex já possui PR");
             payload.put("createdAt", Instant.now().toString());
             return payload;
@@ -251,15 +276,23 @@ public class CodexController {
 
         if (request.getWorkBranch() != null && !request.getWorkBranch().isBlank()) {
             String title = "AI Hub: lote Codex #" + request.getId();
-            JsonNode pr = pullRequestService.createDraftPrFromBranch(
-                actor,
-                coordinates.owner(),
-                coordinates.repo(),
-                extractBaseBranch(request.getEnvironment()),
-                request.getWorkBranch().trim(),
-                title,
-                buildBatchPrExplanation(request, batchRequests)
-            );
+            JsonNode pr;
+            try {
+                pr = pullRequestService.createDraftPrFromBranch(
+                    actor,
+                    coordinates.owner(),
+                    coordinates.repo(),
+                    extractBaseBranch(request.getEnvironment()),
+                    request.getWorkBranch().trim(),
+                    title,
+                    buildBatchPrExplanation(request, batchRequests)
+                );
+            } catch (RestClientResponseException ex) {
+                HttpStatus responseStatus = ex.getStatusCode().is4xxClientError()
+                    ? HttpStatus.BAD_REQUEST
+                    : HttpStatus.BAD_GATEWAY;
+                throw new ResponseStatusException(responseStatus, buildPullRequestErrorMessage(ex), ex);
+            }
             String htmlUrl = pr != null && pr.hasNonNull("html_url") ? pr.get("html_url").asText() : null;
             Integer number = pr != null && pr.hasNonNull("number") ? pr.get("number").asInt() : null;
             codexRequestService.markPullRequestCreatedForBatch(request, htmlUrl);
@@ -299,6 +332,40 @@ public class CodexController {
         payload.put("title", title);
         payload.put("createdAt", Instant.now().toString());
         return payload;
+    }
+
+    private static Optional<String> extractPullRequestUrl(CodexRequest request) {
+        if (request == null) {
+            return Optional.empty();
+        }
+        return extractPullRequestUrl(request.getResponseText());
+    }
+
+    private static Optional<String> extractPullRequestUrl(String text) {
+        if (text == null || text.isBlank()) {
+            return Optional.empty();
+        }
+        Matcher matcher = PULL_REQUEST_URL_PATTERN.matcher(text);
+        if (matcher.find()) {
+            return Optional.of(matcher.group());
+        }
+        return Optional.empty();
+    }
+
+    private String buildPullRequestErrorMessage(RestClientResponseException ex) {
+        String message = "GitHub recusou a criação do PR do lote";
+        String responseBody = ex.getResponseBodyAsString();
+        if (responseBody != null && !responseBody.isBlank()) {
+            try {
+                JsonNode node = objectMapper.readTree(responseBody);
+                if (node.hasNonNull("message")) {
+                    message += ": " + node.get("message").asText();
+                }
+            } catch (IOException ignored) {
+                message += ": " + responseBody;
+            }
+        }
+        return message;
     }
 
     private String extractBaseBranch(String environment) {

@@ -9,10 +9,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientResponseException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -93,5 +97,72 @@ class CodexControllerTest {
             org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.anyString()
         );
+    }
+
+    @Test
+    void createPrReusesPullRequestUrlFoundInBatchResponseText() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/marketing-hub", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(completedRequest, "id", 731L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+        completedRequest.setResponseText("PR criado: https://github.com/paulofor/marketing-hub/pull/4295");
+
+        when(codexRequestService.find(731L)).thenReturn(completedRequest);
+        when(codexRequestService.listBatch(completedRequest)).thenReturn(List.of(completedRequest));
+
+        Map<String, Object> payload = controller.createPr(731L, "owner", "codex-ui");
+
+        assertThat(payload.get("url")).isEqualTo("https://github.com/paulofor/marketing-hub/pull/4295");
+        verify(codexRequestService).markPullRequestCreatedForBatch(completedRequest, "https://github.com/paulofor/marketing-hub/pull/4295");
+        verify(pullRequestService, never()).createDraftPrFromBranch(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString()
+        );
+    }
+
+    @Test
+    void createPrReturnsBadRequestWhenGithubRejectsBatchBranch() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/marketing-hub", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(completedRequest, "id", 732L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+
+        when(codexRequestService.find(732L)).thenReturn(completedRequest);
+        when(codexRequestService.listBatch(completedRequest)).thenReturn(List.of(completedRequest));
+        when(pullRequestService.createDraftPrFromBranch(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt"),
+            eq("AI Hub: lote Codex #732"),
+            org.mockito.ArgumentMatchers.anyString()
+        )).thenThrow(new RestClientResponseException(
+            "422 Unprocessable Entity",
+            422,
+            "Unprocessable Entity",
+            null,
+            "{\"message\":\"Validation Failed\",\"errors\":[{\"field\":\"head\",\"code\":\"invalid\"}]}".getBytes(StandardCharsets.UTF_8),
+            StandardCharsets.UTF_8
+        ));
+
+        assertThatThrownBy(() -> controller.createPr(732L, "owner", "codex-ui"))
+            .isInstanceOfSatisfying(ResponseStatusException.class, ex -> {
+                assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(ex.getReason()).isEqualTo("GitHub recusou a criação do PR do lote: Validation Failed");
+            });
     }
 }
