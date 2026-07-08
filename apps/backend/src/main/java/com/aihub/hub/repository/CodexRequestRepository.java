@@ -17,6 +17,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     Page<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating, Pageable pageable);
     List<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating);
     List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
+    List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);
     Optional<CodexRequest> findByExternalId(String externalId);
     boolean existsByProfileAndStatusInAndExternalIdIsNotNull(CodexIntegrationProfile profile, Collection<CodexRequestStatus> statuses);
     Optional<CodexRequest> findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(CodexIntegrationProfile profile, CodexRequestStatus status);

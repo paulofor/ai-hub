@@ -161,6 +161,7 @@ public class CodexRequestService {
         codexRequest.setImageAttachmentsJson(serializeImageAttachments(request.getImageAttachments()));
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
+        applyWorkBatch(codexRequest, metadata);
         PromptRecord promptRecord = new PromptRecord(
             metadata.repo(),
             metadata.branch(),
@@ -277,6 +278,36 @@ public class CodexRequestService {
     public List<CodexInteractionRecord> listInteractions(Long requestId) {
         findWithoutRefresh(requestId);
         return codexInteractionRepository.findAllByCodexRequestIdOrderBySequenceAscIdAsc(requestId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodexRequest> listBatch(CodexRequest request) {
+        if (request == null) {
+            return List.of();
+        }
+        if (!StringUtils.hasText(request.getWorkBatchKey())) {
+            return List.of(request);
+        }
+        List<CodexRequest> requests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(request.getWorkBatchKey());
+        applyInteractionCounts(requests);
+        return requests;
+    }
+
+    @Transactional
+    public void markPullRequestCreatedForBatch(CodexRequest request, String pullRequestUrl) {
+        if (request == null || !StringUtils.hasText(pullRequestUrl)) {
+            return;
+        }
+        String trimmedUrl = pullRequestUrl.trim();
+        if (StringUtils.hasText(request.getWorkBatchKey())) {
+            codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(request.getWorkBatchKey()).forEach(item -> {
+                item.setPullRequestUrl(trimmedUrl);
+                saveRequest(item);
+            });
+            return;
+        }
+        request.setPullRequestUrl(trimmedUrl);
+        saveRequest(request);
     }
 
     public CodexRequest find(Long id) {
@@ -632,9 +663,11 @@ public class CodexRequestService {
             return;
         }
 
-        String jobId = UUID.randomUUID().toString();
-        log.info("Enviando CodexRequest {} para sandbox com jobId {} e branch padrão {}", request.getId(), jobId, defaultBranch);
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
+        applyWorkBatch(request, metadata);
+        String baseBranch = StringUtils.hasText(metadata.branch()) ? metadata.branch().trim() : defaultBranch;
+        String jobId = UUID.randomUUID().toString();
+        log.info("Enviando CodexRequest {} para sandbox com jobId {} e branch base {}", request.getId(), jobId, baseBranch);
 
         String callbackUrl = this.sandboxCallbackUrl;
         String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
@@ -650,12 +683,14 @@ public class CodexRequestService {
         }
 
         String repoSlug = coordinates.owner() + "/" + coordinates.repo();
-        String workBranch = buildGroupedWorkBranch(repoSlug, defaultBranch, request.getProfile());
+        String workBranch = StringUtils.hasText(request.getWorkBranch())
+            ? request.getWorkBranch().trim()
+            : buildGroupedWorkBranch(repoSlug, baseBranch, request.getProfile());
         SandboxJobRequest jobRequest = new SandboxJobRequest(
             jobId,
             repoSlug,
             null,
-            defaultBranch,
+            baseBranch,
             workBranch,
             request.getPrompt(),
             null,
@@ -695,6 +730,16 @@ public class CodexRequestService {
 
         recordResponse(metadata, response);
         recordHttpRequests(request, response);
+    }
+
+    private void applyWorkBatch(CodexRequest request, PromptMetadata metadata) {
+        if (request == null || metadata == null || !StringUtils.hasText(metadata.repo())) {
+            return;
+        }
+        String baseBranch = StringUtils.hasText(metadata.branch()) ? metadata.branch().trim() : defaultBranch;
+        String workBranch = buildGroupedWorkBranch(metadata.repo(), baseBranch, request.getProfile());
+        request.setWorkBranch(workBranch);
+        request.setWorkBatchKey(workBranch);
     }
 
     private boolean ensureChatgptCodexExecutable(CodexRequest request) {

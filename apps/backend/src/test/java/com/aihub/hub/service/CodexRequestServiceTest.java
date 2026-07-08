@@ -657,6 +657,34 @@ class CodexRequestServiceTest {
         assertThat(requestCaptor.getValue().githubToken()).isNull();
     }
 
+    @Test
+    void workBatchUsesRepositoryBranchAndProfile() {
+        CodexRequestService service = buildService(true);
+        when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.readCodexAccount()).thenReturn(Map.of(
+            "connected", true,
+            "status", "connected",
+            "authMode", "chatgpt",
+            "executable", true
+        ));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("owner/repo@develop");
+        payload.setPrompt("implemente lote acumulado");
+        payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
+
+        CodexRequest created = service.create(payload);
+
+        assertThat(created.getWorkBranch()).isEqualTo("ai-hub/codex-owner-repo-develop-chatgpt_codex_mkt");
+        assertThat(created.getWorkBatchKey()).isEqualTo(created.getWorkBranch());
+        ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().branch()).isEqualTo("develop");
+        assertThat(requestCaptor.getValue().workBranch()).isEqualTo(created.getWorkBranch());
+    }
+
 
     @Test
     void chatgptCodexUsesEconomyModelWhenAvailable() {

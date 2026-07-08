@@ -139,11 +139,16 @@ public class GithubApiClient {
     }
 
     public JsonNode createPullRequest(String owner, String repo, String title, String head, String base, String body) {
+        return createPullRequest(owner, repo, title, head, base, body, false);
+    }
+
+    public JsonNode createPullRequest(String owner, String repo, String title, String head, String base, String body, boolean draft) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("title", title);
         payload.put("head", head);
         payload.put("base", base);
         payload.put("body", body);
+        payload.put("draft", draft);
         return restClient.post()
             .uri("/repos/{owner}/{repo}/pulls", owner, repo)
             .headers(headers -> headers.setAll(authHeaders()))

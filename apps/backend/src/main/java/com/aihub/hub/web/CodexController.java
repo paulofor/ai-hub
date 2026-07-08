@@ -236,6 +236,42 @@ public class CodexController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente da solicitação não está no formato owner/repo");
         }
 
+        List<CodexRequest> batchRequests = codexRequestService.listBatch(request);
+        Optional<String> existingBatchPr = batchRequests.stream()
+            .map(CodexRequest::getPullRequestUrl)
+            .filter(value -> value != null && !value.isBlank())
+            .findFirst();
+        if (existingBatchPr.isPresent()) {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("url", existingBatchPr.get());
+            payload.put("title", "AI Hub: lote Codex já possui PR");
+            payload.put("createdAt", Instant.now().toString());
+            return payload;
+        }
+
+        if (request.getWorkBranch() != null && !request.getWorkBranch().isBlank()) {
+            String title = "AI Hub: lote Codex #" + request.getId();
+            JsonNode pr = pullRequestService.createDraftPrFromBranch(
+                actor,
+                coordinates.owner(),
+                coordinates.repo(),
+                extractBaseBranch(request.getEnvironment()),
+                request.getWorkBranch().trim(),
+                title,
+                buildBatchPrExplanation(request, batchRequests)
+            );
+            String htmlUrl = pr != null && pr.hasNonNull("html_url") ? pr.get("html_url").asText() : null;
+            Integer number = pr != null && pr.hasNonNull("number") ? pr.get("number").asInt() : null;
+            codexRequestService.markPullRequestCreatedForBatch(request, htmlUrl);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("number", number);
+            payload.put("url", htmlUrl);
+            payload.put("title", title);
+            payload.put("workBranch", request.getWorkBranch());
+            payload.put("createdAt", Instant.now().toString());
+            return payload;
+        }
+
         ResponseRecord response = codexRequestService.findLatestResponseForEnvironment(request.getEnvironment())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nenhuma resposta encontrada na tabela responses para esta solicitação"));
 
@@ -263,6 +299,42 @@ public class CodexController {
         payload.put("title", title);
         payload.put("createdAt", Instant.now().toString());
         return payload;
+    }
+
+    private String extractBaseBranch(String environment) {
+        if (environment != null) {
+            int atIndex = environment.indexOf('@');
+            if (atIndex >= 0 && atIndex + 1 < environment.length()) {
+                String branch = environment.substring(atIndex + 1).trim();
+                if (!branch.isBlank()) {
+                    return branch;
+                }
+            }
+            String[] parts = environment.trim().split("/");
+            if (parts.length >= 3 && !parts[2].isBlank()) {
+                return parts[2].trim();
+            }
+        }
+        return "main";
+    }
+
+    private String buildBatchPrExplanation(CodexRequest request, List<CodexRequest> batchRequests) {
+        StringBuilder body = new StringBuilder();
+        body.append("Draft PR criado a partir da branch de trabalho acumulada do AI Hub.");
+        if (request.getWorkBranch() != null && !request.getWorkBranch().isBlank()) {
+            body.append("\n\nBranch de trabalho: `").append(request.getWorkBranch().trim()).append("`.");
+        }
+        if (batchRequests != null && !batchRequests.isEmpty()) {
+            body.append("\n\nSolicitações incluídas:\n");
+            batchRequests.forEach(item -> body
+                .append("- #")
+                .append(item.getId())
+                .append(" - ")
+                .append(Optional.ofNullable(item.getStatus()).map(Enum::name).orElse("PENDING"))
+                .append("\n"));
+        }
+        body.append("\nEste fluxo preserva várias solicitações em uma única branch até o usuário pedir PR.");
+        return body.toString();
     }
 
     private String buildPrExplanation(CodexRequest request, ResponseRecord response) {

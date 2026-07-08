@@ -12,6 +12,8 @@ export interface CodexRequest {
   responseText?: string;
   externalId?: string;
   pullRequestUrl?: string;
+  workBranch?: string;
+  workBatchKey?: string;
   userComment?: string;
   problemDescription?: string;
   problemId?: number;
@@ -224,6 +226,18 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
       ? ((item as Record<string, unknown>).execution_log as string)
       : undefined;
   const pullRequestUrl = pullRequestUrlRaw && pullRequestUrlRaw.trim() ? pullRequestUrlRaw.trim() : undefined;
+  const workBranchRaw = typeof item.workBranch === 'string'
+    ? item.workBranch
+    : typeof (item as Record<string, unknown>).work_branch === 'string'
+      ? ((item as Record<string, unknown>).work_branch as string)
+      : undefined;
+  const workBatchKeyRaw = typeof item.workBatchKey === 'string'
+    ? item.workBatchKey
+    : typeof (item as Record<string, unknown>).work_batch_key === 'string'
+      ? ((item as Record<string, unknown>).work_batch_key as string)
+      : undefined;
+  const workBranch = workBranchRaw && workBranchRaw.trim() ? workBranchRaw.trim() : undefined;
+  const workBatchKey = workBatchKeyRaw && workBatchKeyRaw.trim() ? workBatchKeyRaw.trim() : undefined;
   const userComment = userCommentRaw && userCommentRaw.trim() ? userCommentRaw.trim() : undefined;
   const problemDescription = problemDescriptionRaw && problemDescriptionRaw.trim() ? problemDescriptionRaw.trim() : undefined;
   const resolutionDifficulty =
@@ -242,6 +256,8 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     responseText: (item.responseText as string) ?? undefined,
     externalId: (item.externalId as string) ?? undefined,
     pullRequestUrl: pullRequestUrl ?? undefined,
+    workBranch: workBranch ?? undefined,
+    workBatchKey: workBatchKey ?? undefined,
     userComment: userComment ?? undefined,
     problemDescription: problemDescription ?? undefined,
     resolutionDifficulty: resolutionDifficulty ?? undefined,

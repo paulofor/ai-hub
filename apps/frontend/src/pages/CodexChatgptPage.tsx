@@ -1002,6 +1002,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [deletingRequestId, editingRequestId, loadRequests]);
 
+  const currentEnvironmentRequests = requests.filter((item) => item.environment === environment);
+  const activeBatchBranch = currentEnvironmentRequests.find((item) => item.workBranch)?.workBranch;
+  const activeBatchRequests = activeBatchBranch
+    ? requests.filter((item) => item.workBranch === activeBatchBranch)
+    : [];
+  const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
+  const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
+  const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
+  const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
+
   return (
     <section className="space-y-6">
       <h2 className="text-2xl font-semibold">{config.title}</h2>
@@ -1028,6 +1038,24 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <p className="text-xs">Status: {deviceLogin.status}. {deviceLogin.expiresAt ? `Expira em ${formatDateTime(deviceLogin.expiresAt)}.` : ''}</p>
         </div> : null}
         {!accountApiAvailable ? <p className="text-sm text-amber-700 dark:text-amber-300">Integração de autenticação indisponível: backend não possui rotas <code>/account/*</code> (retorno 404).</p> : null}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white/70 p-5 text-sm dark:border-slate-800 dark:bg-slate-900/60">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Lote atual</h3>
+            <p className="mt-1 text-slate-500">As próximas solicitações deste ambiente entram na mesma branch acumulada até você usar Pedir PR.</p>
+          </div>
+          {activeBatchPrUrl ? <a href={activeBatchPrUrl} target="_blank" rel="noreferrer" className="rounded-md border border-emerald-600 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Abrir PR do lote</a> : null}
+        </div>
+        {activeBatchBranch ? <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <p className="min-w-0 rounded-md bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-950 dark:text-slate-200">{activeBatchBranch}</p>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-800">{activeBatchCompleted} concluída(s)</span>
+            <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">{activeBatchRunning} em execução</span>
+            <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">{activeBatchPending} pendente(s)</span>
+          </div>
+        </div> : <p className="mt-3 text-slate-500">Nenhum lote aberto para o ambiente selecionado.</p>}
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
@@ -1112,6 +1140,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
               {item.status === 'COMPLETED' ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                 <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span>
                 <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span>
