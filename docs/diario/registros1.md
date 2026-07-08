@@ -1339,3 +1339,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Causa raiz: o frontend tratava o clique em `Pedir PR` como mais uma mensagem para o modelo quando havia item `PENDING` ou `RUNNING`; isso fazia o sistema abrir uma nova `CodexRequest` textual, potencialmente em outro workspace limpo, em vez de acionar o endpoint determinístico `/api/codex/requests/{id}/create-pr` sobre a branch acumulada.
 - Ajuste aplicado: o botão agora recarrega as solicitações antes de decidir, reutiliza PR existente do lote quando houver, bloqueia explicitamente enquanto há item pendente/em execução e só chama `/codex/requests/{id}/create-pr` para uma solicitação concluída.
 - Ajuste visual: o texto do lote deixa de prometer enfileiramento de PR e orienta pedir PR somente quando o lote estiver sem pendências.
+
+## 2026-07-08 - Contador de interações não deve regredir ao finalizar
+
+- Solicitação recebida: corrigir o cenário em que a tela mostrava contagem de interações durante a execução, mas ao final o detalhe da solicitação passava a exibir `0`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o backend atualizava `interactionCount` com qualquer valor vindo do sandbox em callbacks posteriores; quando o payload terminal chegava sem as interações detalhadas e com contador explícito zerado/defasado, ele podia sobrescrever a maior contagem já persistida durante a execução.
+- Ajuste aplicado: `applyInteractionSummary` agora trata o contador como métrica monotônica e não deixa um callback posterior reduzir o total já conhecido, preservando a contagem maior vista ao longo do job.
+- Validação: adicionado teste unitário cobrindo callback terminal `COMPLETED` com `interactionCount=0` depois de a solicitação já ter `42` interações persistidas.

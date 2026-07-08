@@ -459,6 +459,50 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void handleSandboxCallbackDoesNotRegressInteractionCountWhenTerminalPayloadReportsZero() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "investigue");
+        request.setExternalId("job-count-regression");
+        request.setCreatedAt(Instant.parse("2024-01-01T00:00:00Z"));
+        request.setInteractionCount(42);
+
+        when(codexRequestRepository.findByExternalId("job-count-regression")).thenReturn(Optional.of(request));
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
+                "job-count-regression",
+                "COMPLETED",
+                "Concluído",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:06:00Z",
+                300000L,
+                0,
+                0,
+                0,
+                0,
+                0,
+                null,
+                null
+            );
+
+        CodexRequestService service = buildService();
+        boolean updated = service.handleSandboxCallback(response);
+
+        assertThat(updated).isTrue();
+        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
+        assertThat(request.getInteractionCount()).isEqualTo(42);
+        verify(codexRequestRepository).save(request);
+    }
+
+    @Test
     void smartEconomyUsesEconomyModelWhenFootprintIsBelowThreshold() {
         CodexRequestService service = buildService();
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));

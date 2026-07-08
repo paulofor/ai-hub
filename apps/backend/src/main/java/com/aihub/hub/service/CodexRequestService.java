@@ -1500,7 +1500,11 @@ public class CodexRequestService {
             return false;
         }
         int interactionCount = responseInteractionCount;
-        if (Objects.equals(request.getInteractionCount(), interactionCount)) {
+        Integer currentInteractionCount = request.getInteractionCount();
+        if (currentInteractionCount != null && currentInteractionCount > interactionCount) {
+            return false;
+        }
+        if (Objects.equals(currentInteractionCount, interactionCount)) {
             return false;
         }
         request.setInteractionCount(interactionCount);
