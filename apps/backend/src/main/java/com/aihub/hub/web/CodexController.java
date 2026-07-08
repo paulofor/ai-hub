@@ -296,6 +296,53 @@ public class CodexController {
         }
 
         if (request.getWorkBranch() != null && !request.getWorkBranch().isBlank()) {
+            Optional<CodexRequest> activeBatchRequest = batchRequests.stream()
+                .filter(item -> {
+                    CodexRequestStatus itemStatus = Optional.ofNullable(item.getStatus()).orElse(CodexRequestStatus.PENDING);
+                    return itemStatus == CodexRequestStatus.PENDING || itemStatus == CodexRequestStatus.RUNNING;
+                })
+                .findFirst();
+            if (activeBatchRequest.isPresent()) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Ainda há solicitação pendente ou em execução no lote. Aguarde concluir antes de pedir PR."
+                );
+            }
+
+            String baseBranch = extractBaseBranch(request.getEnvironment());
+            PullRequestService.BranchPublicationReadiness readiness;
+            try {
+                readiness = pullRequestService.inspectBranchPublicationReadiness(
+                    coordinates.owner(),
+                    coordinates.repo(),
+                    baseBranch,
+                    request.getWorkBranch().trim()
+                );
+            } catch (RestClientResponseException ex) {
+                HttpStatus responseStatus = ex.getStatusCode().is4xxClientError()
+                    ? HttpStatus.BAD_REQUEST
+                    : HttpStatus.BAD_GATEWAY;
+                throw new ResponseStatusException(responseStatus, buildPullRequestErrorMessage(ex), ex);
+            }
+            if (readiness == null) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Não foi possível validar o diff funcional do lote antes de criar PR."
+                );
+            }
+            if (!readiness.hasAnyDiff()) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Este lote não tem alteração para publicar. Envie uma implementação antes de pedir PR."
+                );
+            }
+            if (!readiness.hasFunctionalDiff()) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Este lote contém apenas o diário obrigatório em docs/diario/registros1.md. Não há alteração funcional para publicar."
+                );
+            }
+
             String title = "AI Hub: lote Codex #" + request.getId();
             JsonNode pr;
             try {
@@ -303,7 +350,7 @@ public class CodexController {
                     actor,
                     coordinates.owner(),
                     coordinates.repo(),
-                    extractBaseBranch(request.getEnvironment()),
+                    baseBranch,
                     request.getWorkBranch().trim(),
                     title,
                     buildBatchPrExplanation(request, batchRequests)
@@ -322,6 +369,8 @@ public class CodexController {
             payload.put("url", htmlUrl);
             payload.put("title", title);
             payload.put("workBranch", request.getWorkBranch());
+            payload.put("changedFiles", readiness.changedFiles());
+            payload.put("functionalFiles", readiness.functionalFiles());
             payload.put("createdAt", Instant.now().toString());
             return payload;
         }
@@ -463,7 +512,15 @@ public class CodexController {
             if (parts.length < 2) {
                 return null;
             }
-            return new RepoCoordinates(parts[0], parts[1]);
+            String repo = parts[1];
+            int branchSeparator = repo.indexOf('@');
+            if (branchSeparator >= 0) {
+                repo = repo.substring(0, branchSeparator);
+            }
+            if (repo.isBlank()) {
+                return null;
+            }
+            return new RepoCoordinates(parts[0], repo);
         }
     }
 

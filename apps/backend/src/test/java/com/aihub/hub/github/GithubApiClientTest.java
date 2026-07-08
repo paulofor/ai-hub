@@ -68,4 +68,25 @@ class GithubApiClientTest {
         assertThat(recorded.getPath()).isEqualTo("/repos/owner/repo/git/refs/heads/ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
         assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer token");
     }
+
+    @Test
+    void comparesBaseBranchWithSlashSeparatedWorkBranch() throws Exception {
+        server.enqueue(new MockResponse().setBody("{\"files\":[{\"filename\":\"src/App.tsx\"}]}").addHeader("Content-Type", "application/json"));
+        RestClient restClient = RestClient.builder().baseUrl(server.url("/").toString()).build();
+        GithubAppAuth auth = new GithubAppAuth(restClient, Clock.systemUTC(), "1", GithubAppAuthTest.TEST_KEY, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "token";
+            }
+        };
+        client = new GithubApiClient(restClient, auth);
+
+        JsonNode response = client.compare("owner", "repo", "main", "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
+
+        assertThat(response.at("/files/0/filename").asText()).isEqualTo("src/App.tsx");
+        var recorded = server.takeRequest();
+        assertThat(recorded.getMethod()).isEqualTo("GET");
+        assertThat(recorded.getPath()).isEqualTo("/repos/owner/repo/compare/main...ai-hub%2Fcodex-owner-repo-main-chatgpt_codex_mkt");
+        assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer token");
+    }
 }

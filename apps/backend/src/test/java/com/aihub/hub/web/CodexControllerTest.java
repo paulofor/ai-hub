@@ -25,6 +25,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 
 class CodexControllerTest {
 
@@ -142,6 +143,15 @@ class CodexControllerTest {
 
         when(codexRequestService.find(732L)).thenReturn(completedRequest);
         when(codexRequestService.listBatch(completedRequest)).thenReturn(List.of(completedRequest));
+        when(pullRequestService.inspectBranchPublicationReadiness(
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt")
+        )).thenReturn(new PullRequestService.BranchPublicationReadiness(
+            List.of("apps/backend/src/main/java/App.java"),
+            List.of("apps/backend/src/main/java/App.java")
+        ));
         when(pullRequestService.createDraftPrFromBranch(
             eq("codex-ui"),
             eq("paulofor"),
@@ -164,5 +174,82 @@ class CodexControllerTest {
                 assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
                 assertThat(ex.getReason()).isEqualTo("GitHub recusou a criação do PR do lote: Validation Failed");
             });
+    }
+
+    @Test
+    void createPrRejectsBatchWithPendingRequests() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/ai-hub@main", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(completedRequest, "id", 733L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setWorkBranch("ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt");
+
+        CodexRequest pendingRequest = new CodexRequest("paulofor/ai-hub@main", "gpt-5.5", null, "prompt pendente");
+        ReflectionTestUtils.setField(pendingRequest, "id", 734L);
+        pendingRequest.setStatus(CodexRequestStatus.PENDING);
+        pendingRequest.setWorkBranch("ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt");
+
+        when(codexRequestService.find(733L)).thenReturn(completedRequest);
+        when(codexRequestService.listBatch(completedRequest)).thenReturn(List.of(completedRequest, pendingRequest));
+
+        assertThatThrownBy(() -> controller.createPr(733L, "owner", "codex-ui"))
+            .isInstanceOfSatisfying(ResponseStatusException.class, ex -> {
+                assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(ex.getReason()).isEqualTo("Ainda há solicitação pendente ou em execução no lote. Aguarde concluir antes de pedir PR.");
+            });
+
+        verify(pullRequestService, never()).inspectBranchPublicationReadiness(anyString(), anyString(), anyString(), anyString());
+        verify(pullRequestService, never()).createDraftPrFromBranch(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString()
+        );
+    }
+
+    @Test
+    void createPrRejectsBatchWithOnlyRequiredDiaryChanges() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/ai-hub@main", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(completedRequest, "id", 735L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setWorkBranch("ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt");
+
+        when(codexRequestService.find(735L)).thenReturn(completedRequest);
+        when(codexRequestService.listBatch(completedRequest)).thenReturn(List.of(completedRequest));
+        when(pullRequestService.inspectBranchPublicationReadiness(
+            eq("paulofor"),
+            eq("ai-hub"),
+            eq("main"),
+            eq("ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt")
+        )).thenReturn(new PullRequestService.BranchPublicationReadiness(
+            List.of("docs/diario/registros1.md"),
+            List.of()
+        ));
+
+        assertThatThrownBy(() -> controller.createPr(735L, "owner", "codex-ui"))
+            .isInstanceOfSatisfying(ResponseStatusException.class, ex -> {
+                assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(ex.getReason()).isEqualTo("Este lote contém apenas o diário obrigatório em docs/diario/registros1.md. Não há alteração funcional para publicar.");
+            });
+
+        verify(pullRequestService, never()).createDraftPrFromBranch(
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString(),
+            anyString()
+        );
     }
 }

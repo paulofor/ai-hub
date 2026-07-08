@@ -157,6 +157,14 @@ public class GithubApiClient {
             .body(JsonNode.class);
     }
 
+    public JsonNode compare(String owner, String repo, String base, String head) {
+        return restClient.get()
+            .uri("/repos/{owner}/{repo}/compare/{baseHead}", owner, repo, base + "..." + head)
+            .headers(headers -> headers.setAll(authHeaders()))
+            .retrieve()
+            .body(JsonNode.class);
+    }
+
     public JsonNode getRepository(String owner, String repo) {
         return restClient.get()
             .uri("/repos/{owner}/{repo}", owner, repo)

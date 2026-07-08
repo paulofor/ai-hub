@@ -11,11 +11,15 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 @Service
 public class PullRequestService {
+
+    private static final String REQUIRED_DIARY_PATH = "docs/diario/registros1.md";
 
     private final GithubApiClient githubApiClient;
     private final UnifiedDiffApplier diffApplier;
@@ -94,6 +98,32 @@ public class PullRequestService {
         return pr;
     }
 
+    public BranchPublicationReadiness inspectBranchPublicationReadiness(String owner,
+                                                                        String repo,
+                                                                        String baseBranch,
+                                                                        String headBranch) {
+        JsonNode comparison = githubApiClient.compare(owner, repo, baseBranch, headBranch);
+        List<String> changedFiles = new ArrayList<>();
+        if (comparison != null && comparison.has("files") && comparison.get("files").isArray()) {
+            comparison.get("files").forEach(file -> {
+                if (file != null && file.hasNonNull("filename")) {
+                    changedFiles.add(file.get("filename").asText());
+                }
+            });
+        }
+        List<String> functionalFiles = changedFiles.stream()
+            .filter(PullRequestService::isFunctionalPublicationFile)
+            .toList();
+        return new BranchPublicationReadiness(changedFiles, functionalFiles);
+    }
+
+    private static boolean isFunctionalPublicationFile(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        return !REQUIRED_DIARY_PATH.equals(path.trim());
+    }
+
     private String buildPrBody(String explanation) {
         if (explanation == null || explanation.isBlank()) {
             return "Correção automatizada criada pelo AI Hub.";
@@ -105,5 +135,15 @@ public class PullRequestService {
         return explanationRepository.findByRepoAndPrNumber(owner + "/" + repo, number)
             .map(PullRequestExplanationView::from)
             .orElseThrow(() -> new IllegalArgumentException("Explicação não encontrada para o PR informado"));
+    }
+
+    public record BranchPublicationReadiness(List<String> changedFiles, List<String> functionalFiles) {
+        public boolean hasAnyDiff() {
+            return changedFiles != null && !changedFiles.isEmpty();
+        }
+
+        public boolean hasFunctionalDiff() {
+            return functionalFiles != null && !functionalFiles.isEmpty();
+        }
     }
 }
