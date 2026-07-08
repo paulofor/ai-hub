@@ -256,71 +256,19 @@ public class CodexRequestService {
         return responseRepository.findTopByRepoOrderByCreatedAtDesc(metadata.repo());
     }
 
+    @Transactional(readOnly = true)
     public List<CodexRequest> list() {
-        Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
-        boolean refreshedAny = false;
-
-        for (CodexRequest request : requests) {
-            if (request.getExternalId() == null) {
-                continue;
-            }
-
-            RefreshDecision decision = evaluateRefresh(request, refreshCutoff);
-            if (!decision.shouldRefresh()) {
-                continue;
-            }
-
-            log.info(
-                "Atualizando CodexRequest {} a partir do sandbox ({})",
-                request.getId(),
-                decision.reason()
-            );
-            boolean updated = refreshFromSandbox(request);
-            refreshedAny = refreshedAny || updated;
-        }
-
-        if (refreshedAny) {
-            requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
-        }
-
         applyInteractionCounts(requests);
         return requests;
     }
 
+    @Transactional(readOnly = true)
     public Page<CodexRequest> listPage(int page, int size, Integer rating) {
-        Instant refreshCutoff = Instant.now().minus(Duration.ofHours(1));
         PageRequest pageRequest = PageRequest.of(page, size);
         Page<CodexRequest> requestPage = rating == null
             ? codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest)
             : codexRequestRepository.findAllByRatingOrderByCreatedAtDesc(rating, pageRequest);
-        boolean refreshedAny = false;
-
-        for (CodexRequest request : requestPage.getContent()) {
-            if (request.getExternalId() == null) {
-                continue;
-            }
-
-            RefreshDecision decision = evaluateRefresh(request, refreshCutoff);
-            if (!decision.shouldRefresh()) {
-                continue;
-            }
-
-            log.info(
-                "Atualizando CodexRequest {} a partir do sandbox ({})",
-                request.getId(),
-                decision.reason()
-            );
-            boolean updated = refreshFromSandbox(request);
-            refreshedAny = refreshedAny || updated;
-        }
-
-        if (refreshedAny) {
-            requestPage = rating == null
-                ? codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest)
-                : codexRequestRepository.findAllByRatingOrderByCreatedAtDesc(rating, pageRequest);
-        }
-
         applyInteractionCounts(requestPage.getContent());
         return requestPage;
     }
