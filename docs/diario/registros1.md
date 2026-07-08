@@ -1361,3 +1361,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: recriar branch ausente a partir da base teria risco de abrir PR sem as alterações do lote; ignorar a exceção e retornar sucesso ocultaria falhas reais; reaproveitar a URL de PR já registrada no texto do lote e traduzir falhas do GitHub em 400/502 preserva o PR real e melhora o diagnóstico.
 - Ajuste aplicado: `CodexController.createPr` agora procura URL de PR persistida e também URL de PR citada no texto das respostas do lote antes de chamar o GitHub, persiste a URL encontrada no lote e transforma rejeições do GitHub em mensagem clara em vez de 500.
 - Validação: `mvn test -Dtest=CodexControllerTest` em `apps/backend` passou com 4 testes, 0 falhas.
+
+## 2026-07-08 - PR da correção do lote Codex ChatGPT Marketing
+
+- Solicitação recebida: gerar PR para corrigir o mecanismo de lote que deveria acumular três solicitações e abrir PR somente ao clicar em `Pedir PR`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o contrato entre backend e `sandbox-orchestrator` não tinha um sinal explícito para desativar criação automática de PR em jobs `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`; quando havia token GitHub disponível, o orquestrador fazia commit, push e criava PR ao término de cada job, antes do fechamento manual do lote.
+- Ajuste aplicado: `SandboxJobRequest` ganhou `createPullRequest`; o backend envia `false` para perfis ChatGPT Codex, e o orquestrador passa a publicar a branch de trabalho sem chamar a API de PR quando esse campo é falso.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 28 testes; `npm test` em `apps/sandbox-orchestrator` passou com 60 testes, incluindo regressão que confirma push da `workBranch` sem criação de PR.

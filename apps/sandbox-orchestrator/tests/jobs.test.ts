@@ -2000,6 +2000,104 @@ test('pushes changes and opens a pull request when credentials are present', asy
   await fs.rm(seedRepo, { recursive: true, force: true });
 });
 
+test('pushes work branch without opening pull request when disabled by job', async () => {
+  const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-disabled-remote-'));
+  execSync('git init --bare', { cwd: bareRepo });
+
+  const seedRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-disabled-seed-'));
+  execSync('git init', { cwd: seedRepo });
+  execSync('git config user.email "ci@example.com"', { cwd: seedRepo });
+  execSync('git config user.name "CI Bot"', { cwd: seedRepo });
+  await fs.writeFile(path.join(seedRepo, 'README.md'), 'initial');
+  execSync('git add README.md', { cwd: seedRepo });
+  execSync('git commit -m "init"', { cwd: seedRepo });
+  execSync('git branch -M main', { cwd: seedRepo });
+  execSync(`git remote add origin ${bareRepo}`, { cwd: seedRepo });
+  execSync('git push origin main', { cwd: seedRepo });
+
+  const fakeOpenAI = {
+    calls: [] as any[],
+    responses: {
+      create: async (payload: any) => {
+        fakeOpenAI.calls.push(payload);
+        if (fakeOpenAI.calls.length === 1) {
+          return {
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call-pr-disabled-1',
+                name: 'write_file',
+                arguments: JSON.stringify({ path: 'README.md', content: 'updated without pr' }),
+              },
+              { type: 'message', id: 'msg-pr-disabled', role: 'assistant', status: 'completed', content: [] },
+            ],
+          };
+        }
+        return {
+          output: [
+            {
+              type: 'message',
+              id: 'msg-pr-disabled-2',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'branch ready', annotations: [] }],
+            },
+          ],
+        };
+      },
+    },
+  } as any;
+
+  const fetchCalls: any[] = [];
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    fetchCalls.push({ input, init });
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({ html_url: 'https://github.com/example/repo/pull/99' }),
+      text: async () => 'ok',
+    } as any;
+  };
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', fakeOpenAI, fakeFetch);
+  const job: SandboxJob = {
+    jobId: 'job-pr-disabled',
+    repoSlug: 'example/repo',
+    repoUrl: bareRepo,
+    branch: 'main',
+    workBranch: 'ai-hub/codex-example-repo-main-chatgpt-disabled',
+    taskDescription: 'update readme without pr',
+    createPullRequest: false,
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  const originalToken = process.env.GITHUB_PR_TOKEN;
+  process.env.GITHUB_PR_TOKEN = 'fake-token';
+
+  try {
+    await processor.process(job);
+
+    const heads = execSync(`git ls-remote ${bareRepo} refs/heads/${job.workBranch}`);
+    assert.ok(heads.toString().includes(job.workBranch ?? ''));
+    assert.equal(job.pullRequestUrl, undefined);
+    assert.equal(fetchCalls.length, 0, 'fetch não deve ser chamado para criar PR');
+  } finally {
+    if (originalToken === undefined) {
+      delete process.env.GITHUB_PR_TOKEN;
+    } else {
+      process.env.GITHUB_PR_TOKEN = originalToken;
+    }
+    await fs.rm(bareRepo, { recursive: true, force: true });
+    await fs.rm(seedRepo, { recursive: true, force: true });
+  }
+});
+
 
 test('creates a pull request when only new files are added', async () => {
   const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-new-files-remote-'));

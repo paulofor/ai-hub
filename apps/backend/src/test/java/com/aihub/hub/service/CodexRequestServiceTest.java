@@ -669,6 +669,7 @@ class CodexRequestServiceTest {
         assertThat(requestCaptor.getValue().accessToken()).isNull();
         assertThat(requestCaptor.getValue().githubToken()).isNull();
         assertThat(requestCaptor.getValue().workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex");
+        assertThat(requestCaptor.getValue().createPullRequest()).isFalse();
     }
 
 
@@ -699,6 +700,7 @@ class CodexRequestServiceTest {
         assertThat(requestCaptor.getValue().workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
         assertThat(requestCaptor.getValue().accessToken()).isNull();
         assertThat(requestCaptor.getValue().githubToken()).isNull();
+        assertThat(requestCaptor.getValue().createPullRequest()).isFalse();
     }
 
     @Test

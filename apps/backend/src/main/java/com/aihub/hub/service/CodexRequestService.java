@@ -711,7 +711,8 @@ public class CodexRequestService {
                     attachment.size(),
                     attachment.dataUrl()
                 ))
-                .toList()
+                .toList(),
+            chatgptCodexProfile ? Boolean.FALSE : null
         );
 
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = sandboxOrchestratorClient.createJob(jobRequest);

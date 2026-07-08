@@ -4441,6 +4441,11 @@ grep -R -n -- "$@"
         );
       }
 
+      if (job.createPullRequest === false) {
+        this.log(job, 'criação automática de pull request desativada para este job; branch de trabalho publicada');
+        return;
+      }
+
       const prTitle = this.buildPrTitle(job.summary);
       const prBody = this.buildPrBody(job.summary, job.taskDescription);
       const pr = await this.createOrReusePullRequest(

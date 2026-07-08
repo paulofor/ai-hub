@@ -24,6 +24,10 @@ function validateString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function validateBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 
 function normalizeImageAttachments(value: unknown): SandboxImageAttachment[] | undefined {
   if (!Array.isArray(value)) {
@@ -236,6 +240,7 @@ export function createApp(options: AppOptions = {}) {
     const model = validateString(req.body?.model);
     const accessToken = validateString(req.body?.accessToken);
     const githubToken = validateString(req.body?.githubToken);
+    const createPullRequest = validateBoolean(req.body?.createPullRequest);
     const database = normalizeDatabaseConfig(req.body?.database);
     const profile = normalizeProfile(validateString(req.body?.profile));
     const callbackUrl = validateString(req.body?.callbackUrl);
@@ -272,6 +277,7 @@ export function createApp(options: AppOptions = {}) {
       model: model ?? undefined,
       accessToken: (profile === 'CHATGPT_CODEX' || profile === 'CHATGPT_CODEX_MKT') ? undefined : accessToken ?? undefined,
       githubToken: githubToken ?? undefined,
+      createPullRequest,
       database,
       callbackUrl: callbackUrl ?? undefined,
       callbackSecret: callbackSecret ?? undefined,
