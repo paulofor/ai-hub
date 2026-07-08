@@ -78,6 +78,22 @@ public class PullRequestService {
         return pr;
     }
 
+    public JsonNode createDraftPrFromBranch(String actor,
+                                            String owner,
+                                            String repo,
+                                            String baseBranch,
+                                            String headBranch,
+                                            String title,
+                                            String explanation) {
+        JsonNode pr = githubApiClient.createPullRequest(owner, repo, title, headBranch, baseBranch, buildPrBody(explanation), true);
+        auditService.record(actor, "create_batch_pr", owner + "/" + repo, Map.of("branch", headBranch, "title", title));
+        if (pr != null && pr.has("number")) {
+            PullRequestExplanationRecord record = new PullRequestExplanationRecord(owner + "/" + repo, pr.get("number").asInt(), explanation);
+            explanationRepository.save(record);
+        }
+        return pr;
+    }
+
     private String buildPrBody(String explanation) {
         if (explanation == null || explanation.isBlank()) {
             return "Correção automatizada criada pelo AI Hub.";

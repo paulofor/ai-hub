@@ -92,6 +92,12 @@ public class CodexRequest {
     @Column(name = "pull_request_url")
     private String pullRequestUrl;
 
+    @Column(name = "work_branch")
+    private String workBranch;
+
+    @Column(name = "work_batch_key")
+    private String workBatchKey;
+
     @Column(name = "prompt_tokens")
     private Integer promptTokens;
 
@@ -297,6 +303,22 @@ public class CodexRequest {
 
     public void setPullRequestUrl(String pullRequestUrl) {
         this.pullRequestUrl = pullRequestUrl;
+    }
+
+    public String getWorkBranch() {
+        return workBranch;
+    }
+
+    public void setWorkBranch(String workBranch) {
+        this.workBranch = workBranch;
+    }
+
+    public String getWorkBatchKey() {
+        return workBatchKey;
+    }
+
+    public void setWorkBatchKey(String workBatchKey) {
+        this.workBatchKey = workBatchKey;
     }
 
     public Integer getPromptTokens() {

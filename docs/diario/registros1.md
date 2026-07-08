@@ -1305,3 +1305,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - 2026-07-08 00:00:00 UTC — Solicitação: corrigir totais de interações que continuavam zerados na lista do Codex ChatGPT.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: alguns jobs retornavam `interactionCount: 0` mesmo contendo `interactionSequence`/`interactions` com eventos reais; o backend confiava cegamente no contador explícito quando ele existia, então preservava o zero defasado e ignorava as evidências agregadas disponíveis no payload.
 - Ajuste aplicado: o backend agora resolve o total de interações pelo maior valor confiável entre `interactionCount`, `interactionSequence` e tamanho de `interactions`; o sandbox-orchestrator também normaliza respostas e callbacks com o maior contador disponível para evitar propagar zeros defasados.
+## 2026-07-08 — Lote acumulado para solicitações Codex ChatGPT e PR draft
+
+- Causa-raiz investigada: as solicitações podiam ser executadas em workspaces/branches diferentes e o botão de PR reconstruía o PR a partir da última resposta, não necessariamente da branch acumulada do lote.
+- Alternativas avaliadas:
+  - Criar um PR por solicitação: simples, mas fragmenta o fluxo e não atende ao uso de várias demandas pendentes.
+  - Manter apenas histórico textual da conversa: barato, mas frágil para reconstruir alterações reais no fim.
+  - Persistir `workBranch`/lote por solicitação e criar PR a partir da branch acumulada: maior esforço, mas preserva o estado real e alinha UI, backend e sandbox.
+- Implementação escolhida: adicionar campos `work_branch` e `work_batch_key` em `codex_requests`, calcular branch de trabalho por repositório/branch/perfil, exibir lote atual na tela ChatGPT Codex e fazer o endpoint de PR priorizar draft PR a partir da branch acumulada.
+- Objetivo de produto: permitir várias solicitações sequenciais no Marketing Hub sem perder alterações anteriores antes de pedir PR.
