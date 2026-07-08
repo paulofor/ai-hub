@@ -254,6 +254,14 @@ public class GithubApiClient {
             .toBodilessEntity();
     }
 
+    public void deleteBranch(String owner, String repo, String branch) {
+        restClient.delete()
+            .uri("/repos/{owner}/{repo}/git/refs/heads/{branch}", owner, repo, branch)
+            .headers(headers -> headers.setAll(authHeaders()))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
     private URI buildContentsUri(UriBuilder uriBuilder, String owner, String repo, String path, String ref) {
         UriBuilder builder = uriBuilder.path("/repos/{owner}/{repo}/contents");
         String[] segments = splitPathSegments(path);
