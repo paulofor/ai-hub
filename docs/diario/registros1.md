@@ -1331,3 +1331,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Causa raiz: a tela desabilitava `Pedir PR` enquanto existia qualquer mensagem de assistente em estado não terminal e também exigia ao menos uma resposta `COMPLETED`; assim o usuário só conseguia pedir PR depois de esvaziar a fila, embora o backend já aceite salvar novas `CodexRequest` como `PENDING` quando há execução ativa no perfil.
 - Ajuste aplicado: o botão `Pedir PR` permanece disponível quando há lote/conversa existente; se houver solicitação `PENDING` ou `RUNNING`, ele cria uma nova `CodexRequest` com prompt específico de PR, sem anexos, para entrar no fim da fila. Quando não há pendência, mantém o fluxo imediato de criação de PR para a última solicitação concluída.
 - Ajuste visual: o card de lote atual informa que `Pedir PR` entra no fim da fila quando ainda houver item pendente/em execução, e a conversa exibe o placeholder do pedido de PR enfileirado.
+
+## 2026-07-08 - Correção do botão Pedir PR para não criar solicitação textual
+
+- Solicitação recebida: criar PR com a correção do fluxo `Pedir PR`, após validação local do comportamento.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o frontend tratava o clique em `Pedir PR` como mais uma mensagem para o modelo quando havia item `PENDING` ou `RUNNING`; isso fazia o sistema abrir uma nova `CodexRequest` textual, potencialmente em outro workspace limpo, em vez de acionar o endpoint determinístico `/api/codex/requests/{id}/create-pr` sobre a branch acumulada.
+- Ajuste aplicado: o botão agora recarrega as solicitações antes de decidir, reutiliza PR existente do lote quando houver, bloqueia explicitamente enquanto há item pendente/em execução e só chama `/codex/requests/{id}/create-pr` para uma solicitação concluída.
+- Ajuste visual: o texto do lote deixa de prometer enfileiramento de PR e orienta pedir PR somente quando o lote estiver sem pendências.
