@@ -216,6 +216,18 @@ public class GithubApiClient {
             .body(JsonNode.class);
     }
 
+    public JsonNode listCommits(String owner, String repo, String branch, String path, int perPage) {
+        return restClient.get()
+            .uri(uriBuilder -> uriBuilder.path("/repos/{owner}/{repo}/commits")
+                .queryParam("sha", branch)
+                .queryParam("path", path)
+                .queryParam("per_page", perPage)
+                .build(owner, repo))
+            .headers(headers -> headers.setAll(authHeaders()))
+            .retrieve()
+            .body(JsonNode.class);
+    }
+
     public JsonNode createTree(String owner, String repo, JsonNode baseTree, Map<String, String> files) {
         Map<String, Object> body = new HashMap<>();
         body.put("base_tree", baseTree.get("sha").asText());

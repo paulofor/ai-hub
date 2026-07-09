@@ -9,9 +9,21 @@ interface Prompt {
   prompt: string;
 }
 
+interface SourceModuleChange {
+  name: string;
+  path: string;
+  lastChangedAt: string;
+  daysSinceLastChange: number;
+}
+
 export default function DashboardPage() {
   const { data: prompts } = useFetch<Prompt[]>(
     () => client.get('/prompts').then((res) => res.data),
+    []
+  );
+
+  const { data: sourceModules } = useFetch<SourceModuleChange[]>(
+    () => client.get('/source-modules/changes').then((res) => res.data),
     []
   );
 
@@ -41,6 +53,31 @@ export default function DashboardPage() {
             Abrir Codex ChatGPT →
           </Link>
         </DashboardCard>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold">Últimas alterações do código fonte</h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Dias desde o último commit que alterou arquivos de cada módulo.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {sourceModules?.map((module) => (
+            <div key={module.path} className="rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 p-3">
+              <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{module.name}</div>
+              <div className="mt-2 text-2xl font-bold text-emerald-600">
+                {module.daysSinceLastChange} {module.daysSinceLastChange === 1 ? 'dia' : 'dias'}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                Última alteração: {new Date(module.lastChangedAt).toLocaleDateString()}
+              </div>
+              <div className="mt-1 text-xs font-mono text-slate-400">{module.path}</div>
+            </div>
+          )) ?? <div className="text-sm text-slate-500">Carregando módulos...</div>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

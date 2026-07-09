@@ -1439,3 +1439,5 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitacao recebida: gerar PR com a implementacao que torna o fluxo `Pedir PR` mais seguro para lotes mistos de analise e implementacao.
 - Verificacao antes do PR: branch `ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt` possui diff funcional contra `main`, incluindo backend, testes e frontend; nao e um lote apenas de diario.
 - Acao planejada: publicar a branch atualizada e abrir PR em modo draft para revisao.
+
+- 2026-07-09 02:22:11 UTC — Implementado indicador na dashboard para mostrar há quantos dias houve a última alteração de código fonte por módulo (`Backend`, `Frontend`, `Sandbox Orchestrator` e `MCP Server`). A causa raiz da ausência dessa informação era não existir um endpoint consolidado com metadados de alteração por pasta de módulo; foi criado `/api/source-modules/changes`, calculando a data via `git log` e usando mtime dos arquivos como fallback.
