@@ -28,6 +28,11 @@ function validateBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
+function resolveRequestBodyLimit(): string {
+  const configured = process.env.SANDBOX_REQUEST_BODY_LIMIT?.trim();
+  return configured && configured.length > 0 ? configured : '50mb';
+}
+
 
 function normalizeImageAttachments(value: unknown): SandboxImageAttachment[] | undefined {
   if (!Array.isArray(value)) {
@@ -135,7 +140,8 @@ export function createApp(options: AppOptions = {}) {
   if (process.env.NODE_ENV !== 'test') {
     app.use(morgan('combined'));
   }
-  app.use(express.json({ limit: '500kb' }));
+  const requestBodyLimit = resolveRequestBodyLimit();
+  app.use(express.json({ limit: requestBodyLimit }));
 
   const healthcheckPythonInfo = () => {
     const pythonPath = spawnSync('which', ['python3'], { encoding: 'utf-8' });
@@ -396,6 +402,19 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.use((err: Error, _req: Request, res: Response, _next: () => void) => {
+    const httpError = err as Error & { type?: string; status?: number; statusCode?: number };
+    const status = httpError.status ?? httpError.statusCode;
+    if (status === 413 || httpError.type === 'entity.too.large' || httpError.name === 'PayloadTooLargeError') {
+      console.warn(`Request rejeitada por exceder limite de payload (${requestBodyLimit})`);
+      return res.status(413).json({
+        error: 'payload_too_large',
+        message: `Payload da request excede o limite do sandbox-orchestrator (${requestBodyLimit}). Reduza anexos ou aumente SANDBOX_REQUEST_BODY_LIMIT.`,
+        limit: requestBodyLimit,
+      });
+    }
+    if (status === 400 || httpError.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'invalid_json' });
+    }
     console.error('Unexpected error handling request', err);
     res.status(500).json({ error: 'internal_error' });
   });

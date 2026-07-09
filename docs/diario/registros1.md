@@ -219,6 +219,13 @@
 - Ajustada a etapa `Resolve GHCR credentials` para sempre definir `GHCR_TOKEN=${{ github.token }}` e falhar cedo se `GHCR_USERNAME` divergir de `github.repository_owner`, evitando combinações inválidas de owner/token.
 - Com isso, todos os pontos do workflow que autenticam/chamam GHCR passam a usar o mesmo token nativo do run, eliminando inconsistência de credenciais entre jobs.
 
+## 2026-07-09 19:43:10 UTC-3
+- Diagnóstico de causa raiz do `500 Internal Server Error` ao despachar a `CodexRequest 1419`: o `sandbox-orchestrator` recusou o `POST /jobs` antes da rota por `PayloadTooLargeError: request entity too large`, pois o `express.json` estava limitado a `500kb`; o handler genérico convertia esse estouro em `500 {"error":"internal_error"}`, escondendo a causa real.
+- Ajustado `apps/sandbox-orchestrator/src/server.ts` para usar `SANDBOX_REQUEST_BODY_LIMIT` configurável com padrão `50mb`, compatível com prompts e anexos permitidos pelo frontend, e para responder estouro de payload como `413 payload_too_large` com mensagem acionável.
+- Documentada a nova variável em `apps/sandbox-orchestrator/.env.example` e `apps/sandbox-orchestrator/README.md`.
+- Adicionado teste automatizado garantindo que payload acima do limite retorna `413` em vez de `500`.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator test` com 61 testes aprovados.
+
 ## 2026-06-28 09:38:44 UTC-3
 - Iniciado ajuste para criar o item de menu `Codex ChatGPT MKT`.
 - Causa raiz técnica identificada: o fluxo especial do ChatGPT Codex estava acoplado ao perfil único `CHATGPT_CODEX` em frontend, backend e sandbox-orchestrator, então uma tela nova sem perfil próprio cairia no comportamento de programação ou perderia as garantias do Codex App Server.
@@ -1441,3 +1448,18 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Acao planejada: publicar a branch atualizada e abrir PR em modo draft para revisao.
 
 - 2026-07-09 02:22:11 UTC — Implementado indicador na dashboard para mostrar há quantos dias houve a última alteração de código fonte por módulo (`Backend`, `Frontend`, `Sandbox Orchestrator` e `MCP Server`). A causa raiz da ausência dessa informação era não existir um endpoint consolidado com metadados de alteração por pasta de módulo; foi criado `/api/source-modules/changes`, calculando a data via `git log` e usando mtime dos arquivos como fallback.
+
+## 2026-07-09 22:34:46 UTC - Diagnostico operacional do sistema
+- Solicitação recebida: informar o que está acontecendo agora no sistema.
+- Verificações realizadas: estado Git local, healthcheck do MCP Server, lista de containers via MCP e logs recentes de backend/sandbox.
+- Estado observado: MCP Server respondeu `{"status":"UP"}`; containers `caddy`, `frontend`, `backend`, `sandbox-orchestrator`, `mcp-server` e `sandbox-mail` estavam em execução há cerca de 11 horas, com `sandbox-mail` saudável.
+- Evento atual observado: backend criou a `CodexRequest 1422` para esta conversa e a despachou ao sandbox com job `ed5941a2-e8d2-435c-82ec-4cb74bcd45ba`, perfil `CHATGPT_CODEX`, modelo `gpt-5.5`, branch base `main`.
+- Sinais recentes relevantes: antes desta conversa houve `Connection reset` no acesso JDBC ao banco às 22:28 UTC, `Broken pipe` de streaming às 22:29 UTC e duas falhas de atualização da `CodexRequest 1418` por retorno 500 do sandbox; para a `CodexRequest 1422`, os logs vistos indicaram polling/atualização contínua sem erro.
+- Limitação de ambiente: o Docker local do workspace não estava acessível por `/var/run/docker.sock`; a inspeção de containers foi feita via MCP Server. Algumas consultas pontuais via MCP ao status interno do job e `docker logs` com timeout não retornaram antes do limite de 30s.
+
+## 2026-07-09 22:49:51 UTC - Correção de request concluída aparentando travada
+- Solicitação recebida: investigar por que a tela parecia travada, com a `CodexRequest 1418` ainda como `Em execução` na lista enquanto o detalhe já mostrava `Concluída`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a sincronização da request concluída com o sandbox e o despacho automático da próxima request da fila estavam acoplados no mesmo fluxo; quando o despacho da `1419` recebeu `500 Internal Server Error` do sandbox, a exceção propagou como falha da atualização da `1418`, revertendo a persistência do estado `COMPLETED`.
+- Evidências: `GET /api/codex/requests/1418` atualizava e retornava `COMPLETED` com `finishedAt`, mas `GET /api/codex/requests?page=0&size=20` continuava lendo `1418` como `RUNNING`; os logs mostravam `Sandbox retornou conteúdo de resposta para CodexRequest 1418`, em seguida `Despachando próxima CodexRequest 1419`, e depois `Falha ao atualizar CodexRequest 1418 a partir do sandbox` por `500`.
+- Ajuste aplicado: `dispatchNextQueuedRequest` agora captura falha ao despachar a próxima solicitação, registra erro e mantém a próxima como pendente para nova tentativa, sem desfazer a atualização terminal já confirmada da solicitação anterior.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest` em `apps/backend` passou com 29 testes, incluindo novo teste que garante que a atualização terminal é preservada quando o despacho seguinte falha.
