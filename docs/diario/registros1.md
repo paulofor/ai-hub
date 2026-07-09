@@ -219,6 +219,13 @@
 - Ajustada a etapa `Resolve GHCR credentials` para sempre definir `GHCR_TOKEN=${{ github.token }}` e falhar cedo se `GHCR_USERNAME` divergir de `github.repository_owner`, evitando combinações inválidas de owner/token.
 - Com isso, todos os pontos do workflow que autenticam/chamam GHCR passam a usar o mesmo token nativo do run, eliminando inconsistência de credenciais entre jobs.
 
+## 2026-07-09 19:43:10 UTC-3
+- Diagnóstico de causa raiz do `500 Internal Server Error` ao despachar a `CodexRequest 1419`: o `sandbox-orchestrator` recusou o `POST /jobs` antes da rota por `PayloadTooLargeError: request entity too large`, pois o `express.json` estava limitado a `500kb`; o handler genérico convertia esse estouro em `500 {"error":"internal_error"}`, escondendo a causa real.
+- Ajustado `apps/sandbox-orchestrator/src/server.ts` para usar `SANDBOX_REQUEST_BODY_LIMIT` configurável com padrão `50mb`, compatível com prompts e anexos permitidos pelo frontend, e para responder estouro de payload como `413 payload_too_large` com mensagem acionável.
+- Documentada a nova variável em `apps/sandbox-orchestrator/.env.example` e `apps/sandbox-orchestrator/README.md`.
+- Adicionado teste automatizado garantindo que payload acima do limite retorna `413` em vez de `500`.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator test` com 61 testes aprovados.
+
 ## 2026-06-28 09:38:44 UTC-3
 - Iniciado ajuste para criar o item de menu `Codex ChatGPT MKT`.
 - Causa raiz técnica identificada: o fluxo especial do ChatGPT Codex estava acoplado ao perfil único `CHATGPT_CODEX` em frontend, backend e sandbox-orchestrator, então uma tela nova sem perfil próprio cairia no comportamento de programação ou perderia as garantias do Codex App Server.

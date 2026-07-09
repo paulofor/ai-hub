@@ -350,6 +350,33 @@ test('rejects invalid payload', async () => {
   await request(app).post('/jobs').send({}).expect(400);
 });
 
+test('returns 413 instead of 500 when job payload exceeds request body limit', async () => {
+  const previous = process.env.SANDBOX_REQUEST_BODY_LIMIT;
+  process.env.SANDBOX_REQUEST_BODY_LIMIT = '1kb';
+
+  try {
+    const app = createApp({ processor: new StubProcessor() });
+    const response = await request(app)
+      .post('/jobs')
+      .send({
+        jobId: 'job-too-large',
+        repoUrl: 'https://github.com/example/repo.git',
+        branch: 'main',
+        taskDescription: 'x'.repeat(2048),
+      })
+      .expect(413);
+
+    assert.equal(response.body.error, 'payload_too_large');
+    assert.equal(response.body.limit, '1kb');
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SANDBOX_REQUEST_BODY_LIMIT;
+    } else {
+      process.env.SANDBOX_REQUEST_BODY_LIMIT = previous;
+    }
+  }
+});
+
 test('respects SANDBOX_WORKDIR when creating workspaces', async () => {
   const originalWorkdir = process.env.SANDBOX_WORKDIR;
   const customBase = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-custom-base-'));

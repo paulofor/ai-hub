@@ -28,6 +28,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | Variável | Descrição | Padrão |
 | --- | --- | --- |
 | `PORT` | Porta HTTP exposta pelo serviço | `8083` |
+| `SANDBOX_REQUEST_BODY_LIMIT` | Limite do JSON aceito nas chamadas HTTP do sandbox-orchestrator. Deve comportar o prompt e anexos enviados pelo frontend. | `50mb` |
 | `CODEX_APP_SERVER_ENABLED` | Quando `true`, inicia o supervisor local do `codex app-server --listen stdio://` e inclui seu estado no healthcheck. | `false` |
 | `CODEX_HOME` | Diretório persistente do Codex App Server para cache de autenticação gerenciado pelo próprio Codex. Deve ser tratado como segredo quando usar storage em arquivo. | `/var/lib/ai-hub/codex` na imagem |
 | `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX`/`CHATGPT_CODEX_MKT` via App Server. | `7200000` |
