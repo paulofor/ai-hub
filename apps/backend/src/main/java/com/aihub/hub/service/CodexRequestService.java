@@ -222,7 +222,16 @@ public class CodexRequestService {
         codexRequestRepository.findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(profile, CodexRequestStatus.PENDING)
             .ifPresent(next -> {
                 log.info("Despachando próxima CodexRequest {} da fila do perfil {}", next.getId(), profile);
-                dispatchToSandbox(next, deserializeImageAttachments(next));
+                try {
+                    dispatchToSandbox(next, deserializeImageAttachments(next));
+                } catch (Exception ex) {
+                    log.error(
+                        "Falha ao despachar próxima CodexRequest {} da fila do perfil {}; a solicitação permanecerá pendente para nova tentativa",
+                        next.getId(),
+                        profile,
+                        ex
+                    );
+                }
             });
     }
 

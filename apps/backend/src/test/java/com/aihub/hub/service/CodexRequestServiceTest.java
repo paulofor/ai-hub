@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -344,6 +345,60 @@ class CodexRequestServiceTest {
         assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
         assertThat(request.getFinishedAt()).isEqualTo(Instant.parse("2024-01-01T00:06:00Z"));
         verify(codexRequestRepository).save(request);
+    }
+
+    @Test
+    void terminalSandboxUpdateIsKeptWhenNextQueuedDispatchFails() {
+        CodexRequest completedRequest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "done");
+        completedRequest.setExternalId("job-completed-before-next");
+        completedRequest.setStatus(CodexRequestStatus.RUNNING);
+        completedRequest.setCreatedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        CodexRequest nextRequest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "next task");
+        nextRequest.setStatus(CodexRequestStatus.PENDING);
+
+        when(codexRequestRepository.findByExternalId("job-completed-before-next")).thenReturn(Optional.of(completedRequest));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexRequestRepository.findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(
+            CodexIntegrationProfile.STANDARD,
+            CodexRequestStatus.PENDING
+        )).thenReturn(Optional.of(nextRequest));
+        doThrow(new RuntimeException("sandbox 500")).when(sandboxOrchestratorClient).createJob(any());
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
+                "job-completed-before-next",
+                "COMPLETED",
+                "Concluído",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:06:00Z",
+                300000L,
+                0,
+                0,
+                0,
+                0,
+                null,
+                null,
+                null
+            );
+
+        CodexRequestService service = buildService();
+
+        assertThatCode(() -> service.handleSandboxCallback(response)).doesNotThrowAnyException();
+        assertThat(completedRequest.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
+        assertThat(completedRequest.getResponseText()).isEqualTo("Concluído");
+        assertThat(nextRequest.getStatus()).isEqualTo(CodexRequestStatus.PENDING);
+        assertThat(nextRequest.getExternalId()).isNull();
+        verify(codexRequestRepository).save(completedRequest);
     }
 
     @Test
