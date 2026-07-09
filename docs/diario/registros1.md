@@ -1441,3 +1441,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Acao planejada: publicar a branch atualizada e abrir PR em modo draft para revisao.
 
 - 2026-07-09 02:22:11 UTC — Implementado indicador na dashboard para mostrar há quantos dias houve a última alteração de código fonte por módulo (`Backend`, `Frontend`, `Sandbox Orchestrator` e `MCP Server`). A causa raiz da ausência dessa informação era não existir um endpoint consolidado com metadados de alteração por pasta de módulo; foi criado `/api/source-modules/changes`, calculando a data via `git log` e usando mtime dos arquivos como fallback.
+
+## 2026-07-09 22:34:46 UTC - Diagnostico operacional do sistema
+- Solicitação recebida: informar o que está acontecendo agora no sistema.
+- Verificações realizadas: estado Git local, healthcheck do MCP Server, lista de containers via MCP e logs recentes de backend/sandbox.
+- Estado observado: MCP Server respondeu `{"status":"UP"}`; containers `caddy`, `frontend`, `backend`, `sandbox-orchestrator`, `mcp-server` e `sandbox-mail` estavam em execução há cerca de 11 horas, com `sandbox-mail` saudável.
+- Evento atual observado: backend criou a `CodexRequest 1422` para esta conversa e a despachou ao sandbox com job `ed5941a2-e8d2-435c-82ec-4cb74bcd45ba`, perfil `CHATGPT_CODEX`, modelo `gpt-5.5`, branch base `main`.
+- Sinais recentes relevantes: antes desta conversa houve `Connection reset` no acesso JDBC ao banco às 22:28 UTC, `Broken pipe` de streaming às 22:29 UTC e duas falhas de atualização da `CodexRequest 1418` por retorno 500 do sandbox; para a `CodexRequest 1422`, os logs vistos indicaram polling/atualização contínua sem erro.
+- Limitação de ambiente: o Docker local do workspace não estava acessível por `/var/run/docker.sock`; a inspeção de containers foi feita via MCP Server. Algumas consultas pontuais via MCP ao status interno do job e `docker logs` com timeout não retornaram antes do limite de 30s.
