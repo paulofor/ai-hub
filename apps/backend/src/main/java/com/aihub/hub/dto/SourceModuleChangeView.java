@@ -6,6 +6,6 @@ public record SourceModuleChangeView(
     String name,
     String path,
     Instant lastChangedAt,
-    long daysSinceLastChange
+    Long daysSinceLastChange
 ) {
 }
