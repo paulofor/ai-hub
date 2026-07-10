@@ -7,6 +7,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -67,6 +68,25 @@ class AccountControllerTest {
         assertThat(response).containsEntry("authMode", "chatgpt");
         assertThat(response).containsEntry("executable", true);
         verify(sandbox).readCodexAccount();
+    }
+
+    @Test
+    void appServerModelsProxySandboxModelList() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        SandboxOrchestratorClient sandbox = mock(SandboxOrchestratorClient.class);
+        when(sandbox.listCodexModels()).thenReturn(List.of(Map.of(
+            "id", "gpt-5.6-sol",
+            "modelName", "gpt-5.6-sol",
+            "displayName", "GPT-5.6 Sol"
+        )));
+        AccountController controller = new AccountController(sandbox, meterRegistry);
+        ReflectionTestUtils.setField(controller, "codexAppServerEnabled", true);
+
+        List<Map<String, Object>> response = controller.models();
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0)).containsEntry("modelName", "gpt-5.6-sol");
+        verify(sandbox).listCodexModels();
     }
 
     @Test

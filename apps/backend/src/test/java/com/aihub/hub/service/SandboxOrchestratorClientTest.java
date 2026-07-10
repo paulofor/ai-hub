@@ -44,6 +44,22 @@ class SandboxOrchestratorClientTest {
         }
     }
 
+    @Test
+    void listCodexModelsReturnsUpstreamModelList() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("[{\"id\":\"gpt-5.6-sol\",\"modelName\":\"gpt-5.6-sol\",\"displayName\":\"GPT-5.6 Sol\"}]"));
+            SandboxOrchestratorClient client = clientFor(server);
+
+            java.util.List<Map<String, Object>> response = client.listCodexModels();
+
+            assertThat(response).hasSize(1);
+            assertThat(response.get(0)).containsEntry("modelName", "gpt-5.6-sol");
+            assertThat(server.takeRequest().getPath()).isEqualTo("/codex-app-server/models");
+        }
+    }
 
     @Test
     void getJobUsesLargestInteractionCounterWhenExplicitCountIsStaleZero() throws Exception {

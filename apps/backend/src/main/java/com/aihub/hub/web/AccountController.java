@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.aihub.hub.service.SandboxOrchestratorClient;
 
 import java.util.Map;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/account")
@@ -37,6 +38,14 @@ public class AccountController {
             return legacyOAuthRemovedAccountState();
         }
         return requireSandboxOrchestratorClient().readCodexAccount();
+    }
+
+    @GetMapping("/models")
+    public List<Map<String, Object>> models() {
+        if (!codexAppServerEnabled) {
+            return List.of();
+        }
+        return requireSandboxOrchestratorClient().listCodexModels();
     }
 
     @PostMapping("/login/start")

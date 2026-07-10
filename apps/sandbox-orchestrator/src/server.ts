@@ -16,12 +16,49 @@ interface AppOptions {
   codexAppServerClient?: CodexAppServerClient;
 }
 
+interface CodexAppServerModel {
+  id?: unknown;
+  model?: unknown;
+  displayName?: unknown;
+  hidden?: unknown;
+}
+
+interface CodexAppServerModelListResponse {
+  data?: unknown;
+  nextCursor?: unknown;
+}
+
 function validateString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeCodexAppServerModels(response: unknown): Array<{ id: string; modelName: string; displayName?: string }> {
+  const payload = response as CodexAppServerModelListResponse;
+  const items = Array.isArray(payload?.data) ? payload.data : [];
+  return items
+    .map((item): { id: string; modelName: string; displayName?: string; hidden: boolean } | null => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+      const model = item as CodexAppServerModel;
+      const modelName = validateString(model.model) ?? validateString(model.id);
+      if (!modelName) {
+        return null;
+      }
+      return {
+        id: validateString(model.id) ?? modelName,
+        modelName,
+        displayName: validateString(model.displayName),
+        hidden: model.hidden === true,
+      };
+    })
+    .filter((item): item is { id: string; modelName: string; displayName?: string; hidden: boolean } => item !== null)
+    .filter((item) => !item.hidden)
+    .map(({ hidden: _hidden, ...item }) => item);
 }
 
 function validateBoolean(value: unknown): boolean | undefined {
@@ -184,6 +221,29 @@ export function createApp(options: AppOptions = {}) {
     const state = await readCodexAccount(codexAppServerClient);
     const httpStatus = state.status === 'unavailable' ? 503 : 200;
     return res.status(httpStatus).json(state);
+  });
+
+  app.get('/codex-app-server/models', async (_req: Request, res: Response) => {
+    if (!codexAppServerClient) {
+      return res.status(503).json({ models: [], blockReason: 'CODEX_APP_SERVER_DISABLED' });
+    }
+    try {
+      const models: Array<{ id: string; modelName: string; displayName?: string }> = [];
+      let cursor: string | undefined;
+      do {
+        const response = await codexAppServerClient.request<CodexAppServerModelListResponse>('model/list', {
+          cursor,
+          limit: 100,
+          includeHidden: false,
+        });
+        models.push(...normalizeCodexAppServerModels(response));
+        cursor = validateString(response?.nextCursor);
+      } while (cursor);
+      return res.json(models);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'CODEX_MODEL_LIST_FAILED';
+      return res.status(502).json({ models: [], blockReason: message });
+    }
   });
 
 
