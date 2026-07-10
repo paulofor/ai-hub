@@ -112,7 +112,10 @@ public class CodexController {
         payload.put("profile", request.getProfile());
         payload.put("createdAt", request.getCreatedAt());
         payload.put("envParameters", extractEnvParameters());
-        payload.put("interactionCount", interactions.size());
+        int summarizedInteractionCount = request.getInteractionCount() != null
+            ? Math.max(request.getInteractionCount(), interactions.size())
+            : interactions.size();
+        payload.put("interactionCount", summarizedInteractionCount);
         payload.put("interactions", interactions.stream().map(interaction -> {
             Map<String, Object> item = new HashMap<>();
             item.put("id", interaction.getId());
