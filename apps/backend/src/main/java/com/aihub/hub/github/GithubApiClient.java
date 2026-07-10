@@ -34,6 +34,14 @@ public class GithubApiClient {
         return headers;
     }
 
+    private Map<String, String> tokenAuthHeaders(String token) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", "Bearer " + token);
+        headers.put("Accept", "application/vnd.github+json");
+        headers.put("X-GitHub-Api-Version", API_VERSION);
+        return headers;
+    }
+
     public JsonNode createRepository(String org, String name, boolean isPrivate) {
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
@@ -224,6 +232,18 @@ public class GithubApiClient {
                 .queryParam("per_page", perPage)
                 .build(owner, repo))
             .headers(headers -> headers.setAll(authHeaders()))
+            .retrieve()
+            .body(JsonNode.class);
+    }
+
+    public JsonNode listCommitsWithToken(String owner, String repo, String branch, String path, int perPage, String token) {
+        return restClient.get()
+            .uri(uriBuilder -> uriBuilder.path("/repos/{owner}/{repo}/commits")
+                .queryParam("sha", branch)
+                .queryParam("path", path)
+                .queryParam("per_page", perPage)
+                .build(owner, repo))
+            .headers(headers -> headers.setAll(tokenAuthHeaders(token)))
             .retrieve()
             .body(JsonNode.class);
     }

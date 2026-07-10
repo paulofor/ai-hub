@@ -1,5 +1,6 @@
 package com.aihub.hub.service;
 
+import com.aihub.hub.domain.SourceRepositoryConfig;
 import com.aihub.hub.github.GithubApiClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ class SourceModuleChangeServiceTest {
         SourceModuleChangeService service = new SourceModuleChangeService(
             CLOCK,
             mock(GithubApiClient.class),
+            emptySourceRepositoryConfigService(),
             "",
             "",
             "main",
@@ -60,6 +62,7 @@ class SourceModuleChangeServiceTest {
         SourceModuleChangeService service = new SourceModuleChangeService(
             CLOCK,
             githubApiClient,
+            emptySourceRepositoryConfigService(),
             "owner",
             "repo",
             "main",
@@ -76,6 +79,54 @@ class SourceModuleChangeServiceTest {
     }
 
     @Test
+    void usesPersistedGithubTokenConfigBeforeEnvironmentCoordinates() throws Exception {
+        GithubApiClient githubApiClient = mock(GithubApiClient.class);
+        SourceRepositoryConfig config = new SourceRepositoryConfig();
+        config.setGithubOwner("persisted-owner");
+        config.setGithubRepo("persisted-repo");
+        config.setGithubBranch("develop");
+        config.setGithubToken("github_pat_secret");
+
+        SourceRepositoryConfigService configService = mock(SourceRepositoryConfigService.class);
+        when(configService.getConfig()).thenReturn(java.util.Optional.of(config));
+        when(githubApiClient.listCommitsWithToken(
+            eq("persisted-owner"),
+            eq("persisted-repo"),
+            eq("develop"),
+            eq("apps/frontend"),
+            eq(1),
+            eq("github_pat_secret")
+        )).thenReturn(OBJECT_MAPPER.readTree("""
+            [{
+              "commit": {
+                "committer": {
+                  "date": "2026-07-08T00:00:00Z"
+                }
+              }
+            }]
+            """));
+
+        SourceModuleChangeService service = new SourceModuleChangeService(
+            CLOCK,
+            githubApiClient,
+            configService,
+            "env-owner",
+            "env-repo",
+            "main",
+            tempDir.toString()
+        );
+
+        var frontend = service.listModuleChanges().stream()
+            .filter(module -> module.path().equals("apps/frontend"))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(frontend.lastChangedAt()).isEqualTo(Instant.parse("2026-07-08T00:00:00Z"));
+        assertThat(frontend.daysSinceLastChange()).isEqualTo(2);
+    }
+
+
+    @Test
     void usesLatestLocalFileDateWhenGitHistoryIsUnavailable() throws Exception {
         Path moduleDir = tempDir.resolve("apps/frontend/src");
         Files.createDirectories(moduleDir);
@@ -86,6 +137,7 @@ class SourceModuleChangeServiceTest {
         SourceModuleChangeService service = new SourceModuleChangeService(
             CLOCK,
             mock(GithubApiClient.class),
+            emptySourceRepositoryConfigService(),
             "",
             "",
             "main",
@@ -99,5 +151,11 @@ class SourceModuleChangeServiceTest {
 
         assertThat(frontend.lastChangedAt()).isEqualTo(Instant.parse("2026-07-09T00:00:00Z"));
         assertThat(frontend.daysSinceLastChange()).isEqualTo(1);
+    }
+
+    private SourceRepositoryConfigService emptySourceRepositoryConfigService() {
+        SourceRepositoryConfigService service = mock(SourceRepositoryConfigService.class);
+        when(service.getConfig()).thenReturn(java.util.Optional.empty());
+        return service;
     }
 }

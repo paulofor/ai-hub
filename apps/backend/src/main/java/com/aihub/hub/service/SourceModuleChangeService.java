@@ -1,5 +1,6 @@
 package com.aihub.hub.service;
 
+import com.aihub.hub.domain.SourceRepositoryConfig;
 import com.aihub.hub.dto.SourceModuleChangeView;
 import com.aihub.hub.github.GithubApiClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,6 +30,7 @@ public class SourceModuleChangeService {
 
     private final Clock clock;
     private final GithubApiClient githubApiClient;
+    private final SourceRepositoryConfigService sourceRepositoryConfigService;
     private final Path repositoryRoot;
     private final String githubOwner;
     private final String githubRepo;
@@ -37,6 +39,7 @@ public class SourceModuleChangeService {
     public SourceModuleChangeService(
         Clock clock,
         GithubApiClient githubApiClient,
+        SourceRepositoryConfigService sourceRepositoryConfigService,
         @Value("${hub.source.repository.owner:${GITHUB_SOURCE_OWNER:}}") String githubOwner,
         @Value("${hub.source.repository.repo:${GITHUB_SOURCE_REPO:}}") String githubRepo,
         @Value("${hub.source.repository.branch:${GITHUB_SOURCE_BRANCH:main}}") String githubBranch,
@@ -44,6 +47,7 @@ public class SourceModuleChangeService {
     ) {
         this.clock = clock;
         this.githubApiClient = githubApiClient;
+        this.sourceRepositoryConfigService = sourceRepositoryConfigService;
         this.githubOwner = githubOwner;
         this.githubRepo = githubRepo;
         this.githubBranch = githubBranch;
@@ -90,11 +94,43 @@ public class SourceModuleChangeService {
     }
 
     private Instant lastCommitInstantFromGithub(String modulePath) {
+        Instant configuredInstant = sourceRepositoryConfigService.getConfig()
+            .map(config -> lastCommitInstantFromGithubConfig(modulePath, config))
+            .orElse(null);
+        if (configuredInstant != null) {
+            return configuredInstant;
+        }
         if (githubOwner.isBlank() || githubRepo.isBlank()) {
             return null;
         }
         try {
             JsonNode commits = githubApiClient.listCommits(githubOwner, githubRepo, githubBranch, modulePath, 1);
+            if (commits == null || !commits.isArray() || commits.isEmpty()) {
+                return null;
+            }
+            JsonNode date = commits.get(0).path("commit").path("committer").path("date");
+            return date.isTextual() ? Instant.parse(date.asText()) : null;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private Instant lastCommitInstantFromGithubConfig(String modulePath, SourceRepositoryConfig config) {
+        if (config.getGithubOwner() == null || config.getGithubOwner().isBlank()
+            || config.getGithubRepo() == null || config.getGithubRepo().isBlank()
+            || config.getGithubBranch() == null || config.getGithubBranch().isBlank()
+            || config.getGithubToken() == null || config.getGithubToken().isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode commits = githubApiClient.listCommitsWithToken(
+                config.getGithubOwner(),
+                config.getGithubRepo(),
+                config.getGithubBranch(),
+                modulePath,
+                1,
+                config.getGithubToken()
+            );
             if (commits == null || !commits.isArray() || commits.isEmpty()) {
                 return null;
             }

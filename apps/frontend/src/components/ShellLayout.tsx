@@ -14,6 +14,7 @@ const links = [
   { to: '/codex-chatgpt', label: 'Codex ChatGPT' },
   { to: '/codex-chatgpt-mkt', label: 'Codex ChatGPT MKT' },
   { to: '/codex/models', label: 'Modelos Codex' },
+  { to: '/source-repository-config', label: 'Config. Repositório' },
   { to: '/audit', label: 'Audit Log' }
 ];
 

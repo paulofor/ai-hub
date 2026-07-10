@@ -14,6 +14,7 @@ import ProblemsPage from './pages/ProblemsPage';
 import ProblemDetailPage from './pages/ProblemDetailPage';
 import CodexChatgptPage from './pages/CodexChatgptPage';
 import PrivacyPage from './pages/PrivacyPage';
+import SourceRepositoryConfigPage from './pages/SourceRepositoryConfigPage';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
         <Route path="/codex-chatgpt-mkt" element={<CodexChatgptPage variant="marketing" />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
+        <Route path="/source-repository-config" element={<SourceRepositoryConfigPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
