@@ -1507,3 +1507,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado no frontend: adicionado menu `Config. Repositório`, rota `/source-repository-config` e tela para cadastrar usuário/organização, repositório, branch e token. Quando já há token salvo, o campo fica vazio e serve apenas para substituição.
 - Validação: `mvn test` em `apps/backend` passou com 70 testes, incluindo cobertura para uso da configuração persistida com token; `npm install` foi executado para montar o ambiente frontend local; `npm run build` em `apps/frontend` passou.
 - Validação runtime: uma execução local do backend carregou o `.env` existente e aplicou a migration `V34__create_source_repository_config` no MySQL configurado, criando a tabela necessária sem gravar token. A tentativa posterior com H2 isolado confirmou uma limitação preexistente: o runtime H2 não sobe porque existem duas migrations `V29` em `db/migration/h2`.
+
+## 2026-07-10 11:53:20 UTC - Modelos GPT-5.6 na combo Codex ChatGPT
+
+- Solicitação recebida: pesquisar modelos 5.6, colocar na combo do Codex ChatGPT e esclarecer se o usuário conseguiria usar GPT-5.6 Sol.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a combo da tela `Codex ChatGPT` era uma lista fixa no frontend com apenas `gpt-5.5` e `gpt-5.4`; o backend já repassava o campo `model` para o sandbox/App Server, então o problema raiz era falta de descoberta/atualização da lista exibida, não o caminho de execução em si.
+- Pesquisa realizada: fontes públicas indicam família GPT-5.6 com variantes Sol/Terra/Luna e disponibilidade gradual em Codex/ChatGPT Work para contas elegíveis; como a disponibilidade depende da conta conectada, a fonte de verdade operacional deve ser o `model/list` do Codex App Server local.
+- Ajuste aplicado no sandbox-orchestrator: adicionado `GET /codex-app-server/models`, que chama `model/list`, pagina resultados, remove modelos ocultos e normaliza `{id, modelName, displayName}`.
+- Ajuste aplicado no backend: adicionado proxy `GET /api/account/models`, mantendo `/api/codex/models` reservado para cadastro de preços/custos.
+- Ajuste aplicado no frontend: a combo passa a carregar modelos reais de `/account/models` e usa fallback com `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5` e `gpt-5.4`.
+- Observação operacional: o usuário conseguirá usar `GPT-5.6 Sol` se a conta ChatGPT conectada tiver acesso e o Codex App Server aceitar o ID retornado por `model/list`; se a conta ainda não tiver rollout, o fallback pode aparecer, mas a execução poderá falhar no `thread/start`.
+- Validação: `mvn test -Dtest=AccountControllerTest,SandboxOrchestratorClientTest` passou; `npm run build` em `apps/frontend` passou; `npm run build` e `node --test --test-name-pattern="lista modelos|Codex App Server" dist/tests/jobs.test.js dist/tests/codexAppServerClient.test.js` passaram no `apps/sandbox-orchestrator`; `git diff --check` passou.

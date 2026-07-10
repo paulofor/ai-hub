@@ -3467,6 +3467,33 @@ test('encaminha logout para Codex App Server', async () => {
   assert.equal(response.body.executable, false);
 });
 
+test('lista modelos disponíveis do Codex App Server', async () => {
+  const calls: Array<{ method: string; params?: unknown }> = [];
+  const fakeCodexAppServerClient = {
+    health: () => ({ status: 'ready', ready: true, restartAttempts: 0 }),
+    isReady: () => true,
+    request: async (method: string, params?: unknown) => {
+      calls.push({ method, params });
+      if (method === 'model/list') {
+        return {
+          data: [
+            { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol', hidden: false },
+            { id: 'legacy-hidden', model: 'legacy-hidden', hidden: true },
+          ],
+          nextCursor: null,
+        };
+      }
+      return {};
+    },
+  } as any;
+  const app = createApp({ processor: new StubProcessor(), codexAppServerClient: fakeCodexAppServerClient });
+  const response = await request(app).get('/codex-app-server/models').expect(200);
+
+  assert.deepEqual(response.body, [{ id: 'gpt-5.6-sol', modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' }]);
+  assert.equal(calls[0]?.method, 'model/list');
+  assert.equal((calls[0]?.params as { includeHidden?: boolean })?.includeHidden, false);
+});
+
 test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start', async () => {
   const tempRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-codex-app-server-'));
   execSync('git init', { cwd: tempRepo });

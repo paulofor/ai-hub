@@ -29,8 +29,9 @@ interface EnvironmentOption {
 }
 
 interface ModelOption {
-  id: number;
+  id: string;
   modelName: string;
+  displayName?: string;
 }
 
 const POLL_INTERVAL_MS = 5000;
@@ -145,9 +146,40 @@ const MarkdownMessage = ({ content }: { content: string }) => {
 };
 
 const CHATGPT_CODEX_MODELS: ModelOption[] = [
-  { id: 55, modelName: 'gpt-5.5' },
-  { id: 54, modelName: 'gpt-5.4' }
+  { id: 'gpt-5.6-sol', modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' },
+  { id: 'gpt-5.6-terra', modelName: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra' },
+  { id: 'gpt-5.6-luna', modelName: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' },
+  { id: 'gpt-5.5', modelName: 'gpt-5.5' },
+  { id: 'gpt-5.4', modelName: 'gpt-5.4' }
 ];
+
+const normalizeModelOption = (value: unknown): ModelOption | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const modelName = typeof record.modelName === 'string' && record.modelName.trim()
+    ? record.modelName.trim()
+    : typeof record.model === 'string' && record.model.trim()
+      ? record.model.trim()
+      : null;
+  if (!modelName) {
+    return null;
+  }
+  const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : modelName;
+  const displayName = typeof record.displayName === 'string' && record.displayName.trim() ? record.displayName.trim() : undefined;
+  return { id, modelName, displayName };
+};
+
+const mergeModelOptions = (primary: ModelOption[], fallback: ModelOption[]): ModelOption[] => {
+  const byModel = new Map<string, ModelOption>();
+  [...primary, ...fallback].forEach((item) => {
+    if (!byModel.has(item.modelName)) {
+      byModel.set(item.modelName, item);
+    }
+  });
+  return Array.from(byModel.values());
+};
 
 interface ImageAttachment {
   id: string;
@@ -554,6 +586,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         client.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
         client.get<EnvironmentOption[]>('/environments')
       ]);
+      const modelResponse = await client.get('/account/models')
+        .then((response) => Array.isArray(response.data) ? response.data.map(normalizeModelOption).filter((item): item is ModelOption => item !== null) : [])
+        .catch(() => []);
       if (accountResult.ok) {
         const parsedAccount = parseStatus(accountResult.data);
         setAccount(parsedAccount);
@@ -566,9 +601,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         throw accountResult.error;
       }
       setEnvironments(envResponse.data);
-      setModels(CHATGPT_CODEX_MODELS);
+      const nextModels = mergeModelOptions(modelResponse, CHATGPT_CODEX_MODELS);
+      setModels(nextModels);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
-      setModel((current) => CHATGPT_CODEX_MODELS.some((item) => item.modelName === current) ? current : CHATGPT_CODEX_MODELS[0].modelName);
+      setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
       await loadRequests();
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
@@ -1197,7 +1233,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             {environments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
           </select>
           <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
-            {models.map((item) => <option key={item.id} value={item.modelName}>{item.modelName}</option>)}
+            {models.map((item) => <option key={item.id} value={item.modelName}>{item.displayName ?? item.modelName}</option>)}
           </select>
         </div>
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />

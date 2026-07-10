@@ -86,6 +86,19 @@ public class SandboxOrchestratorClient {
         }
     }
 
+    public List<Map<String, Object>> listCodexModels() {
+        try {
+            List<Map<String, Object>> response = restClient.get()
+                .uri("/codex-app-server/models")
+                .retrieve()
+                .body(new org.springframework.core.ParameterizedTypeReference<List<Map<String, Object>>>() {});
+            return response == null ? List.of() : response;
+        } catch (HttpStatusCodeException ex) {
+            log.warn("Falha ao listar modelos do Codex App Server: status={} body={}", ex.getStatusCode(), ex.getResponseBodyAsString());
+            return List.of();
+        }
+    }
+
     private Map<String, Object> accountStateFromUpstreamError(HttpStatusCodeException ex, String fallbackBlockReason) {
         String responseBody = ex.getResponseBodyAsString();
         if (responseBody != null && !responseBody.isBlank()) {
