@@ -1484,3 +1484,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado no frontend: a dashboard aceita valores nulos e exibe `Sem dados`/`indisponível`, evitando datas falsas quando a origem não está acessível.
 - Testes adicionados: `SourceModuleChangeServiceTest` cobre módulo sem diretório/histórico, data vinda do GitHub e fallback por mtime local.
 - Validação: `mvn test -Dtest=SourceModuleChangeServiceTest`, `mvn test` completo em `apps/backend` e `npm run build` em `apps/frontend` passaram.
+
+## 2026-07-10 02:16:00 UTC - Esclarecimento sobre exibição dos dias corretos
+
+- Solicitação recebida: esclarecer se a dashboard exibirá `null` e o que é necessário para mostrar a quantidade correta de dias desde a última alteração.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a contagem correta depende de o backend conseguir consultar uma fonte real de histórico para cada pasta de módulo; sem GitHub configurado e sem raiz local de repositório acessível, o sistema não tem dado confiável para calcular os dias.
+- Orientação registrada: a UI não deve exibir `null`; ela mostra `Sem dados`/`indisponível` quando o backend retorna ausência de data. Para exibir a quantidade correta, configurar `GITHUB_SOURCE_OWNER`, `GITHUB_SOURCE_REPO` e `GITHUB_SOURCE_BRANCH` para consulta via GitHub ou `HUB_SOURCE_REPOSITORY_ROOT` apontando para a raiz local do checkout com `.git` acessível ao container/processo do backend.
