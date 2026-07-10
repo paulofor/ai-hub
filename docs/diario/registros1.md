@@ -1475,3 +1475,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Decisão: seguir pela alternativa 1. Ajustes aplicados: `CodexRequest.interactionCount` passou a ser coluna `interaction_count`; adicionadas migrations `V32` H2, `V31` PostgreSQL e `V33` MySQL com backfill a partir de `codex_interactions`; o download de interações agora usa a maior contagem entre o resumo persistido e as linhas detalhadas existentes.
 - Testes adicionados: teste de domínio garantindo que `interactionCount` não é mais `@Transient` e teste do controller validando que o ZIP de interações reporta a contagem resumida mesmo sem linhas detalhadas.
 - Validação: `mvn test -Dtest=CodexRequestTest,CodexControllerTest,CodexRequestServiceTest,SandboxOrchestratorClientTest` passou com 40 testes; em seguida `mvn test` completo em `apps/backend` passou com 66 testes, 0 falhas e 0 erros. `git diff --check` também passou sem apontar problemas de whitespace.
+
+## 2026-07-10 02:03:00 UTC - Correção dos totais de dias na dashboard
+
+- Solicitação recebida: corrigir os totais de dias exibidos em "Últimas alterações do código fonte", que apareciam como `20644 dias` e data `31/12/1969`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: quando o backend não encontrava commit via GitHub/git local ou não conseguia ler a pasta do módulo, o fallback retornava `Instant.EPOCH`; a UI renderizava esse timestamp como uma data real, fazendo a contagem desde 1970.
+- Ajuste aplicado: `SourceModuleChangeService` agora retorna `null` para `lastChangedAt` e `daysSinceLastChange` quando não há fonte confiável, em vez de usar epoch; também foi adicionada configuração opcional `hub.source.repository.root`/`HUB_SOURCE_REPOSITORY_ROOT` para apontar explicitamente a raiz local quando disponível.
+- Ajuste aplicado no frontend: a dashboard aceita valores nulos e exibe `Sem dados`/`indisponível`, evitando datas falsas quando a origem não está acessível.
+- Testes adicionados: `SourceModuleChangeServiceTest` cobre módulo sem diretório/histórico, data vinda do GitHub e fallback por mtime local.
+- Validação: `mvn test -Dtest=SourceModuleChangeServiceTest`, `mvn test` completo em `apps/backend` e `npm run build` em `apps/frontend` passaram.

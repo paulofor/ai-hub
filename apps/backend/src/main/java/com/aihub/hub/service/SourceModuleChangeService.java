@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class SourceModuleChangeService {
@@ -38,14 +39,15 @@ public class SourceModuleChangeService {
         GithubApiClient githubApiClient,
         @Value("${hub.source.repository.owner:${GITHUB_SOURCE_OWNER:}}") String githubOwner,
         @Value("${hub.source.repository.repo:${GITHUB_SOURCE_REPO:}}") String githubRepo,
-        @Value("${hub.source.repository.branch:${GITHUB_SOURCE_BRANCH:main}}") String githubBranch
+        @Value("${hub.source.repository.branch:${GITHUB_SOURCE_BRANCH:main}}") String githubBranch,
+        @Value("${hub.source.repository.root:${HUB_SOURCE_REPOSITORY_ROOT:}}") String configuredRepositoryRoot
     ) {
         this.clock = clock;
         this.githubApiClient = githubApiClient;
         this.githubOwner = githubOwner;
         this.githubRepo = githubRepo;
         this.githubBranch = githubBranch;
-        this.repositoryRoot = discoverRepositoryRoot();
+        this.repositoryRoot = discoverRepositoryRoot(configuredRepositoryRoot);
     }
 
     public List<SourceModuleChangeView> listModuleChanges() {
@@ -56,7 +58,9 @@ public class SourceModuleChangeService {
 
     private SourceModuleChangeView toView(SourceModule module) {
         Instant lastChangedAt = lastCommitInstant(module.path());
-        long daysSinceLastChange = Math.max(0, Duration.between(lastChangedAt, clock.instant()).toDays());
+        Long daysSinceLastChange = lastChangedAt == null
+            ? null
+            : Math.max(0, Duration.between(lastChangedAt, clock.instant()).toDays());
         return new SourceModuleChangeView(module.name(), module.path(), lastChangedAt, daysSinceLastChange);
     }
 
@@ -103,6 +107,9 @@ public class SourceModuleChangeService {
 
     private Instant latestFileModifiedAt(String modulePath) {
         Path absoluteModulePath = repositoryRoot.resolve(modulePath);
+        if (!Files.isDirectory(absoluteModulePath)) {
+            return null;
+        }
         try (var paths = Files.walk(absoluteModulePath)) {
             return paths
                 .filter(Files::isRegularFile)
@@ -110,10 +117,11 @@ public class SourceModuleChangeService {
                 .filter(path -> !path.toString().contains("/target/"))
                 .filter(path -> !path.toString().contains("/dist/"))
                 .map(this::lastModifiedAt)
+                .filter(Objects::nonNull)
                 .max(Instant::compareTo)
-                .orElse(Instant.EPOCH);
+                .orElse(null);
         } catch (IOException ex) {
-            return Instant.EPOCH;
+            return null;
         }
     }
 
@@ -121,11 +129,14 @@ public class SourceModuleChangeService {
         try {
             return Files.getLastModifiedTime(path).toInstant();
         } catch (IOException ex) {
-            return Instant.EPOCH;
+            return null;
         }
     }
 
-    private Path discoverRepositoryRoot() {
+    private Path discoverRepositoryRoot(String configuredRepositoryRoot) {
+        if (configuredRepositoryRoot != null && !configuredRepositoryRoot.isBlank()) {
+            return Path.of(configuredRepositoryRoot).toAbsolutePath().normalize();
+        }
         Path current = Path.of("").toAbsolutePath();
         while (current != null) {
             if (Files.isDirectory(current.resolve(".git"))) {

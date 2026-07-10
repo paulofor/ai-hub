@@ -12,8 +12,12 @@ interface Prompt {
 interface SourceModuleChange {
   name: string;
   path: string;
-  lastChangedAt: string;
-  daysSinceLastChange: number;
+  lastChangedAt: string | null;
+  daysSinceLastChange: number | null;
+}
+
+function formatModuleDate(value: string | null) {
+  return value ? new Date(value).toLocaleDateString() : 'indisponível';
 }
 
 export default function DashboardPage() {
@@ -69,10 +73,12 @@ export default function DashboardPage() {
             <div key={module.path} className="rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40 p-3">
               <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{module.name}</div>
               <div className="mt-2 text-2xl font-bold text-emerald-600">
-                {module.daysSinceLastChange} {module.daysSinceLastChange === 1 ? 'dia' : 'dias'}
+                {module.daysSinceLastChange === null
+                  ? 'Sem dados'
+                  : `${module.daysSinceLastChange} ${module.daysSinceLastChange === 1 ? 'dia' : 'dias'}`}
               </div>
               <div className="mt-1 text-xs text-slate-500">
-                Última alteração: {new Date(module.lastChangedAt).toLocaleDateString()}
+                Última alteração: {formatModuleDate(module.lastChangedAt)}
               </div>
               <div className="mt-1 text-xs font-mono text-slate-400">{module.path}</div>
             </div>
