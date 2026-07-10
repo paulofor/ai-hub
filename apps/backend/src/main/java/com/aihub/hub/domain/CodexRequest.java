@@ -14,7 +14,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -155,7 +154,7 @@ public class CodexRequest {
     @JsonIgnore
     private BigDecimal problemCostContribution = BigDecimal.ZERO;
 
-    @Transient
+    @Column(name = "interaction_count")
     private Integer interactionCount;
 
     public CodexRequest() {

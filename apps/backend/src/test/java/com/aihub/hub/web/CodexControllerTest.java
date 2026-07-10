@@ -5,14 +5,18 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.zip.ZipInputStream;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +32,30 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 
 class CodexControllerTest {
+
+    @Test
+    void downloadInteractionsUsesPersistedSummaryCountWhenDetailedRowsAreEmpty() throws Exception {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, objectMapper);
+
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5.5", null, "prompt");
+        ReflectionTestUtils.setField(request, "id", 1434L);
+        request.setInteractionCount(7);
+
+        when(codexRequestService.listInteractions(1434L)).thenReturn(List.of());
+        when(codexRequestService.find(1434L)).thenReturn(request);
+
+        byte[] zipBytes = controller.downloadInteractions(1434L).getBody();
+
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            assertThat(zip.getNextEntry()).isNotNull();
+            JsonNode payload = objectMapper.readTree(zip.readAllBytes());
+            assertThat(payload.path("interactionCount").asInt()).isEqualTo(7);
+            assertThat(payload.path("interactions")).isEmpty();
+        }
+    }
 
 
     @Test
