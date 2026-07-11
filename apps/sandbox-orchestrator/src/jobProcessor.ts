@@ -218,6 +218,7 @@ interface RunnerEnvironmentState {
   permissionProfile: 'read-write-execute';
   essentialTools: string[];
   cloudTools: string[];
+  awsCredentialsAvailable: boolean;
   browserTools: string[];
   supplementalBinPath?: string;
   validatedAt: string;
@@ -1143,18 +1144,30 @@ export class SandboxJobProcessor implements JobProcessor {
     return `A sandbox disponibiliza um cliente de e-mail descartável para testes: configure SMTP em ${smtpHost}:${smtpPort}, use destinatários como teste+<jobId>@sandbox.local, consulte a API em ${apiUrl} (por exemplo, GET ${apiUrl}/messages) ou a UI interna em ${webUrl}, e nunca use credenciais reais de SMTP para validações.`;
   }
 
+  private buildAwsCliInstruction(): string {
+    const hasAwsCredentials = Boolean(
+      process.env.AWS_ACCESS_KEY_ID?.trim()
+      && process.env.AWS_SECRET_ACCESS_KEY?.trim()
+      && process.env.AWS_DEFAULT_REGION?.trim(),
+    );
+    return hasAwsCredentials
+      ? 'O AWS CLI está disponível pelo comando aws e as credenciais AWS do ambiente já estão exportadas; valide acesso com comandos seguros como aws sts get-caller-identity e nunca imprima AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY ou AWS_SESSION_TOKEN.'
+      : 'O AWS CLI está disponível pelo comando aws para verificações e operações AWS quando o ambiente fornecer credenciais e permissões adequadas; se precisar de AWS e as credenciais não estiverem presentes, pare e relate a ausência sem inventar valores.';
+  }
+
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const localDevelopmentInstruction = 'Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado, registrando qualquer limitação real de ambiente que impeça a execução local.';
     const marketingObjectiveInstruction = 'Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub.';
     const marketingDecisionInstruction = 'Nos pontos mais importantes do fluxo de solução, aplique um mecanismo explícito de raciocínio: elabore pelo menos 3 alternativas boas, compare benefícios, riscos, custo/esforço e aderência ao objetivo do usuário, escolha a melhor para a situação e siga por ela registrando a justificativa de forma objetiva.';
     const emailTestingInstruction = this.buildSandboxEmailInstruction();
+    const awsCliInstruction = this.buildAwsCliInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente. ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${emailTestingInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente. ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${emailTestingInstruction} ${awsCliInstruction}
 
 ${job.taskDescription}`
       : this.isChatgptCodex(job)
-        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction}
+        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${awsCliInstruction}
 
 ${job.taskDescription}`
         : job.taskDescription;
@@ -1279,6 +1292,7 @@ ${job.taskDescription}`
 
     const environmentState = this.getOrThrowRunnerEnvironmentState(job, repoPath);
     const checklist = this.buildEnvironmentChecklist(environmentState);
+    const awsCliInstruction = this.buildAwsCliInstruction();
 
     const tools = this.buildTools(repoPath);
     const profileInstruction = this.isEconomy(job)
@@ -1322,7 +1336,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. O sandbox possui Chromium headless em /usr/bin/chromium e as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. O AWS CLI está disponível pelo comando aws para verificações e operações AWS quando o ambiente fornecer credenciais e permissões adequadas. Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. O sandbox possui Chromium headless em /usr/bin/chromium e as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
@@ -3805,6 +3819,11 @@ ${stderr}`);
     if (await this.isCommandAvailable('aws')) {
       cloudTools.push('aws');
     }
+    const awsCredentialsAvailable = Boolean(
+      process.env.AWS_ACCESS_KEY_ID?.trim()
+      && process.env.AWS_SECRET_ACCESS_KEY?.trim()
+      && process.env.AWS_DEFAULT_REGION?.trim(),
+    );
 
     const state: RunnerEnvironmentState = {
       repoPath: realRepoPath,
@@ -3813,6 +3832,7 @@ ${stderr}`);
       permissionProfile: 'read-write-execute',
       essentialTools,
       cloudTools,
+      awsCredentialsAvailable,
       browserTools,
       supplementalBinPath,
       validatedAt: new Date().toISOString(),
@@ -3841,6 +3861,7 @@ ${stderr}`);
       `- [x] permissões: ${state.permissionProfile}`,
       `- [x] tools essenciais: ${state.essentialTools.join(', ')}`,
       `- [x] ferramentas cloud disponíveis: ${state.cloudTools.length > 0 ? state.cloudTools.join(', ') : 'nenhuma detectada'}`,
+      `- [x] credenciais AWS exportadas: ${state.awsCredentialsAvailable ? 'sim' : 'não'}`,
       `- [x] navegador headless disponível para screenshots: ${state.browserTools.join(', ')} (/usr/bin/chromium; CHROME_BIN/CHROMIUM_BIN/PUPPETEER_EXECUTABLE_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)`,
       `- [x] estado validado em: ${state.validatedAt}`,
     ].join('\n');
