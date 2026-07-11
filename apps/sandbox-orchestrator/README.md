@@ -50,6 +50,21 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
 | `GEMINI_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/gemini-token`; quando contém o arquivo `gemini_api_key`, o `docker-compose` exporta seu conteúdo como `GEMINI_API_KEY` antes de iniciar o runner, tornando a chave disponível aos comandos do modelo sem versionar o segredo. | `/root/infra/gemini-token` |
+| `AWS_CREDENTIALS_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/aws`; quando contém o arquivo `acesso_aws`, o `docker-compose` exporta `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` e, opcionalmente, `AWS_SESSION_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/aws` |
+
+Formato esperado de `/root/infra/aws/acesso_aws` no host:
+
+```dotenv
+AWS_ACCESS_KEY_ID=xxxxxxxxx
+AWS_SECRET_ACCESS_KEY=xxxxxxxx
+AWS_DEFAULT_REGION=us-east-1
+# Opcional para credenciais temporárias:
+AWS_SESSION_TOKEN=xxxxxxxx
+```
+
+O runner informa ao modelo que o comando `aws` está disponível e se as credenciais foram exportadas. Para validar acesso sem expor segredo, use comandos como `aws sts get-caller-identity`; não imprima variáveis `AWS_*` em logs.
+
+O runner também informa ao modelo que o Docker CLI e o plugin Docker Compose v2 estão disponíveis pelos comandos `docker` e `docker compose`. Prefira `docker compose` ao binário legado `docker-compose`; antes de depender de containers, valide a engine/socket com `docker version` e o plugin com `docker compose version`.
 
 ### Limites de contexto (`CONTEXT_*`)
 

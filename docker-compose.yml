@@ -84,6 +84,7 @@ services:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
       - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
       - ${GEMINI_TOKEN_HOST_DIR:-/root/infra/gemini-token}:/run/secrets/gemini-token:ro
+      - ${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}:/run/secrets/aws:ro
       - codex-auth-data:/var/lib/ai-hub/codex
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
     command: >
@@ -99,6 +100,16 @@ services:
       fi;
       if [ -f /run/secrets/gemini-token/gemini_api_key ]; then
         export GEMINI_API_KEY=$(cat /run/secrets/gemini-token/gemini_api_key);
+      fi;
+      if [ -f /run/secrets/aws/acesso_aws ]; then
+        AWS_ACCESS_KEY_ID_VALUE=$(grep -E '^AWS_ACCESS_KEY_ID=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        AWS_SECRET_ACCESS_KEY_VALUE=$(grep -E '^AWS_SECRET_ACCESS_KEY=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        AWS_DEFAULT_REGION_VALUE=$(grep -E '^AWS_DEFAULT_REGION=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        AWS_SESSION_TOKEN_VALUE=$(grep -E '^AWS_SESSION_TOKEN=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        if [ -n "$$AWS_ACCESS_KEY_ID_VALUE" ]; then export AWS_ACCESS_KEY_ID="$$AWS_ACCESS_KEY_ID_VALUE"; fi;
+        if [ -n "$$AWS_SECRET_ACCESS_KEY_VALUE" ]; then export AWS_SECRET_ACCESS_KEY="$$AWS_SECRET_ACCESS_KEY_VALUE"; fi;
+        if [ -n "$$AWS_DEFAULT_REGION_VALUE" ]; then export AWS_DEFAULT_REGION="$$AWS_DEFAULT_REGION_VALUE"; fi;
+        if [ -n "$$AWS_SESSION_TOKEN_VALUE" ]; then export AWS_SESSION_TOKEN="$$AWS_SESSION_TOKEN_VALUE"; fi;
       fi;
       exec node dist/src/index.js"
     networks:

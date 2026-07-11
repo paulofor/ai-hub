@@ -56,6 +56,26 @@ test('reports python availability on healthcheck', async () => {
   assert.ok(response.body.python?.python, 'python path ausente no healthcheck');
 });
 
+test('docker compose monta e exporta credenciais AWS para o sandbox-orchestrator', async () => {
+  const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
+
+  assert.match(compose, /\$\{AWS_CREDENTIALS_HOST_DIR:-\/root\/infra\/aws\}:\/run\/secrets\/aws:ro/);
+  assert.match(compose, /\/run\/secrets\/aws\/acesso_aws/);
+  assert.match(compose, /AWS_ACCESS_KEY_ID=/);
+  assert.match(compose, /AWS_SECRET_ACCESS_KEY=/);
+  assert.match(compose, /AWS_DEFAULT_REGION=/);
+  assert.match(compose, /AWS_SESSION_TOKEN=/);
+});
+
+test('imagem da sandbox instala Docker Compose v2 como plugin do Docker CLI', async () => {
+  const dockerfile = await fs.readFile(path.resolve('Dockerfile'), 'utf8');
+
+  assert.match(dockerfile, /https:\/\/download\.docker\.com\/linux\/debian/);
+  assert.match(dockerfile, /\bdocker-ce-cli\b/);
+  assert.match(dockerfile, /\bdocker-compose-plugin\b/);
+  assert.doesNotMatch(dockerfile, /\bdocker\.io\b/);
+});
+
 test('accepts a job request and processes asynchronously', async () => {
   const registry = new Map<string, SandboxJob>();
   const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
@@ -2733,7 +2753,10 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
+    assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
+    assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
+    assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
     assert.match(promptText, /Chromium headless em \/usr\/bin\/chromium/i);
     assert.match(promptText, /navegador headless disponível para screenshots: chromium/i);
     assert.ok(job.logs.some((entry) => entry.includes('preflight do runner concluído com sucesso')));
