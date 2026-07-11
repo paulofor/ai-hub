@@ -5,6 +5,7 @@ import com.aihub.hub.dto.CodexSavedConversationView;
 import com.aihub.hub.dto.SaveCodexConversationRequest;
 import com.aihub.hub.service.CodexSavedConversationService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,5 +45,10 @@ public class CodexSavedConversationController {
     @PutMapping("/{id}")
     public CodexSavedConversationView update(@PathVariable Long id, @Valid @RequestBody SaveCodexConversationRequest request) {
         return service.update(id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        service.delete(id);
     }
 }

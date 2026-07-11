@@ -22,7 +22,6 @@ import java.util.Objects;
 @Service
 public class CodexSavedConversationService {
 
-    private static final int MAX_MESSAGES = 80;
     private static final int MAX_CONTENT_CHARS = 80_000;
     private static final int MAX_TITLE_CHARS = 255;
     private static final TypeReference<List<SaveCodexConversationRequest.Message>> MESSAGE_LIST_TYPE = new TypeReference<>() {
@@ -63,6 +62,12 @@ public class CodexSavedConversationService {
         return toView(repository.save(record), true);
     }
 
+    @Transactional
+    public void delete(Long id) {
+        CodexSavedConversation record = findRecord(id);
+        repository.delete(record);
+    }
+
     private CodexSavedConversation findRecord(Long id) {
         return repository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversa salva não encontrada"));
@@ -89,7 +94,6 @@ public class CodexSavedConversationService {
             .filter(Objects::nonNull)
             .map(this::normalizeMessage)
             .filter(Objects::nonNull)
-            .limit(MAX_MESSAGES)
             .toList();
     }
 

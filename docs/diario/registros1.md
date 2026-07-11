@@ -1584,3 +1584,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Atualizados `.env.example`, README e `docs/sandbox-architecture.md` para documentar o diretório do host, o formato do arquivo `acesso_aws` e o comando seguro de validação `aws sts get-caller-identity`.
 - Ajustado o prompt/checklist do runner para informar ao modelo quando as credenciais AWS estão exportadas e orientar que segredos `AWS_*` não sejam impressos em logs.
 - Adicionado teste para travar o contrato do Compose e reforçado teste do checklist de preflight com o status de credenciais AWS.
+
+## 2026-07-11 - Conversas salvas sem limite visual e exclusao manual
+
+- Solicitação recebida: corrigir a limitação indevida de 20 mensagens ao salvar conversa no Codex ChatGPT e adicionar um caminho para o usuário apagar conversas salvas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o estado `conversation` era usado ao mesmo tempo como fonte completa do diálogo e como lista renderizada na tela; a função `trimConversationMessages(...slice(-20))` cortava o próprio estado em cada atualização, fazendo o salvamento persistir apenas as mensagens ainda visíveis.
+- Ajuste aplicado no frontend: removido o corte do estado da conversa; a conversa completa da sessão passa a ser preservada para prompt, edição e salvamento, enquanto a tela renderiza apenas `conversation.slice(-20)` para manter o navegador leve. O texto da UI agora esclarece que mensagens antigas ficam ocultas, mas continuam entrando no salvamento.
+- Ajuste aplicado no backend/frontend: removido o limite silencioso de quantidade de mensagens no normalizador de conversa salva, mantendo a proteção de tamanho por conteúdo; adicionado `DELETE /api/codex/conversations/{id}` no controller/service de conversas salvas e botão “Apagar salva” na tela, com confirmação do usuário, recarga da lista e limpeza da conversa selecionada.
