@@ -23,6 +23,15 @@ interface DeviceLoginState {
   expiresAt?: string | null;
 }
 
+interface DiscardBatchResult {
+  deleted?: number;
+  cancelled?: number;
+  detached?: number;
+  branchDeleted?: boolean;
+  branchDeletionWarning?: string;
+  total?: number;
+}
+
 interface EnvironmentOption {
   id: number;
   name: string;
@@ -1250,7 +1259,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
         ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
       const batchRequests = (currentBatchKey
-        ? latestRequests.filter((item) => item.workBatchKey === currentBatchKey || item.workBranch === currentBatchKey)
+        ? latestRequests.filter((item) => !isClosedBatchRequest(item) && (item.workBatchKey === currentBatchKey || item.workBranch === currentBatchKey))
         : [])
         .filter((item) => item.profile === config.profile);
       const requestsToDiscard = batchRequests.filter((item) => item.status === 'PENDING' || item.status === 'RUNNING');
@@ -1259,12 +1268,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         const confirmed = window.confirm(`Zerar este lote com ${batchRequests.length} solicitação(ões)? Solicitações pendentes/em execução serão descartadas e solicitações concluídas sairão do lote atual.`);
         if (!confirmed) return;
 
-        await client.post('/codex/requests/batch/discard', {
+        const response = await client.post<DiscardBatchResult>('/codex/requests/batch/discard', {
           environment,
           profile: config.profile,
           workBatchKey: currentBatchKey
         });
-        registerTelemetry('execution_success', `${batchRequests.length} solicitação(ões) removida(s) do lote atual; ${requestsToDiscard.length} pendente(s)/em execução descartada(s).`);
+        const result = response.data;
+        const branchMessage = result.branchDeleted === false && result.branchDeletionWarning
+          ? ` ${result.branchDeletionWarning}`
+          : '';
+        registerTelemetry('execution_success', `${result.total ?? batchRequests.length} solicitação(ões) removida(s) do lote atual; ${result.cancelled ?? requestsToDiscard.length} cancelada(s), ${result.deleted ?? 0} apagada(s), ${result.detached ?? 0} desanexada(s).${branchMessage}`);
       }
 
       setConversation([]);

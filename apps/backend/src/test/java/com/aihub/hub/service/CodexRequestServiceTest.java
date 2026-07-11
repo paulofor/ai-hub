@@ -837,6 +837,30 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void discardBatchDetachesCompletedRequestsWhenRemoteBranchDeletionFails() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest completed = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "feito");
+        completed.setStatus(CodexRequestStatus.COMPLETED);
+        completed.setWorkBranch(workBranch);
+        completed.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(completed));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(HttpClientErrorException.create(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", null, null, null))
+            .when(githubApiClient).deleteBranch("owner", "repo", workBranch);
+
+        Map<String, Object> result = service.discardBatch("owner/repo@main", CodexIntegrationProfile.CHATGPT_CODEX_MKT, workBranch);
+
+        assertThat(result).containsEntry("branchDeleted", false);
+        assertThat(result).containsEntry("detached", 1);
+        assertThat(result).containsKey("branchDeletionWarning");
+        assertThat(completed.getWorkBranch()).isNull();
+        assertThat(completed.getWorkBatchKey()).isNull();
+        verify(codexRequestRepository).save(completed);
+    }
+
+    @Test
     void listBatchIgnoresRequestsAlreadyClosedByPullRequestWhenCurrentRequestHasNoPr() {
         CodexRequestService service = buildService(true);
         String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";

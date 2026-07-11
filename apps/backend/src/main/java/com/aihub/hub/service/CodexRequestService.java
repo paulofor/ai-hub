@@ -358,7 +358,7 @@ public class CodexRequestService {
             .filter(item -> profile.equals(item.getProfile()))
             .toList();
 
-        boolean branchDeleted = deleteRemoteWorkBranch(environment, workBatchKey.trim());
+        RemoteBranchDeletionResult branchDeletion = deleteRemoteWorkBranch(environment, workBatchKey.trim());
 
         int deleted = 0;
         int cancelled = 0;
@@ -395,31 +395,46 @@ public class CodexRequestService {
         result.put("deleted", deleted);
         result.put("cancelled", cancelled);
         result.put("detached", detached);
-        result.put("branchDeleted", branchDeleted);
+        result.put("branchDeleted", branchDeletion.deleted());
+        if (StringUtils.hasText(branchDeletion.warning())) {
+            result.put("branchDeletionWarning", branchDeletion.warning());
+        }
         result.put("total", deleted + detached);
         return result;
     }
 
-    private boolean deleteRemoteWorkBranch(String environment, String workBranch) {
+    private RemoteBranchDeletionResult deleteRemoteWorkBranch(String environment, String workBranch) {
         RepoCoordinates coordinates = RepoCoordinates.from(environment);
         if (coordinates == null || !StringUtils.hasText(workBranch)) {
-            return false;
+            return RemoteBranchDeletionResult.notDeleted(null);
         }
         String branch = workBranch.trim();
         if (!branch.startsWith("ai-hub/") || !isValidWorkBranchName(branch)) {
             log.warn("Branch de lote não será apagada por nome inválido ou fora do namespace AI Hub: {}", branch);
-            return false;
+            return RemoteBranchDeletionResult.notDeleted("Branch remota não foi apagada porque o nome é inválido ou está fora do namespace AI Hub.");
         }
         try {
             githubApiClient.deleteBranch(coordinates.owner(), coordinates.repo(), branch);
             log.info("Branch remota do lote apagada em {}/{}: {}", coordinates.owner(), coordinates.repo(), branch);
-            return true;
+            return RemoteBranchDeletionResult.deletedBranch();
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode().value() == 404) {
                 log.info("Branch remota do lote já não existia em {}/{}: {}", coordinates.owner(), coordinates.repo(), branch);
-                return false;
+                return RemoteBranchDeletionResult.notDeleted(null);
             }
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao zerar branch remota do lote no GitHub", ex);
+            log.warn("Falha ao apagar branch remota do lote em {}/{}: {}. O lote local continuará sendo descartado.",
+                coordinates.owner(), coordinates.repo(), branch, ex);
+            return RemoteBranchDeletionResult.notDeleted("Falha ao apagar a branch remota no GitHub; o lote local foi descartado.");
+        }
+    }
+
+    private record RemoteBranchDeletionResult(boolean deleted, String warning) {
+        static RemoteBranchDeletionResult deletedBranch() {
+            return new RemoteBranchDeletionResult(true, null);
+        }
+
+        static RemoteBranchDeletionResult notDeleted(String warning) {
+            return new RemoteBranchDeletionResult(false, warning);
         }
     }
 
