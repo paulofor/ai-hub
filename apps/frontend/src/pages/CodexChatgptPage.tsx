@@ -34,6 +34,24 @@ interface ModelOption {
   displayName?: string;
 }
 
+interface SavedConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt?: string;
+}
+
+interface SavedConversation {
+  id: number;
+  title: string;
+  environment?: string;
+  model?: string;
+  profile: CodexProfile;
+  messageCount: number;
+  messages: SavedConversationMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_IMAGE_ATTACHMENTS = 5;
@@ -51,6 +69,48 @@ const formatInteractionCount = (count?: number) => {
     return '—';
   }
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'interação' : 'interações'}`;
+};
+
+const parseSavedConversationMessage = (value: unknown): SavedConversationMessage | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const item = value as Record<string, unknown>;
+  const content = typeof item.content === 'string' ? item.content : '';
+  if (!content.trim()) return null;
+  const rawRole = typeof item.role === 'string' ? item.role.trim().toLowerCase() : 'user';
+  return {
+    role: rawRole === 'assistant' || rawRole === 'model' || rawRole === 'modelo' ? 'assistant' : 'user',
+    content,
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined
+  };
+};
+
+const parseSavedConversation = (value: unknown): SavedConversation | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const item = value as Record<string, unknown>;
+  const id = typeof item.id === 'number' ? item.id : Number(item.id);
+  if (!Number.isFinite(id)) return null;
+  const profileRaw = typeof item.profile === 'string' ? item.profile.trim().toUpperCase().replace('-', '_') : 'CHATGPT_CODEX';
+  const profile: CodexProfile = profileRaw === 'CHATGPT_CODEX_MKT' ? 'CHATGPT_CODEX_MKT' : 'CHATGPT_CODEX';
+  const messages = Array.isArray(item.messages)
+    ? item.messages.map(parseSavedConversationMessage).filter((message): message is SavedConversationMessage => message !== null)
+    : [];
+  const messageCount = typeof item.messageCount === 'number' ? item.messageCount : Number(item.messageCount ?? messages.length);
+  return {
+    id,
+    title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : `Conversa #${id}`,
+    environment: typeof item.environment === 'string' && item.environment.trim() ? item.environment.trim() : undefined,
+    model: typeof item.model === 'string' && item.model.trim() ? item.model.trim() : undefined,
+    profile,
+    messageCount: Number.isFinite(messageCount) ? messageCount : messages.length,
+    messages,
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
+    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : ''
+  };
+};
+
+const parseSavedConversations = (payload: unknown): SavedConversation[] => {
+  const items = Array.isArray(payload) ? payload : [];
+  return items.map(parseSavedConversation).filter((item): item is SavedConversation => item !== null);
 };
 
 const stripModelThinking = (content: string): string => {
@@ -520,6 +580,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [savedConversations, setSavedConversations] = useState<SavedConversation[]>([]);
+  const [selectedSavedConversationId, setSelectedSavedConversationId] = useState<number | ''>('');
+  const [selectedSavedConversationMessages, setSelectedSavedConversationMessages] = useState<SavedConversationMessage[]>([]);
+  const [savingConversation, setSavingConversation] = useState(false);
   const conversationPollInFlight = useRef(false);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
 
@@ -579,6 +643,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [config.profile]);
 
+  const loadSavedConversations = useCallback(async () => {
+    const response = await client.get('/codex/conversations', { params: { profile: config.profile } });
+    const parsed = parseSavedConversations(response.data).filter((item) => item.profile === config.profile);
+    setSavedConversations(parsed);
+    return parsed;
+  }, [config.profile]);
+
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
     try {
@@ -605,7 +676,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setModels(nextModels);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
-      await loadRequests();
+      await Promise.all([loadRequests(), loadSavedConversations()]);
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
     } catch (err) {
@@ -614,7 +685,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setLoading(false);
     }
-  }, [loadRequests, registerTelemetry]);
+  }, [loadRequests, loadSavedConversations, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -786,17 +857,40 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setImageAttachments((current) => current.filter((item) => item.id !== id));
   }, []);
 
+  const conversationMessagesMatchSavedContext = useCallback((historyMessages: ChatMessage[]) => {
+    if (selectedSavedConversationMessages.length === 0 || selectedSavedConversationMessages.length > historyMessages.length) {
+      return false;
+    }
+    return selectedSavedConversationMessages.every((savedMessage, index) => {
+      const historyMessage = historyMessages[index];
+      return historyMessage
+        && savedMessage.role === historyMessage.role
+        && savedMessage.content.trim() === historyMessage.content.trim();
+    });
+  }, [selectedSavedConversationMessages]);
+
   const buildConversationPromptFromHistory = useCallback((message: string, historyMessages: ChatMessage[]) => {
-    const history = historyMessages.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
+    const savedContextMessages = conversationMessagesMatchSavedContext(historyMessages)
+      ? []
+      : selectedSavedConversationMessages;
+    const promptHistoryMessages = [
+      ...savedContextMessages.map((item) => ({ role: item.role, content: item.content })),
+      ...historyMessages.map((item) => ({ role: item.role, content: item.content }))
+    ];
+    const history = promptHistoryMessages.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
+    const selectedConversation = selectedSavedConversationId
+      ? savedConversations.find((item) => item.id === selectedSavedConversationId)
+      : undefined;
     return [
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
       ...config.promptExtraLines,
+      selectedConversation ? `Contexto selecionado pelo usuário: conversa salva "${selectedConversation.title}" (${selectedConversation.messageCount} mensagem(ns), atualizada em ${formatDateTime(selectedConversation.updatedAt)}).` : '',
       history ? `Histórico da conversa:\n${history}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine]);
+  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, savedConversations, selectedSavedConversationId, selectedSavedConversationMessages]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -816,6 +910,79 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       };
     })));
   }, [extractAssistantContent]);
+
+  const handleSelectSavedConversation = useCallback(async (value: string) => {
+    const nextId = value ? Number(value) : '';
+    if (nextId === '') {
+      setSelectedSavedConversationId('');
+      setSelectedSavedConversationMessages([]);
+      return;
+    }
+    if (!Number.isFinite(nextId)) {
+      return;
+    }
+    try {
+      const response = await client.get(`/codex/conversations/${nextId}`);
+      const parsed = parseSavedConversation(response.data);
+      if (!parsed) {
+        throw new Error('Conversa salva inválida retornada pelo servidor.');
+      }
+      setSelectedSavedConversationId(parsed.id);
+      setSelectedSavedConversationMessages(parsed.messages);
+      if (parsed.environment && environments.some((item) => item.name === parsed.environment)) {
+        setEnvironment(parsed.environment);
+      }
+      if (parsed.model && models.some((item) => item.modelName === parsed.model)) {
+        setModel(parsed.model);
+      }
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, [environments, models]);
+
+  const handleSaveConversation = useCallback(async () => {
+    if (savingConversation) return;
+    const messages = conversation
+      .filter((message) => message.content.trim())
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt
+      }));
+    if (messages.length === 0) {
+      setError('Não há diálogo para salvar ainda.');
+      return;
+    }
+    const firstUserMessage = messages.find((message) => message.role === 'user')?.content ?? 'Conversa Codex';
+    const title = firstUserMessage.replace(/\s+/g, ' ').trim().slice(0, 72) || 'Conversa Codex';
+    setSavingConversation(true);
+    try {
+      const response = await client.post('/codex/conversations', {
+        title,
+        environment,
+        model,
+        profile: config.profile,
+        messages
+      });
+      const saved = parseSavedConversation(response.data);
+      const latest = await loadSavedConversations();
+      if (saved) {
+        setSelectedSavedConversationId(saved.id);
+        setSelectedSavedConversationMessages(saved.messages);
+      } else if (latest.length > 0) {
+        setSelectedSavedConversationId(latest[0].id);
+        setSelectedSavedConversationMessages([]);
+      }
+      registerTelemetry('execution_success', 'Conversa salva para retomada futura.');
+      setError(null);
+    } catch (err) {
+      registerTelemetry('execution_failed', `Falha ao salvar conversa: ${(err as Error).message}`);
+      setError((err as Error).message);
+    } finally {
+      setSavingConversation(false);
+    }
+  }, [config.profile, conversation, environment, loadSavedConversations, model, registerTelemetry, savingConversation]);
 
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1127,6 +1294,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     .filter((item) => item.profile === config.profile);
   const activeBatchDiscardable = activeBatchDiscardableRequests.length;
   const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
+  const selectedSavedConversation = selectedSavedConversationId
+    ? savedConversations.find((item) => item.id === selectedSavedConversationId)
+    : undefined;
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
@@ -1195,6 +1365,38 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
         <h3 className="text-lg font-semibold">{config.formTitle}</h3>
         <p className="text-sm text-slate-500">{config.description}</p>
+        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="space-y-1">
+              <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Conversa salva para contexto</span>
+              <select
+                value={selectedSavedConversationId}
+                onChange={(event) => void handleSelectSavedConversation(event.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm"
+              >
+                <option value="">Sem conversa salva selecionada</option>
+                {savedConversations.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title} · {item.messageCount} msg · {formatDateTime(item.updatedAt)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={handleSaveConversation}
+                disabled={savingConversation || conversation.length === 0}
+                className="w-full rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50 lg:w-auto"
+              >
+                {savingConversation ? 'Salvando...' : 'Salvar conversa'}
+              </button>
+            </div>
+          </div>
+          {selectedSavedConversation ? <p className="mt-2 text-xs text-slate-500">
+            O próximo envio incluirá essa conversa salva no prompt do modelo; o diálogo antigo não precisa ser renderizado na tela.
+          </p> : <p className="mt-2 text-xs text-slate-500">Salve apenas os diálogos que precisar retomar depois.</p>}
+        </div>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <p className="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">Mantemos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} interações nesta conversa para evitar peso no navegador.</p>
           {conversation.map((message, messageIndex) => {
