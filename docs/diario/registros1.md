@@ -198,6 +198,14 @@
 
 ## 2026-05-14 16:38:40 UTC-3
 - Correção do diagnóstico anterior com nova evidência: os pacotes `ai-hub-6-backend`, `ai-hub-6-frontend` e `ai-hub-6-sandbox` existem no owner `paulofor`; portanto o problema não é ausência geral do padrão `ai-hub-6-*`.
+
+## 2026-07-11 18:03:24 UTC-3
+- Continuação do trabalho AWS-only de e-mails do domínio `digicomdigital.com.br` para uso futuro no Marketing Hub e criação de novo Business Manager dedicado ao WhatsApp.
+- Validado por DNS público que os nameservers do domínio já apontam para Route 53 (`ns-1322.awsdns-37.org`, `ns-1821.awsdns-35.co.uk`, `ns-80.awsdns-10.com`, `ns-972.awsdns-57.net`).
+- Validado que o MX público aponta para `10 inbound-smtp.us-east-1.amazonaws.com`, que o SPF raiz está como `v=spf1 include:amazonses.com -all` e que existe DMARC em modo monitoramento (`p=none`).
+- Testado recebimento SMTP no MX da AWS para `whatsapp@digicomdigital.com.br`; o servidor SES inbound respondeu `250 Ok` para o destinatário, indicando aceitação operacional do endereço no nível SMTP.
+- Identificada limitação atual: a credencial AWS temporária usada anteriormente não está mais válida (`InvalidClientTokenId`), impedindo consultar SES/S3/Route53 pela conta e confirmar leitura do conteúdo recebido no bucket.
+- Recomendação operacional: não criar ainda o novo Business Manager da Meta com esse e-mail até garantir acesso de leitura aos e-mails recebidos, pois a Meta provavelmente enviará código/link de confirmação que precisará ser recuperado no S3 ou no inbox do Marketing Hub.
 - Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
 - Ação objetiva no GitHub: abrir/criar o package `ai-hub-6-caddy` no owner correto, vincular ao repositório `paulofor/ai-hub` em `Manage Actions access` e manter `packages: write` no workflow.
 
