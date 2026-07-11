@@ -219,6 +219,16 @@
 - Ajustada a etapa `Resolve GHCR credentials` para sempre definir `GHCR_TOKEN=${{ github.token }}` e falhar cedo se `GHCR_USERNAME` divergir de `github.repository_owner`, evitando combinações inválidas de owner/token.
 - Com isso, todos os pontos do workflow que autenticam/chamam GHCR passam a usar o mesmo token nativo do run, eliminando inconsistência de credenciais entre jobs.
 
+## 2026-07-11 00:52:05 UTC-3
+- Iniciada investigação de causa raiz para persistir conversas no fluxo `CodexChatgptPage`: o histórico usado no prompt vive apenas no estado React `conversation`, é podado para reduzir peso no navegador e não possui entidade própria no banco para retomada futura escolhida pelo usuário.
+- Direção de correção definida: criar persistência explícita de conversas salvas sob demanda, com snapshot do diálogo para contexto de prompt e UI para salvar/escolher a conversa, sem obrigar recuperação completa do diálogo na tela.
+
+## 2026-07-11 00:57:40 UTC-3
+- Implementada persistência manual de conversas do fluxo ChatGPT/Codex: nova tabela `codex_saved_conversations` em MySQL, PostgreSQL e H2, entidade/repositório/serviço/controlador e endpoints `/api/codex/conversations`.
+- Atualizada `CodexChatgptPage` com botão `Salvar conversa`, seletor de conversa salva por perfil e inclusão do diálogo salvo no prompt do modelo quando escolhido pelo usuário, sem renderizar o histórico antigo na tela.
+- Adicionada proteção para não duplicar o contexto salvo no prompt quando a conversa salva já é prefixo da conversa local ativa.
+- Validação executada: `mvn test` no backend com 72 testes aprovados e `npm run build` no frontend concluído com sucesso.
+
 ## 2026-07-09 19:43:10 UTC-3
 - Diagnóstico de causa raiz do `500 Internal Server Error` ao despachar a `CodexRequest 1419`: o `sandbox-orchestrator` recusou o `POST /jobs` antes da rota por `PayloadTooLargeError: request entity too large`, pois o `express.json` estava limitado a `500kb`; o handler genérico convertia esse estouro em `500 {"error":"internal_error"}`, escondendo a causa real.
 - Ajustado `apps/sandbox-orchestrator/src/server.ts` para usar `SANDBOX_REQUEST_BODY_LIMIT` configurável com padrão `50mb`, compatível com prompts e anexos permitidos pelo frontend, e para responder estouro de payload como `413 payload_too_large` com mensagem acionável.
