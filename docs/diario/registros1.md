@@ -1612,3 +1612,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
 - Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
 - Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
+
+## 2026-07-11 - Investigação de travamento na tela ChatGPT/Codex
+- Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu?
+- Evidência nos logs do backend: a listagem `/api/codex/requests?page=0&size=20` executava SQL carregando colunas LONGTEXT pesadas (`prompt`, `response_text`, `model_transcript`, `execution_log`, anexos etc.) para cards/listas que só precisam de metadados. Em execuções recentes, isso gerou `Connection reset`, `SocketTimeoutException`, `Broken pipe` e polling acumulado no navegador.
+- Correção aplicada: a listagem paginada passou a usar um DTO leve (`CodexRequestSummary`) com query JPQL explícita, omitindo os textos longos e truncando o prompt para resumo. O detalhe `/api/codex/requests/{id}` continua carregando o registro completo para exibir resposta/log quando necessário.
