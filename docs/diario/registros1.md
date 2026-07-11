@@ -218,6 +218,13 @@
 - Identificada limitação atual: a credencial AWS temporária usada anteriormente não está mais válida (`InvalidClientTokenId`), impedindo consultar SES/S3/Route53 pela conta e confirmar leitura do conteúdo recebido no bucket.
 - Recomendação operacional: não criar ainda o novo Business Manager da Meta com esse e-mail até garantir acesso de leitura aos e-mails recebidos, pois a Meta provavelmente enviará código/link de confirmação que precisará ser recuperado no S3 ou no inbox do Marketing Hub.
 - Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
+
+## 2026-07-11 18:26:02 UTC-3
+- Diagnóstico de causa raiz para a tela Codex ChatGPT MKT aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
+- Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema observado concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
+- Resposta explícita à pergunta “por que esse erro aconteceu?”: a tela ficou travada porque o backend esgotou o pool de conexões JDBC com o MySQL enquanto atendia listagens/polling de `/api/codex/requests`, impedindo a UI de carregar o estado já atualizado da execução.
+- Causa técnica provável identificada no código: a listagem `CodexRequestService.listPage` retorna entidades `CodexRequest` completas com vários campos `LONGTEXT` (`prompt`, `responseText`, `modelTranscript`, `executionLog`) e ainda é chamada em polling; isso aumenta custo de leitura/serialização e mantém conexões ocupadas quando há várias requisições simultâneas ou clientes cancelando por timeout.
+- Não foi criado PR nem aplicado ajuste funcional; recomendação técnica registrada: criar DTO leve para listagem, separar endpoint de detalhe, reduzir polling/concorrência no frontend e configurar limites/timeout do pool de banco com observabilidade antes de aumentar capacidade.
 - Ação objetiva no GitHub: abrir/criar o package `ai-hub-6-caddy` no owner correto, vincular ao repositório `paulofor/ai-hub` em `Manage Actions access` e manter `packages: write` no workflow.
 
 ## 2026-05-14 16:40:29 UTC-3
@@ -1639,3 +1646,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validação operacional: o AWS CLI falhou inicialmente porque o valor de `AWS_ACCESS_KEY_ID` no ambiente estava com caractere de quebra de linha/carriage return; sanitizando o valor apenas dentro do comando, `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com usuário IAM temporário `codex-aih6`.
 - Decisão: seguir com a criação assistida no navegador do usuário, usando `whatsapp@digicomdigital.com.br` como e-mail comercial; o modelo ficará responsável por monitorar o S3/SES e recuperar eventual código/link de confirmação enviado pela Meta.
 - Observação: não foi criado PR.
+
+## 2026-07-11 18:26:50 UTC-3
+- Correção administrativa: a entrada `2026-07-11 18:26:02 UTC-3` sobre travamento da tela Codex ChatGPT MKT foi inserida antes do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o diagnóstico no local correto.
+- Diagnóstico de causa raiz para a tela aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
+- Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
+- Resposta explícita à pergunta “por que esse erro aconteceu?”: a tela ficou travada porque o backend esgotou o pool de conexões JDBC com o MySQL enquanto atendia listagens/polling de `/api/codex/requests`, impedindo a UI de carregar o estado já atualizado da execução.
+- Causa técnica provável identificada no código: `CodexRequestService.listPage` retorna entidades `CodexRequest` completas com vários campos `LONGTEXT` (`prompt`, `responseText`, `modelTranscript`, `executionLog`) e é chamada em polling; isso aumenta custo de leitura/serialização e mantém conexões ocupadas quando há várias requisições simultâneas ou clientes cancelando por timeout.
+- Estado final observado: `GET /actuator/health` do backend voltou a responder `200 UP`, mas logs recentes ainda exibiam timeouts/broken pipe de clientes, indicando degradação transitória ou recorrente.
+- Alternativas avaliadas: (1) reiniciar backend para alívio imediato, baixo esforço mas não elimina recorrência; (2) aumentar pool do Hikari/timeout, ajuda capacidade mas pode transferir pressão para o MySQL; (3) corrigir endpoint/listagem para DTO leve, separar detalhe e reduzir polling concorrente. Decisão recomendada: alternativa 3 como correção estrutural; alternativa 1 apenas como mitigação operacional se a tela continuar indisponível.
+- Não foi criado PR nem aplicado ajuste funcional neste turno.
