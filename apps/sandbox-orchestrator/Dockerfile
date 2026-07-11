@@ -22,7 +22,7 @@ RUN apt-get update \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker.io bash google-cloud-cli chromium \
+  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker.io bash google-cloud-cli awscli chromium \
   && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh

@@ -1438,6 +1438,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o endpoint `create-pr` criava draft PR direto a partir da `workBranch` quando ela existia, sem validar se o lote tinha pendencias e sem comparar a branch acumulada contra a base para confirmar que havia alteracao funcional publicavel.
 - Alternativas avaliadas: esconder o botao no frontend reduz confusao mas e contornavel; classificar mensagens como analise/implementacao depende de texto e pode errar em lotes mistos; validar o diff real da branch no backend e a opcao mais robusta porque usa a fonte de verdade do lote.
 - Ajuste aplicado: `PullRequestService` passou a inspecionar o compare GitHub `base...workBranch`, separar arquivos alterados de arquivos funcionais e tratar `docs/diario/registros1.md` como diario obrigatorio nao publicavel sozinho.
+## 2026-07-11 03:25:21 UTC - AWS CLI na imagem da sandbox
+
+- Solicitação recebida: adicionar o AWS CLI na imagem da sandbox para o modelo conseguir acessar a AWS quando houver credenciais/permissões disponíveis.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem `ai-hub-6-sandbox`, construída a partir de `apps/sandbox-orchestrator/Dockerfile`, instalava ferramentas como Maven, JDK, Docker CLI, Google Cloud CLI e Chromium, mas não instalava nenhum pacote que fornecesse o comando `aws`; por isso o modelo não conseguiria executar comandos AWS dentro do container.
+- Ajuste aplicado: incluído o pacote Debian `awscli` no `apt-get install` da imagem de produção do `sandbox-orchestrator`.
+- Ajuste aplicado no runner: o prompt inicial agora informa que o AWS CLI está disponível pelo comando `aws`, e o checklist de ambiente lista ferramentas cloud detectadas.
+- Documentação atualizada: README e `docs/sandbox-architecture.md` agora registram que a imagem da sandbox vem com AWS CLI pré-instalado.
+
 - Ajuste aplicado: `CodexController.createPr` agora bloqueia lote com solicitacao `PENDING`/`RUNNING`, lote sem diff e lote cujo diff contem apenas o diario obrigatorio, antes de chamar a criacao de draft PR.
 - Ajuste aplicado: a extracao de repo no fechamento de PR agora remove o sufixo `@branch`, evitando chamadas GitHub para repositorios invalidos como `ai-hub@main`.
 - Ajuste aplicado no frontend: a tela Codex ChatGPT informa que o PR depende de diff funcional acumulado validado pelo backend e mostra motivo de bloqueio enquanto houver pendencias.
