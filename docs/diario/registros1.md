@@ -128,6 +128,17 @@
 - Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
 - Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
 - Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
+
+## 2026-07-11 21:06:00 UTC - Validação da nova credencial AWS e e-mail AWS-only
+
+- Solicitação recebida: usuário informou que descartou a credencial antiga e disponibilizou uma nova credencial no ambiente para continuar o trabalho de e-mails AWS-only.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a infraestrutura SES/DNS estava ativa, mas a credencial antiga havia sido descartada/invalidada, impedindo o acesso ao S3 para ler os e-mails recebidos. Na nova tentativa, o `AWS_ACCESS_KEY_ID` também apareceu com caractere `CR` no ambiente, causando erro de assinatura no AWS CLI; a validação funcionou ao normalizar `AWS_*` apenas dentro dos comandos, sem imprimir segredos.
+- Validação segura de identidade AWS: `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com o usuário IAM `codex-aih6`.
+- Validação SES: `digicomdigital.com.br` está verificado no SES em `us-east-1`; envio habilitado; limite de envio retornado pelo SES: `Max24HourSend=50000`, `MaxSendRate=14`, `SentLast24Hours=0`.
+- Validação inbound: o rule set ativo `mh-digicom-email-rules` contém a regra `store-and-notify-digicom`, habilitada para o domínio `digicomdigital.com.br`, gravando no bucket `mh-digicom-email-948388760606` com prefixo `inbound/` e notificação SNS `mh-digicom-email-inbound`.
+- Teste real executado: enviado e-mail SES de `whatsapp@digicomdigital.com.br` para `whatsapp@digicomdigital.com.br` com assunto `Teste inbound Marketing Hub 20260711T210558Z`; SES retornou `MessageId=0100019f530057c3-c7e89e54-6853-4671-a860-fe13a8055a51-000000`.
+- Resultado do recebimento: novo objeto S3 criado em `inbound/26m1r60f8umsqqgc6la1qppqo0go4nklrgnbp0g1`, com cabeçalhos confirmando entrega para `whatsapp@digicomdigital.com.br`, `X-SES-Spam-Verdict: PASS`, `X-SES-Virus-Verdict: PASS`, `dkim=pass` e `dmarc=pass`.
+- Decisão: o e-mail `whatsapp@digicomdigital.com.br` está operacional para receber confirmação da Meta; recomendado iniciar a criação da nova BM somente mantendo esta credencial ativa até capturarmos o código/link enviado pela Meta.
 - Investigada causa raiz da falha no deploy: o workflow publicava backend/frontend/sandbox, mas não publicava a imagem `ai-hub-caddy`; no deploy, `docker compose pull` sempre tentava baixar `ghcr.io/<owner>/ai-hub-caddy:latest` e falhava com `not found`.
 - Ajustado `.github/workflows/ci.yml` para build/push da imagem `ai-hub-caddy` usando `infra/caddy/Dockerfile`.
 - Ajustada rotina de cleanup para também remover a tag SHA do pacote `ai-hub-caddy`.
