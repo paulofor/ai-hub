@@ -1631,3 +1631,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
 - Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
 - Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
+
+## 2026-07-11 21:08:10 UTC - Preparacao para criar nova BM Meta com e-mail AWS-only
+
+- Solicitação recebida: continuar o trabalho de e-mails e iniciar a criação de uma nova Business Manager/Business Portfolio na Meta para uso dedicado ao WhatsApp.
+- Pergunta explícita de causa raiz: “por que esse erro/bloqueio poderia acontecer?”. Resposta: a criação da BM pode travar se a Meta enviar confirmação para `whatsapp@digicomdigital.com.br` e o time não conseguir acessar o conteúdo recebido; portanto a investigação focou em confirmar acesso operacional ao inbox AWS-only, não em recriar DNS/SES.
+- Validação operacional: o AWS CLI falhou inicialmente porque o valor de `AWS_ACCESS_KEY_ID` no ambiente estava com caractere de quebra de linha/carriage return; sanitizando o valor apenas dentro do comando, `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com usuário IAM temporário `codex-aih6`.
+- Decisão: seguir com a criação assistida no navegador do usuário, usando `whatsapp@digicomdigital.com.br` como e-mail comercial; o modelo ficará responsável por monitorar o S3/SES e recuperar eventual código/link de confirmação enviado pela Meta.
+- Observação: não foi criado PR.
