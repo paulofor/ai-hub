@@ -205,6 +205,60 @@ class CodexControllerTest {
     }
 
     @Test
+    void createPrCreatesDraftPullRequestFromReadyBatchBranch() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, objectMapper);
+
+        CodexRequest firstRequest = new CodexRequest("paulofor/marketing-hub@main", "gpt-5.4-mini", null, "criar md");
+        ReflectionTestUtils.setField(firstRequest, "id", 740L);
+        firstRequest.setStatus(CodexRequestStatus.COMPLETED);
+        firstRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+        firstRequest.setWorkBatchKey("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+
+        CodexRequest secondRequest = new CodexRequest("paulofor/marketing-hub@main", "gpt-5.4-mini", null, "analisar sem mudanca");
+        ReflectionTestUtils.setField(secondRequest, "id", 741L);
+        secondRequest.setStatus(CodexRequestStatus.COMPLETED);
+        secondRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+        secondRequest.setWorkBatchKey("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+
+        when(codexRequestService.find(740L)).thenReturn(firstRequest);
+        when(codexRequestService.listBatch(firstRequest)).thenReturn(List.of(firstRequest, secondRequest));
+        when(pullRequestService.inspectBranchPublicationReadiness(
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt")
+        )).thenReturn(new PullRequestService.BranchPublicationReadiness(
+            List.of("docs/aihub-lote-mkt-pr-test-20260711.md", "docs/diario/registros1.md"),
+            List.of("docs/aihub-lote-mkt-pr-test-20260711.md")
+        ));
+        when(pullRequestService.createDraftPrFromBranch(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt"),
+            eq("AI Hub: lote Codex #740"),
+            org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(objectMapper.createObjectNode()
+            .put("html_url", "https://github.com/paulofor/marketing-hub/pull/740")
+            .put("number", 740));
+
+        Map<String, Object> payload = controller.createPr(740L, "owner", "codex-ui");
+
+        assertThat(payload)
+            .containsEntry("number", 740)
+            .containsEntry("url", "https://github.com/paulofor/marketing-hub/pull/740")
+            .containsEntry("title", "AI Hub: lote Codex #740")
+            .containsEntry("workBranch", "ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+        assertThat(payload.get("changedFiles")).isEqualTo(List.of("docs/aihub-lote-mkt-pr-test-20260711.md", "docs/diario/registros1.md"));
+        assertThat(payload.get("functionalFiles")).isEqualTo(List.of("docs/aihub-lote-mkt-pr-test-20260711.md"));
+        verify(codexRequestService).markPullRequestCreatedForBatch(firstRequest, "https://github.com/paulofor/marketing-hub/pull/740");
+    }
+
+    @Test
     void createPrRejectsBatchWithPendingRequests() {
         CodexRequestService codexRequestService = mock(CodexRequestService.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);
