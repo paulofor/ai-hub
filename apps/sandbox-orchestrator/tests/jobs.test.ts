@@ -2732,6 +2732,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     const promptText = firstSystem?.content?.[0]?.text ?? '';
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
+    assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
+    assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /Chromium headless em \/usr\/bin\/chromium/i);
     assert.match(promptText, /navegador headless disponível para screenshots: chromium/i);
     assert.ok(job.logs.some((entry) => entry.includes('preflight do runner concluído com sucesso')));
