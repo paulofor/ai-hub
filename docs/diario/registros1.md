@@ -118,6 +118,16 @@
 - Atualizado `docker-compose.yml` para defaults consistentes com o pipeline atual (`ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-*`) em `caddy`, `backend`, `frontend` e `sandbox-orchestrator`, eliminando fallback legado `paulodb/ai-hub-6-*` que causava pull quebrado quando variáveis não eram exportadas.
 
 ## 2026-05-13 — Correção de deploy GHCR (caddy)
+
+## 2026-07-11 14:56:20 UTC-3
+- Diagnóstico de causa raiz para ausência de `docker compose` na sandbox: a imagem instalava `docker.io`, que disponibiliza o Docker CLI clássico, mas não garante o plugin Compose v2 usado pelo subcomando `docker compose`; por isso o modelo encontrava `docker` mas recebia `docker: 'compose' is not a docker command`.
+- Atualizado `apps/sandbox-orchestrator/Dockerfile` para adicionar o repositório oficial Docker Debian e instalar explicitamente `docker-ce-cli` com `docker-compose-plugin`, tornando `docker compose` parte da imagem da sandbox.
+- Atualizado o preflight do runner para detectar `docker` e `docker compose version`, registrando no checklist inicial quais ferramentas Docker estão disponíveis ao modelo.
+- Atualizadas as instruções enviadas ao modelo para orientar o uso preferencial de `docker compose` em vez de `docker-compose` e validar engine/plugin antes de depender de containers.
+- Atualizadas documentações em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para declarar o plugin Docker Compose v2.
+- Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
+- Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
+- Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
 - Investigada causa raiz da falha no deploy: o workflow publicava backend/frontend/sandbox, mas não publicava a imagem `ai-hub-caddy`; no deploy, `docker compose pull` sempre tentava baixar `ghcr.io/<owner>/ai-hub-caddy:latest` e falhava com `not found`.
 - Ajustado `.github/workflows/ci.yml` para build/push da imagem `ai-hub-caddy` usando `infra/caddy/Dockerfile`.
 - Ajustada rotina de cleanup para também remover a tag SHA do pacote `ai-hub-caddy`.
@@ -1591,3 +1601,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o estado `conversation` era usado ao mesmo tempo como fonte completa do diálogo e como lista renderizada na tela; a função `trimConversationMessages(...slice(-20))` cortava o próprio estado em cada atualização, fazendo o salvamento persistir apenas as mensagens ainda visíveis.
 - Ajuste aplicado no frontend: removido o corte do estado da conversa; a conversa completa da sessão passa a ser preservada para prompt, edição e salvamento, enquanto a tela renderiza apenas `conversation.slice(-20)` para manter o navegador leve. O texto da UI agora esclarece que mensagens antigas ficam ocultas, mas continuam entrando no salvamento.
 - Ajuste aplicado no backend/frontend: removido o limite silencioso de quantidade de mensagens no normalizador de conversa salva, mantendo a proteção de tamanho por conteúdo; adicionado `DELETE /api/codex/conversations/{id}` no controller/service de conversas salvas e botão “Apagar salva” na tela, com confirmação do usuário, recarga da lista e limpeza da conversa selecionada.
+
+## 2026-07-11 14:56:46 UTC-3
+- Correção administrativa: a entrada `2026-07-11 14:56:20 UTC-3` sobre Docker Compose v2 foi inserida fora do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o trabalho no local correto.
+- Diagnóstico de causa raiz para ausência de `docker compose` na sandbox: a imagem instalava `docker.io`, que disponibiliza o Docker CLI clássico, mas não garante o plugin Compose v2 usado pelo subcomando `docker compose`; por isso o modelo encontrava `docker` mas recebia `docker: 'compose' is not a docker command`.
+- Atualizado `apps/sandbox-orchestrator/Dockerfile` para adicionar o repositório oficial Docker Debian e instalar explicitamente `docker-ce-cli` com `docker-compose-plugin`, tornando `docker compose` parte da imagem da sandbox.
+- Atualizado o preflight do runner para detectar `docker` e `docker compose version`, registrando no checklist inicial quais ferramentas Docker estão disponíveis ao modelo.
+- Atualizadas as instruções enviadas ao modelo para orientar o uso preferencial de `docker compose` em vez de `docker-compose` e validar engine/plugin antes de depender de containers.
+- Atualizadas documentações em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para declarar o plugin Docker Compose v2.
+- Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
+- Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
+- Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.

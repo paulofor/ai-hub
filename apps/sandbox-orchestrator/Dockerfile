@@ -19,10 +19,14 @@ RUN apt-get update \
     | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg \
   && echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb bookworm main" \
     > /etc/apt/sources.list.d/adoptium.list \
+  && curl -fsSL https://download.docker.com/linux/debian/gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+    > /etc/apt/sources.list.d/docker.list \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker.io bash google-cloud-cli awscli chromium \
+  && apt-get install -y --no-install-recommends git python3 python3-pip patch temurin-21-jdk maven ripgrep docker-ce-cli docker-compose-plugin bash google-cloud-cli awscli chromium \
   && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
