@@ -106,6 +106,7 @@ interface ImageToolResult {
 
 interface TokenUsage {
   promptTokens?: number;
+  cachedPromptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
   cost?: number;
@@ -1075,6 +1076,7 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       client.onNotification('item/completed', (params) => {
         firstEventAt = firstEventAt ?? Date.now();
+        this.addCodexAppServerUsageMetrics(job, params);
         const text = this.extractCodexAgentMessageText(params);
         if (text) {
           finalAgentMessage = text;
@@ -1087,8 +1089,13 @@ export class SandboxJobProcessor implements JobProcessor {
         firstEventAt = firstEventAt ?? Date.now();
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
+      client.onNotification('thread/tokenUsage/updated', (params) => {
+        firstEventAt = firstEventAt ?? Date.now();
+        this.addCodexAppServerUsageMetrics(job, params);
+      }),
       client.onNotification('turn/completed', (params) => {
         firstEventAt = firstEventAt ?? Date.now();
+        this.addCodexAppServerUsageMetrics(job, params);
         const status = this.extractCodexStatus(params);
         const text = this.extractCodexText(params);
         if (text) {
@@ -1118,6 +1125,7 @@ export class SandboxJobProcessor implements JobProcessor {
       this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId}`);
       const immediateStatus = this.extractCodexStatus(turn);
       const immediateText = this.extractCodexText(turn);
+      this.addCodexAppServerUsageMetrics(job, turn);
       if (immediateText) {
         summary = immediateText;
       }
@@ -2756,19 +2764,31 @@ ${stderr}`);
     }
 
     const source = usage as Record<string, unknown>;
-    const promptTokens = this.readNumberField(source, ['prompt_tokens', 'input_tokens', 'promptTokens']);
+    const promptTokens = this.readNumberField(source, ['prompt_tokens', 'input_tokens', 'promptTokens', 'inputTokens']);
+    const cachedPromptTokens = this.readNumberField(source, [
+      'cached_prompt_tokens',
+      'cached_input_tokens',
+      'cachedPromptTokens',
+      'cachedInputTokens',
+    ]);
     const completionTokens = this.readNumberField(source, [
       'completion_tokens',
       'output_tokens',
       'completionTokens',
+      'outputTokens',
     ]);
     const totalTokens =
       this.readNumberField(source, ['total_tokens', 'totalTokens']) ??
-      (promptTokens !== undefined && completionTokens !== undefined ? promptTokens + completionTokens : undefined);
+      (promptTokens !== undefined || cachedPromptTokens !== undefined || completionTokens !== undefined
+        ? (promptTokens ?? 0) + (cachedPromptTokens ?? 0) + (completionTokens ?? 0)
+        : undefined);
     const cost = this.readNumberField(source, ['total_cost', 'cost']);
 
     if (promptTokens !== undefined) {
       job.promptTokens = (job.promptTokens ?? 0) + promptTokens;
+    }
+    if (cachedPromptTokens !== undefined) {
+      job.cachedPromptTokens = (job.cachedPromptTokens ?? 0) + cachedPromptTokens;
     }
     if (completionTokens !== undefined) {
       job.completionTokens = (job.completionTokens ?? 0) + completionTokens;
@@ -2780,7 +2800,112 @@ ${stderr}`);
       job.cost = (job.cost ?? 0) + cost;
     }
 
-    return { promptTokens, completionTokens, totalTokens, cost };
+    return { promptTokens, cachedPromptTokens, completionTokens, totalTokens, cost };
+  }
+
+  private addCodexAppServerUsageMetrics(job: SandboxJob, payload: unknown): TokenUsage | undefined {
+    const usage = this.extractCodexAppServerLastUsage(payload);
+    if (!usage) {
+      return undefined;
+    }
+
+    const previousTotal = job.totalTokens ?? 0;
+    const metrics = this.addUsageMetrics(job, usage);
+    const totalUsage = this.extractCodexAppServerTotalUsage(payload);
+    if (totalUsage) {
+      this.applyCodexAppServerTotalUsage(job, totalUsage, previousTotal);
+    }
+    if (metrics) {
+      this.log(
+        job,
+        `uso de tokens Codex App Server: input=${metrics.promptTokens ?? 0}, cache=${metrics.cachedPromptTokens ?? 0}, output=${metrics.completionTokens ?? 0}, total=${job.totalTokens ?? metrics.totalTokens ?? 0}`,
+      );
+    }
+    return metrics;
+  }
+
+  private extractCodexAppServerLastUsage(payload: unknown): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return undefined;
+    }
+    const source = payload as Record<string, unknown>;
+    const candidates = [
+      source.last,
+      source.last_token_usage,
+      source.lastTokenUsage,
+      source.usage,
+      source.tokenUsage,
+      source.token_usage,
+      source.tokenCount,
+      source.token_count,
+    ];
+    const tokenUsage = source.token_usage ?? source.tokenUsage;
+    if (tokenUsage && typeof tokenUsage === 'object') {
+      const usage = tokenUsage as Record<string, unknown>;
+      candidates.unshift(usage.last);
+    }
+    const tokenUsageInfo = source.token_usage_info ?? source.tokenUsageInfo;
+    if (tokenUsageInfo && typeof tokenUsageInfo === 'object') {
+      const info = tokenUsageInfo as Record<string, unknown>;
+      candidates.unshift(info.last_token_usage, info.lastTokenUsage);
+    }
+    return candidates.find((candidate) => candidate && typeof candidate === 'object');
+  }
+
+  private extractCodexAppServerTotalUsage(payload: unknown): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return undefined;
+    }
+    const source = payload as Record<string, unknown>;
+    const tokenUsageInfo = source.token_usage_info ?? source.tokenUsageInfo;
+    if (tokenUsageInfo && typeof tokenUsageInfo === 'object') {
+      const info = tokenUsageInfo as Record<string, unknown>;
+      return info.total_token_usage ?? info.totalTokenUsage;
+    }
+    const tokenUsage = source.token_usage ?? source.tokenUsage;
+    if (tokenUsage && typeof tokenUsage === 'object') {
+      const usage = tokenUsage as Record<string, unknown>;
+      return usage.total;
+    }
+    if (source.total && typeof source.total === 'object') {
+      return source.total;
+    }
+    return source.total_token_usage ?? source.totalTokenUsage;
+  }
+
+  private applyCodexAppServerTotalUsage(job: SandboxJob, totalUsage: unknown, previousTotalTokens: number): void {
+    if (!totalUsage || typeof totalUsage !== 'object') {
+      return;
+    }
+    const total = totalUsage as Record<string, unknown>;
+    const totalTokens = this.readNumberField(total, ['total_tokens', 'totalTokens']);
+    if (totalTokens === undefined || totalTokens < previousTotalTokens) {
+      return;
+    }
+    const promptTokens = this.readNumberField(total, ['prompt_tokens', 'input_tokens', 'promptTokens', 'inputTokens']);
+    const cachedPromptTokens = this.readNumberField(total, [
+      'cached_prompt_tokens',
+      'cached_input_tokens',
+      'cachedPromptTokens',
+      'cachedInputTokens',
+    ]);
+    const completionTokens = this.readNumberField(total, [
+      'completion_tokens',
+      'output_tokens',
+      'completionTokens',
+      'outputTokens',
+    ]);
+
+    if (promptTokens !== undefined) {
+      job.promptTokens = promptTokens;
+    }
+    if (cachedPromptTokens !== undefined) {
+      job.cachedPromptTokens = cachedPromptTokens;
+    }
+    if (completionTokens !== undefined) {
+      job.completionTokens = completionTokens;
+    }
+    job.totalTokens = totalTokens;
   }
 
   private readNumberField(source: Record<string, unknown>, candidates: string[]): number | undefined {
