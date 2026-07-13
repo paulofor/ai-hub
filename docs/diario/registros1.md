@@ -219,6 +219,13 @@
 - Recomendação operacional: não criar ainda o novo Business Manager da Meta com esse e-mail até garantir acesso de leitura aos e-mails recebidos, pois a Meta provavelmente enviará código/link de confirmação que precisará ser recuperado no S3 ou no inbox do Marketing Hub.
 - Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
 
+## 2026-07-13 13:02:08 UTC-3
+- Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
+- Alternativas avaliadas: alterar backend/DTO (maior risco e desnecessário), recalcular no card a partir das interações (risco de divergência do custo oficial), ou renderizar os campos já normalizados no card. Escolhida a terceira opção por menor escopo e aderência ao dado oficial persistido.
+- Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
+- Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
+
 ## 2026-07-11 18:26:02 UTC-3
 - Diagnóstico de causa raiz para a tela Codex ChatGPT MKT aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
 - Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema observado concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
@@ -1656,3 +1663,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Estado final observado: `GET /actuator/health` do backend voltou a responder `200 UP`, mas logs recentes ainda exibiam timeouts/broken pipe de clientes, indicando degradação transitória ou recorrente.
 - Alternativas avaliadas: (1) reiniciar backend para alívio imediato, baixo esforço mas não elimina recorrência; (2) aumentar pool do Hikari/timeout, ajuda capacidade mas pode transferir pressão para o MySQL; (3) corrigir endpoint/listagem para DTO leve, separar detalhe e reduzir polling concorrente. Decisão recomendada: alternativa 3 como correção estrutural; alternativa 1 apenas como mitigação operacional se a tela continuar indisponível.
 - Não foi criado PR nem aplicado ajuste funcional neste turno.
+
+## 2026-07-13 13:03:37 UTC-3
+- Correção administrativa: a entrada `2026-07-13 13:02:08 UTC-3` sobre tokens/custo nos cards MKT foi inserida antes do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o trabalho no local correto.
+- Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
+- Alternativas avaliadas: alterar backend/DTO (maior risco e desnecessário), recalcular no card a partir das interações (risco de divergência do custo oficial), ou renderizar os campos já normalizados no card. Escolhida a terceira opção por menor escopo e aderência ao dado oficial persistido.
+- Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
+- Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
