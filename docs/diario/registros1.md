@@ -1625,3 +1625,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado no sandbox-orchestrator: adicionado suporte a `cachedPromptTokens` no contrato do job e no agregador de métricas; o fluxo Codex App Server agora lê `tokenUsage.last` e `tokenUsage.total` do evento `thread/tokenUsage/updated`, além de fallbacks para `usage`, `token_usage_info` e nomes snake_case/camelCase.
 - Ajuste de precisão: quando o App Server envia total acumulado, o orquestrador aplica esse total ao job para evitar duplicidade em eventos repetidos; quando só há delta, mantém a soma incremental.
 - Resultado esperado: o backend passa a receber os tokens do sandbox e calcula `promptCost`, `cachedPromptCost`, `completionCost` e `cost` com `TokenCostCalculator`, usando os preços cadastrados do modelo.
+
+## 2026-07-13 14:48:00 UTC - Estimativa de custo para uso recorrente de GPT-5.5
+
+- Solicitação recebida: pesquisar custos do modelo `gpt-5.5` usado no Codex ChatGPT Managed e estimar o custo de uma execução mostrada na tela.
+- Pesquisa realizada: documentação oficial da OpenAI indica `gpt-5.5` com preço standard curto de US$ 5,00/1M input, US$ 0,50/1M input cacheado e US$ 30,00/1M output; para prompts acima de 272K tokens, a documentação aplica preço de contexto longo: US$ 10,00/1M input, US$ 1,00/1M input cacheado e US$ 45,00/1M output.
+- Estimativa com os tokens do print: input total 2.036.035, input cacheado 1.916.288 e output 10.508. Como o input excede 272K, a estimativa principal usa long context; tratando cache como subconjunto do input, o custo estimado é cerca de US$ 3,586618 por execução.
+- Comparativos calculados: sem cache, o mesmo request ficaria em cerca de US$ 20,833210; se o sistema tratar `promptTokens` e `cachedPromptTokens` como categorias separadas em vez de cache ser subconjunto, o cálculo long context subiria para cerca de US$ 22,749498, indicando possível ponto de atenção na fórmula local.
+- Observação de produto: o `application.yml` atual inicializa preços para `gpt-5-codex` e `gpt-4.1-mini`, mas não para `gpt-5.5`; por isso a área de custos pode permanecer vazia se não houver cadastro persistido para `gpt-5.5` no banco.
+
+## 2026-07-13 15:10:00 UTC - Cálculo de custo do GPT-5.5 na aplicação
+
+- Solicitação recebida: colocar o cálculo de custos do `gpt-5.5` dentro da aplicação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o modelo `gpt-5.5` já aparecia como opção no Codex ChatGPT Managed, mas o backend não tinha preço default/migração para esse modelo; além disso, o calculador somava `cachedPromptTokens` ao input como se fossem tokens adicionais, quando no contrato do Codex App Server `cachedInputTokens` é uma parcela do input total.
+- Ajuste aplicado: adicionado preço default e migration `V36__seed_gpt_5_5_pricing.sql` para H2/MySQL/PostgreSQL com valores standard do `gpt-5.5`: US$ 5,00 input, US$ 0,50 input cacheado e US$ 30,00 output por 1M tokens.
+- Ajuste aplicado: `TokenCostCalculator` passou a calcular input não cacheado como `inputTokens - cachedInputTokens`, cobrar cache separadamente, e usar `inputTokens + outputTokens` como total quando precisar inferir o total.
+- Ajuste aplicado: para `gpt-5.5` com input acima de 272.000 tokens, o calculador aplica long context automaticamente: 2x input/cache e 1,5x output, reproduzindo o exemplo de 2.036.035 input, 1.916.288 cacheados e 10.508 output como US$ 3,586618.

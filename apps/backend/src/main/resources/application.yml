@@ -43,6 +43,10 @@ hub:
           input: 1.25 # US$ 1.25 por 1M de tokens de entrada
           cached-input: 0.50 # US$ 0.50 por 1M de tokens de entrada cacheados
           output: 10.0 # US$ 10.00 por 1M de tokens de saída
+        gpt-5.5:
+          input: 5.0 # US$ 5.00 por 1M de tokens de entrada; long context aplicado no calculador
+          cached-input: 0.50 # US$ 0.50 por 1M de tokens de entrada cacheados; long context aplicado no calculador
+          output: 30.0 # US$ 30.00 por 1M de tokens de saída; long context aplicado no calculador
         gpt-4.1-mini:
           input: 0.15 # US$ 0.15 por 1M de tokens de entrada
           cached-input: 0.06 # US$ 0.06 por 1M de tokens de entrada cacheados
