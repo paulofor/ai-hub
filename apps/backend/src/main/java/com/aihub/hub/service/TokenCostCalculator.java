@@ -11,6 +11,9 @@ import java.util.Optional;
 public class TokenCostCalculator {
 
     private static final BigDecimal MILLION = BigDecimal.valueOf(1_000_000L);
+    private static final int GPT_5_5_LONG_CONTEXT_INPUT_THRESHOLD = 272_000;
+    private static final BigDecimal GPT_5_5_LONG_CONTEXT_INPUT_MULTIPLIER = BigDecimal.valueOf(2);
+    private static final BigDecimal GPT_5_5_LONG_CONTEXT_OUTPUT_MULTIPLIER = BigDecimal.valueOf(1.5);
 
     private final CodexModelPricingService pricingService;
 
@@ -37,20 +40,43 @@ public class TokenCostCalculator {
         int outputCount = Optional.ofNullable(outputTokens).orElse(0);
 
         Integer resolvedTotal = totalTokens;
+        if (inputTokens == null && resolvedTotal != null && outputTokens != null) {
+            inputCount = Math.max(resolvedTotal - outputCount, 0);
+        }
+        if (inputCount == 0 && cachedInputCount > 0) {
+            inputCount = cachedInputCount;
+        }
+
         if (resolvedTotal == null) {
-            resolvedTotal = inputCount + cachedInputCount + outputCount;
+            resolvedTotal = inputCount + outputCount;
         } else {
-            int known = inputCount + cachedInputCount + outputCount;
+            int known = inputCount + outputCount;
             if (known == 0) {
                 outputCount = resolvedTotal;
-            } else if (known < resolvedTotal && outputCount == 0) {
-                outputCount = Math.max(resolvedTotal - (inputCount + cachedInputCount), 0);
+            } else if (known < resolvedTotal) {
+                if (outputCount == 0) {
+                    outputCount = Math.max(resolvedTotal - inputCount, 0);
+                } else if (inputTokens == null) {
+                    inputCount = Math.max(resolvedTotal - outputCount, 0);
+                }
             }
         }
 
-        BigDecimal inputCost = costForTokens(pricing.getInputPricePerMillion(), inputCount);
-        BigDecimal cachedInputCost = costForTokens(pricing.getCachedInputPricePerMillion(), cachedInputCount);
-        BigDecimal outputCost = costForTokens(pricing.getOutputPricePerMillion(), outputCount);
+        int billableCachedInputCount = Math.min(cachedInputCount, inputCount);
+        int billableInputCount = Math.max(inputCount - billableCachedInputCount, 0);
+
+        BigDecimal inputPrice = pricing.getInputPricePerMillion();
+        BigDecimal cachedInputPrice = pricing.getCachedInputPricePerMillion();
+        BigDecimal outputPrice = pricing.getOutputPricePerMillion();
+        if (usesGpt55LongContext(model, inputCount)) {
+            inputPrice = multiply(inputPrice, GPT_5_5_LONG_CONTEXT_INPUT_MULTIPLIER);
+            cachedInputPrice = multiply(cachedInputPrice, GPT_5_5_LONG_CONTEXT_INPUT_MULTIPLIER);
+            outputPrice = multiply(outputPrice, GPT_5_5_LONG_CONTEXT_OUTPUT_MULTIPLIER);
+        }
+
+        BigDecimal inputCost = costForTokens(inputPrice, billableInputCount);
+        BigDecimal cachedInputCost = costForTokens(cachedInputPrice, billableCachedInputCount);
+        BigDecimal outputCost = costForTokens(outputPrice, outputCount);
         BigDecimal totalCost = inputCost.add(cachedInputCost).add(outputCost);
 
         return new TokenCostBreakdown(
@@ -63,6 +89,18 @@ public class TokenCostCalculator {
             outputCost,
             totalCost
         );
+    }
+
+    private boolean usesGpt55LongContext(String model, int inputTokens) {
+        return "gpt-5.5".equalsIgnoreCase(Optional.ofNullable(model).orElse("").trim())
+            && inputTokens > GPT_5_5_LONG_CONTEXT_INPUT_THRESHOLD;
+    }
+
+    private BigDecimal multiply(BigDecimal value, BigDecimal multiplier) {
+        if (value == null) {
+            return null;
+        }
+        return value.multiply(multiplier);
     }
 
     private BigDecimal costForTokens(BigDecimal pricePerMillion, int tokens) {

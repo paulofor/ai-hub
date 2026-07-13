@@ -64,6 +64,7 @@ export interface SandboxJob {
   error?: string;
   sandboxPath?: string;
   promptTokens?: number;
+  cachedPromptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
   cost?: number;

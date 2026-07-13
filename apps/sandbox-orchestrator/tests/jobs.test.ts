@@ -3546,6 +3546,29 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
             listener({ delta: 'resumo via app server' });
           }
+          for (const listener of listeners.get('thread/tokenUsage/updated') ?? []) {
+            listener({
+              threadId: 'thread-123',
+              turnId: 'turn-123',
+              tokenUsage: {
+                total: {
+                  totalTokens: 47,
+                  inputTokens: 30,
+                  cachedInputTokens: 12,
+                  outputTokens: 5,
+                  reasoningOutputTokens: 0,
+                },
+                last: {
+                  totalTokens: 47,
+                  inputTokens: 30,
+                  cachedInputTokens: 12,
+                  outputTokens: 5,
+                  reasoningOutputTokens: 0,
+                },
+                modelContextWindow: 128000,
+              },
+            });
+          }
           for (const listener of listeners.get('turn/completed') ?? []) {
             listener({ status: 'completed', turnId: 'turn-123' });
           }
@@ -3589,6 +3612,10 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
 
     assert.equal(job.status, 'COMPLETED');
     assert.equal(job.summary, 'resumo via app server');
+    assert.equal(job.promptTokens, 30);
+    assert.equal(job.cachedPromptTokens, 12);
+    assert.equal(job.completionTokens, 5);
+    assert.equal(job.totalTokens, 47);
     const threadStartCall = calls.find((call) => call.method === 'thread/start');
     assert.ok(threadStartCall);
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');

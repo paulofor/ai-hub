@@ -11,6 +11,7 @@ import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.dto.UpdatePendingCodexRequest;
@@ -279,13 +280,11 @@ public class CodexRequestService {
     }
 
     @Transactional(readOnly = true)
-    public Page<CodexRequest> listPage(int page, int size, Integer rating) {
+    public Page<CodexRequestSummary> listPage(int page, int size, Integer rating) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        Page<CodexRequest> requestPage = rating == null
-            ? codexRequestRepository.findAllByOrderByCreatedAtDesc(pageRequest)
-            : codexRequestRepository.findAllByRatingOrderByCreatedAtDesc(rating, pageRequest);
-        applyInteractionCounts(requestPage.getContent());
-        return requestPage;
+        return rating == null
+            ? codexRequestRepository.findSummariesByOrderByCreatedAtDesc(pageRequest)
+            : codexRequestRepository.findSummariesByRatingOrderByCreatedAtDesc(rating, pageRequest);
     }
 
     @Transactional(readOnly = true)

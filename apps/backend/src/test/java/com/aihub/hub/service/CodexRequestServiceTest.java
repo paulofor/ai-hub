@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
@@ -235,13 +236,21 @@ class CodexRequestServiceTest {
         request.setStatus(CodexRequestStatus.RUNNING);
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
 
-        when(codexRequestRepository.findAllByOrderByCreatedAtDesc(any(Pageable.class)))
-            .thenReturn(new PageImpl<>(List.of(request)));
-        when(codexInteractionRepository.countByCodexRequestIds(any())).thenReturn(Collections.emptyList());
+        CodexRequestSummary summary = new CodexRequestSummary(
+            123L, request.getEnvironment(), request.getModel(), request.getVersion(), request.getProfile(), request.getPrompt(),
+            request.getStatus(), request.getRating(), request.getExternalId(), request.getPullRequestUrl(), request.getWorkBranch(),
+            request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
+            request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
+            request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
+            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
+            null, null
+        );
+        when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(summary)));
 
         CodexRequestService service = buildService();
 
-        assertThat(service.listPage(0, 5, null).getContent()).containsExactly(request);
+        assertThat(service.listPage(0, 5, null).getContent()).containsExactly(summary);
         verify(sandboxOrchestratorClient, never()).getJob("job-running-page");
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }

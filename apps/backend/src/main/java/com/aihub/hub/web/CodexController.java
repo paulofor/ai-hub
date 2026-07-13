@@ -6,6 +6,7 @@ import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.dto.UpdatePendingCodexRequest;
@@ -85,7 +86,7 @@ public class CodexController {
         }
         int resolvedPage = page != null ? page : 0;
         int resolvedSize = size != null ? size : 5;
-        Page<CodexRequest> result = codexRequestService.listPage(resolvedPage, resolvedSize, rating);
+        Page<CodexRequestSummary> result = codexRequestService.listPage(resolvedPage, resolvedSize, rating);
         return result;
     }
 
