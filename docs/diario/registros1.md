@@ -128,6 +128,17 @@
 - Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
 - Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
 - Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
+
+## 2026-07-11 21:06:00 UTC - Validação da nova credencial AWS e e-mail AWS-only
+
+- Solicitação recebida: usuário informou que descartou a credencial antiga e disponibilizou uma nova credencial no ambiente para continuar o trabalho de e-mails AWS-only.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a infraestrutura SES/DNS estava ativa, mas a credencial antiga havia sido descartada/invalidada, impedindo o acesso ao S3 para ler os e-mails recebidos. Na nova tentativa, o `AWS_ACCESS_KEY_ID` também apareceu com caractere `CR` no ambiente, causando erro de assinatura no AWS CLI; a validação funcionou ao normalizar `AWS_*` apenas dentro dos comandos, sem imprimir segredos.
+- Validação segura de identidade AWS: `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com o usuário IAM `codex-aih6`.
+- Validação SES: `digicomdigital.com.br` está verificado no SES em `us-east-1`; envio habilitado; limite de envio retornado pelo SES: `Max24HourSend=50000`, `MaxSendRate=14`, `SentLast24Hours=0`.
+- Validação inbound: o rule set ativo `mh-digicom-email-rules` contém a regra `store-and-notify-digicom`, habilitada para o domínio `digicomdigital.com.br`, gravando no bucket `mh-digicom-email-948388760606` com prefixo `inbound/` e notificação SNS `mh-digicom-email-inbound`.
+- Teste real executado: enviado e-mail SES de `whatsapp@digicomdigital.com.br` para `whatsapp@digicomdigital.com.br` com assunto `Teste inbound Marketing Hub 20260711T210558Z`; SES retornou `MessageId=0100019f530057c3-c7e89e54-6853-4671-a860-fe13a8055a51-000000`.
+- Resultado do recebimento: novo objeto S3 criado em `inbound/26m1r60f8umsqqgc6la1qppqo0go4nklrgnbp0g1`, com cabeçalhos confirmando entrega para `whatsapp@digicomdigital.com.br`, `X-SES-Spam-Verdict: PASS`, `X-SES-Virus-Verdict: PASS`, `dkim=pass` e `dmarc=pass`.
+- Decisão: o e-mail `whatsapp@digicomdigital.com.br` está operacional para receber confirmação da Meta; recomendado iniciar a criação da nova BM somente mantendo esta credencial ativa até capturarmos o código/link enviado pela Meta.
 - Investigada causa raiz da falha no deploy: o workflow publicava backend/frontend/sandbox, mas não publicava a imagem `ai-hub-caddy`; no deploy, `docker compose pull` sempre tentava baixar `ghcr.io/<owner>/ai-hub-caddy:latest` e falhava com `not found`.
 - Ajustado `.github/workflows/ci.yml` para build/push da imagem `ai-hub-caddy` usando `infra/caddy/Dockerfile`.
 - Ajustada rotina de cleanup para também remover a tag SHA do pacote `ai-hub-caddy`.
@@ -198,7 +209,29 @@
 
 ## 2026-05-14 16:38:40 UTC-3
 - Correção do diagnóstico anterior com nova evidência: os pacotes `ai-hub-6-backend`, `ai-hub-6-frontend` e `ai-hub-6-sandbox` existem no owner `paulofor`; portanto o problema não é ausência geral do padrão `ai-hub-6-*`.
+
+## 2026-07-11 18:03:24 UTC-3
+- Continuação do trabalho AWS-only de e-mails do domínio `digicomdigital.com.br` para uso futuro no Marketing Hub e criação de novo Business Manager dedicado ao WhatsApp.
+- Validado por DNS público que os nameservers do domínio já apontam para Route 53 (`ns-1322.awsdns-37.org`, `ns-1821.awsdns-35.co.uk`, `ns-80.awsdns-10.com`, `ns-972.awsdns-57.net`).
+- Validado que o MX público aponta para `10 inbound-smtp.us-east-1.amazonaws.com`, que o SPF raiz está como `v=spf1 include:amazonses.com -all` e que existe DMARC em modo monitoramento (`p=none`).
+- Testado recebimento SMTP no MX da AWS para `whatsapp@digicomdigital.com.br`; o servidor SES inbound respondeu `250 Ok` para o destinatário, indicando aceitação operacional do endereço no nível SMTP.
+- Identificada limitação atual: a credencial AWS temporária usada anteriormente não está mais válida (`InvalidClientTokenId`), impedindo consultar SES/S3/Route53 pela conta e confirmar leitura do conteúdo recebido no bucket.
+- Recomendação operacional: não criar ainda o novo Business Manager da Meta com esse e-mail até garantir acesso de leitura aos e-mails recebidos, pois a Meta provavelmente enviará código/link de confirmação que precisará ser recuperado no S3 ou no inbox do Marketing Hub.
 - Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
+
+## 2026-07-13 13:02:08 UTC-3
+- Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
+- Alternativas avaliadas: alterar backend/DTO (maior risco e desnecessário), recalcular no card a partir das interações (risco de divergência do custo oficial), ou renderizar os campos já normalizados no card. Escolhida a terceira opção por menor escopo e aderência ao dado oficial persistido.
+- Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
+- Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
+
+## 2026-07-11 18:26:02 UTC-3
+- Diagnóstico de causa raiz para a tela Codex ChatGPT MKT aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
+- Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema observado concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
+- Resposta explícita à pergunta “por que esse erro aconteceu?”: a tela ficou travada porque o backend esgotou o pool de conexões JDBC com o MySQL enquanto atendia listagens/polling de `/api/codex/requests`, impedindo a UI de carregar o estado já atualizado da execução.
+- Causa técnica provável identificada no código: a listagem `CodexRequestService.listPage` retorna entidades `CodexRequest` completas com vários campos `LONGTEXT` (`prompt`, `responseText`, `modelTranscript`, `executionLog`) e ainda é chamada em polling; isso aumenta custo de leitura/serialização e mantém conexões ocupadas quando há várias requisições simultâneas ou clientes cancelando por timeout.
+- Não foi criado PR nem aplicado ajuste funcional; recomendação técnica registrada: criar DTO leve para listagem, separar endpoint de detalhe, reduzir polling/concorrência no frontend e configurar limites/timeout do pool de banco com observabilidade antes de aumentar capacidade.
 - Ação objetiva no GitHub: abrir/criar o package `ai-hub-6-caddy` no owner correto, vincular ao repositório `paulofor/ai-hub` em `Manage Actions access` e manter `packages: write` no workflow.
 
 ## 2026-05-14 16:40:29 UTC-3
@@ -1613,31 +1646,28 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
 - Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
 
-## 2026-07-11 - Investigação de travamento na tela ChatGPT/Codex
-- Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu?
-- Evidência nos logs do backend: a listagem `/api/codex/requests?page=0&size=20` executava SQL carregando colunas LONGTEXT pesadas (`prompt`, `response_text`, `model_transcript`, `execution_log`, anexos etc.) para cards/listas que só precisam de metadados. Em execuções recentes, isso gerou `Connection reset`, `SocketTimeoutException`, `Broken pipe` e polling acumulado no navegador.
-- Correção aplicada: a listagem paginada passou a usar um DTO leve (`CodexRequestSummary`) com query JPQL explícita, omitindo os textos longos e truncando o prompt para resumo. O detalhe `/api/codex/requests/{id}` continua carregando o registro completo para exibir resposta/log quando necessário.
+## 2026-07-11 21:08:10 UTC - Preparacao para criar nova BM Meta com e-mail AWS-only
 
-## 2026-07-13 13:08:44 UTC - Contagem de tokens e custo no Codex ChatGPT Managed
+- Solicitação recebida: continuar o trabalho de e-mails e iniciar a criação de uma nova Business Manager/Business Portfolio na Meta para uso dedicado ao WhatsApp.
+- Pergunta explícita de causa raiz: “por que esse erro/bloqueio poderia acontecer?”. Resposta: a criação da BM pode travar se a Meta enviar confirmação para `whatsapp@digicomdigital.com.br` e o time não conseguir acessar o conteúdo recebido; portanto a investigação focou em confirmar acesso operacional ao inbox AWS-only, não em recriar DNS/SES.
+- Validação operacional: o AWS CLI falhou inicialmente porque o valor de `AWS_ACCESS_KEY_ID` no ambiente estava com caractere de quebra de linha/carriage return; sanitizando o valor apenas dentro do comando, `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com usuário IAM temporário `codex-aih6`.
+- Decisão: seguir com a criação assistida no navegador do usuário, usando `whatsapp@digicomdigital.com.br` como e-mail comercial; o modelo ficará responsável por monitorar o S3/SES e recuperar eventual código/link de confirmação enviado pela Meta.
+- Observação: não foi criado PR.
 
-- Solicitação recebida: preencher a área de “Uso de tokens” e “Custos” no detalhe da solicitação Codex ChatGPT Managed.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI e o backend já tinham campos para tokens/custos, mas o fluxo Fase 2/ChatGPT Managed executa via Codex App Server e o orquestrador não assinava nem normalizava o evento `thread/tokenUsage/updated`; por isso `promptTokens`, `cachedPromptTokens`, `completionTokens` e `totalTokens` ficavam nulos, impedindo o backend de calcular custo pela tabela de preços.
-- Ajuste aplicado no sandbox-orchestrator: adicionado suporte a `cachedPromptTokens` no contrato do job e no agregador de métricas; o fluxo Codex App Server agora lê `tokenUsage.last` e `tokenUsage.total` do evento `thread/tokenUsage/updated`, além de fallbacks para `usage`, `token_usage_info` e nomes snake_case/camelCase.
-- Ajuste de precisão: quando o App Server envia total acumulado, o orquestrador aplica esse total ao job para evitar duplicidade em eventos repetidos; quando só há delta, mantém a soma incremental.
-- Resultado esperado: o backend passa a receber os tokens do sandbox e calcula `promptCost`, `cachedPromptCost`, `completionCost` e `cost` com `TokenCostCalculator`, usando os preços cadastrados do modelo.
+## 2026-07-11 18:26:50 UTC-3
+- Correção administrativa: a entrada `2026-07-11 18:26:02 UTC-3` sobre travamento da tela Codex ChatGPT MKT foi inserida antes do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o diagnóstico no local correto.
+- Diagnóstico de causa raiz para a tela aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
+- Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
+- Resposta explícita à pergunta “por que esse erro aconteceu?”: a tela ficou travada porque o backend esgotou o pool de conexões JDBC com o MySQL enquanto atendia listagens/polling de `/api/codex/requests`, impedindo a UI de carregar o estado já atualizado da execução.
+- Causa técnica provável identificada no código: `CodexRequestService.listPage` retorna entidades `CodexRequest` completas com vários campos `LONGTEXT` (`prompt`, `responseText`, `modelTranscript`, `executionLog`) e é chamada em polling; isso aumenta custo de leitura/serialização e mantém conexões ocupadas quando há várias requisições simultâneas ou clientes cancelando por timeout.
+- Estado final observado: `GET /actuator/health` do backend voltou a responder `200 UP`, mas logs recentes ainda exibiam timeouts/broken pipe de clientes, indicando degradação transitória ou recorrente.
+- Alternativas avaliadas: (1) reiniciar backend para alívio imediato, baixo esforço mas não elimina recorrência; (2) aumentar pool do Hikari/timeout, ajuda capacidade mas pode transferir pressão para o MySQL; (3) corrigir endpoint/listagem para DTO leve, separar detalhe e reduzir polling concorrente. Decisão recomendada: alternativa 3 como correção estrutural; alternativa 1 apenas como mitigação operacional se a tela continuar indisponível.
+- Não foi criado PR nem aplicado ajuste funcional neste turno.
 
-## 2026-07-13 14:48:00 UTC - Estimativa de custo para uso recorrente de GPT-5.5
-
-- Solicitação recebida: pesquisar custos do modelo `gpt-5.5` usado no Codex ChatGPT Managed e estimar o custo de uma execução mostrada na tela.
-- Pesquisa realizada: documentação oficial da OpenAI indica `gpt-5.5` com preço standard curto de US$ 5,00/1M input, US$ 0,50/1M input cacheado e US$ 30,00/1M output; para prompts acima de 272K tokens, a documentação aplica preço de contexto longo: US$ 10,00/1M input, US$ 1,00/1M input cacheado e US$ 45,00/1M output.
-- Estimativa com os tokens do print: input total 2.036.035, input cacheado 1.916.288 e output 10.508. Como o input excede 272K, a estimativa principal usa long context; tratando cache como subconjunto do input, o custo estimado é cerca de US$ 3,586618 por execução.
-- Comparativos calculados: sem cache, o mesmo request ficaria em cerca de US$ 20,833210; se o sistema tratar `promptTokens` e `cachedPromptTokens` como categorias separadas em vez de cache ser subconjunto, o cálculo long context subiria para cerca de US$ 22,749498, indicando possível ponto de atenção na fórmula local.
-- Observação de produto: o `application.yml` atual inicializa preços para `gpt-5-codex` e `gpt-4.1-mini`, mas não para `gpt-5.5`; por isso a área de custos pode permanecer vazia se não houver cadastro persistido para `gpt-5.5` no banco.
-
-## 2026-07-13 15:10:00 UTC - Cálculo de custo do GPT-5.5 na aplicação
-
-- Solicitação recebida: colocar o cálculo de custos do `gpt-5.5` dentro da aplicação.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o modelo `gpt-5.5` já aparecia como opção no Codex ChatGPT Managed, mas o backend não tinha preço default/migração para esse modelo; além disso, o calculador somava `cachedPromptTokens` ao input como se fossem tokens adicionais, quando no contrato do Codex App Server `cachedInputTokens` é uma parcela do input total.
-- Ajuste aplicado: adicionado preço default e migration `V36__seed_gpt_5_5_pricing.sql` para H2/MySQL/PostgreSQL com valores standard do `gpt-5.5`: US$ 5,00 input, US$ 0,50 input cacheado e US$ 30,00 output por 1M tokens.
-- Ajuste aplicado: `TokenCostCalculator` passou a calcular input não cacheado como `inputTokens - cachedInputTokens`, cobrar cache separadamente, e usar `inputTokens + outputTokens` como total quando precisar inferir o total.
-- Ajuste aplicado: para `gpt-5.5` com input acima de 272.000 tokens, o calculador aplica long context automaticamente: 2x input/cache e 1,5x output, reproduzindo o exemplo de 2.036.035 input, 1.916.288 cacheados e 10.508 output como US$ 3,586618.
+## 2026-07-13 13:03:37 UTC-3
+- Correção administrativa: a entrada `2026-07-13 13:02:08 UTC-3` sobre tokens/custo nos cards MKT foi inserida antes do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o trabalho no local correto.
+- Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
+- Alternativas avaliadas: alterar backend/DTO (maior risco e desnecessário), recalcular no card a partir das interações (risco de divergência do custo oficial), ou renderizar os campos já normalizados no card. Escolhida a terceira opção por menor escopo e aderência ao dado oficial persistido.
+- Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
+- Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
