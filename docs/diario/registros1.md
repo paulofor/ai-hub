@@ -1617,3 +1617,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu?
 - Evidência nos logs do backend: a listagem `/api/codex/requests?page=0&size=20` executava SQL carregando colunas LONGTEXT pesadas (`prompt`, `response_text`, `model_transcript`, `execution_log`, anexos etc.) para cards/listas que só precisam de metadados. Em execuções recentes, isso gerou `Connection reset`, `SocketTimeoutException`, `Broken pipe` e polling acumulado no navegador.
 - Correção aplicada: a listagem paginada passou a usar um DTO leve (`CodexRequestSummary`) com query JPQL explícita, omitindo os textos longos e truncando o prompt para resumo. O detalhe `/api/codex/requests/{id}` continua carregando o registro completo para exibir resposta/log quando necessário.
+
+## 2026-07-13 13:08:44 UTC - Contagem de tokens e custo no Codex ChatGPT Managed
+
+- Solicitação recebida: preencher a área de “Uso de tokens” e “Custos” no detalhe da solicitação Codex ChatGPT Managed.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI e o backend já tinham campos para tokens/custos, mas o fluxo Fase 2/ChatGPT Managed executa via Codex App Server e o orquestrador não assinava nem normalizava o evento `thread/tokenUsage/updated`; por isso `promptTokens`, `cachedPromptTokens`, `completionTokens` e `totalTokens` ficavam nulos, impedindo o backend de calcular custo pela tabela de preços.
+- Ajuste aplicado no sandbox-orchestrator: adicionado suporte a `cachedPromptTokens` no contrato do job e no agregador de métricas; o fluxo Codex App Server agora lê `tokenUsage.last` e `tokenUsage.total` do evento `thread/tokenUsage/updated`, além de fallbacks para `usage`, `token_usage_info` e nomes snake_case/camelCase.
+- Ajuste de precisão: quando o App Server envia total acumulado, o orquestrador aplica esse total ao job para evitar duplicidade em eventos repetidos; quando só há delta, mantém a soma incremental.
+- Resultado esperado: o backend passa a receber os tokens do sandbox e calcula `promptCost`, `cachedPromptCost`, `completionCost` e `cost` com `TokenCostCalculator`, usando os preços cadastrados do modelo.
