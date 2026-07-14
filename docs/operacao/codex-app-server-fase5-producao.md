@@ -42,6 +42,70 @@ docker compose up -d
 
 > Observação: no erro observado em 2026-06-23, `CODEX_APP_SERVER_ENABLED=true` já estava presente, mas o `.env` ainda pinava `BACKEND_IMAGE=ghcr.io/paulodb/ai-hub-backend:latest` e `SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/paulodb/ai-hub-sandbox:latest`; por isso o container continuou servindo o endpoint OAuth legado `redirect_required` em vez do proxy App Server.
 
+## Quando o sandbox não consegue reiniciar produção
+
+A falta de Docker daemon, systemd ou socket Docker dentro do sandbox não deve bloquear a validação operacional de produção. Nessa situação, trate o sandbox como ambiente de código/testes locais e use o MCP Server como plano de controle do host.
+
+Antes de propor restart ou qualquer ajuste operacional, pergunte: **por que esse erro aconteceu?** Para a limitação relatada, a causa raiz não era o contrato `connected=true`/`executable=true`; era a tentativa de validar um efeito de produção usando capacidades locais do sandbox que não existem naquele ambiente. A validação de produção precisa ser feita no host via MCP, ou pelo workflow de deploy, e a validação local precisa ficar restrita a testes automatizados e contratos de código.
+
+Alternativas avaliadas para esse tipo de bloqueio:
+
+1. Instalar Docker daemon/systemd dentro do sandbox. Reduz fricção local, mas aumenta superfície de segurança, mistura responsabilidades e ainda não prova o estado real de produção.
+2. Exigir SSH/manual fora do fluxo do agente. Funciona como emergência, mas perde rastreabilidade e torna a operação menos repetível.
+3. Usar MCP Server com comandos allowlistados, curtos e auditáveis para healthcheck, `docker ps`, logs e restart autorizado. É a melhor opção operacional porque valida o host real sem conceder Docker bruto ao sandbox.
+
+Decisão: para validações de produção, usar MCP Server; para alterações persistentes de `.env` e deploy, preferir o workflow de `main`; para restart manual via MCP, exigir autorização explícita quando afetar serviços de produção.
+
+Comandos seguros e copiáveis:
+
+```bash
+curl -fsS https://iahub.xyz/mcp
+```
+
+```bash
+curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
+  -H 'Content-Type: application/json' \
+  --data @- <<'JSON'
+{"command":"docker ps --format '{{.Names}}' | grep -E 'ai-hub-6-(backend|sandbox-orchestrator|mcp-server|frontend|caddy)-1' || true"}
+JSON
+```
+
+Use `timeout -k` envolvendo a pipeline inteira nos logs para evitar chamadas presas no MCP. O `tail` final mantém a evidência curta:
+
+```bash
+curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
+  -H 'Content-Type: application/json' \
+  --data @- <<'JSON'
+{"command":"timeout -k 2s 12s sh -lc 'docker logs --since 10m --tail 120 ai-hub-6-backend-1 2>&1 | grep -i \"/oauth/token\" | tail -n 40 || true' || true"}
+JSON
+```
+
+```bash
+curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
+  -H 'Content-Type: application/json' \
+  --data @- <<'JSON'
+{"command":"timeout -k 2s 12s sh -lc 'docker logs --since 10m --tail 120 ai-hub-6-sandbox-orchestrator-1 2>&1 | grep -E \"thread/start|turn/start|turn/completed|request method=account/read\" | tail -n 40 || true' || true"}
+JSON
+```
+
+Restart manual apenas quando autorizado:
+
+```bash
+curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
+  -H 'Content-Type: application/json' \
+  --data @- <<'JSON'
+{"command":"cd /host/root/ai-hub-6 && docker compose up -d backend sandbox-orchestrator"}
+JSON
+```
+
+Critério mínimo para considerar a fase validada:
+
+- MCP healthcheck responde `{"status":"UP"}`;
+- containers `backend`, `sandbox-orchestrator`, `frontend`, `caddy` e `mcp-server` aparecem no `docker ps`;
+- `GET /api/account/read` confirma `connected=true` e `executable=true`;
+- após uma request real `CHATGPT_CODEX` ou `CHATGPT_CODEX_MKT`, os logs do sandbox-orchestrator mostram `thread/start`, `turn/start` e `turn/completed`;
+- logs recentes do backend não mostram retomada do fluxo legado `/oauth/token`.
+
 ## Checklist operacional
 
 1. Encerrar sessões antigas pelo fluxo App Server:
