@@ -226,6 +226,11 @@
 - Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
 - Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
 
+## 2026-07-14 17:27:24 UTC
+- Solicitação analisada: como permitir que a sandbox do modelo envie e receba mensagens de WhatsApp para testar um chatbot de outra aplicação.
+- Direcionamento proposto: evitar colocar credenciais ou sessão WhatsApp pessoal dentro da sandbox; criar um canal de teste controlado via WhatsApp Cloud API ou provedor equivalente, exposto para a sandbox por uma ferramenta/backend interno com permissões restritas, logs e isolamento por execução.
+- Observação: não foi aplicado ajuste de código neste turno; a resposta foi arquitetural.
+
 ## 2026-07-11 18:26:02 UTC-3
 - Diagnóstico de causa raiz para a tela Codex ChatGPT MKT aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
 - Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema observado concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
