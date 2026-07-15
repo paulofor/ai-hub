@@ -1,4 +1,5 @@
 import { CodexAppServerClient } from './codexAppServerClient.js';
+import { maintainCodexSqliteLogs } from './codexLogMaintenance.js';
 import { createApp } from './server.js';
 
 const port = Number.parseInt(process.env.PORT ?? '8083', 10);
@@ -7,10 +8,17 @@ const codexAppServerClient = codexAppServerEnabled ? new CodexAppServerClient() 
 const app = createApp({ codexAppServerClient });
 
 if (codexAppServerClient) {
-  codexAppServerClient.start().catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Falha ao iniciar Codex App Server: ${message}`);
-  });
+  maintainCodexSqliteLogs()
+    .catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Falha na manutenção dos logs SQLite do Codex App Server: ${message}`);
+    })
+    .finally(() => {
+      codexAppServerClient.start().catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Falha ao iniciar Codex App Server: ${message}`);
+      });
+    });
 }
 
 app.listen(port, () => {
