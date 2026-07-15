@@ -173,6 +173,9 @@ jobs:
       - mcp-server
       - docker
     runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -182,6 +185,7 @@ jobs:
       REMOTE_PATH: /root/ai-hub-6
       GHCR_USERNAME: paulofor
       GHCR_TOKEN: ${{ github.token }}
+      IMAGE_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure SSH
@@ -226,22 +230,22 @@ jobs:
             printf '%s\n' \
               'CODEX_APP_SERVER_ENABLED=true' \
               'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000' \
-              'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest' \
-              'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest' \
-              'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest' \
-              'CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:latest' \
-              'MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest' \
+              'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:${IMAGE_TAG}' \
+              'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG}' \
+              'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG}' \
+              'CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:${IMAGE_TAG}' \
+              'MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG}' \
               >> .env"
       - name: Publish services
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "set -euo pipefail && \
             cd ${REMOTE_PATH} && \
-            export CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:latest && \
-            export BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:latest && \
-            export FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:latest && \
-            export SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:latest && \
-            export MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:latest && \
+            export CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:${IMAGE_TAG} && \
+            export BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:${IMAGE_TAG} && \
+            export FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG} && \
+            export SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG} && \
+            export MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG} && \
             docker compose pull && docker compose up -d --remove-orphans"
       - name: Verify production services
         run: |
