@@ -20,7 +20,15 @@ import {
 import { CodexAppServerClient } from './codexAppServerClient.js';
 import { readCodexAccount } from './codexAppServerAuth.js';
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
-import { JobProcessor, SandboxJob, SandboxProfile, SandboxInteraction, SandboxHttpRequestLog, SandboxDatabaseConfig } from './types.js';
+import {
+  JobProcessor,
+  SandboxJob,
+  SandboxProfile,
+  SandboxInteraction,
+  SandboxHttpRequestLog,
+  SandboxDatabaseConfig,
+  SandboxDownloadLog,
+} from './types.js';
 
 function resolveOpenAIOrganization(): string | undefined {
   const organization = process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID ?? process.env.HUB_ACCOUNT_OAUTH_ORGANIZATION_ID;
@@ -678,6 +686,7 @@ export class SandboxJobProcessor implements JobProcessor {
     job.httpGetCount = job.httpGetCount ?? 0;
     job.httpGetSuccessCount = job.httpGetSuccessCount ?? 0;
     job.httpRequests = Array.isArray(job.httpRequests) ? job.httpRequests : [];
+    job.downloadLogs = Array.isArray(job.downloadLogs) ? job.downloadLogs : [];
     job.dbQueryCount = job.dbQueryCount ?? 0;
 
     const start = new Date();
@@ -854,7 +863,25 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private async cloneRepository(job: SandboxJob, repoPath: string, cloneUrl: string): Promise<void> {
+    const startedAt = new Date().toISOString();
+    const safeUrl = redactUrlCredentials(cloneUrl);
+    this.recordDownload(job, {
+      source: 'git',
+      url: safeUrl,
+      command: `git clone --branch ${job.branch} --depth 1 ${safeUrl} ${repoPath}`,
+      startedAt,
+      note: 'clone inicial do repositório',
+    });
     await exec(`git clone --branch ${job.branch} --depth 1 ${cloneUrl} ${repoPath}`);
+    this.recordDownload(job, {
+      source: 'git',
+      url: safeUrl,
+      command: `git clone --branch ${job.branch} --depth 1 ${safeUrl} ${repoPath}`,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      success: true,
+      note: 'clone inicial do repositório concluído',
+    });
     if (job.commitHash) {
       this.log(job, `checando commit ${job.commitHash}`);
       await exec(`git checkout ${job.commitHash}`, { cwd: repoPath });
@@ -3327,6 +3354,13 @@ ${stderr}`);
     const requestedAt = new Date().toISOString();
 
     this.log(job, `${toolName}: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs}, maxResponseChars=${maxResponseChars})`);
+    const downloadEntry: SandboxDownloadLog = {
+      callId,
+      source: toolName === 'WebSearch' ? 'http_get' : 'http_get',
+      url: url.toString(),
+      startedAt: requestedAt,
+      note: `${toolName} solicitado pelo modelo`,
+    };
 
     const controller = AbortSignal.timeout(this.httpToolTimeoutMs);
     let response: any;
@@ -3369,6 +3403,7 @@ ${stderr}`);
 
     const status = typeof response?.status === 'number' ? response.status : undefined;
     const success = this.isSuccessfulHttpResponse(response);
+    const contentLength = this.readContentLength(response);
     if (success) {
       job.httpGetSuccessCount = (job.httpGetSuccessCount ?? 0) + 1;
     }
@@ -3380,6 +3415,17 @@ ${stderr}`);
       success,
       toolName,
       requestedAt,
+    });
+    this.recordDownload(job, {
+      ...downloadEntry,
+      status,
+      success,
+      contentLength,
+      bytesRead: Buffer.byteLength(body),
+      finishedAt: new Date().toISOString(),
+      note: truncated
+        ? `${toolName} retornou corpo truncado pelo limite de caracteres`
+        : `${toolName} retornou corpo dentro do limite`,
     });
 
     return {
@@ -3395,6 +3441,26 @@ ${stderr}`);
   private recordHttpRequest(job: SandboxJob, entry: SandboxHttpRequestLog) {
     job.httpRequests = Array.isArray(job.httpRequests) ? job.httpRequests : [];
     job.httpRequests.push(entry);
+  }
+
+  private recordDownload(job: SandboxJob, entry: SandboxDownloadLog): void {
+    job.downloadLogs = Array.isArray(job.downloadLogs) ? job.downloadLogs : [];
+    job.downloadLogs.push(entry);
+    const details = [
+      entry.url ? `url=${entry.url}` : undefined,
+      entry.command ? `command=${entry.command}` : undefined,
+      entry.status !== undefined ? `status=${entry.status}` : undefined,
+      entry.contentLength !== undefined ? `contentLength=${entry.contentLength}` : undefined,
+      entry.bytesRead !== undefined ? `bytesRead=${entry.bytesRead}` : undefined,
+      entry.note,
+    ].filter(Boolean).join(' ');
+    this.log(job, `download_log: source=${entry.source} ${details}`.trim());
+  }
+
+  private readContentLength(response: any): number | undefined {
+    const raw = response?.headers?.get?.('content-length');
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
   }
 
   private isSuccessfulHttpResponse(response: any): boolean {
@@ -3630,6 +3696,7 @@ ${stderr}`);
     }
 
     const joined = command.join(' ');
+    this.recordShellDownloadIntent(job, joined);
     const cachedResult = this.tryReuseShortTermShellCache(job, cwd, joined, now);
     if (cachedResult) {
       return cachedResult;
@@ -3729,6 +3796,23 @@ ${stderr}`);
     this.storeShortTermShellCache(job, cwd, joined, result, now);
 
     return result;
+  }
+
+  private recordShellDownloadIntent(job: SandboxJob, command: string): void {
+    const lower = command.toLowerCase();
+    if (!/\b(curl|wget|aria2c|git\s+(clone|fetch|pull)|npm\s+(install|ci)|pnpm\s+(install|i)|yarn\s+(install|add)|pip\s+install|mvn\s+dependency:|gradle\s+dependencies|docker\s+pull)\b/.test(lower)) {
+      return;
+    }
+    const urls = Array.from(command.matchAll(/https?:\/\/[^\s"'`<>]+/g)).map((match) => match[0]);
+    this.recordDownload(job, {
+      source: 'run_shell',
+      command,
+      url: urls[0],
+      startedAt: new Date().toISOString(),
+      note: urls.length > 1
+        ? `comando do modelo com possível download; ${urls.length} URLs detectadas`
+        : 'comando do modelo com possível download',
+    });
   }
 
 
@@ -4273,6 +4357,13 @@ grep -R -n -- "$@"
     const headers = this.sanitizeHeaders((args as Record<string, unknown>).headers);
     const requestedAt = new Date().toISOString();
     this.log(job, `fetch_image: ${url.toString()} (timeoutMs=${this.httpToolTimeoutMs}, maxBytes=${this.resolveImageToolMaxBytes()})`);
+    const downloadEntry: SandboxDownloadLog = {
+      callId: call.id,
+      source: 'fetch_image',
+      url: url.toString(),
+      startedAt: requestedAt,
+      note: 'fetch_image solicitado pelo modelo',
+    };
 
     let response: any;
     try {
@@ -4296,12 +4387,28 @@ grep -R -n -- "$@"
       requestedAt,
     });
     if (!success) {
+      this.recordDownload(job, {
+        ...downloadEntry,
+        status,
+        success,
+        contentLength: this.readContentLength(response),
+        finishedAt: new Date().toISOString(),
+        note: 'fetch_image retornou erro HTTP',
+      });
       throw new Error(`falha ao buscar imagem: status ${status ?? 'desconhecido'}`);
     }
 
-    const contentLength = Number(response.headers?.get?.('content-length'));
+    const contentLength = this.readContentLength(response);
     const maxBytes = this.resolveImageToolMaxBytes();
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    if (contentLength !== undefined && contentLength > maxBytes) {
+      this.recordDownload(job, {
+        ...downloadEntry,
+        status,
+        success,
+        contentLength,
+        finishedAt: new Date().toISOString(),
+        note: `fetch_image bloqueado por content-length acima de ${maxBytes} bytes`,
+      });
       throw new Error(`imagem excede limite de ${maxBytes} bytes`);
     }
 
@@ -4317,8 +4424,26 @@ grep -R -n -- "$@"
       throw new Error(`falha ao ler imagem: ${message}`);
     }
     if (buffer.byteLength > maxBytes) {
+      this.recordDownload(job, {
+        ...downloadEntry,
+        status,
+        success,
+        contentLength,
+        bytesRead: buffer.byteLength,
+        finishedAt: new Date().toISOString(),
+        note: `fetch_image bloqueado após leitura acima de ${maxBytes} bytes`,
+      });
       throw new Error(`imagem excede limite de ${maxBytes} bytes`);
     }
+    this.recordDownload(job, {
+      ...downloadEntry,
+      status,
+      success,
+      contentLength,
+      bytesRead: buffer.byteLength,
+      finishedAt: new Date().toISOString(),
+      note: 'fetch_image concluído dentro do limite',
+    });
 
     return this.buildImageToolResult({
       source: 'fetch_image',
@@ -4595,7 +4720,7 @@ grep -R -n -- "$@"
     try {
       await exec('git config user.email "ai-hub-bot@example.com"', { cwd: repoPath });
       await exec('git config user.name "AI Hub Bot"', { cwd: repoPath });
-      const existingRemoteBranch = await this.checkoutWorkBranch(repoPath, branchName);
+      const existingRemoteBranch = await this.checkoutWorkBranch(repoPath, branchName, job);
       if (existingRemoteBranch) {
         this.log(job, `branch de trabalho existente reutilizada: ${branchName}`);
       } else {
@@ -4665,9 +4790,25 @@ grep -R -n -- "$@"
     return branch;
   }
 
-  private async checkoutWorkBranch(repoPath: string, branchName: string): Promise<boolean> {
+  private async checkoutWorkBranch(repoPath: string, branchName: string, job: SandboxJob): Promise<boolean> {
+    const command = `git fetch origin ${branchName}:refs/remotes/origin/${branchName}`;
+    const startedAt = new Date().toISOString();
     try {
-      await exec(`git fetch origin ${branchName}:refs/remotes/origin/${branchName}`, { cwd: repoPath });
+      this.recordDownload(job, {
+        source: 'git',
+        command,
+        startedAt,
+        note: 'busca de branch remota antes de PR',
+      });
+      await exec(command, { cwd: repoPath });
+      this.recordDownload(job, {
+        source: 'git',
+        command,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        success: true,
+        note: 'busca de branch remota antes de PR concluída',
+      });
       await exec(`git checkout -B ${branchName} refs/remotes/origin/${branchName}`, { cwd: repoPath });
       return true;
     } catch {
@@ -4688,7 +4829,23 @@ grep -R -n -- "$@"
     }
 
     try {
-      await exec(`git fetch origin ${branchName}:refs/remotes/origin/${branchName}`, { cwd: repoPath });
+      const command = `git fetch origin ${branchName}:refs/remotes/origin/${branchName}`;
+      const startedAt = new Date().toISOString();
+      this.recordDownload(job, {
+        source: 'git',
+        command,
+        startedAt,
+        note: 'busca de branch remota para contexto',
+      });
+      await exec(command, { cwd: repoPath });
+      this.recordDownload(job, {
+        source: 'git',
+        command,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        success: true,
+        note: 'busca de branch remota para contexto concluída',
+      });
       await exec(`git checkout -B ${branchName} refs/remotes/origin/${branchName}`, { cwd: repoPath });
       this.log(job, `branch de trabalho existente carregada antes da execução: ${branchName}`);
     } catch {

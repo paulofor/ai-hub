@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { CodexAppServerClient } from '../src/codexAppServerClient.js';
+import { buildCodexAppServerEnv, CodexAppServerClient } from '../src/codexAppServerClient.js';
 
 const fixturePath = path.resolve('tests/fixtures/fake-codex-app-server.cjs');
 const silentLogger = { info() {}, warn() {}, error() {} };
@@ -88,4 +88,26 @@ test('trata notificações error do Codex App Server sem derrubar o processo', a
   assert.equal(client.isReady(), true);
 
   await client.stop();
+});
+
+test('rebaixa TRACE do ambiente do Codex App Server por padrão', () => {
+  const env = buildCodexAppServerEnv(
+    { RUST_LOG: 'trace', CODEX_APP_SERVER_RUST_LOG: 'codex_api=trace,tokio_tungstenite=trace,warn' },
+    {},
+  );
+
+  assert.equal(env.RUST_LOG, 'codex_api=info,tokio_tungstenite=info,warn');
+  assert.equal(env.CODEX_LOG, 'info');
+});
+
+test('permite TRACE apenas quando habilitado explicitamente', () => {
+  const env = buildCodexAppServerEnv(
+    {
+      CODEX_APP_SERVER_RUST_LOG: 'codex_api=trace,warn',
+      CODEX_APP_SERVER_ALLOW_TRACE_LOGS: 'true',
+    },
+    {},
+  );
+
+  assert.equal(env.RUST_LOG, 'codex_api=trace,warn');
 });

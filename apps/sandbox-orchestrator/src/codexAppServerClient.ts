@@ -32,6 +32,42 @@ export interface CodexAppServerHealth {
   initializedAt?: string;
 }
 
+export function buildCodexAppServerEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  overrideEnv: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+  const configuredRustLog = overrideEnv.CODEX_APP_SERVER_RUST_LOG
+    ?? baseEnv.CODEX_APP_SERVER_RUST_LOG
+    ?? 'codex_core=info,codex_tui=info,codex_app_server=info,codex_api=info,codex_client=info,warn';
+  const allowTrace = (overrideEnv.CODEX_APP_SERVER_ALLOW_TRACE_LOGS ?? baseEnv.CODEX_APP_SERVER_ALLOW_TRACE_LOGS ?? 'false')
+    .toLowerCase() === 'true';
+  const rustLog = allowTrace ? configuredRustLog : downgradeTraceFilters(configuredRustLog);
+
+  return {
+    ...baseEnv,
+    ...overrideEnv,
+    RUST_LOG: rustLog,
+    CODEX_LOG: overrideEnv.CODEX_LOG ?? baseEnv.CODEX_LOG ?? 'info',
+  };
+}
+
+function downgradeTraceFilters(value: string): string {
+  return value
+    .split(',')
+    .map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed) {
+        return trimmed;
+      }
+      if (trimmed === 'trace') {
+        return 'info';
+      }
+      return trimmed.replace(/=trace\b/gi, '=info');
+    })
+    .filter(Boolean)
+    .join(',');
+}
+
 export class CodexAppServerError extends Error {
   constructor(message: string, public readonly code?: number) {
     super(message);
@@ -64,7 +100,7 @@ export class CodexAppServerClient {
   constructor(options: CodexAppServerClientOptions = {}) {
     this.command = options.command ?? process.env.CODEX_APP_SERVER_COMMAND ?? 'codex';
     this.args = options.args ?? (process.env.CODEX_APP_SERVER_ARGS?.trim().split(/\s+/).filter(Boolean) ?? ['app-server', '--listen', 'stdio://']);
-    this.env = { ...process.env, ...options.env };
+    this.env = buildCodexAppServerEnv(process.env, options.env);
     this.requestTimeoutMs = options.requestTimeoutMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS ?? '60000', 10);
     this.restartBackoffMs = options.restartBackoffMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_RESTART_BACKOFF_MS ?? '2000', 10);
     this.maxRestartAttempts = options.maxRestartAttempts ?? Number.parseInt(process.env.CODEX_APP_SERVER_MAX_RESTART_ATTEMPTS ?? '3', 10);

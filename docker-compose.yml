@@ -80,6 +80,9 @@ services:
       SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}
       SANDBOX_MAIL_WEB_URL: ${SANDBOX_MAIL_WEB_URL:-http://sandbox-mail:8025}
       SANDBOX_MAIL_API_URL: ${SANDBOX_MAIL_API_URL:-http://sandbox-mail:8025/api/v1}
+      CODEX_APP_SERVER_RUST_LOG: ${CODEX_APP_SERVER_RUST_LOG:-codex_core=info,codex_tui=info,codex_app_server=info,codex_api=info,codex_client=info,warn}
+      CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES: ${CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES:-536870912}
+      CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED: ${CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED:-2}
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
       - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro

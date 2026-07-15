@@ -36,6 +36,21 @@ export interface SandboxHttpRequestLog {
   requestedAt: string;
 }
 
+export interface SandboxDownloadLog {
+  callId?: string;
+  source: 'http_get' | 'fetch_image' | 'run_shell' | 'git';
+  url?: string;
+  command?: string;
+  status?: number;
+  success?: boolean;
+  contentLength?: number;
+  bytesRead?: number;
+  path?: string;
+  startedAt: string;
+  finishedAt?: string;
+  note?: string;
+}
+
 export interface SandboxJob {
   jobId: string;
   repoSlug?: string;
@@ -81,6 +96,7 @@ export interface SandboxJob {
   dbQueryCount?: number;
   cancelRequested?: boolean;
   httpRequests?: SandboxHttpRequestLog[];
+  downloadLogs?: SandboxDownloadLog[];
 }
 
 export interface JobProcessor {
