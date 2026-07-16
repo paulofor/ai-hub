@@ -757,6 +757,8 @@ export class SandboxJobProcessor implements JobProcessor {
       this.ensureNotCancelled(job);
       await this.runRunnerPreflight(job, repoPath!);
       this.ensureNotCancelled(job);
+      await this.materializeJobAttachments(job, repoPath!);
+      this.ensureNotCancelled(job);
 
       this.ensureNotCancelled(job);
       this.log(job, `iniciando interação com o modelo do sandbox (${resolvedModel})`);
@@ -810,6 +812,92 @@ export class SandboxJobProcessor implements JobProcessor {
   private ensureNotCancelled(job: SandboxJob): void {
     if (job.cancelRequested) {
       throw new JobCancelledError();
+    }
+  }
+
+  private async materializeJobAttachments(job: SandboxJob, repoPath: string): Promise<void> {
+    const attachments = job.imageAttachments ?? [];
+    if (attachments.length === 0) {
+      return;
+    }
+
+    const attachmentDir = path.join(repoPath, '.codex', 'attachments', this.sanitizeId(job.jobId));
+    await fs.mkdir(attachmentDir, { recursive: true });
+    const usedFilenames = new Set<string>();
+    for (const [index, attachment] of attachments.entries()) {
+      const parsed = this.parseAttachmentDataUrl(attachment.dataUrl);
+      if (!parsed) {
+        this.log(job, `anexo ignorado por dataUrl inválido: ${attachment.name ?? `#${index + 1}`}`);
+        continue;
+      }
+      const filename = this.buildAttachmentFilename(attachment.name, parsed.mimeType, index, usedFilenames);
+      const absolutePath = path.join(attachmentDir, filename);
+      await fs.writeFile(absolutePath, parsed.buffer);
+      attachment.mimeType = attachment.mimeType ?? parsed.mimeType;
+      attachment.size = attachment.size ?? parsed.buffer.byteLength;
+      attachment.path = path.relative(repoPath, absolutePath).replace(/\\/g, '/');
+      this.log(job, `anexo preparado em ${attachment.path} (${attachment.mimeType ?? parsed.mimeType}, ${attachment.size} bytes)`);
+    }
+  }
+
+  private parseAttachmentDataUrl(dataUrl: string): { mimeType: string; buffer: Buffer } | null {
+    const match = dataUrl.match(/^data:([^;,]+)?;base64,([a-zA-Z0-9+/=\s]+)$/);
+    if (!match) {
+      return null;
+    }
+    const mimeType = match[1]?.trim() || 'application/octet-stream';
+    return { mimeType, buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64') };
+  }
+
+  private buildAttachmentFilename(name: string | undefined, mimeType: string, index: number, usedFilenames: Set<string>): string {
+    const fallbackExtension = this.extensionForMimeType(mimeType);
+    const fallbackName = `anexo-${index + 1}${fallbackExtension}`;
+    const rawName = name?.trim() || fallbackName;
+    const sanitized = rawName
+      .replace(/[\\/]/g, '-')
+      .replace(/[^a-zA-Z0-9._ -]/g, '_')
+      .replace(/^\.+/, '')
+      .trim();
+    const baseName = sanitized || fallbackName;
+    if (!usedFilenames.has(baseName)) {
+      usedFilenames.add(baseName);
+      return baseName;
+    }
+    const extensionIndex = baseName.lastIndexOf('.');
+    const stem = extensionIndex > 0 ? baseName.slice(0, extensionIndex) : baseName;
+    const extension = extensionIndex > 0 ? baseName.slice(extensionIndex) : '';
+    let deduped = `${stem}-${index + 1}${extension}`;
+    let suffix = index + 1;
+    while (usedFilenames.has(deduped)) {
+      suffix += 1;
+      deduped = `${stem}-${suffix}${extension}`;
+    }
+    usedFilenames.add(deduped);
+    return deduped;
+  }
+
+  private extensionForMimeType(mimeType: string): string {
+    switch (mimeType.toLowerCase()) {
+      case 'text/plain':
+        return '.txt';
+      case 'text/csv':
+        return '.csv';
+      case 'application/json':
+        return '.json';
+      case 'application/pdf':
+        return '.pdf';
+      case 'application/zip':
+        return '.zip';
+      case 'image/png':
+        return '.png';
+      case 'image/jpeg':
+        return '.jpg';
+      case 'image/webp':
+        return '.webp';
+      case 'image/gif':
+        return '.gif';
+      default:
+        return '';
     }
   }
 
@@ -1206,19 +1294,37 @@ export class SandboxJobProcessor implements JobProcessor {
     const taskDescription = this.isChatgptCodexMarketing(job)
       ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e só prepare mudanças para PR quando o usuário solicitar explicitamente. ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${dockerCliInstruction}
 
-${job.taskDescription}`
+${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodex(job)
         ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${awsCliInstruction} ${dockerCliInstruction}
 
-${job.taskDescription}`
-        : job.taskDescription;
+${job.taskDescription}${this.buildAttachmentContext(job)}`
+        : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
     return [
       { type: 'text', text: taskDescription },
-      ...(job.imageAttachments ?? []).map((attachment) => ({
+      ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
         type: 'image',
         url: attachment.dataUrl,
       })),
     ];
+  }
+
+  private buildAttachmentContext(job: SandboxJob): string {
+    const attachments = (job.imageAttachments ?? []).filter((attachment) => attachment.path);
+    if (attachments.length === 0) {
+      return '';
+    }
+    const lines = attachments.map((attachment, index) => {
+      const size = Number.isFinite(attachment.size) ? `${attachment.size} bytes` : 'tamanho desconhecido';
+      const mimeType = attachment.mimeType ?? 'application/octet-stream';
+      return `- ${index + 1}. ${attachment.name ?? attachment.path}: ${attachment.path} (${mimeType}, ${size})`;
+    });
+    return `\n\nArquivos anexados pelo usuário foram salvos no repositório temporário. Leia-os quando forem relevantes:\n${lines.join('\n')}`;
+  }
+
+  private isImageAttachment(attachment: { mimeType?: string; dataUrl?: string }): boolean {
+    return (attachment.mimeType ?? '').toLowerCase().startsWith('image/')
+      || (attachment.dataUrl ?? '').toLowerCase().startsWith('data:image/');
   }
 
   private async waitForCodexTurn(job: SandboxJob, isCompleted: () => boolean, failureReason: () => string | undefined): Promise<void> {
@@ -1360,8 +1466,8 @@ Modo ChatGPT Codex MKT ativo: use a sandbox para baixar e analisar o repositóri
 Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos. Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado, registrando qualquer limitação real de ambiente que impeça a execução local.`
               : '';
     const userContent: Array<Record<string, string>> = [
-      { type: 'input_text', text: job.taskDescription },
-      ...(job.imageAttachments ?? []).map((attachment) => ({
+      { type: 'input_text', text: `${job.taskDescription}${this.buildAttachmentContext(job)}` },
+      ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
         type: 'input_image',
         image_url: attachment.dataUrl,
         detail: 'auto',
@@ -4585,7 +4691,10 @@ grep -R -n -- "$@"
 
   private isInternalWorkspacePath(filePath: string): boolean {
     const normalized = filePath.replace(/\\/g, '/').replace(/^\.\//, '');
-    return normalized === '.ai-hub-bin' || normalized.startsWith('.ai-hub-bin/');
+    return normalized === '.ai-hub-bin'
+      || normalized.startsWith('.ai-hub-bin/')
+      || normalized === '.codex'
+      || normalized.startsWith('.codex/');
   }
 
   private async collectChangedFiles(repoPath: string, baseCommit?: string, job?: SandboxJob): Promise<string[]> {

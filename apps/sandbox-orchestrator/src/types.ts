@@ -8,6 +8,7 @@ export interface SandboxImageAttachment {
   mimeType?: string;
   size?: number;
   dataUrl: string;
+  path?: string;
 }
 
 export interface SandboxDatabaseConfig {

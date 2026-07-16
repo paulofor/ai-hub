@@ -82,7 +82,7 @@ function normalizeImageAttachments(value: unknown): SandboxImageAttachment[] | u
       }
       const record = item as Record<string, unknown>;
       const dataUrl = validateString(record.dataUrl);
-      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+      if (!dataUrl || !dataUrl.startsWith('data:') || !dataUrl.includes(';base64,')) {
         return null;
       }
       return {
