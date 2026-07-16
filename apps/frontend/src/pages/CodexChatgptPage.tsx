@@ -189,12 +189,38 @@ interface MarketingStructuredResponse {
   orientacaoProximaAcao: string;
 }
 
+const tryParseMarketingResponseRecord = (candidate: string): Record<string, unknown> | null => {
+  try {
+    const parsed = JSON.parse(candidate);
+    if (typeof parsed === 'string') {
+      return tryParseMarketingResponseRecord(parsed);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
 const extractJsonObjectCandidate = (content: string): string | null => {
   const trimmed = content.trim();
   if (!trimmed) return null;
 
-  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const candidate = fencedMatch ? fencedMatch[1].trim() : trimmed;
+  const parsedString = (() => {
+    try {
+      const parsed = JSON.parse(candidate);
+      return typeof parsed === 'string' ? parsed : null;
+    } catch {
+      return null;
+    }
+  })();
+  if (parsedString) {
+    return extractJsonObjectCandidate(parsedString);
+  }
   if (candidate.startsWith('{') && candidate.endsWith('}')) {
     return candidate;
   }
@@ -222,28 +248,24 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
   const candidate = extractJsonObjectCandidate(content);
   if (!candidate) return null;
 
-  try {
-    const parsed = JSON.parse(candidate);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null;
-    }
-    const record = parsed as Record<string, unknown>;
-    const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
-    const orientacaoProximaAcao = readStructuredResponseString(record, [
-      'orientacaoProximaAcao',
-      'orientaçãoProximaAção',
-      'orientacao_proxima_acao',
-      'orientacao',
-      'orientação',
-      'nextActionGuidance'
-    ]).trim();
-    if (!comentario && !orientacaoProximaAcao) {
-      return null;
-    }
-    return { comentario, orientacaoProximaAcao };
-  } catch {
+  const record = tryParseMarketingResponseRecord(candidate);
+  if (!record) {
     return null;
   }
+
+  const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
+  const orientacaoProximaAcao = readStructuredResponseString(record, [
+    'orientacaoProximaAcao',
+    'orientaçãoProximaAção',
+    'orientacao_proxima_acao',
+    'orientacao',
+    'orientação',
+    'nextActionGuidance'
+  ]).trim();
+  if (!comentario && !orientacaoProximaAcao) {
+    return null;
+  }
+  return { comentario, orientacaoProximaAcao };
 };
 
 const MarkdownMessage = ({ content }: { content: string }) => {
@@ -291,13 +313,13 @@ const AssistantMessageBody = ({ content, marketing }: { content: string; marketi
   }
 
   return <div className="space-y-3">
-    {structured.comentario ? <section className="space-y-1">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Comentário</h4>
+    {structured.comentario ? <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
       <MarkdownMessage content={structured.comentario} />
     </section> : null}
-    {structured.orientacaoProximaAcao ? <section className="rounded-md border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/30">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação para próxima ação</h4>
-      <div className="mt-2 text-emerald-950 dark:text-emerald-100">
+    {structured.orientacaoProximaAcao ? <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30">
+      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação</h4>
+      <div className="text-emerald-950 dark:text-emerald-100">
         <MarkdownMessage content={structured.orientacaoProximaAcao} />
       </div>
     </section> : null}
