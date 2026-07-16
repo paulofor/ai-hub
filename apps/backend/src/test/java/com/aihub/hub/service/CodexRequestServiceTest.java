@@ -1,6 +1,7 @@
 package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
+import com.aihub.hub.domain.CodexDocumentAccessLog;
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
@@ -8,6 +9,7 @@ import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
+import com.aihub.hub.repository.CodexDocumentAccessRepository;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
@@ -28,6 +30,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -60,6 +63,7 @@ class CodexRequestServiceTest {
     private final CodexInteractionRepository codexInteractionRepository = mock(CodexInteractionRepository.class);
     private final ProblemRepository problemRepository = mock(ProblemRepository.class);
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
+    private final CodexDocumentAccessRepository codexDocumentAccessRepository = mock(CodexDocumentAccessRepository.class);
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
     private final SandboxOrchestratorClient sandboxOrchestratorClient = mock(SandboxOrchestratorClient.class);
     private final GithubAppAuth githubAppAuth = mock(GithubAppAuth.class);
@@ -91,6 +95,7 @@ class CodexRequestServiceTest {
             responseRepository,
             codexInteractionRepository,
             codexHttpRequestRepository,
+            codexDocumentAccessRepository,
             environmentRepository,
             problemRepository,
             sandboxOrchestratorClient,
@@ -344,6 +349,7 @@ class CodexRequestServiceTest {
                 0,
                 null,
                 null,
+                null,
                 null
             );
 
@@ -395,6 +401,7 @@ class CodexRequestServiceTest {
                 0,
                 0,
                 0,
+                null,
                 null,
                 null,
                 null
@@ -467,6 +474,7 @@ class CodexRequestServiceTest {
                         3
                     )
                 ),
+                null,
                 null
             );
 
@@ -515,6 +523,7 @@ class CodexRequestServiceTest {
                 0,
                 42,
                 null,
+                null,
                 null
             );
 
@@ -560,6 +569,7 @@ class CodexRequestServiceTest {
                 0,
                 0,
                 null,
+                null,
                 null
             );
 
@@ -570,6 +580,63 @@ class CodexRequestServiceTest {
         assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
         assertThat(request.getInteractionCount()).isEqualTo(42);
         verify(codexRequestRepository).save(request);
+    }
+
+    @Test
+    void handleSandboxCallbackPersistsDocumentAccesses() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "analise docs");
+        ReflectionTestUtils.setField(request, "id", 123L);
+        request.setExternalId("job-docs");
+        request.setCreatedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        when(codexRequestRepository.findByExternalId("job-docs")).thenReturn(Optional.of(request));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(codexDocumentAccessRepository.existsBySandboxJobIdAndSandboxAccessId("job-docs", "access-1")).thenReturn(false);
+
+        SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+            new SandboxOrchestratorClient.SandboxOrchestratorJobResponse(
+                "job-docs",
+                "COMPLETED",
+                "Concluído",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:06:00Z",
+                300000L,
+                0,
+                0,
+                0,
+                0,
+                1,
+                null,
+                null,
+                List.of(new SandboxOrchestratorClient.SandboxOrchestratorJobResponse.DocumentAccess(
+                    "access-1",
+                    "docs/briefing.md",
+                    "read_file",
+                    "./docs/briefing.md",
+                    null,
+                    "2024-01-01T00:02:00Z"
+                ))
+            );
+
+        CodexRequestService service = buildService();
+        service.handleSandboxCallback(response);
+
+        ArgumentCaptor<CodexDocumentAccessLog> captor = ArgumentCaptor.forClass(CodexDocumentAccessLog.class);
+        verify(codexDocumentAccessRepository).save(captor.capture());
+        assertThat(captor.getValue().getCodexRequest()).isSameAs(request);
+        assertThat(captor.getValue().getSandboxJobId()).isEqualTo("job-docs");
+        assertThat(captor.getValue().getDocumentPath()).isEqualTo("docs/briefing.md");
+        assertThat(captor.getValue().getToolName()).isEqualTo("read_file");
+        assertThat(captor.getValue().getRequestedPath()).isEqualTo("./docs/briefing.md");
     }
 
     @Test

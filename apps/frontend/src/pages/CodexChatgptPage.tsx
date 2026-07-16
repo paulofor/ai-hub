@@ -184,6 +184,68 @@ const parseMarkdownTable = (paragraph: string) => {
   return { headers, rows };
 };
 
+interface MarketingStructuredResponse {
+  comentario: string;
+  orientacaoProximaAcao: string;
+}
+
+const extractJsonObjectCandidate = (content: string): string | null => {
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fencedMatch ? fencedMatch[1].trim() : trimmed;
+  if (candidate.startsWith('{') && candidate.endsWith('}')) {
+    return candidate;
+  }
+
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    return candidate.slice(start, end + 1);
+  }
+
+  return null;
+};
+
+const readStructuredResponseString = (record: Record<string, unknown>, keys: string[]): string => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+  return '';
+};
+
+const parseMarketingStructuredResponse = (content: string): MarketingStructuredResponse | null => {
+  const candidate = extractJsonObjectCandidate(content);
+  if (!candidate) return null;
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
+    const orientacaoProximaAcao = readStructuredResponseString(record, [
+      'orientacaoProximaAcao',
+      'orientaçãoProximaAção',
+      'orientacao_proxima_acao',
+      'orientacao',
+      'orientação',
+      'nextActionGuidance'
+    ]).trim();
+    if (!comentario && !orientacaoProximaAcao) {
+      return null;
+    }
+    return { comentario, orientacaoProximaAcao };
+  } catch {
+    return null;
+  }
+};
+
 const MarkdownMessage = ({ content }: { content: string }) => {
   const normalized = stripModelThinking(content);
   const blocks = normalized.split(/(```[\s\S]*?```)/g).filter((block) => block.length > 0);
@@ -219,6 +281,26 @@ const MarkdownMessage = ({ content }: { content: string }) => {
         return <p key={`p-${blockIndex}-${paragraphIndex}`} className="whitespace-pre-wrap">{renderInlineMarkdown(paragraph, `p-${blockIndex}-${paragraphIndex}`)}</p>;
       });
     })}
+  </div>;
+};
+
+const AssistantMessageBody = ({ content, marketing }: { content: string; marketing: boolean }) => {
+  const structured = marketing ? parseMarketingStructuredResponse(content) : null;
+  if (!structured) {
+    return <MarkdownMessage content={content} />;
+  }
+
+  return <div className="space-y-3">
+    {structured.comentario ? <section className="space-y-1">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Comentário</h4>
+      <MarkdownMessage content={structured.comentario} />
+    </section> : null}
+    {structured.orientacaoProximaAcao ? <section className="rounded-md border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/30">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação para próxima ação</h4>
+      <div className="mt-2 text-emerald-950 dark:text-emerald-100">
+        <MarkdownMessage content={structured.orientacaoProximaAcao} />
+      </div>
+    </section> : null}
   </div>;
 };
 
@@ -515,7 +597,8 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
-    'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.'
+    'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
+    'Na resposta final, responda somente com JSON válido no formato {"comentario":"<resposta principal em Markdown>","orientacaoProximaAcao":"<orientação objetiva para a próxima ação baseada na alternativa escolhida, ou string vazia se não houver orientação aplicável>"}. Use comentario para a resposta normal e orientacaoProximaAcao apenas quando existir uma decisão entre alternativas ou próxima ação clara.'
   ]
 };
 
@@ -1531,7 +1614,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   <button type="button" onClick={handleCancelEditPendingRequest} disabled={savingEditRequestId === editingRequestId} className="rounded-md border border-slate-300 px-3 py-1 font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Cancelar</button>
                   <button type="button" onClick={() => editingRequestId ? handleSaveEditPendingRequest(editingRequestId) : undefined} disabled={!editingRequestId || savingEditRequestId === editingRequestId} className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white disabled:opacity-50">Salvar edição</button>
                 </div>
-              </div> : <MarkdownMessage content={message.content} />}
+              </div> : <AssistantMessageBody content={message.content} marketing={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant'} />}
             </article>;
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}

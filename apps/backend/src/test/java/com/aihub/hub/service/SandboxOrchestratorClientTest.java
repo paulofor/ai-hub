@@ -87,6 +87,37 @@ class SandboxOrchestratorClientTest {
         }
     }
 
+    @Test
+    void getJobParsesDocumentAccesses() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                    {
+                      "jobId": "job-doc-access",
+                      "status": "COMPLETED",
+                      "documentAccesses": [
+                        {
+                          "accessId": "access-1",
+                          "documentPath": "docs/briefing.md",
+                          "toolName": "read_file",
+                          "requestedPath": "./docs/briefing.md",
+                          "accessedAt": "2026-07-16T15:00:00Z"
+                        }
+                      ]
+                    }
+                    """));
+            SandboxOrchestratorClient client = clientFor(server);
+
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = client.getJob("job-doc-access");
+
+            assertThat(response.documentAccesses()).hasSize(1);
+            assertThat(response.documentAccesses().get(0).documentPath()).isEqualTo("docs/briefing.md");
+            assertThat(response.documentAccesses().get(0).toolName()).isEqualTo("read_file");
+        }
+    }
+
     private SandboxOrchestratorClient clientFor(MockWebServer server) {
         RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())

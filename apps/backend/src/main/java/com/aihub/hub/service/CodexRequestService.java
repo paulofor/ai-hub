@@ -1,6 +1,7 @@
 package com.aihub.hub.service;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
+import com.aihub.hub.domain.CodexDocumentAccessLog;
 import com.aihub.hub.domain.CodexInteractionDirection;
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexHttpRequestLog;
@@ -20,6 +21,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
+import com.aihub.hub.repository.CodexDocumentAccessRepository;
 import com.aihub.hub.repository.CodexHttpRequestRepository;
 import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
@@ -73,6 +75,7 @@ public class CodexRequestService {
     private final ResponseRepository responseRepository;
     private final CodexInteractionRepository codexInteractionRepository;
     private final CodexHttpRequestRepository codexHttpRequestRepository;
+    private final CodexDocumentAccessRepository codexDocumentAccessRepository;
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
@@ -94,6 +97,7 @@ public class CodexRequestService {
                                ResponseRepository responseRepository,
                                CodexInteractionRepository codexInteractionRepository,
                                CodexHttpRequestRepository codexHttpRequestRepository,
+                               CodexDocumentAccessRepository codexDocumentAccessRepository,
                                EnvironmentRepository environmentRepository,
                                ProblemRepository problemRepository,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
@@ -114,6 +118,7 @@ public class CodexRequestService {
         this.responseRepository = responseRepository;
         this.codexInteractionRepository = codexInteractionRepository;
         this.codexHttpRequestRepository = codexHttpRequestRepository;
+        this.codexDocumentAccessRepository = codexDocumentAccessRepository;
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
@@ -866,6 +871,7 @@ public class CodexRequestService {
 
         recordResponse(metadata, response);
         recordHttpRequests(request, response);
+        recordDocumentAccesses(request, response);
     }
 
     private void applyWorkBatch(CodexRequest request, PromptMetadata metadata) {
@@ -1048,6 +1054,7 @@ public class CodexRequestService {
 
         recordResponse(extractMetadata(request.getEnvironment()), response);
         recordHttpRequests(request, response);
+        recordDocumentAccesses(request, response);
 
         return updated || usageUpdated || interactionSummaryUpdated;
     }
@@ -1126,6 +1133,7 @@ public class CodexRequestService {
             applyUsageMetadata(request, response);
             applyInteractionSummary(request, response);
             recordHttpRequests(request, response);
+            recordDocumentAccesses(request, response);
         } else {
             Instant finishedAt = Instant.now();
             request.setStatus(CodexRequestStatus.CANCELLED);
@@ -1630,6 +1638,59 @@ public class CodexRequestService {
     private String buildSyntheticCallId(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.HttpRequest httpRequest, String sandboxJobId) {
         String seed = sandboxJobId + "|" + Optional.ofNullable(httpRequest.url()).orElse("") + "|" + Optional.ofNullable(httpRequest.requestedAt()).orElse("");
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private void recordDocumentAccesses(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
+        if (request == null || request.getId() == null || response == null || response.documentAccesses() == null) {
+            return;
+        }
+
+        String sandboxJobId = Optional.ofNullable(response.jobId()).orElse(request.getExternalId());
+        if (!StringUtils.hasText(sandboxJobId)) {
+            sandboxJobId = "unknown-" + request.getId();
+        }
+
+        for (SandboxOrchestratorClient.SandboxOrchestratorJobResponse.DocumentAccess documentAccess : response.documentAccesses()) {
+            if (documentAccess == null || !StringUtils.hasText(documentAccess.documentPath())) {
+                continue;
+            }
+
+            String accessId = Optional.ofNullable(documentAccess.accessId())
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .orElse(buildSyntheticDocumentAccessId(documentAccess, sandboxJobId));
+            if (codexDocumentAccessRepository.existsBySandboxJobIdAndSandboxAccessId(sandboxJobId, accessId)) {
+                continue;
+            }
+
+            CodexDocumentAccessLog logRecord = new CodexDocumentAccessLog(
+                request,
+                sandboxJobId,
+                accessId,
+                truncateForColumn(documentAccess.documentPath(), 2048),
+                Optional.ofNullable(truncateForColumn(documentAccess.toolName(), 64)).orElse("unknown"),
+                truncateForColumn(documentAccess.requestedPath(), 2048),
+                truncateForColumn(documentAccess.command(), 4096),
+                parseInstant(documentAccess.accessedAt())
+            );
+            codexDocumentAccessRepository.save(logRecord);
+        }
+    }
+
+    private String buildSyntheticDocumentAccessId(SandboxOrchestratorClient.SandboxOrchestratorJobResponse.DocumentAccess documentAccess, String sandboxJobId) {
+        String seed = sandboxJobId
+            + "|" + Optional.ofNullable(documentAccess.documentPath()).orElse("")
+            + "|" + Optional.ofNullable(documentAccess.toolName()).orElse("")
+            + "|" + Optional.ofNullable(documentAccess.accessedAt()).orElse("");
+        return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private String truncateForColumn(String value, int maxLength) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= maxLength ? trimmed : trimmed.substring(0, maxLength);
     }
 
     private boolean applyInteractionSummary(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
