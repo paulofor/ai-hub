@@ -28,6 +28,7 @@ import {
   SandboxHttpRequestLog,
   SandboxDatabaseConfig,
   SandboxDownloadLog,
+  SandboxDocumentAccessLog,
 } from './types.js';
 
 function resolveOpenAIOrganization(): string | undefined {
@@ -93,6 +94,23 @@ const INSPECTION_SHELL_EXECUTABLES = new Set([
   'wc',
   'ls',
   'find',
+]);
+const DOCUMENT_ACCESS_EXTENSIONS = new Set([
+  '.md',
+  '.markdown',
+  '.mdown',
+  '.mkd',
+  '.txt',
+  '.rst',
+  '.adoc',
+  '.asc',
+  '.csv',
+  '.tsv',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.odt',
+  '.rtf',
 ]);
 
 interface ToolCall {
@@ -687,6 +705,7 @@ export class SandboxJobProcessor implements JobProcessor {
     job.httpGetSuccessCount = job.httpGetSuccessCount ?? 0;
     job.httpRequests = Array.isArray(job.httpRequests) ? job.httpRequests : [];
     job.downloadLogs = Array.isArray(job.downloadLogs) ? job.downloadLogs : [];
+    job.documentAccesses = Array.isArray(job.documentAccesses) ? job.documentAccesses : [];
     job.dbQueryCount = job.dbQueryCount ?? 0;
 
     const start = new Date();
@@ -3082,6 +3101,7 @@ ${stderr}`);
       if (reuse.logMessage) {
         this.log(job, reuse.logMessage);
       }
+      this.recordCachedToolDocumentAccess(job, call);
       return reuse.payload;
     }
     if (reuse.logMessage) {
@@ -3093,7 +3113,7 @@ ${stderr}`);
         result = await this.handleRunShell(call.arguments, repoPath, job);
         break;
       case 'read_file':
-        result = await this.handleReadFile(call.arguments, repoPath);
+        result = await this.handleReadFile(call.arguments, repoPath, job);
         break;
       case 'read_image':
         result = await this.handleReadImage(call.arguments, repoPath, job);
@@ -3804,6 +3824,7 @@ ${stderr}`);
 
     const joined = command.join(' ');
     this.recordShellDownloadIntent(job, joined);
+    this.recordShellDocumentAccesses(job, repoPath, cwd, command, joined);
     const cachedResult = this.tryReuseShortTermShellCache(job, cwd, joined, now);
     if (cachedResult) {
       return cachedResult;
@@ -4648,13 +4669,112 @@ grep -R -n -- "$@"
     return Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : 5 * 1024 * 1024;
   }
 
-  private async handleReadFile(args: Record<string, unknown>, repoPath: string) {
+  private async handleReadFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {
     const { absolute, relative } = this.normalizeRepoPath(
       repoPath,
       typeof args.path === 'string' ? args.path : undefined,
     );
     const content = await fs.readFile(absolute, 'utf8');
+    this.recordDocumentAccess(job, {
+      documentPath: relative,
+      requestedPath: typeof args.path === 'string' ? args.path : undefined,
+      toolName: 'read_file',
+    });
     return { path: relative, content };
+  }
+
+  private recordShellDocumentAccesses(
+    job: SandboxJob,
+    repoPath: string,
+    cwd: string,
+    command: string[],
+    joined: string,
+  ): void {
+    const executable = path.basename(command[0] ?? '').toLowerCase();
+    if (!INSPECTION_SHELL_EXECUTABLES.has(executable)) {
+      return;
+    }
+
+    for (const part of command.slice(1)) {
+      const requestedPath = this.sanitizeRequestedPath(part);
+      if (!requestedPath || requestedPath.startsWith('-')) {
+        continue;
+      }
+      if (/[*?[\]{}]/.test(requestedPath)) {
+        continue;
+      }
+      try {
+        const absolute = path.resolve(cwd, requestedPath);
+        const normalizedRepo = path.resolve(repoPath);
+        if (absolute !== normalizedRepo && !absolute.startsWith(normalizedRepo + path.sep)) {
+          continue;
+        }
+        const relative = path.relative(normalizedRepo, absolute).replace(/\\/g, '/');
+        this.recordDocumentAccess(job, {
+          documentPath: relative,
+          requestedPath,
+          toolName: 'run_shell',
+          command: joined,
+        });
+      } catch {
+        // Caminhos inválidos em comandos de inspeção não devem falhar a execução da tool.
+      }
+    }
+  }
+
+  private recordDocumentAccess(
+    job: SandboxJob,
+    entry: Omit<SandboxDocumentAccessLog, 'accessedAt' | 'accessId' | 'documentPath'> & { documentPath?: string },
+  ): void {
+    const documentPath = this.normalizeDocumentPath(entry.documentPath);
+    if (!documentPath || !this.isDocumentAccessPath(documentPath)) {
+      return;
+    }
+
+    job.documentAccesses = Array.isArray(job.documentAccesses) ? job.documentAccesses : [];
+    const accessedAt = new Date().toISOString();
+    const seed = [
+      job.jobId,
+      documentPath,
+      entry.toolName,
+      entry.requestedPath ?? '',
+      entry.command ?? '',
+      accessedAt,
+      job.documentAccesses.length + 1,
+    ].join('|');
+    job.documentAccesses.push({
+      accessId: `${job.jobId}-doc-${String(job.documentAccesses.length + 1).padStart(4, '0')}-${this.hashString(seed).slice(0, 10)}`,
+      documentPath,
+      toolName: entry.toolName,
+      requestedPath: entry.requestedPath,
+      command: entry.command,
+      accessedAt,
+    });
+  }
+
+  private recordCachedToolDocumentAccess(job: SandboxJob, call: ToolCall): void {
+    if (call.name !== 'read_file') {
+      return;
+    }
+    const requestedPath = typeof call.arguments?.path === 'string' ? call.arguments.path : undefined;
+    this.recordDocumentAccess(job, {
+      documentPath: requestedPath,
+      requestedPath,
+      toolName: 'read_file',
+    });
+  }
+
+  private normalizeDocumentPath(value: string | undefined): string | undefined {
+    const sanitized = this.sanitizeRequestedPath(value);
+    if (!sanitized) {
+      return undefined;
+    }
+    return sanitized.replace(/\\/g, '/').replace(/^\.\/+/, '');
+  }
+
+  private isDocumentAccessPath(value: string): boolean {
+    const parsed = path.posix.parse(value.replace(/\\/g, '/'));
+    return DOCUMENT_ACCESS_EXTENSIONS.has(parsed.ext.toLowerCase());
   }
 
   private async handleWriteFile(args: Record<string, unknown>, repoPath: string, job: SandboxJob) {

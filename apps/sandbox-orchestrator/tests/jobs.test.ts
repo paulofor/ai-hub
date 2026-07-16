@@ -561,7 +561,9 @@ test('configura prompt cache retention e chave estável na Responses API', async
   execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
   execSync('git config user.name "CI Bot"', { cwd: tempRepo });
   await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
-  execSync('git add README.md', { cwd: tempRepo });
+  await fs.mkdir(path.join(tempRepo, 'src'), { recursive: true });
+  await fs.writeFile(path.join(tempRepo, 'src', 'app.ts'), 'export const value = 1;');
+  execSync('git add README.md src/app.ts', { cwd: tempRepo });
   execSync('git commit -m "init"', { cwd: tempRepo });
   execSync('git branch -M main', { cwd: tempRepo });
 
@@ -1497,6 +1499,12 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
                 name: 'read_file',
                 arguments: JSON.stringify({ path: 'README.md' }),
               },
+              {
+                type: 'function_call',
+                call_id: 'call-read-source',
+                name: 'read_file',
+                arguments: JSON.stringify({ path: 'src/app.ts' }),
+              },
               { type: 'message', id: 'msg-read', role: 'assistant', status: 'completed', content: [] },
             ],
           };
@@ -1539,6 +1547,10 @@ test('normalizes read_file path to repo-relative when sending tool outputs', asy
   const parsedOutput = JSON.parse(toolMessage.output);
   assert.equal(parsedOutput.path, 'README.md');
   assert.equal(parsedOutput.content, 'initial');
+  assert.deepEqual(
+    job.documentAccesses?.map((entry) => entry.documentPath),
+    ['README.md'],
+  );
 
   await fs.rm(tempRepo, { recursive: true, force: true });
 });

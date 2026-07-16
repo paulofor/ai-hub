@@ -214,7 +214,8 @@ public class SandboxOrchestratorClient {
         Integer dbQueryCount,
         Integer interactionCount,
         List<Interaction> interactions,
-        List<HttpRequest> httpRequests
+        List<HttpRequest> httpRequests,
+        List<DocumentAccess> documentAccesses
     ) {
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
@@ -283,6 +284,30 @@ public class SandboxOrchestratorClient {
                 }
             }
 
+            java.util.List<DocumentAccess> documentAccesses = null;
+            JsonNode documentAccessesNode = node.path("documentAccesses");
+            if (documentAccessesNode != null && documentAccessesNode.isArray()) {
+                java.util.List<DocumentAccess> values = new java.util.ArrayList<>();
+                documentAccessesNode.forEach(element -> {
+                    if (element == null || element.isMissingNode() || element.isNull()) {
+                        return;
+                    }
+                    String documentPath = readText(element, "documentPath", "document_path");
+                    if (documentPath == null || documentPath.isBlank()) {
+                        return;
+                    }
+                    String accessId = readText(element, "accessId", "access_id");
+                    String toolName = readText(element, "toolName", "tool_name");
+                    String requestedPath = readText(element, "requestedPath", "requested_path");
+                    String command = readText(element, "command");
+                    String accessedAt = readText(element, "accessedAt", "accessed_at");
+                    values.add(new DocumentAccess(accessId, documentPath, toolName, requestedPath, command, accessedAt));
+                });
+                if (!values.isEmpty()) {
+                    documentAccesses = java.util.List.copyOf(values);
+                }
+            }
+
             return new SandboxOrchestratorJobResponse(
                 node.path("jobId").asText(null),
                 node.path("status").asText(null),
@@ -305,7 +330,8 @@ public class SandboxOrchestratorClient {
                 readInt(node, "dbQueryCount", "db_query_count"),
                 resolveInteractionCount(node, interactions),
                 interactions,
-                httpRequests
+                httpRequests,
+                documentAccesses
             );
         }
 
@@ -325,6 +351,15 @@ public class SandboxOrchestratorClient {
             Boolean success,
             String toolName,
             String requestedAt
+        ) { }
+
+        public record DocumentAccess(
+            String accessId,
+            String documentPath,
+            String toolName,
+            String requestedPath,
+            String command,
+            String accessedAt
         ) { }
 
         private static Integer resolvePromptTokens(JsonNode node) {

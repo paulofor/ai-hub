@@ -52,6 +52,15 @@ export interface SandboxDownloadLog {
   note?: string;
 }
 
+export interface SandboxDocumentAccessLog {
+  accessId?: string;
+  documentPath: string;
+  toolName: string;
+  requestedPath?: string;
+  command?: string;
+  accessedAt: string;
+}
+
 export interface SandboxJob {
   jobId: string;
   repoSlug?: string;
@@ -98,6 +107,7 @@ export interface SandboxJob {
   cancelRequested?: boolean;
   httpRequests?: SandboxHttpRequestLog[];
   downloadLogs?: SandboxDownloadLog[];
+  documentAccesses?: SandboxDocumentAccessLog[];
 }
 
 export interface JobProcessor {
