@@ -1775,3 +1775,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção de registro append-only: a entrada `2026-07-15 22:59:40 UTC-3` sobre o botão `Cancelar solicitação` foi inserida antes de entradas posteriores já existentes no arquivo, em vez de ser adicionada no fim. Nenhuma linha foi apagada ou movida; esta entrada registra a correção no final do diário.
 - Resumo válido da alteração: `CodexChatgptPage.tsx` passou a expor `Cancelar solicitação` nos balões da conversa e nos cards de últimas execuções para solicitações não terminais, chamando o endpoint existente `POST /codex/requests/{id}/cancel` e atualizando conversa, histórico e telemetria.
 - Validação confirmada: `npm --prefix apps/frontend run build` passou após `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-16 02:02:19 UTC - Ambiente e perfil visíveis nos cards ChatGPT MKT
+
+- Solicitação recebida: colocar nos cards de últimas execuções qual ambiente é a solicitação e qual perfil foi usado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend e o parser do frontend já carregavam `environment` e `profile`, mas a renderização do card priorizava apenas id, modelo, data, branch, status e métricas. A informação existia no contrato, só não era exibida no resumo operacional.
+- Alternativas avaliadas: (1) mostrar só o ambiente, esforço mínimo mas incompleto para auditoria; (2) mostrar ambiente/perfil apenas no detalhe, sem resolver a necessidade de acompanhar pela lista; (3) adicionar uma linha fixa no card com `Ambiente` e `Perfil`, reutilizando o formatador existente de perfil. Escolhida a alternativa 3 por ser direta, consistente com os dados existentes e útil em cards pendentes, em execução e concluídos.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: importado `formatProfile`, criada formatação segura para ambiente vazio e adicionada linha `Ambiente | Perfil` em cada card de últimas execuções.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou porque `node_modules` estava vazio; `npm --prefix apps/frontend ci` restaurou dependências a partir do lockfile; em seguida `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Não foi criado Pull Request, conforme restrição do modo MKT.

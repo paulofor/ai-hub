@@ -1,7 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
+import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -78,6 +78,11 @@ const formatInteractionCount = (count?: number) => {
     return '—';
   }
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'interação' : 'interações'}`;
+};
+
+const formatRequestEnvironment = (environment?: string) => {
+  const value = environment?.trim();
+  return value ? value : 'Ambiente não informado';
 };
 
 const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
@@ -1580,6 +1585,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
+                <span className="mx-2 text-slate-300 dark:text-slate-700">|</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Perfil:</span> {formatProfile(item.profile)}
+              </p>
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
               {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                 {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
