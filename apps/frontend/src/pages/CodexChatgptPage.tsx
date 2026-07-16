@@ -208,11 +208,9 @@ const extractJsonObjectCandidate = (content: string): string | null => {
   const trimmed = content.trim();
   if (!trimmed) return null;
 
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const candidate = fencedMatch ? fencedMatch[1].trim() : trimmed;
   const parsedString = (() => {
     try {
-      const parsed = JSON.parse(candidate);
+      const parsed = JSON.parse(trimmed);
       return typeof parsed === 'string' ? parsed : null;
     } catch {
       return null;
@@ -221,14 +219,20 @@ const extractJsonObjectCandidate = (content: string): string | null => {
   if (parsedString) {
     return extractJsonObjectCandidate(parsedString);
   }
-  if (candidate.startsWith('{') && candidate.endsWith('}')) {
-    return candidate;
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed;
   }
 
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fencedMatch ? fencedMatch[1].trim() : trimmed;
+  if (candidate !== trimmed) {
+    return extractJsonObjectCandidate(candidate);
+  }
+
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
   if (start >= 0 && end > start) {
-    return candidate.slice(start, end + 1);
+    return trimmed.slice(start, end + 1);
   }
 
   return null;
