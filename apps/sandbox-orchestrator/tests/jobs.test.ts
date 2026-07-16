@@ -99,6 +99,30 @@ test('accepts a job request and processes asynchronously', async () => {
   assert.deepEqual(stored!.changedFiles, ['README.md']);
 });
 
+test('accepts non-image attachments in job request', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  const payload = {
+    jobId: 'job-file-attachment',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'analisar arquivo anexado',
+    imageAttachments: [{
+      name: 'briefing.pdf',
+      mimeType: 'application/pdf',
+      size: 7,
+      dataUrl: 'data:application/pdf;base64,JVBERi0=',
+    }],
+  };
+
+  await request(app).post('/jobs').send(payload).expect(201);
+
+  const stored = registry.get(payload.jobId);
+  assert.equal(stored?.imageAttachments?.[0]?.name, 'briefing.pdf');
+  assert.equal(stored?.imageAttachments?.[0]?.mimeType, 'application/pdf');
+  assert.equal(stored?.imageAttachments?.[0]?.dataUrl, 'data:application/pdf;base64,JVBERi0=');
+});
+
 test('accepts github token for PR creation without exposing it in job responses', async () => {
   const registry = new Map<string, SandboxJob>();
   const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
@@ -3596,6 +3620,11 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
       mimeType: 'image/png',
       size: 3,
       dataUrl: 'data:image/png;base64,QUJD',
+    }, {
+      name: 'briefing.txt',
+      mimeType: 'text/plain',
+      size: 11,
+      dataUrl: 'data:text/plain;base64,YnJpZWZpbmc=',
     }],
     profile: 'CHATGPT_CODEX',
     status: 'PENDING',
@@ -3628,8 +3657,12 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('use app server'));
+    assert.ok(input?.[0]?.text?.includes('Arquivos anexados pelo usuário'));
+    assert.ok(input?.[0]?.text?.includes('.codex/attachments/job-chatgpt-codex-app-server/briefing.txt'));
     assert.deepEqual(input?.[1], { type: 'image', url: 'data:image/png;base64,QUJD' });
+    assert.equal(input?.length, 2);
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
+    assert.deepEqual(job.changedFiles, []);
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }

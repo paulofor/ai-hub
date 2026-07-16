@@ -1,7 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
+import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -63,8 +63,8 @@ interface SavedConversation {
 
 const POLL_INTERVAL_MS = 5000;
 const TELEMETRY_WINDOW_SIZE = 30;
-const MAX_IMAGE_ATTACHMENTS = 5;
-const MAX_IMAGE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_ATTACHMENTS = 5;
+const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 
 const isClosedBatchRequest = (request: CodexRequest): boolean =>
@@ -79,6 +79,14 @@ const formatInteractionCount = (count?: number) => {
   }
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'interação' : 'interações'}`;
 };
+
+const formatRequestEnvironment = (environment?: string) => {
+  const value = environment?.trim();
+  return value ? value : 'Ambiente não informado';
+};
+
+const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
+  current.map((item) => item.id === updated.id ? { ...item, ...updated } : item);
 
 const parseSavedConversationMessage = (value: unknown): SavedConversationMessage | null => {
   if (typeof value !== 'object' || value === null) return null;
@@ -250,13 +258,15 @@ const mergeModelOptions = (primary: ModelOption[], fallback: ModelOption[]): Mod
   return Array.from(byModel.values());
 };
 
-interface ImageAttachment {
+interface FileAttachment {
   id: string;
   name: string;
   mimeType: string;
   size: number;
   dataUrl: string;
 }
+
+const isImageAttachment = (attachment: FileAttachment): boolean => attachment.mimeType.startsWith('image/');
 
 interface ChatMessage {
   id: string;
@@ -576,12 +586,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
-  const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
   const [prLoading, setPrLoading] = useState(false);
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<number | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
@@ -644,7 +655,25 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       setRequests(parsed);
-      return parsed;
+      const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
+      if (activeRequests.length === 0) {
+        return parsed;
+      }
+
+      const detailResponses = await Promise.allSettled(
+        activeRequests.map((item) => client.get(`/codex/requests/${item.id}`))
+      );
+      const detailedRequests = detailResponses
+        .map((result) => result.status === 'fulfilled' ? parseCodexRequest(result.value.data) : null)
+        .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
+      if (detailedRequests.length === 0) {
+        return parsed;
+      }
+
+      const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
+      const merged = parsed.map((item) => detailedById.get(item.id) ?? item);
+      setRequests(merged);
+      return merged;
     } finally {
       setRequestsLoading(false);
     }
@@ -800,68 +829,64 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [loadAccount, registerTelemetry]);
 
 
-  const readImageFile = useCallback((file: File): Promise<ImageAttachment> => new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      reject(new Error(`O arquivo ${file.name || 'sem nome'} não é uma imagem.`));
-      return;
-    }
-    if (file.size > MAX_IMAGE_ATTACHMENT_BYTES) {
-      reject(new Error(`A imagem ${file.name || 'sem nome'} excede o limite de 5 MB.`));
+  const readAttachmentFile = useCallback((file: File): Promise<FileAttachment> => new Promise((resolve, reject) => {
+    if (file.size > MAX_FILE_ATTACHMENT_BYTES) {
+      reject(new Error(`O arquivo ${file.name || 'sem nome'} excede o limite de 5 MB.`));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== 'string') {
-        reject(new Error(`Não foi possível ler a imagem ${file.name || 'sem nome'}.`));
+        reject(new Error(`Não foi possível ler o arquivo ${file.name || 'sem nome'}.`));
         return;
       }
       resolve({
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        name: file.name || `imagem-${Date.now()}.png`,
-        mimeType: file.type || 'image/png',
+        name: file.name || `arquivo-${Date.now()}`,
+        mimeType: file.type || 'application/octet-stream',
         size: file.size,
         dataUrl: reader.result
       });
     };
-    reader.onerror = () => reject(new Error(`Falha ao ler a imagem ${file.name || 'sem nome'}.`));
+    reader.onerror = () => reject(new Error(`Falha ao ler o arquivo ${file.name || 'sem nome'}.`));
     reader.readAsDataURL(file);
   }), []);
 
-  const appendImageFiles = useCallback(async (files: File[]) => {
+  const appendAttachmentFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) {
       return;
     }
-    const slotsAvailable = MAX_IMAGE_ATTACHMENTS - imageAttachments.length;
+    const slotsAvailable = MAX_FILE_ATTACHMENTS - fileAttachments.length;
     if (slotsAvailable <= 0) {
-      setError(`Limite de ${MAX_IMAGE_ATTACHMENTS} imagens por solicitação atingido.`);
+      setError(`Limite de ${MAX_FILE_ATTACHMENTS} arquivos por solicitação atingido.`);
       return;
     }
     try {
-      const nextAttachments = await Promise.all(files.slice(0, slotsAvailable).map(readImageFile));
-      setImageAttachments((current) => [...current, ...nextAttachments]);
-      setError(files.length > slotsAvailable ? `Foram anexadas ${slotsAvailable} imagens; o limite é ${MAX_IMAGE_ATTACHMENTS}.` : null);
+      const nextAttachments = await Promise.all(files.slice(0, slotsAvailable).map(readAttachmentFile));
+      setFileAttachments((current) => [...current, ...nextAttachments]);
+      setError(files.length > slotsAvailable ? `Foram anexados ${slotsAvailable} arquivos; o limite é ${MAX_FILE_ATTACHMENTS}.` : null);
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [imageAttachments.length, readImageFile]);
+  }, [fileAttachments.length, readAttachmentFile]);
 
   const handlePromptPaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+    const files = Array.from(event.clipboardData.files);
     if (files.length === 0) {
       return;
     }
     event.preventDefault();
-    void appendImageFiles(files);
-  }, [appendImageFiles]);
+    void appendAttachmentFiles(files);
+  }, [appendAttachmentFiles]);
 
-  const handleImageInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = '';
-    void appendImageFiles(files);
-  }, [appendImageFiles]);
+    void appendAttachmentFiles(files);
+  }, [appendAttachmentFiles]);
 
-  const removeImageAttachment = useCallback((id: string) => {
-    setImageAttachments((current) => current.filter((item) => item.id !== id));
+  const removeFileAttachment = useCallback((id: string) => {
+    setFileAttachments((current) => current.filter((item) => item.id !== id));
   }, []);
 
   const conversationMessagesMatchSavedContext = useCallback((historyMessages: ChatMessage[]) => {
@@ -901,7 +926,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
-  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
+  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED'
+    ? 'A execução falhou. Abra os detalhes para ver os logs.'
+    : request.status === 'CANCELLED'
+      ? `Solicitação #${request.id} cancelada. Nenhuma nova resposta será gerada para esta mensagem.`
+      : 'Resposta ainda não disponível.'), []);
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     setConversation((current) => current.map((message) => {
@@ -1028,7 +1057,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         environment,
         model,
         profile: config.profile,
-        imageAttachments: imageAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
+        imageAttachments: fileAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
       const created = parseCodexRequest(response.data);
       if (created) {
@@ -1043,7 +1072,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         }]);
       }
       setPrompt('');
-      setImageAttachments([]);
+      setFileAttachments([]);
       await loadRequests();
       registerTelemetry('execution_success', `Execução enviada com profile ${config.profile}.`);
       setError(null);
@@ -1053,7 +1082,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, environment, extractAssistantContent, imageAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
+  }, [buildConversationPrompt, config.profile, environment, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
 
 
   useEffect(() => {
@@ -1071,7 +1100,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         .then((responses) => {
           responses.forEach((response) => {
             const parsed = parseCodexRequest(response.data);
-            if (parsed) updateAssistantFromRequest(parsed);
+            if (parsed) {
+              updateAssistantFromRequest(parsed);
+              setRequests((current) => mergeCodexRequest(current, parsed));
+            }
           });
         })
         .catch((err: Error) => registerTelemetry('poll_error', `Falha ao atualizar conversa: ${err.message}`))
@@ -1268,6 +1300,34 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [deletingRequestId, editingRequestId, loadRequests]);
 
+  const handleCancelRequest = useCallback(async (requestId: number) => {
+    if (cancellingRequestId) return;
+    const confirmed = window.confirm(`Cancelar a solicitação #${requestId}? Use esta opção quando ela foi enviada por engano ou não precisa mais executar.`);
+    if (!confirmed) return;
+
+    setCancellingRequestId(requestId);
+    try {
+      const response = await client.post(`/codex/requests/${requestId}/cancel`);
+      const updated = parseCodexRequest(response.data);
+      if (updated) {
+        updateAssistantFromRequest(updated);
+        setRequests((current) => mergeCodexRequest(current, updated));
+      }
+      if (editingRequestId === requestId) {
+        setEditingRequestId(null);
+        setEditingDraft('');
+      }
+      await loadRequests();
+      registerTelemetry('execution_success', `Solicitação #${requestId} cancelada pelo usuário.`);
+      setError(null);
+    } catch (err) {
+      registerTelemetry('execution_failed', `Falha ao cancelar solicitação #${requestId}: ${(err as Error).message}`);
+      setError((err as Error).message);
+    } finally {
+      setCancellingRequestId(null);
+    }
+  }, [cancellingRequestId, editingRequestId, loadRequests, registerTelemetry, updateAssistantFromRequest]);
+
   const handleDiscardBatchRequests = useCallback(async () => {
     if (bulkDiscardLoading) return;
 
@@ -1461,6 +1521,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   </button>
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
+                  {message.requestId && message.status && !isTerminalStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
@@ -1485,19 +1546,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-            Anexar imagens
-            <input type="file" accept="image/*" multiple onChange={handleImageInputChange} className="sr-only" />
+            Anexar arquivos
+            <input type="file" multiple onChange={handleFileInputChange} className="sr-only" />
           </label>
-          <p className="mt-2 text-xs text-slate-500">Cole prints com Ctrl+V no campo da tarefa ou selecione arquivos. Até {MAX_IMAGE_ATTACHMENTS} imagens de 5 MB.</p>
-          {imageAttachments.length > 0 ? <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {imageAttachments.map((attachment) => (
+          <p className="mt-2 text-xs text-slate-500">Cole arquivos com Ctrl+V no campo da tarefa ou selecione qualquer tipo de arquivo. Até {MAX_FILE_ATTACHMENTS} arquivos de 5 MB.</p>
+          {fileAttachments.length > 0 ? <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {fileAttachments.map((attachment) => (
               <li key={attachment.id} className="flex items-center gap-2 rounded-md border border-slate-200 p-2 dark:border-slate-800">
-                <img src={attachment.dataUrl} alt={attachment.name} className="h-14 w-20 rounded object-cover" />
+                {isImageAttachment(attachment)
+                  ? <img src={attachment.dataUrl} alt={attachment.name} className="h-14 w-20 rounded object-cover" />
+                  : <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded bg-slate-100 px-2 text-[10px] font-semibold uppercase text-slate-600 dark:bg-slate-800 dark:text-slate-300">{attachment.name.split('.').pop()?.slice(0, 6) || 'file'}</div>}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{attachment.name}</p>
-                  <p className="text-[11px] text-slate-500">{Math.ceil(attachment.size / 1024)} KB</p>
+                  <p className="text-[11px] text-slate-500">{Math.ceil(attachment.size / 1024)} KB - {attachment.mimeType}</p>
                 </div>
-                <button type="button" onClick={() => removeImageAttachment(attachment.id)} className="text-xs text-rose-600 hover:underline">Remover</button>
+                <button type="button" onClick={() => removeFileAttachment(attachment.id)} className="text-xs text-rose-600 hover:underline">Remover</button>
               </li>
             ))}
           </ul> : null}
@@ -1522,16 +1585,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
+                <span className="mx-2 text-slate-300 dark:text-slate-700">|</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Perfil:</span> {formatProfile(item.profile)}
+              </p>
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
-              {item.status === 'COMPLETED' ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
-                <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span>
-                <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span>
-                <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span>
-                <span>Custo estimado: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatCost(item.cost)}</strong></span>
+              {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+                {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
+                {item.interactionCount !== undefined ? <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span> : null}
+                {item.status === 'COMPLETED' || item.totalTokens !== undefined ? <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span> : null}
+                {item.status === 'COMPLETED' || item.cost !== undefined ? <span>Custo estimado: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatCost(item.cost)}</strong></span> : null}
               </div> : null}
               <div className="mt-1 flex flex-wrap gap-3">
                 <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
                 {item.status === 'PENDING' && !item.externalId ? <button type="button" onClick={() => handleDeletePendingRequest(item.id)} disabled={deletingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
+                {!isTerminalStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
               </div>
             </li>
           ))}
