@@ -80,6 +80,9 @@ const formatInteractionCount = (count?: number) => {
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'interação' : 'interações'}`;
 };
 
+const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
+  current.map((item) => item.id === updated.id ? { ...item, ...updated } : item);
+
 const parseSavedConversationMessage = (value: unknown): SavedConversationMessage | null => {
   if (typeof value !== 'object' || value === null) return null;
   const item = value as Record<string, unknown>;
@@ -646,7 +649,25 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       setRequests(parsed);
-      return parsed;
+      const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
+      if (activeRequests.length === 0) {
+        return parsed;
+      }
+
+      const detailResponses = await Promise.allSettled(
+        activeRequests.map((item) => client.get(`/codex/requests/${item.id}`))
+      );
+      const detailedRequests = detailResponses
+        .map((result) => result.status === 'fulfilled' ? parseCodexRequest(result.value.data) : null)
+        .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
+      if (detailedRequests.length === 0) {
+        return parsed;
+      }
+
+      const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
+      const merged = parsed.map((item) => detailedById.get(item.id) ?? item);
+      setRequests(merged);
+      return merged;
     } finally {
       setRequestsLoading(false);
     }
@@ -1069,7 +1090,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         .then((responses) => {
           responses.forEach((response) => {
             const parsed = parseCodexRequest(response.data);
-            if (parsed) updateAssistantFromRequest(parsed);
+            if (parsed) {
+              updateAssistantFromRequest(parsed);
+              setRequests((current) => mergeCodexRequest(current, parsed));
+            }
           });
         })
         .catch((err: Error) => registerTelemetry('poll_error', `Falha ao atualizar conversa: ${err.message}`))
@@ -1523,11 +1547,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               </div>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
-              {item.status === 'COMPLETED' ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
-                <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span>
-                <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span>
-                <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span>
-                <span>Custo estimado: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatCost(item.cost)}</strong></span>
+              {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+                {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
+                {item.interactionCount !== undefined ? <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span> : null}
+                {item.status === 'COMPLETED' || item.totalTokens !== undefined ? <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span> : null}
+                {item.status === 'COMPLETED' || item.cost !== undefined ? <span>Custo estimado: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatCost(item.cost)}</strong></span> : null}
               </div> : null}
               <div className="mt-1 flex flex-wrap gap-3">
                 <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
