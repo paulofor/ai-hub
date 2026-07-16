@@ -1826,3 +1826,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: `extractJsonObjectCandidate` agora tenta reconhecer o conteúdo inteiro como JSON antes de procurar bloco fenced externo, preservando suporte a JSON duplamente codificado e a respostas em bloco fenced `json`.
 - Validação executada: validação local com o `responseText` real da solicitação `1877` passou (`comentarioLength=1444`, `orientacaoLength=179`); o primeiro build falhou por dependências de dev ausentes/TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou.
 - Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências neste turno. Não foi criado Pull Request.
+
+## 2026-07-16 20:30:40 UTC - Botão de cópia no quadro de orientação
+
+- Solicitação recebida: adicionar um ícone de cópia no quadro da orientação exibido para respostas estruturadas do Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a separação visual de `comentario` e `orientacaoProximaAcao` criou um card próprio para orientação, mas o controle de cópia existente continuou disponível apenas no cabeçalho da mensagem completa; faltava uma ação específica para copiar somente a orientação.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: extraída função comum `copyTextToClipboard`, reaproveitada na cópia de mensagens e adicionado botão com ícone no cabeçalho do quadro “Orientação”, copiando apenas `orientacaoProximaAcao` e exibindo feedback temporário de sucesso.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite. O npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências neste turno. Não foi criado Pull Request.

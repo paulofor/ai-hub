@@ -67,6 +67,28 @@ const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 
+const copyTextToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) {
+    throw new Error('document.execCommand(copy) retornou falso');
+  }
+};
+
 const isClosedBatchRequest = (request: CodexRequest): boolean =>
   request.status === 'COMPLETED' && Boolean(request.pullRequestUrl);
 
@@ -312,6 +334,27 @@ const MarkdownMessage = ({ content }: { content: string }) => {
 
 const AssistantMessageBody = ({ content, marketing }: { content: string; marketing: boolean }) => {
   const structured = marketing ? parseMarketingStructuredResponse(content) : null;
+  const [copiedOrientation, setCopiedOrientation] = useState(false);
+  const copiedOrientationTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copiedOrientationTimeoutRef.current) {
+      window.clearTimeout(copiedOrientationTimeoutRef.current);
+    }
+  }, []);
+
+  const handleCopyOrientation = useCallback(async () => {
+    if (!structured?.orientacaoProximaAcao) {
+      return;
+    }
+    await copyTextToClipboard(structured.orientacaoProximaAcao);
+    setCopiedOrientation(true);
+    if (copiedOrientationTimeoutRef.current) {
+      window.clearTimeout(copiedOrientationTimeoutRef.current);
+    }
+    copiedOrientationTimeoutRef.current = window.setTimeout(() => setCopiedOrientation(false), 2000);
+  }, [structured?.orientacaoProximaAcao]);
+
   if (!structured) {
     return <MarkdownMessage content={content} />;
   }
@@ -322,7 +365,18 @@ const AssistantMessageBody = ({ content, marketing }: { content: string; marketi
       <MarkdownMessage content={structured.comentario} />
     </section> : null}
     {structured.orientacaoProximaAcao ? <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30">
-      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação</h4>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação</h4>
+        <button
+          type="button"
+          onClick={handleCopyOrientation}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-emerald-300 bg-white/80 text-emerald-700 transition hover:border-emerald-500 hover:bg-white hover:text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:border-emerald-500 dark:hover:text-emerald-100"
+          title="Copiar orientação"
+          aria-label="Copiar orientação"
+        >
+          {copiedOrientation ? '✓' : '⧉'}
+        </button>
+      </div>
       <div className="text-emerald-950 dark:text-emerald-100">
         <MarkdownMessage content={structured.orientacaoProximaAcao} />
       </div>
@@ -1351,24 +1405,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const handleCopyConversationMessage = useCallback(async (message: ChatMessage) => {
     try {
-      if (navigator.clipboard?.writeText && window.isSecureContext) {
-        await navigator.clipboard.writeText(message.content);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = message.content;
-        textarea.setAttribute('readonly', 'true');
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        textarea.style.top = '0';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        const copied = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        if (!copied) {
-          throw new Error('document.execCommand(copy) retornou falso');
-        }
-      }
+      await copyTextToClipboard(message.content);
 
       setCopiedMessageId(message.id);
       setError(null);
