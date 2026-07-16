@@ -219,6 +219,14 @@
 - Recomendação operacional: não criar ainda o novo Business Manager da Meta com esse e-mail até garantir acesso de leitura aos e-mails recebidos, pois a Meta provavelmente enviará código/link de confirmação que precisará ser recuperado no S3 ou no inbox do Marketing Hub.
 - Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
 
+## 2026-07-15 22:59:40 UTC-3
+- Solicitação atendida: adicionar botão para cancelar uma solicitação enquanto ela está pendente ou em execução na tela `CodexChatgptPage`.
+- Pergunta explícita de causa raiz: “por que esse erro/problema aconteceu?”. Resposta: o backend e o sandbox-orchestrator já possuíam contrato de cancelamento (`POST /api/codex/requests/{id}/cancel`), mas a tela principal não expunha essa ação nos cards acompanhados pelo usuário; por isso uma solicitação enviada por engano ficava sem controle direto na UI.
+- Alternativas avaliadas: (1) apenas remover/esconder o card localmente, baixo esforço mas sem cancelar a execução real; (2) chamar o endpoint existente de cancelamento por solicitação, baixo risco e aderente ao contrato atual; (3) criar cancelamento em massa novo, mais amplo porém fora do pedido. Escolhida a alternativa 2.
+- Ajustada `apps/frontend/src/pages/CodexChatgptPage.tsx` para incluir estado de cancelamento em andamento, confirmação antes da ação, chamada a `/codex/requests/{id}/cancel`, atualização da conversa e do histórico, telemetria de sucesso/falha e mensagem clara quando o status vira `CANCELLED`.
+- Botão `Cancelar solicitação` exposto tanto no balão da conversa quanto nos cards de últimas execuções para solicitações não terminais (`PENDING`/`RUNNING`).
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais com `npm --prefix apps/frontend ci --include=dev`.
+
 ## 2026-07-13 13:02:08 UTC-3
 - Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
 - Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
@@ -1762,3 +1770,8 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o bloco de métricas deixou de depender exclusivamente de `COMPLETED`; agora mostra `Interações` em cards `Em execução` quando `interactionCount` estiver disponível, mantendo tokens/custo/tempo conforme existirem.
 - Validação: `npm --prefix apps/frontend ci --include=dev` restaurou dependências; `npm --prefix apps/frontend run build` passou com TypeScript e Vite. Observações de ambiente: o primeiro build antes do `npm ci` falhou por dependências ausentes/tipos não instalados; após restaurar o lockfile, passou. O npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo.
 - Não foi criado Pull Request, conforme restrição do modo MKT.
+
+## 2026-07-15 23:00:24 UTC-3
+- Correção de registro append-only: a entrada `2026-07-15 22:59:40 UTC-3` sobre o botão `Cancelar solicitação` foi inserida antes de entradas posteriores já existentes no arquivo, em vez de ser adicionada no fim. Nenhuma linha foi apagada ou movida; esta entrada registra a correção no final do diário.
+- Resumo válido da alteração: `CodexChatgptPage.tsx` passou a expor `Cancelar solicitação` nos balões da conversa e nos cards de últimas execuções para solicitações não terminais, chamando o endpoint existente `POST /codex/requests/{id}/cancel` e atualizando conversa, histórico e telemetria.
+- Validação confirmada: `npm --prefix apps/frontend run build` passou após `npm --prefix apps/frontend ci --include=dev`.

@@ -587,6 +587,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<number | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
@@ -920,7 +921,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
-  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED' ? 'A execução falhou. Abra os detalhes para ver os logs.' : 'Resposta ainda não disponível.'), []);
+  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED'
+    ? 'A execução falhou. Abra os detalhes para ver os logs.'
+    : request.status === 'CANCELLED'
+      ? `Solicitação #${request.id} cancelada. Nenhuma nova resposta será gerada para esta mensagem.`
+      : 'Resposta ainda não disponível.'), []);
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     setConversation((current) => current.map((message) => {
@@ -1290,6 +1295,34 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [deletingRequestId, editingRequestId, loadRequests]);
 
+  const handleCancelRequest = useCallback(async (requestId: number) => {
+    if (cancellingRequestId) return;
+    const confirmed = window.confirm(`Cancelar a solicitação #${requestId}? Use esta opção quando ela foi enviada por engano ou não precisa mais executar.`);
+    if (!confirmed) return;
+
+    setCancellingRequestId(requestId);
+    try {
+      const response = await client.post(`/codex/requests/${requestId}/cancel`);
+      const updated = parseCodexRequest(response.data);
+      if (updated) {
+        updateAssistantFromRequest(updated);
+        setRequests((current) => mergeCodexRequest(current, updated));
+      }
+      if (editingRequestId === requestId) {
+        setEditingRequestId(null);
+        setEditingDraft('');
+      }
+      await loadRequests();
+      registerTelemetry('execution_success', `Solicitação #${requestId} cancelada pelo usuário.`);
+      setError(null);
+    } catch (err) {
+      registerTelemetry('execution_failed', `Falha ao cancelar solicitação #${requestId}: ${(err as Error).message}`);
+      setError((err as Error).message);
+    } finally {
+      setCancellingRequestId(null);
+    }
+  }, [cancellingRequestId, editingRequestId, loadRequests, registerTelemetry, updateAssistantFromRequest]);
+
   const handleDiscardBatchRequests = useCallback(async () => {
     if (bulkDiscardLoading) return;
 
@@ -1483,6 +1516,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   </button>
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
+                  {message.requestId && message.status && !isTerminalStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
@@ -1556,6 +1590,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <div className="mt-1 flex flex-wrap gap-3">
                 <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
                 {item.status === 'PENDING' && !item.externalId ? <button type="button" onClick={() => handleDeletePendingRequest(item.id)} disabled={deletingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
+                {!isTerminalStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
               </div>
             </li>
           ))}
