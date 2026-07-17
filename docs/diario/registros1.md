@@ -1838,3 +1838,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajustada `CodexChatgptPage` para adicionar um segundo ícone no quadro de orientação, ao lado do copiar, que preenche diretamente a caixa de texto com `Execute sua orientação : \n<texto-da-orientação>`.
 - Adicionado estado visual para orientações já pedidas: após o clique, o novo ícone muda para confirmação e mantém `aria-pressed`, indicando que aquela orientação já foi enviada para a solicitação.
 - Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend install --include=dev`.
+
+## 2026-07-17 04:09:04 UTC - Cancelamento apenas para execução
+
+- Solicitação recebida: deixar o botão `Cancelar solicitação` somente em situações que estão em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela `CodexChatgptPage` renderizava `Cancelar solicitação` para qualquer status não terminal; como `PENDING` não é terminal, solicitações ainda pendentes também exibiam a ação de cancelar, mesmo quando o fluxo correto para pendentes sem envio é `Apagar antes do envio`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criada a regra explícita `isCancellableRequestStatus`, retornando verdadeiro apenas para `RUNNING`, e aplicada tanto no balão da conversa quanto nos cards de últimas execuções.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.

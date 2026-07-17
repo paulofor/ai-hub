@@ -95,6 +95,9 @@ const isClosedBatchRequest = (request: CodexRequest): boolean =>
 const isOpenBatchRequest = (request: CodexRequest): boolean =>
   Boolean(request.workBatchKey || request.workBranch) && !isClosedBatchRequest(request);
 
+const isCancellableRequestStatus = (status?: CodexRequest['status']): boolean =>
+  status === 'RUNNING';
+
 const formatInteractionCount = (count?: number) => {
   if (count === undefined || count === null || !Number.isFinite(count)) {
     return '—';
@@ -1708,7 +1711,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   </button>
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
-                  {message.requestId && message.status && !isTerminalStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+                  {message.requestId && isCancellableRequestStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
@@ -1792,7 +1795,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <div className="mt-1 flex flex-wrap gap-3">
                 <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
                 {item.status === 'PENDING' && !item.externalId ? <button type="button" onClick={() => handleDeletePendingRequest(item.id)} disabled={deletingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
-                {!isTerminalStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+                {isCancellableRequestStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
               </div>
             </li>
           ))}
