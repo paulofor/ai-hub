@@ -72,6 +72,7 @@ const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
+const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -588,6 +589,36 @@ interface ChatMessage {
   createdAt: string;
 }
 
+const chatConversationStorageKey = (profile: CodexProfile) => `${CHAT_CONVERSATION_STORAGE_PREFIX}${profile}`;
+
+const parsePersistedChatMessage = (value: unknown): ChatMessage | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const item = value as Record<string, unknown>;
+  const role = item.role === 'assistant' ? 'assistant' : item.role === 'user' ? 'user' : null;
+  const content = typeof item.content === 'string' ? item.content : '';
+  const id = typeof item.id === 'string' ? item.id : '';
+  const createdAt = typeof item.createdAt === 'string' ? item.createdAt : '';
+  const requestId = typeof item.requestId === 'number' && Number.isFinite(item.requestId) ? item.requestId : undefined;
+  const status = typeof item.status === 'string' && ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(item.status)
+    ? item.status as CodexRequest['status']
+    : undefined;
+  return role && content.trim() && id && createdAt ? { id, role, content, requestId, status, createdAt } : null;
+};
+
+const loadPersistedChatConversation = (profile: CodexProfile): ChatMessage[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const value = window.localStorage.getItem(chatConversationStorageKey(profile));
+    if (!value) return [];
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.map(parsePersistedChatMessage).filter((message): message is ChatMessage => message !== null)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 const resolveAssistantMessageTimestamp = (request: CodexRequest, currentCreatedAt?: string) => {
   if (!isTerminalStatus(request.status)) {
     return currentCreatedAt ?? request.createdAt ?? new Date().toISOString();
@@ -902,7 +933,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
-  const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
@@ -929,6 +960,19 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       window.clearTimeout(copiedMessageTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const key = chatConversationStorageKey(config.profile);
+      if (conversation.length === 0) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+      window.localStorage.setItem(key, JSON.stringify(conversation));
+    } catch {
+      // A conversa continua na sessão atual caso o navegador bloqueie ou limite o armazenamento local.
+    }
+  }, [config.profile, conversation]);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
