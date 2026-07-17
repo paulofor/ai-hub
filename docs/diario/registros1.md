@@ -1846,3 +1846,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criada a regra explícita `isCancellableRequestStatus`, retornando verdadeiro apenas para `RUNNING`, e aplicada tanto no balão da conversa quanto nos cards de últimas execuções.
 - Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
 - Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-17 04:11:53 UTC - Headings Markdown no Codex ChatGPT MKT
+
+- Solicitação recebida: corrigir a interpretação de `##` como padrão de formatação Markdown nas respostas do Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend usa um renderizador Markdown manual em `CodexChatgptPage.tsx`; ele quebrava blocos apenas por linhas em branco e só reconhecia tabela e lista com `-`/`*` quando o parágrafo inteiro tinha esse formato. Quando uma heading `## Título` vinha logo após texto sem linha em branco, ela caía no fallback de parágrafo e era exibida como texto literal.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o renderizador de blocos de texto passou a processar Markdown linha a linha, reconhecendo headings `#` a `######`, listas numeradas, listas com marcadores e tabelas mesmo quando aparecem depois de texto sem linha em branco, mantendo suporte existente a code fences, inline code e negrito.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
