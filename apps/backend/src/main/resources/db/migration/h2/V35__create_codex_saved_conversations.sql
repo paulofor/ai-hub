@@ -4,7 +4,7 @@ CREATE TABLE codex_saved_conversations (
     environment VARCHAR(255),
     model VARCHAR(255),
     profile VARCHAR(64) NOT NULL,
-    messages_json CLOB NOT NULL,
+    messages_json LONGTEXT NOT NULL,
     message_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

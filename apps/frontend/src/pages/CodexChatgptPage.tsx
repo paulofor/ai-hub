@@ -43,6 +43,12 @@ interface ModelOption {
   displayName?: string;
 }
 
+interface ProductOption {
+  id: number;
+  name: string;
+  slug: string;
+}
+
 interface SavedConversationMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -546,6 +552,23 @@ const mergeModelOptions = (primary: ModelOption[], fallback: ModelOption[]): Mod
   return Array.from(byModel.values());
 };
 
+const parseProductOption = (value: unknown): ProductOption | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'number' ? record.id : Number(record.id);
+  const name = typeof record.name === 'string' ? record.name.trim() : '';
+  const slug = typeof record.slug === 'string' ? record.slug.trim() : '';
+  if (!Number.isFinite(id) || !name || !slug) {
+    return null;
+  }
+  return { id, name, slug };
+};
+
+const sortProductOptions = (items: ProductOption[]) =>
+  [...items].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+
 interface FileAttachment {
   id: string;
   name: string;
@@ -871,6 +894,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [model, setModel] = useState('');
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [selectedProductSlug, setSelectedProductSlug] = useState('');
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
@@ -977,6 +1003,28 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     return parsed;
   }, [config.profile]);
 
+  const loadProducts = useCallback(async () => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT') {
+      setProducts([]);
+      setSelectedProductSlug('');
+      return [];
+    }
+    setProductsLoading(true);
+    try {
+      const response = await client.get('/products');
+      const parsed = sortProductOptions(
+        (Array.isArray(response.data) ? response.data : [])
+          .map(parseProductOption)
+          .filter((item): item is ProductOption => item !== null)
+      );
+      setProducts(parsed);
+      setSelectedProductSlug((current) => current && parsed.some((item) => item.slug === current) ? current : '');
+      return parsed;
+    } finally {
+      setProductsLoading(false);
+    }
+  }, [config.profile]);
+
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
     try {
@@ -1003,7 +1051,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setModels(nextModels);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
-      await Promise.all([loadRequests(), loadSavedConversations()]);
+      await Promise.all([loadRequests(), loadSavedConversations(), loadProducts()]);
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
     } catch (err) {
@@ -1012,7 +1060,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setLoading(false);
     }
-  }, [loadRequests, loadSavedConversations, registerTelemetry]);
+  }, [loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -1204,7 +1252,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const selectedConversation = selectedSavedConversationId
       ? savedConversations.find((item) => item.id === selectedSavedConversationId)
       : undefined;
+    const selectedProduct = selectedProductSlug
+      ? products.find((item) => item.slug === selectedProductSlug)
+      : undefined;
+    const productSourceInstruction = selectedProduct
+      ? `Antes de começar leia o documento em http://191.252.181.168:8000/api/products/public/${selectedProduct.slug}/marketing-definition.md e use como fonte de verdade sobre o PDE.`
+      : '';
     return [
+      productSourceInstruction,
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
@@ -1213,7 +1268,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       history ? `Histórico da conversa:\n${history}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, savedConversations, selectedSavedConversationId, selectedSavedConversationMessages]);
+  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedSavedConversationId, selectedSavedConversationMessages]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -1675,6 +1730,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const selectedSavedConversation = selectedSavedConversationId
     ? savedConversations.find((item) => item.id === selectedSavedConversationId)
     : undefined;
+  const showProductSelector = config.profile === 'CHATGPT_CODEX_MKT';
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
   const visibleConversation = conversation.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
@@ -1834,6 +1890,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.displayName ?? item.modelName}</option>)}
           </select>
         </div>
+        {showProductSelector ? <select value={selectedProductSlug} onChange={(e) => setSelectedProductSlug(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
+          <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
+          {products.map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
+        </select> : null}
         <textarea ref={promptTextareaRef} value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">

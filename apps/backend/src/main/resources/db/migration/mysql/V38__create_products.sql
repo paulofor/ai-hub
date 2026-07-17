@@ -1,0 +1,12 @@
+CREATE TABLE products (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(150) NOT NULL,
+    slug VARCHAR(150) NOT NULL,
+    external_id VARCHAR(150) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_products_slug (slug),
+    UNIQUE KEY uk_products_external_id (external_id)
+) ENGINE=InnoDB;
+
