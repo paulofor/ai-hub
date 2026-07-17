@@ -332,10 +332,18 @@ const MarkdownMessage = ({ content }: { content: string }) => {
   </div>;
 };
 
-const AssistantMessageBody = ({ content, marketing }: { content: string; marketing: boolean }) => {
+interface AssistantMessageBodyProps {
+  content: string;
+  marketing: boolean;
+  isOrientationRequested: (orientation: string) => boolean;
+  onRequestOrientation: (orientation: string) => void;
+}
+
+const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
   const structured = marketing ? parseMarketingStructuredResponse(content) : null;
   const [copiedOrientation, setCopiedOrientation] = useState(false);
   const copiedOrientationTimeoutRef = useRef<number | null>(null);
+  const orientationRequested = structured?.orientacaoProximaAcao ? isOrientationRequested(structured.orientacaoProximaAcao) : false;
 
   useEffect(() => () => {
     if (copiedOrientationTimeoutRef.current) {
@@ -355,6 +363,13 @@ const AssistantMessageBody = ({ content, marketing }: { content: string; marketi
     copiedOrientationTimeoutRef.current = window.setTimeout(() => setCopiedOrientation(false), 2000);
   }, [structured?.orientacaoProximaAcao]);
 
+  const handleRequestOrientation = useCallback(() => {
+    if (!structured?.orientacaoProximaAcao) {
+      return;
+    }
+    onRequestOrientation(structured.orientacaoProximaAcao);
+  }, [onRequestOrientation, structured?.orientacaoProximaAcao]);
+
   if (!structured) {
     return <MarkdownMessage content={content} />;
   }
@@ -367,15 +382,27 @@ const AssistantMessageBody = ({ content, marketing }: { content: string; marketi
     {structured.orientacaoProximaAcao ? <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação</h4>
-        <button
-          type="button"
-          onClick={handleCopyOrientation}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-emerald-300 bg-white/80 text-emerald-700 transition hover:border-emerald-500 hover:bg-white hover:text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:border-emerald-500 dark:hover:text-emerald-100"
-          title="Copiar orientação"
-          aria-label="Copiar orientação"
-        >
-          {copiedOrientation ? '✓' : '⧉'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleRequestOrientation}
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-full border transition focus:outline-none focus:ring-2 focus:ring-emerald-500 ${orientationRequested ? 'border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 dark:border-emerald-400 dark:bg-emerald-500 dark:text-emerald-950' : 'border-emerald-300 bg-white/80 text-emerald-700 hover:border-emerald-500 hover:bg-white hover:text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:border-emerald-500 dark:hover:text-emerald-100'}`}
+            title={orientationRequested ? 'Orientação já enviada para a solicitação' : 'Enviar orientação para a solicitação'}
+            aria-label={orientationRequested ? 'Orientação já enviada para a solicitação' : 'Enviar orientação para a solicitação'}
+            aria-pressed={orientationRequested}
+          >
+            {orientationRequested ? '✓' : '↪'}
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyOrientation}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-emerald-300 bg-white/80 text-emerald-700 transition hover:border-emerald-500 hover:bg-white hover:text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:border-emerald-500 dark:hover:text-emerald-100"
+            title="Copiar orientação"
+            aria-label="Copiar orientação"
+          >
+            {copiedOrientation ? '✓' : '⧉'}
+          </button>
+        </div>
       </div>
       <div className="text-emerald-950 dark:text-emerald-100">
         <MarkdownMessage content={structured.orientacaoProximaAcao} />
@@ -765,8 +792,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [selectedSavedConversationMessages, setSelectedSavedConversationMessages] = useState<SavedConversationMessage[]>([]);
   const [savingConversation, setSavingConversation] = useState(false);
   const [deletingSavedConversation, setDeletingSavedConversation] = useState(false);
+  const [requestedOrientations, setRequestedOrientations] = useState<Set<string>>(() => new Set());
   const conversationPollInFlight = useRef(false);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useModelResponseTabMarker(conversation, config.title);
 
@@ -1418,6 +1447,18 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, []);
 
+  const isOrientationRequested = useCallback((orientation: string) => requestedOrientations.has(orientation), [requestedOrientations]);
+
+  const handleRequestOrientation = useCallback((orientation: string) => {
+    setPrompt(`Execute sua orientação : \n${orientation}`);
+    setRequestedOrientations((current) => {
+      const next = new Set(current);
+      next.add(orientation);
+      return next;
+    });
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, []);
+
   const handleDeletePendingRequest = useCallback(async (requestId: number) => {
     if (deletingRequestId) return;
     setDeletingRequestId(requestId);
@@ -1677,7 +1718,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   <button type="button" onClick={handleCancelEditPendingRequest} disabled={savingEditRequestId === editingRequestId} className="rounded-md border border-slate-300 px-3 py-1 font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Cancelar</button>
                   <button type="button" onClick={() => editingRequestId ? handleSaveEditPendingRequest(editingRequestId) : undefined} disabled={!editingRequestId || savingEditRequestId === editingRequestId} className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white disabled:opacity-50">Salvar edição</button>
                 </div>
-              </div> : <AssistantMessageBody content={message.content} marketing={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant'} />}
+              </div> : <AssistantMessageBody
+                content={message.content}
+                marketing={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant'}
+                isOrientationRequested={isOrientationRequested}
+                onRequestOrientation={handleRequestOrientation}
+              />}
             </article>;
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
@@ -1689,7 +1735,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.displayName ?? item.modelName}</option>)}
           </select>
         </div>
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
+        <textarea ref={promptTextareaRef} value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
             Anexar arquivos
