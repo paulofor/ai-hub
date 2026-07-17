@@ -1899,3 +1899,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o diálogo é carregado do `localStorage` na inicialização e salvo após cada alteração, em chave separada para cada perfil ChatGPT. O conteúdo persistido é validado antes de ser usado; se o browser bloquear/limitar o armazenamento, a conversa continua funcionando na sessão atual sem interromper a interface.
 - Compatibilidade: o botão “Zerar e descartar lote” continua limpando o diálogo e, consequentemente, remove o estado persistido. Solicitações ainda em execução são restauradas e continuam sendo atualizadas pelo polling existente.
 - Validação executada: `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+
+## 2026-07-17 18:00:00 UTC - Proposta de construção com avaliação por persona
+
+- Solicitação recebida: avaliar a possibilidade de uma solicitação com dois modelos, um construindo um produto digital e outro representando o público-alvo para avaliar o resultado e acelerar a evolução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Não se trata de um erro existente; a necessidade decorre de uma lacuna de orquestração: o fluxo atual executa um único agente por job e não materializa uma etapa de avaliação de produto versionada entre iterações.
+- Decisão arquitetural: documentada a proposta de dois sandboxes isolados por ciclo, com o construtor em `workspace-write` e a persona em `read-only` sobre um snapshot imutável. Evita concorrência de escrita, feedback sobre estado parcial e acesso indevido a credenciais.
+- Definidos fluxo sequencial, contrato JSON schema-validado para feedback, limites de custo/iterações, critérios de parada, requisitos de auditoria e etapas concretas de implementação no AI Hub.
+- Validação executada: revisão do fluxo atual e dos tipos do `sandbox-orchestrator`; `git diff --check` passou.
+
+## 2026-07-17 18:15:00 UTC - Entrada de menu para construção com persona
+
+- Solicitação recebida: disponibilizar esse tipo de solicitação como um novo item de menu.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A proposta anterior estava somente na documentação; não havia rota nem link de navegação no frontend para que a funcionalidade planejada pudesse ser descoberta pelos usuários.
+- Ajuste aplicado: adicionado o item `Construir com Persona`, a rota `/construir-com-persona` e uma página de apresentação com as etapas construção, avaliação e evolução.
+- Transparência funcional: a página informa explicitamente que o envio automatizado depende da implementação ainda pendente do perfil no backend e no Sandbox Orchestrator; não simula uma solicitação que o backend atual não suporta.
+- Validação executada: `npm --prefix apps/frontend run build`, `git diff --check` e smoke check `curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/construir-com-persona` passaram (HTTP 200). A tela foi revisada visualmente em screenshot local.
