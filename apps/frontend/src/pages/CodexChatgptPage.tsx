@@ -95,6 +95,9 @@ const isClosedBatchRequest = (request: CodexRequest): boolean =>
 const isOpenBatchRequest = (request: CodexRequest): boolean =>
   Boolean(request.workBatchKey || request.workBranch) && !isClosedBatchRequest(request);
 
+const isCancellableRequestStatus = (status?: CodexRequest['status']): boolean =>
+  status === 'RUNNING';
+
 const formatInteractionCount = (count?: number) => {
   if (count === undefined || count === null || !Number.isFinite(count)) {
     return '—';
@@ -206,6 +209,126 @@ const parseMarkdownTable = (paragraph: string) => {
   return { headers, rows };
 };
 
+const headingClasses: Record<number, string> = {
+  1: 'text-xl font-semibold',
+  2: 'text-lg font-semibold',
+  3: 'text-base font-semibold',
+  4: 'text-sm font-semibold',
+  5: 'text-sm font-semibold',
+  6: 'text-sm font-semibold'
+};
+
+const renderMarkdownTable = (table: NonNullable<ReturnType<typeof parseMarkdownTable>>, key: string) => (
+  <div key={key} className="overflow-x-auto">
+    <table className="min-w-full border-collapse text-left text-sm">
+      <thead className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        <tr>{table.headers.map((header, cellIndex) => <th key={cellIndex} className="border border-slate-200 px-3 py-2 font-semibold dark:border-slate-700">{renderInlineMarkdown(header, `${key}-th-${cellIndex}`)}</th>)}</tr>
+      </thead>
+      <tbody>
+        {table.rows.map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-white even:bg-slate-50 dark:odd:bg-slate-900 dark:even:bg-slate-950/40">
+          {row.map((cell, cellIndex) => <td key={cellIndex} className="border border-slate-200 px-3 py-2 align-top dark:border-slate-700">{renderInlineMarkdown(cell, `${key}-td-${rowIndex}-${cellIndex}`)}</td>)}
+        </tr>)}
+      </tbody>
+    </table>
+  </div>
+);
+
+const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[] => {
+  const nodes: ReactNode[] = [];
+  const paragraphLines: string[] = [];
+  const lines = block.split('\n');
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    const paragraph = paragraphLines.join('\n').trim();
+    if (paragraph) {
+      const key = `p-${blockIndex}-${nodes.length}`;
+      nodes.push(<p key={key} className="whitespace-pre-wrap">{renderInlineMarkdown(paragraph, key)}</p>);
+    }
+    paragraphLines.length = 0;
+  };
+
+  for (let lineIndex = 0; lineIndex < lines.length;) {
+    const line = lines[lineIndex];
+    if (!line.trim()) {
+      flushParagraph();
+      lineIndex += 1;
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (headingMatch) {
+      flushParagraph();
+      const level = headingMatch[1].length;
+      const key = `heading-${blockIndex}-${lineIndex}`;
+      const content = renderInlineMarkdown(headingMatch[2], key);
+      if (level === 1) nodes.push(<h1 key={key} className={headingClasses[level]}>{content}</h1>);
+      else if (level === 2) nodes.push(<h2 key={key} className={headingClasses[level]}>{content}</h2>);
+      else if (level === 3) nodes.push(<h3 key={key} className={headingClasses[level]}>{content}</h3>);
+      else if (level === 4) nodes.push(<h4 key={key} className={headingClasses[level]}>{content}</h4>);
+      else if (level === 5) nodes.push(<h5 key={key} className={headingClasses[level]}>{content}</h5>);
+      else nodes.push(<h6 key={key} className={headingClasses[level]}>{content}</h6>);
+      lineIndex += 1;
+      continue;
+    }
+
+    if (line.includes('|') && lineIndex + 1 < lines.length && isMarkdownTableDivider(lines[lineIndex + 1])) {
+      flushParagraph();
+      const tableLines = [line, lines[lineIndex + 1]];
+      lineIndex += 2;
+      while (lineIndex < lines.length && lines[lineIndex].includes('|') && lines[lineIndex].trim()) {
+        tableLines.push(lines[lineIndex]);
+        lineIndex += 1;
+      }
+      const table = parseMarkdownTable(tableLines.join('\n'));
+      if (table) {
+        nodes.push(renderMarkdownTable(table, `table-${blockIndex}-${nodes.length}`));
+      } else {
+        paragraphLines.push(...tableLines);
+      }
+      continue;
+    }
+
+    const unorderedMatch = line.match(/^\s*[-*]\s+(.+)$/);
+    if (unorderedMatch) {
+      flushParagraph();
+      const items: string[] = [];
+      while (lineIndex < lines.length) {
+        const itemMatch = lines[lineIndex].match(/^\s*[-*]\s+(.+)$/);
+        if (!itemMatch) break;
+        items.push(itemMatch[1]);
+        lineIndex += 1;
+      }
+      nodes.push(<ul key={`ul-${blockIndex}-${nodes.length}`} className="list-disc space-y-1 pl-5">
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInlineMarkdown(item, `ul-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
+      </ul>);
+      continue;
+    }
+
+    const orderedMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (orderedMatch) {
+      flushParagraph();
+      const items: string[] = [];
+      while (lineIndex < lines.length) {
+        const itemMatch = lines[lineIndex].match(/^\s*\d+[.)]\s+(.+)$/);
+        if (!itemMatch) break;
+        items.push(itemMatch[1]);
+        lineIndex += 1;
+      }
+      nodes.push(<ol key={`ol-${blockIndex}-${nodes.length}`} className="list-decimal space-y-1 pl-5">
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInlineMarkdown(item, `ol-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
+      </ol>);
+      continue;
+    }
+
+    paragraphLines.push(line);
+    lineIndex += 1;
+  }
+
+  flushParagraph();
+  return nodes;
+};
+
 interface MarketingStructuredResponse {
   comentario: string;
   orientacaoProximaAcao: string;
@@ -303,31 +426,7 @@ const MarkdownMessage = ({ content }: { content: string }) => {
       if (codeMatch) {
         return <pre key={`code-${blockIndex}`} className="overflow-x-auto rounded-md border border-slate-200 bg-slate-950 p-3 text-xs text-slate-50 dark:border-slate-700"><code>{codeMatch[2].trimEnd()}</code></pre>;
       }
-      return block.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0).map((paragraph, paragraphIndex) => {
-        const lines = paragraph.split('\n');
-        const table = parseMarkdownTable(paragraph);
-        if (table) {
-          return <div key={`table-${blockIndex}-${paragraphIndex}`} className="overflow-x-auto">
-            <table className="min-w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                <tr>{table.headers.map((header, cellIndex) => <th key={cellIndex} className="border border-slate-200 px-3 py-2 font-semibold dark:border-slate-700">{renderInlineMarkdown(header, `th-${blockIndex}-${paragraphIndex}-${cellIndex}`)}</th>)}</tr>
-              </thead>
-              <tbody>
-                {table.rows.map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-white even:bg-slate-50 dark:odd:bg-slate-900 dark:even:bg-slate-950/40">
-                  {row.map((cell, cellIndex) => <td key={cellIndex} className="border border-slate-200 px-3 py-2 align-top dark:border-slate-700">{renderInlineMarkdown(cell, `td-${blockIndex}-${paragraphIndex}-${rowIndex}-${cellIndex}`)}</td>)}
-                </tr>)}
-              </tbody>
-            </table>
-          </div>;
-        }
-        const listItems = lines.filter((line) => /^\s*[-*]\s+/.test(line));
-        if (listItems.length === lines.length && listItems.length > 0) {
-          return <ul key={`list-${blockIndex}-${paragraphIndex}`} className="list-disc space-y-1 pl-5">
-            {listItems.map((line, lineIndex) => <li key={lineIndex}>{renderInlineMarkdown(line.replace(/^\s*[-*]\s+/, ''), `li-${blockIndex}-${paragraphIndex}-${lineIndex}`)}</li>)}
-          </ul>;
-        }
-        return <p key={`p-${blockIndex}-${paragraphIndex}`} className="whitespace-pre-wrap">{renderInlineMarkdown(paragraph, `p-${blockIndex}-${paragraphIndex}`)}</p>;
-      });
+      return renderMarkdownTextBlock(block, blockIndex);
     })}
   </div>;
 };
@@ -1708,7 +1807,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   </button>
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
-                  {message.requestId && message.status && !isTerminalStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+                  {message.requestId && isCancellableRequestStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
@@ -1792,7 +1891,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <div className="mt-1 flex flex-wrap gap-3">
                 <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
                 {item.status === 'PENDING' && !item.externalId ? <button type="button" onClick={() => handleDeletePendingRequest(item.id)} disabled={deletingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
-                {!isTerminalStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+                {isCancellableRequestStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
               </div>
             </li>
           ))}
