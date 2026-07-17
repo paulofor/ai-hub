@@ -695,6 +695,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
+    assert.ok(input?.[0]?.text?.includes('"titulo"'));
+    assert.ok(input?.[0]?.text?.includes('"sugestaoMelhoriaAmbiente"'));
+    assert.ok(input?.[0]?.text?.includes('melhoria do ambiente de execução'));
     assert.ok(input?.[0]?.text?.includes('cliente de e-mail descartável'));
     assert.ok(input?.[0]?.text?.includes('sandbox-mail:1025'));
     assert.ok(input?.[0]?.text?.includes('http://sandbox-mail:8025/api/v1/messages'));
