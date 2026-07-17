@@ -337,8 +337,10 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
 };
 
 interface MarketingStructuredResponse {
+  titulo: string;
   comentario: string;
   orientacaoProximaAcao: string;
+  sugestaoMelhoriaAmbiente: string;
 }
 
 const tryParseMarketingResponseRecord = (candidate: string): Record<string, unknown> | null => {
@@ -409,6 +411,7 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
     return null;
   }
 
+  const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
   const orientacaoProximaAcao = readStructuredResponseString(record, [
     'orientacaoProximaAcao',
@@ -418,10 +421,23 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
     'orientação',
     'nextActionGuidance'
   ]).trim();
-  if (!comentario && !orientacaoProximaAcao) {
+  const sugestaoMelhoriaAmbiente = readStructuredResponseString(record, [
+    'sugestaoMelhoriaAmbiente',
+    'sugestãoMelhoriaAmbiente',
+    'sugestao_melhoria_ambiente',
+    'sugestaoAmbiente',
+    'sugestãoAmbiente',
+    'environmentImprovementSuggestion'
+  ]).trim();
+  if (!titulo && !comentario && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { comentario, orientacaoProximaAcao };
+  return { titulo, comentario, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+};
+
+const parseMarketingStructuredTitle = (content?: string): string => {
+  if (!content) return '';
+  return parseMarketingStructuredResponse(content)?.titulo ?? '';
 };
 
 const MarkdownMessage = ({ content }: { content: string }) => {
@@ -481,6 +497,10 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
   }
 
   return <div className="space-y-3">
+    {structured.titulo ? <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm dark:border-sky-900 dark:bg-sky-950/30">
+      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">Título</h4>
+      <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">{structured.titulo}</p>
+    </section> : null}
     {structured.comentario ? <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
       <MarkdownMessage content={structured.comentario} />
@@ -512,6 +532,12 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
       </div>
       <div className="text-emerald-950 dark:text-emerald-100">
         <MarkdownMessage content={structured.orientacaoProximaAcao} />
+      </div>
+    </section> : null}
+    {structured.sugestaoMelhoriaAmbiente ? <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
+      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Sugestão de melhoria para o ambiente</h4>
+      <div className="text-amber-950 dark:text-amber-100">
+        <MarkdownMessage content={structured.sugestaoMelhoriaAmbiente} />
       </div>
     </section> : null}
   </div>;
@@ -858,7 +884,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"comentario":"<resposta principal em Markdown>","orientacaoProximaAcao":"<orientação objetiva para a próxima ação baseada na alternativa escolhida, ou string vazia se não houver orientação aplicável>"}. Use comentario para a resposta normal e orientacaoProximaAcao apenas quando existir uma decisão entre alternativas ou próxima ação clara.'
+    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","orientacaoProximaAcao":"<orientação objetiva para a próxima ação baseada na alternativa escolhida, ou string vazia se não houver orientação aplicável>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. Use comentario para a resposta normal, orientacaoProximaAcao apenas quando existir uma decisão entre alternativas ou próxima ação clara, e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 
@@ -939,6 +965,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<number | null>(null);
+  const [ratingRequestId, setRatingRequestId] = useState<number | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
@@ -1713,6 +1740,29 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [cancellingRequestId, editingRequestId, loadRequests, registerTelemetry, updateAssistantFromRequest]);
 
+  const handleRating = useCallback(async (requestId: number, rating: number) => {
+    if (ratingRequestId) return;
+
+    setRatingRequestId(requestId);
+    try {
+      const response = await client.post(`/codex/requests/${requestId}/rating`, { rating });
+      const updated = parseCodexRequest(response.data);
+      if (updated) {
+        setRequests((current) => mergeCodexRequest(current, updated));
+        updateAssistantFromRequest(updated);
+      } else {
+        await loadRequests();
+      }
+      registerTelemetry('execution_success', `Avaliação registrada para solicitação #${requestId}.`);
+      setError(null);
+    } catch (err) {
+      registerTelemetry('execution_failed', `Falha ao avaliar solicitação #${requestId}: ${(err as Error).message}`);
+      setError((err as Error).message);
+    } finally {
+      setRatingRequestId(null);
+    }
+  }, [loadRequests, ratingRequestId, registerTelemetry, updateAssistantFromRequest]);
+
   const handleDiscardBatchRequests = useCallback(async () => {
     if (bulkDiscardLoading) return;
 
@@ -1976,9 +2026,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {requests.map((item) => (
             <li key={item.id} className="rounded-md border px-3 py-2 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">#{item.id} · {item.model}</span>
+                <span className="min-w-0 font-medium">
+                  #{item.id} · {parseMarketingStructuredTitle(item.responseText) || item.model}
+                </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
+              {parseMarketingStructuredTitle(item.responseText) ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
@@ -1996,6 +2049,27 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <Link to={`/codex/requests/${item.id}`} className="text-xs text-emerald-700 hover:underline">Abrir detalhes</Link>
                 {item.status === 'PENDING' && !item.externalId ? <button type="button" onClick={() => handleDeletePendingRequest(item.id)} disabled={deletingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
                 {isCancellableRequestStatus(item.status) ? <button type="button" onClick={() => handleCancelRequest(item.id)} disabled={cancellingRequestId === item.id} className="text-xs text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === item.id ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+              </div>
+              <div className="mt-2 flex items-center gap-1" aria-label={`Avaliação da execução #${item.id}`}>
+                {[1, 2, 3, 4, 5].map((value) => {
+                  const currentRating = item.rating ?? 0;
+                  const filled = value <= currentRating;
+                  const isInteractive = item.status === 'COMPLETED';
+                  if (!isInteractive) {
+                    return <span key={`static-rating-${item.id}-${value}`} className={`text-base ${filled ? 'text-amber-500' : 'text-slate-400'}`}>★</span>;
+                  }
+                  return <button
+                    key={`rating-${item.id}-${value}`}
+                    type="button"
+                    onClick={() => handleRating(item.id, value)}
+                    disabled={ratingRequestId === item.id}
+                    className="text-base transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                    title={`Avaliar execução #${item.id} com ${value} estrela${value === 1 ? '' : 's'}`}
+                    aria-label={`Avaliar execução #${item.id} com ${value} estrela${value === 1 ? '' : 's'}`}
+                  >
+                    <span className={filled ? 'text-amber-500' : 'text-slate-400'}>★</span>
+                  </button>;
+                })}
               </div>
             </li>
           ))}
