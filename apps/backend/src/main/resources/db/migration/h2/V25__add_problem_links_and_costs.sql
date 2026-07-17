@@ -1,9 +1,8 @@
 ALTER TABLE problems
     ADD COLUMN total_cost DECIMAL(19,6) DEFAULT 0 NOT NULL;
 
-ALTER TABLE codex_requests
-    ADD COLUMN problem_id BIGINT,
-    ADD COLUMN problem_cost_contribution DECIMAL(19,6) DEFAULT 0 NOT NULL;
+ALTER TABLE codex_requests ADD COLUMN problem_id BIGINT;
+ALTER TABLE codex_requests ADD COLUMN problem_cost_contribution DECIMAL(19,6) DEFAULT 0 NOT NULL;
 
 UPDATE problems
     SET total_cost = 0

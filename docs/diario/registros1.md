@@ -1861,3 +1861,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Atualizados testes em `apps/sandbox-orchestrator/tests/jobs.test.ts` para garantir que os prompts do Codex App Server incluam a distinção entre não criar PR e editar arquivos.
 - Validação executada: `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `cd apps/sandbox-orchestrator && node --test --test-name-pattern="CHATGPT_CODEX" dist/tests/jobs.test.js dist/tests/codexAppServerClient.test.js dist/tests/codexLogMaintenance.test.js` passou com 4 testes executados, 65 ignorados pelo filtro e 0 falhas.
 - Observação de ambiente: a primeira execução de testes falhou por ausência de dependências de desenvolvimento (`@types/express`, `@types/morgan`, `@types/node`, `@types/supertest`); após `npm --prefix apps/sandbox-orchestrator ci --include=dev`, a validação passou. O npm reportou 7 vulnerabilidades existentes no grafo do pacote, sem ajuste de dependências para preservar o escopo.
+
+## 2026-07-17 14:32:19 UTC - CRUD Cadastro de Produtos
+
+- Solicitação recebida: criar mais um item de menu com CRUD `Cadastro de Produtos`, contendo `nome`, `slug` e `id externo`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: não era um erro existente de tela, e sim uma lacuna funcional; o sistema não tinha entidade, tabela, API, rota nem página para produtos.
+- Ajuste aplicado no backend: adicionados `ProductRecord`, `ProductRepository`, DTOs, `ProductService` e `ProductController` em `/api/products`, com listagem, criação, edição, exclusão, validação de campos obrigatórios e bloqueio de `slug`/`externalId` duplicados.
+- Ajuste aplicado no banco: criada a migration `V38__create_products.sql` para MySQL, PostgreSQL e H2 com tabela `products` e chaves únicas para `slug` e `external_id`.
+- Ajuste aplicado no frontend: criada `ProductsPage`, adicionada rota `/products` e novo item de menu `Cadastro de Produtos`.
+- Correções de causa raiz descobertas na validação local: migrations H2 antigas impediam startup com Flyway por versão duplicada `V29`, sintaxe `ALTER TABLE ... ADD COLUMN` incompatível com H2 2.2 e tipos `TEXT/CLOB` divergentes de entidades `LONGTEXT`; os arquivos H2/PostgreSQL afetados foram normalizados para permitir startup local com Flyway e Hibernate `validate`.
+- Validação executada: `npm run build` em `apps/frontend` passou; `mvn test` em `apps/backend` passou com 78 testes; startup local do backend com H2/Flyway aplicou 35 migrations até `V38`; smoke test em `/api/products` validou create, update com `updatedAt` avançando, erro 400 para slug duplicado, delete 204 e listagem final vazia.
+- Observação de ambiente: o primeiro build frontend falhou porque `node_modules` estava vazio; após `npm install` em `apps/frontend`, o build passou. O npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem ajuste de dependências neste turno. Não foi criado Pull Request.

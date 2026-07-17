@@ -15,6 +15,7 @@ import ProblemDetailPage from './pages/ProblemDetailPage';
 import CodexChatgptPage from './pages/CodexChatgptPage';
 import PrivacyPage from './pages/PrivacyPage';
 import SourceRepositoryConfigPage from './pages/SourceRepositoryConfigPage';
+import ProductsPage from './pages/ProductsPage';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/prompt-hints" element={<PromptHintsPage />} />
         <Route path="/prompt-lists" element={<PromptListsPage />} />
+        <Route path="/products" element={<ProductsPage />} />
         <Route path="/problems" element={<ProblemsPage />} />
         <Route path="/problems/:id" element={<ProblemDetailPage />} />
         <Route path="/environments" element={<EnvironmentsPage />} />

@@ -10,8 +10,7 @@ CREATE TABLE codex_model_pricing (
     CONSTRAINT uk_codex_model_pricing_model_name UNIQUE (model_name)
 );
 
-ALTER TABLE codex_requests
-    ADD COLUMN cached_prompt_tokens INT,
-    ADD COLUMN prompt_cost DECIMAL(19,6),
-    ADD COLUMN cached_prompt_cost DECIMAL(19,6),
-    ADD COLUMN completion_cost DECIMAL(19,6);
+ALTER TABLE codex_requests ADD COLUMN cached_prompt_tokens INT;
+ALTER TABLE codex_requests ADD COLUMN prompt_cost DECIMAL(19,6);
+ALTER TABLE codex_requests ADD COLUMN cached_prompt_cost DECIMAL(19,6);
+ALTER TABLE codex_requests ADD COLUMN completion_cost DECIMAL(19,6);

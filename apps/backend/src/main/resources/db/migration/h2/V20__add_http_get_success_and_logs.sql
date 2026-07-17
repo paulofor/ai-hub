@@ -11,7 +11,7 @@ CREATE TABLE codex_http_requests (
     sandbox_job_id VARCHAR(255) NOT NULL,
     sandbox_call_id VARCHAR(255) NOT NULL,
     tool_name VARCHAR(64),
-    url TEXT NOT NULL,
+    url LONGTEXT NOT NULL,
     status_code INT,
     success BOOLEAN,
     requested_at TIMESTAMP NOT NULL DEFAULT NOW(),
