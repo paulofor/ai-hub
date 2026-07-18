@@ -8,6 +8,7 @@ RUN npm run build
 
 FROM node:20-bookworm-slim AS production
 WORKDIR /app
+ARG ACTIONLINT_VERSION=1.7.12
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
   && mkdir -p /etc/apt/keyrings \
@@ -26,7 +27,17 @@ RUN apt-get update \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git python3 python3-pip patch jq temurin-21-jdk maven ripgrep docker-ce-cli docker-compose-plugin bash google-cloud-cli awscli chromium \
+  && apt-get install -y --no-install-recommends git gh python3 python3-pip patch jq temurin-21-jdk maven ripgrep docker-ce-cli docker-compose-plugin bash google-cloud-cli awscli chromium \
+  && case "$(dpkg --print-architecture)" in \
+    amd64) actionlint_arch=amd64 ;; \
+    arm64) actionlint_arch=arm64 ;; \
+    *) echo "Arquitetura sem actionlint precompilado: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+  esac \
+  && curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${actionlint_arch}.tar.gz" \
+    | tar -xz -C /usr/local/bin actionlint \
+  && chmod +x /usr/local/bin/actionlint \
+  && gh --version \
+  && actionlint --version \
   && rm -rf /var/lib/apt/lists/* \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh

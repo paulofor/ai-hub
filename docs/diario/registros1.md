@@ -225,6 +225,19 @@
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
 
+## 2026-07-18 20:57:47 UTC - GitHub CLI e actionlint na sandbox do modelo
+
+- Solicitação recebida: colocar `gh` e `actionlint` na sandbox para o modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem do `sandbox-orchestrator` lista explicitamente as ferramentas instaladas no runner (`git`, `jq`, `ripgrep`, Docker CLI, AWS CLI, Chromium etc.), mas não declarava nem instalava `gh` ou `actionlint`; por isso essas ferramentas não ficavam disponíveis de forma reprodutível para os jobs do modelo.
+- Alternativas avaliadas: (1) instalar manualmente no container atual, rápido mas efêmero e não reproduzível; (2) apenas documentar a necessidade, baixo esforço mas não entrega a ferramenta ao modelo; (3) alterar a imagem do sandbox, o prompt/checklist do runner, documentação e teste de contrato. Escolhida a alternativa 3 por corrigir a causa raiz e evitar regressão.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado `gh` via apt e `actionlint` fixado em `1.7.12`, baixado dos releases oficiais para `amd64` e `arm64`, com validação `gh --version` e `actionlint --version` durante o build da imagem.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o prompt do runner agora informa que `gh` e `actionlint` estão disponíveis, e o checklist de preflight registra as ferramentas GitHub/CI detectadas.
+- Ajustes de documentação: `README.md` e `docs/sandbox-architecture.md` passaram a declarar GitHub CLI (`gh`) e `actionlint` como ferramentas pré-instaladas na imagem da sandbox.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar o contrato do Dockerfile e a presença da nova instrução/checklist no prompt do runner.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala|checklist de ambiente" dist/tests/jobs.test.js` passou com 2 testes executados, 57 ignorados pelo filtro e 0 falhas; `git diff --check` passou.
+- Validação externa dos artefatos: URLs oficiais dos assets `actionlint_1.7.12_linux_amd64.tar.gz` e `actionlint_1.7.12_linux_arm64.tar.gz` responderam com redirect HTTP válido para `release-assets.githubusercontent.com`.
+- Limitação real de ambiente: não foi possível executar `docker build` porque o daemon Docker/socket `/var/run/docker.sock` não está disponível neste sandbox (`failed to connect to the docker API`). O npm reportou 7 vulnerabilidades existentes no grafo do `sandbox-orchestrator`, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
 ## 2026-07-18 20:33:36 UTC - jq na imagem da sandbox
 
 - Solicitação recebida: instalar `jq` na imagem da sandbox.
