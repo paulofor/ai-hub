@@ -225,6 +225,14 @@
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
 
+## 2026-07-18 19:47:32 UTC - Orientação sobre Playwright versionado no frontend
+
+- Solicitação recebida: avaliar como atender a sugestão “Ter Playwright já instalado no projeto facilitaria repetir validações visuais sem instalação temporária.”
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: as validações visuais foram úteis para revisar telas, mas o projeto não declara Playwright como ferramenta versionada; isso obriga instalações temporárias em cada sandbox/execução e reduz repetibilidade.
+- Alternativas avaliadas: (1) manter instalação temporária quando necessário, baixo custo imediato mas frágil e lento; (2) adicionar Playwright somente ao `apps/frontend`, com script dedicado e configuração mínima, melhor aderência porque as validações visuais são da UI; (3) criar pacote E2E separado na raiz/monorepo, mais escalável mas excesso de estrutura para o estado atual do repositório. Recomendação: alternativa 2.
+- Orientação proposta: instalar `@playwright/test` como devDependency em `apps/frontend`, adicionar `playwright.config.ts`, script como `test:visual` ou `test:e2e`, pasta inicial `apps/frontend/e2e`, e documentar que os testes devem rodar contra `npm run dev`/`vite preview`.
+- Não houve alteração de dependências nem criação de Pull Request nesta etapa, pois a solicitação foi interpretada como orientação de como atender.
+
 ## 2026-07-18 02:12:44 UTC - Orientação opcional no JSON final MKT
 
 ## 2026-07-17 23:42:44 UTC-3
