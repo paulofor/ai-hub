@@ -199,6 +199,32 @@
 
 - 2026-05-14 17:40:00 UTC — Correção adicional da causa raiz para persistência de push no owner incorreto (`paulofor`): o fallback de `GHCR_USERNAME` no workflow ainda dependia de `github.repository_owner` quando segredo não existia, mantendo namespace errado em forks/migrações; padronizado fallback para `secrets.GHCR_USERNAME` -> `vars.GHCR_USERNAME` -> `paulodb` tanto no job `docker` quanto no `deploy` e no cleanup (`GHCR_OWNER`), garantindo consistência total do namespace no build, pull e limpeza de tags.
 
+## 2026-07-17 23:06:59 UTC-3
+- Solicitação recebida: na lista de últimas execuções do Codex ChatGPT MKT, exibir o título somente em execuções concluídas e deixar execuções em andamento, pendentes e canceladas sem título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend montava o cabeçalho do card sempre como `#id · título`, usando `requestTitle`, `problemTitle`, título estruturado da resposta ou modelo sem condicionar pelo status da execução.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada resolução de cabeçalho do histórico que mantém `#id · título` apenas para `COMPLETED`; para demais status, o cabeçalho passa a exibir somente `#id`.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-18 02:13:43 UTC - Orientação opcional no JSON final MKT
+
+- Correção administrativa: a entrada `2026-07-18 02:12:44 UTC` sobre orientação opcional foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+- Solicitação recebida: orientar o modelo do modo Codex ChatGPT MKT para que `orientacaoProximaAcao` não seja obrigatório e só apareça quando houver uma ação efetiva do usuário necessária para concluir a solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado colocava `orientacaoProximaAcao` no exemplo principal do JSON e recomendava string vazia quando não aplicável, induzindo respostas com campo vazio mesmo após implementações concluídas.
+- Alternativas avaliadas: (1) tratar só na resposta manual, sem efeito sistêmico; (2) esconder somente na UI, preservando o prompt ambíguo; (3) alterar o contrato enviado ao modelo e manter o parser compatível com respostas antigas. Escolhida a alternativa 3 por corrigir a causa raiz com baixo risco.
+- Ajustes aplicados: `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx` agora mostram o JSON base sem `orientacaoProximaAcao` e instruem que o campo opcional seja incluído apenas quando o usuário precisar decidir, aprovar, fornecer acesso ou executar etapa fora da sandbox.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para validar a presença da regra opcional no prompt MKT.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="CHATGPT_CODEX_MKT" apps/sandbox-orchestrator/dist/tests/jobs.test.js` passou; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: foi necessário executar `npm --prefix apps/sandbox-orchestrator ci --include=dev` e `npm --prefix apps/frontend ci --include=dev` porque as dependências locais não estavam instaladas. O npm reportou vulnerabilidades existentes nos grafos dos pacotes, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-18 02:12:44 UTC - Orientação opcional no JSON final MKT
+
+- Solicitação recebida: implementar no sistema que o campo `orientacaoProximaAcao` não seja obrigatório na resposta final do modo Codex ChatGPT MKT; ele deve aparecer somente quando houver uma ação efetiva do usuário necessária para concluir a solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado do modo MKT colocava `orientacaoProximaAcao` dentro do exemplo principal de JSON e orientava usar string vazia quando não aplicável; isso induzia o modelo a sempre devolver o campo mesmo em solicitações já implementadas.
+- Alternativas avaliadas: (1) alterar apenas a resposta manual do assistente, sem efeito sistêmico; (2) esconder campo vazio apenas na UI, útil mas não corrige o prompt; (3) ajustar o contrato enviado ao modelo, tornando `orientacaoProximaAcao` opcional e mantendo o parser atual compatível com respostas antigas. Escolhida a alternativa 3 por corrigir a causa raiz e preservar compatibilidade.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: as instruções MKT do Codex App Server e do fluxo legado agora mostram um JSON base sem `orientacaoProximaAcao` e explicam que o campo opcional deve ser incluído somente quando o usuário precisar decidir, aprovar, fornecer acesso ou executar etapa fora da sandbox.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o texto de instruções do modo MKT exibido/enviado pela tela foi alinhado ao novo contrato opcional.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para garantir que o prompt MKT contenha a regra de campo opcional, o caso de solicitação já implementada e a instrução para omitir o campo.
+
 ## 2026-05-14 16:32:50 UTC-3
 - Diagnóstico da causa raiz da falha no job `docker` do GitHub Actions: push para `ghcr.io/paulodb/ai-hub-6-caddy:latest` negado com `permission_denied: The requested installation does not exist`, indicando namespace/owner de registry divergente do owner onde o workflow roda (`paulofor`) e/ou ausência de autorização do GitHub App/Actions para publicar no pacote alvo.
 - Orientação operacional no GitHub para restabelecer o pipeline: alinhar todas as tags de imagem para `ghcr.io/paulofor/*`, garantir `permissions: packages: write` no workflow e habilitar acesso do repositório ao pacote no GHCR (Package settings > Manage Actions access).
@@ -1946,3 +1972,21 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/CodexRequestService.java`: `prepareRequestSummary` agora tenta extrair `titulo`/`título`/`title` de JSON direto, JSON serializado como string, bloco cercado por ```json ou conteúdo com JSON embutido; se não encontrar, mantém o fallback para a última mensagem do usuário.
 - Teste adicionado em `apps/backend/src/test/java/com/aihub/hub/service/CodexRequestServiceTest.java`: `listPageUsesStructuredModelTitleBeforePromptTitle` garante que `{"titulo":"Histórico com títulos", ...}` prevalece sobre o prompt no `requestTitle` retornado à lista.
 - Validação executada: `mvn -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test` passou com 32 testes; `mvn -f apps/backend/pom.xml test` passou com 79 testes. Não foi criado Pull Request.
+
+## 2026-07-17 23:07:26 UTC-3
+- Correção administrativa: a entrada `2026-07-17 23:06:59 UTC-3` sobre títulos somente em execuções concluídas foi inserida em ponto intermediário do arquivo por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+- Solicitação recebida: na lista de últimas execuções do Codex ChatGPT MKT, exibir o título somente em execuções concluídas e deixar execuções em andamento, pendentes e canceladas sem título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend montava o cabeçalho do card sempre como `#id · título`, usando `requestTitle`, `problemTitle`, título estruturado da resposta ou modelo sem condicionar pelo status da execução.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada resolução de cabeçalho do histórico que mantém `#id · título` apenas para `COMPLETED`; para demais status, o cabeçalho passa a exibir somente `#id`.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-18 02:14:30 UTC - Orientação opcional no JSON final MKT
+
+- Correção administrativa final: as entradas `2026-07-18 02:12:44 UTC` e `2026-07-18 02:13:43 UTC` sobre orientação opcional foram inseridas em pontos intermediários do diário por correspondência de contexto repetido; como o diário é append-only, elas foram mantidas e este registro consolida o trabalho no final correto do arquivo.
+- Solicitação recebida: orientar o modelo do modo Codex ChatGPT MKT para que `orientacaoProximaAcao` não seja obrigatório e só apareça quando houver uma ação efetiva do usuário necessária para concluir a solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado colocava `orientacaoProximaAcao` no exemplo principal do JSON e recomendava string vazia quando não aplicável, induzindo respostas com campo vazio mesmo após implementações concluídas.
+- Alternativas avaliadas: (1) tratar só na resposta manual, sem efeito sistêmico; (2) esconder somente na UI, preservando o prompt ambíguo; (3) alterar o contrato enviado ao modelo e manter o parser compatível com respostas antigas. Escolhida a alternativa 3 por corrigir a causa raiz com baixo risco.
+- Ajustes aplicados: `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx` agora mostram o JSON base sem `orientacaoProximaAcao` e instruem que o campo opcional seja incluído apenas quando o usuário precisar decidir, aprovar, fornecer acesso ou executar etapa fora da sandbox.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para validar a presença da regra opcional no prompt MKT.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="CHATGPT_CODEX_MKT" apps/sandbox-orchestrator/dist/tests/jobs.test.js` passou; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: foi necessário executar `npm --prefix apps/sandbox-orchestrator ci --include=dev` e `npm --prefix apps/frontend ci --include=dev` porque as dependências locais não estavam instaladas. O npm reportou vulnerabilidades existentes nos grafos dos pacotes, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.

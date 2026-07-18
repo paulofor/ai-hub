@@ -443,6 +443,11 @@ const parseMarketingStructuredTitle = (content?: string): string => {
 const resolveRequestHistoryTitle = (request: CodexRequest): string =>
   request.requestTitle || request.problemTitle || parseMarketingStructuredTitle(request.responseText) || request.model;
 
+const resolveRequestHistoryHeading = (request: CodexRequest): string =>
+  request.status === 'COMPLETED'
+    ? `#${request.id} · ${resolveRequestHistoryTitle(request)}`
+    : `#${request.id}`;
+
 const MarkdownMessage = ({ content }: { content: string }) => {
   const normalized = stripModelThinking(content);
   const blocks = normalized.split(/(```[\s\S]*?```)/g).filter((block) => block.length > 0);
@@ -887,7 +892,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","orientacaoProximaAcao":"<orientação objetiva para a próxima ação baseada na alternativa escolhida, ou string vazia se não houver orientação aplicável>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. Use comentario para a resposta normal, orientacaoProximaAcao apenas quando existir uma decisão entre alternativas ou próxima ação clara, e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
+    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 
@@ -2029,8 +2034,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {requests.map((item) => (
             <li key={item.id} className="rounded-md border px-3 py-2 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-medium" title={resolveRequestHistoryTitle(item)}>
-                  #{item.id} · {resolveRequestHistoryTitle(item)}
+                <span className="min-w-0 truncate font-medium" title={resolveRequestHistoryHeading(item)}>
+                  {resolveRequestHistoryHeading(item)}
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
