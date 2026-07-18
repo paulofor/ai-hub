@@ -443,6 +443,11 @@ const parseMarketingStructuredTitle = (content?: string): string => {
 const resolveRequestHistoryTitle = (request: CodexRequest): string =>
   request.requestTitle || request.problemTitle || parseMarketingStructuredTitle(request.responseText) || request.model;
 
+const resolveRequestHistoryHeading = (request: CodexRequest): string =>
+  request.status === 'COMPLETED'
+    ? `#${request.id} · ${resolveRequestHistoryTitle(request)}`
+    : `#${request.id}`;
+
 const MarkdownMessage = ({ content }: { content: string }) => {
   const normalized = stripModelThinking(content);
   const blocks = normalized.split(/(```[\s\S]*?```)/g).filter((block) => block.length > 0);
@@ -2029,8 +2034,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {requests.map((item) => (
             <li key={item.id} className="rounded-md border px-3 py-2 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-medium" title={resolveRequestHistoryTitle(item)}>
-                  #{item.id} · {resolveRequestHistoryTitle(item)}
+                <span className="min-w-0 truncate font-medium" title={resolveRequestHistoryHeading(item)}>
+                  {resolveRequestHistoryHeading(item)}
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>

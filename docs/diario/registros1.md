@@ -199,6 +199,12 @@
 
 - 2026-05-14 17:40:00 UTC — Correção adicional da causa raiz para persistência de push no owner incorreto (`paulofor`): o fallback de `GHCR_USERNAME` no workflow ainda dependia de `github.repository_owner` quando segredo não existia, mantendo namespace errado em forks/migrações; padronizado fallback para `secrets.GHCR_USERNAME` -> `vars.GHCR_USERNAME` -> `paulodb` tanto no job `docker` quanto no `deploy` e no cleanup (`GHCR_OWNER`), garantindo consistência total do namespace no build, pull e limpeza de tags.
 
+## 2026-07-17 23:06:59 UTC-3
+- Solicitação recebida: na lista de últimas execuções do Codex ChatGPT MKT, exibir o título somente em execuções concluídas e deixar execuções em andamento, pendentes e canceladas sem título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend montava o cabeçalho do card sempre como `#id · título`, usando `requestTitle`, `problemTitle`, título estruturado da resposta ou modelo sem condicionar pelo status da execução.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada resolução de cabeçalho do histórico que mantém `#id · título` apenas para `COMPLETED`; para demais status, o cabeçalho passa a exibir somente `#id`.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend ci --include=dev`.
+
 ## 2026-05-14 16:32:50 UTC-3
 - Diagnóstico da causa raiz da falha no job `docker` do GitHub Actions: push para `ghcr.io/paulodb/ai-hub-6-caddy:latest` negado com `permission_denied: The requested installation does not exist`, indicando namespace/owner de registry divergente do owner onde o workflow roda (`paulofor`) e/ou ausência de autorização do GitHub App/Actions para publicar no pacote alvo.
 - Orientação operacional no GitHub para restabelecer o pipeline: alinhar todas as tags de imagem para `ghcr.io/paulofor/*`, garantir `permissions: packages: write` no workflow e habilitar acesso do repositório ao pacote no GHCR (Package settings > Manage Actions access).
@@ -1946,3 +1952,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/CodexRequestService.java`: `prepareRequestSummary` agora tenta extrair `titulo`/`título`/`title` de JSON direto, JSON serializado como string, bloco cercado por ```json ou conteúdo com JSON embutido; se não encontrar, mantém o fallback para a última mensagem do usuário.
 - Teste adicionado em `apps/backend/src/test/java/com/aihub/hub/service/CodexRequestServiceTest.java`: `listPageUsesStructuredModelTitleBeforePromptTitle` garante que `{"titulo":"Histórico com títulos", ...}` prevalece sobre o prompt no `requestTitle` retornado à lista.
 - Validação executada: `mvn -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test` passou com 32 testes; `mvn -f apps/backend/pom.xml test` passou com 79 testes. Não foi criado Pull Request.
+
+## 2026-07-17 23:07:26 UTC-3
+- Correção administrativa: a entrada `2026-07-17 23:06:59 UTC-3` sobre títulos somente em execuções concluídas foi inserida em ponto intermediário do arquivo por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+- Solicitação recebida: na lista de últimas execuções do Codex ChatGPT MKT, exibir o título somente em execuções concluídas e deixar execuções em andamento, pendentes e canceladas sem título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend montava o cabeçalho do card sempre como `#id · título`, usando `requestTitle`, `problemTitle`, título estruturado da resposta ou modelo sem condicionar pelo status da execução.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada resolução de cabeçalho do histórico que mantém `#id · título` apenas para `COMPLETED`; para demais status, o cabeçalho passa a exibir somente `#id`.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend ci --include=dev`.
