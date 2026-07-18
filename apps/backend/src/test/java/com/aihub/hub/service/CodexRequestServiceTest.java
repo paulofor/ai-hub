@@ -258,7 +258,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, null
+            null, null, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -272,6 +272,39 @@ class CodexRequestServiceTest {
         assertThat(summaries.get(0).prompt()).hasSizeLessThanOrEqualTo(2000);
         verify(sandboxOrchestratorClient, never()).getJob("job-running-page");
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
+    }
+
+    @Test
+    void listPageUsesStructuredModelTitleBeforePromptTitle() {
+        CodexRequest request = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.CHATGPT_CODEX_MKT,
+            "Instruções internas\n\nÚltima mensagem do usuário:\nNo 'ultimas execuções' vc esta colocando o titulo errado."
+        );
+        request.setStatus(CodexRequestStatus.COMPLETED);
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(2)));
+        request.setResponseText("{\"titulo\":\"Histórico com títulos\",\"comentario\":\"ok\",\"orientacaoProximaAcao\":\"\",\"sugestaoMelhoriaAmbiente\":\"\"}");
+
+        CodexRequestSummary summary = new CodexRequestSummary(
+            124L, request.getEnvironment(), request.getModel(), request.getVersion(), request.getProfile(), request.getPrompt(),
+            request.getStatus(), request.getRating(), request.getExternalId(), request.getPullRequestUrl(), request.getWorkBranch(),
+            request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
+            request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
+            request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
+            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
+            null, null, request.getResponseText(), null
+        );
+        when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(summary)));
+
+        CodexRequestService service = buildService();
+
+        List<CodexRequestSummary> summaries = service.listPage(0, 5, null).getContent();
+
+        assertThat(summaries).hasSize(1);
+        assertThat(summaries.get(0).requestTitle()).isEqualTo("Histórico com títulos");
+        assertThat(summaries.get(0).responseText()).isEqualTo(request.getResponseText());
     }
 
     @Test

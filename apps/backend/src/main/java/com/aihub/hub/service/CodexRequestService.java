@@ -18,6 +18,7 @@ import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.dto.UpdatePendingCodexRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
@@ -71,6 +72,7 @@ public class CodexRequestService {
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
     private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
     private static final int REQUEST_TITLE_LIMIT = 140;
+    private static final Pattern JSON_FENCE_PATTERN = Pattern.compile("(?is)```(?:json)?\\s*([\\s\\S]*?)\\s*```");
     private static final Pattern LAST_USER_MESSAGE_PATTERN = Pattern.compile(
         "(?s)(?:^|\\R)Última mensagem do usuário:\\s*\\R?(.+?)\\s*$"
     );
@@ -302,8 +304,16 @@ public class CodexRequestService {
         String fullPrompt = summary.prompt();
         return summary.withPromptAndRequestTitle(
             abbreviate(fullPrompt, SUMMARY_PROMPT_PREVIEW_LIMIT),
-            buildRequestTitle(fullPrompt)
+            buildRequestTitle(fullPrompt, summary.responseText())
         );
+    }
+
+    private String buildRequestTitle(String prompt, String responseText) {
+        String structuredTitle = extractMarketingStructuredTitle(responseText);
+        if (StringUtils.hasText(structuredTitle)) {
+            return abbreviate(normalizeTitle(structuredTitle), REQUEST_TITLE_LIMIT);
+        }
+        return buildRequestTitle(prompt);
     }
 
     private String buildRequestTitle(String prompt) {
@@ -314,6 +324,61 @@ public class CodexRequestService {
         Matcher matcher = LAST_USER_MESSAGE_PATTERN.matcher(prompt);
         String candidate = matcher.find() ? matcher.group(1) : prompt;
         return abbreviate(normalizeTitle(candidate), REQUEST_TITLE_LIMIT);
+    }
+
+    private String extractMarketingStructuredTitle(String content) {
+        String candidate = extractJsonObjectCandidate(content);
+        if (!StringUtils.hasText(candidate)) {
+            return "";
+        }
+        try {
+            JsonNode node = objectMapper.readTree(candidate);
+            if (node != null && node.isTextual()) {
+                return extractMarketingStructuredTitle(node.asText());
+            }
+            if (node == null || !node.isObject()) {
+                return "";
+            }
+            for (String key : List.of("titulo", "título", "title")) {
+                JsonNode title = node.get(key);
+                if (title != null && title.isTextual() && StringUtils.hasText(title.asText())) {
+                    return title.asText().trim();
+                }
+            }
+        } catch (JsonProcessingException ignored) {
+            return "";
+        }
+        return "";
+    }
+
+    private String extractJsonObjectCandidate(String content) {
+        if (!StringUtils.hasText(content)) {
+            return "";
+        }
+        String trimmed = content.trim();
+        try {
+            JsonNode node = objectMapper.readTree(trimmed);
+            if (node != null && node.isTextual()) {
+                return extractJsonObjectCandidate(node.asText());
+            }
+            if (node != null && node.isObject()) {
+                return trimmed;
+            }
+        } catch (JsonProcessingException ignored) {
+            // Continue with tolerant extraction for fenced or wrapped model output.
+        }
+
+        Matcher fenceMatcher = JSON_FENCE_PATTERN.matcher(trimmed);
+        if (fenceMatcher.find()) {
+            return extractJsonObjectCandidate(fenceMatcher.group(1));
+        }
+
+        int start = trimmed.indexOf('{');
+        int end = trimmed.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return trimmed.substring(start, end + 1);
+        }
+        return "";
     }
 
     private String normalizeTitle(String value) {

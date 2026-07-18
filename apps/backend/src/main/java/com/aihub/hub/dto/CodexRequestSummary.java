@@ -2,6 +2,7 @@ package com.aihub.hub.dto;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -38,6 +39,8 @@ public record CodexRequestSummary(
     Integer interactionCount,
     Long problemId,
     String problemTitle,
+    @JsonIgnore
+    String responseText,
     String requestTitle
 ) {
     public CodexRequestSummary withPromptAndRequestTitle(String prompt, String requestTitle) {
@@ -46,7 +49,7 @@ public record CodexRequestSummary(
             workBranch, workBatchKey, promptTokens, cachedPromptTokens, completionTokens, totalTokens,
             promptCost, cachedPromptCost, completionCost, cost, timeoutCount, httpGetCount, httpGetSuccessCount,
             dbQueryCount, startedAt, finishedAt, durationMs, createdAt, interactionCount, problemId, problemTitle,
-            requestTitle
+            responseText, requestTitle
         );
     }
 }

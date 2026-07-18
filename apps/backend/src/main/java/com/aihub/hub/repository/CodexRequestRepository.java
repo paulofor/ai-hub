@@ -24,7 +24,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, ''
+            problem.id, problem.title, cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
@@ -41,7 +41,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, ''
+            problem.id, problem.title, cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
