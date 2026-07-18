@@ -18,6 +18,7 @@ export interface CodexRequest {
   problemDescription?: string;
   problemId?: number;
   problemTitle?: string;
+  requestTitle?: string;
   resolutionDifficulty?: string;
   executionLog?: string;
   promptTokens?: number;
@@ -200,6 +201,12 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
       ? ((item as Record<string, unknown>).problem_title as string)
       : undefined;
   const problemTitle = problemTitleRaw && problemTitleRaw.trim() ? problemTitleRaw.trim() : undefined;
+  const requestTitleRaw = typeof item.requestTitle === 'string'
+    ? item.requestTitle
+    : typeof (item as Record<string, unknown>).request_title === 'string'
+      ? ((item as Record<string, unknown>).request_title as string)
+      : undefined;
+  const requestTitle = requestTitleRaw && requestTitleRaw.trim() ? requestTitleRaw.trim() : undefined;
   const pullRequestUrlRaw = typeof item.pullRequestUrl === 'string'
     ? item.pullRequestUrl
     : typeof (item as Record<string, unknown>).pull_request_url === 'string'
@@ -280,7 +287,8 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     dbQueryCount,
     interactionCount,
     problemId: problemId ?? undefined,
-    problemTitle: problemTitle ?? undefined
+    problemTitle: problemTitle ?? undefined,
+    requestTitle: requestTitle ?? undefined
   };
 };
 

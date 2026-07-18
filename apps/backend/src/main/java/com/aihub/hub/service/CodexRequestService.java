@@ -69,6 +69,11 @@ public class CodexRequestService {
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
     private static final Set<Long> SANDBOX_REFRESHES_IN_PROGRESS = ConcurrentHashMap.newKeySet();
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
+    private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
+    private static final int REQUEST_TITLE_LIMIT = 140;
+    private static final Pattern LAST_USER_MESSAGE_PATTERN = Pattern.compile(
+        "(?s)(?:^|\\R)Última mensagem do usuário:\\s*\\R?(.+?)\\s*$"
+    );
 
     private final CodexRequestRepository codexRequestRepository;
     private final PromptRepository promptRepository;
@@ -287,9 +292,47 @@ public class CodexRequestService {
     @Transactional(readOnly = true)
     public Page<CodexRequestSummary> listPage(int page, int size, Integer rating) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        return rating == null
+        Page<CodexRequestSummary> summaries = rating == null
             ? codexRequestRepository.findSummariesByOrderByCreatedAtDesc(pageRequest)
             : codexRequestRepository.findSummariesByRatingOrderByCreatedAtDesc(rating, pageRequest);
+        return summaries.map(this::prepareRequestSummary);
+    }
+
+    private CodexRequestSummary prepareRequestSummary(CodexRequestSummary summary) {
+        String fullPrompt = summary.prompt();
+        return summary.withPromptAndRequestTitle(
+            abbreviate(fullPrompt, SUMMARY_PROMPT_PREVIEW_LIMIT),
+            buildRequestTitle(fullPrompt)
+        );
+    }
+
+    private String buildRequestTitle(String prompt) {
+        if (!StringUtils.hasText(prompt)) {
+            return "";
+        }
+
+        Matcher matcher = LAST_USER_MESSAGE_PATTERN.matcher(prompt);
+        String candidate = matcher.find() ? matcher.group(1) : prompt;
+        return abbreviate(normalizeTitle(candidate), REQUEST_TITLE_LIMIT);
+    }
+
+    private String normalizeTitle(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        String normalized = value
+            .replaceAll("(?m)^Arquivos anexados pelo usuário foram salvos no repositório temporário\\..*$", "")
+            .replaceAll("(?m)^- \\d+\\. .*", "")
+            .replaceAll("\\s+", " ")
+            .trim();
+        return normalized;
+    }
+
+    private String abbreviate(String value, int limit) {
+        if (value == null || value.length() <= limit) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, limit - 1)).trim() + "…";
     }
 
     @Transactional(readOnly = true)

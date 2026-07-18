@@ -122,7 +122,12 @@ class CodexRequestServiceTest {
 
     @Test
     void findAppliesFallbackAndStopsRefreshingWhenSandboxJobIsMissing() {
-        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        CodexRequest request = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "Instruções internas\n\nHistórico da conversa:\nUsuário: mensagem anterior\n\nÚltima mensagem do usuário:\ncoloque para aparecer os titulos das solicitações nos historico"
+        );
         request.setExternalId("job-123");
         request.setStatus(CodexRequestStatus.FAILED);
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(20)));
@@ -236,7 +241,12 @@ class CodexRequestServiceTest {
 
     @Test
     void listPageDoesNotRefreshRunningRequestDuringPolling() {
-        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        CodexRequest request = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "Instruções internas\n\nHistórico da conversa:\nUsuário: mensagem anterior\n\nÚltima mensagem do usuário:\ncoloque para aparecer os titulos das solicitações nos historico"
+        );
         request.setExternalId("job-running-page");
         request.setStatus(CodexRequestStatus.RUNNING);
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
@@ -248,14 +258,18 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null
+            null, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
 
         CodexRequestService service = buildService();
 
-        assertThat(service.listPage(0, 5, null).getContent()).containsExactly(summary);
+        List<CodexRequestSummary> summaries = service.listPage(0, 5, null).getContent();
+        assertThat(summaries).hasSize(1);
+        assertThat(summaries.get(0).requestTitle())
+            .isEqualTo("coloque para aparecer os titulos das solicitações nos historico");
+        assertThat(summaries.get(0).prompt()).hasSizeLessThanOrEqualTo(2000);
         verify(sandboxOrchestratorClient, never()).getJob("job-running-page");
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }

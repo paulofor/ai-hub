@@ -37,6 +37,16 @@ public record CodexRequestSummary(
     Instant createdAt,
     Integer interactionCount,
     Long problemId,
-    String problemTitle
+    String problemTitle,
+    String requestTitle
 ) {
+    public CodexRequestSummary withPromptAndRequestTitle(String prompt, String requestTitle) {
+        return new CodexRequestSummary(
+            id, environment, model, version, profile, prompt, status, rating, externalId, pullRequestUrl,
+            workBranch, workBatchKey, promptTokens, cachedPromptTokens, completionTokens, totalTokens,
+            promptCost, cachedPromptCost, completionCost, cost, timeoutCount, httpGetCount, httpGetSuccessCount,
+            dbQueryCount, startedAt, finishedAt, durationMs, createdAt, interactionCount, problemId, problemTitle,
+            requestTitle
+        );
+    }
 }

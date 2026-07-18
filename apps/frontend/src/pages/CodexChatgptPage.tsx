@@ -440,6 +440,9 @@ const parseMarketingStructuredTitle = (content?: string): string => {
   return parseMarketingStructuredResponse(content)?.titulo ?? '';
 };
 
+const resolveRequestHistoryTitle = (request: CodexRequest): string =>
+  request.requestTitle || request.problemTitle || parseMarketingStructuredTitle(request.responseText) || request.model;
+
 const MarkdownMessage = ({ content }: { content: string }) => {
   const normalized = stripModelThinking(content);
   const blocks = normalized.split(/(```[\s\S]*?```)/g).filter((block) => block.length > 0);
@@ -2026,12 +2029,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {requests.map((item) => (
             <li key={item.id} className="rounded-md border px-3 py-2 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 font-medium">
-                  #{item.id} · {parseMarketingStructuredTitle(item.responseText) || item.model}
+                <span className="min-w-0 truncate font-medium" title={resolveRequestHistoryTitle(item)}>
+                  #{item.id} · {resolveRequestHistoryTitle(item)}
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
-              {parseMarketingStructuredTitle(item.responseText) ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
+              {resolveRequestHistoryTitle(item) !== item.model ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
