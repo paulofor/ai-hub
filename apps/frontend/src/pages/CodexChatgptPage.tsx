@@ -441,7 +441,7 @@ const parseMarketingStructuredTitle = (content?: string): string => {
 };
 
 const resolveRequestHistoryTitle = (request: CodexRequest): string =>
-  request.requestTitle || request.problemTitle || parseMarketingStructuredTitle(request.responseText) || request.model;
+  request.requestTitle || request.problemTitle || parseMarketingStructuredTitle(request.responseText);
 
 const resolveRequestHistoryHeading = (request: CodexRequest): string =>
   request.status === 'COMPLETED'
@@ -2039,7 +2039,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
-              {resolveRequestHistoryTitle(item) !== item.model ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
+              {item.model ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
