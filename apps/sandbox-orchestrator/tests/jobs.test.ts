@@ -696,6 +696,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
     assert.ok(input?.[0]?.text?.includes('"titulo"'));
+    assert.ok(input?.[0]?.text?.includes('O campo opcional "orientacaoProximaAcao"'));
+    assert.ok(input?.[0]?.text?.includes('quando a solicitação já tiver sido implementada'));
+    assert.ok(input?.[0]?.text?.includes('omita esse campo'));
     assert.ok(input?.[0]?.text?.includes('"sugestaoMelhoriaAmbiente"'));
     assert.ok(input?.[0]?.text?.includes('melhoria do ambiente de execução'));
     assert.ok(input?.[0]?.text?.includes('cliente de e-mail descartável'));
