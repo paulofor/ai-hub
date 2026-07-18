@@ -67,12 +67,16 @@ test('docker compose monta e exporta credenciais AWS para o sandbox-orchestrator
   assert.match(compose, /AWS_SESSION_TOKEN=/);
 });
 
-test('imagem da sandbox instala Docker Compose v2 como plugin do Docker CLI', async () => {
+test('imagem da sandbox instala ferramentas de execução e validação do runner', async () => {
   const dockerfile = await fs.readFile(path.resolve('Dockerfile'), 'utf8');
 
   assert.match(dockerfile, /https:\/\/download\.docker\.com\/linux\/debian/);
   assert.match(dockerfile, /\bdocker-ce-cli\b/);
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
+  assert.match(dockerfile, /\bgh\b/);
+  assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
+  assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
+  assert.match(dockerfile, /actionlint --version/);
   assert.doesNotMatch(dockerfile, /\bdocker\.io\b/);
 });
 
@@ -2799,8 +2803,10 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
     assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
+    assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
+    assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
     assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
     assert.match(promptText, /Chromium headless em \/usr\/bin\/chromium/i);
     assert.match(promptText, /navegador headless disponível para screenshots: chromium/i);

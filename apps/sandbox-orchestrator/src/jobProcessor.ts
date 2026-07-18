@@ -246,6 +246,7 @@ interface RunnerEnvironmentState {
   essentialTools: string[];
   dockerTools: string[];
   cloudTools: string[];
+  githubCiTools: string[];
   awsCredentialsAvailable: boolean;
   browserTools: string[];
   supplementalBinPath?: string;
@@ -1302,6 +1303,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'O Docker CLI e o plugin Docker Compose v2 estão disponíveis para o modelo pelos comandos docker e docker compose; use docker compose preferencialmente a docker-compose, e valide a engine com docker version/docker compose version antes de depender de containers.';
   }
 
+  private buildGithubCiInstruction(): string {
+    return 'O GitHub CLI e o actionlint estão disponíveis para o modelo pelos comandos gh e actionlint; use gh para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em .github/workflows.';
+  }
+
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const localDevelopmentInstruction = 'Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado, registrando qualquer limitação real de ambiente que impeça a execução local.';
@@ -1462,6 +1467,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const checklist = this.buildEnvironmentChecklist(environmentState);
     const awsCliInstruction = this.buildAwsCliInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
+    const githubCiInstruction = this.buildGithubCiInstruction();
     const noPrButEditInstruction = 'Não criar Pull Request sem pedido explícito não significa evitar alterações: quando o usuário solicitar ajuste, correção ou implementação e você identificar a solução, altere os arquivos necessários, valide e deixe as mudanças prontas na branch/worktree; apenas não abra nem publique o PR até o usuário pedir.';
 
     const tools = this.buildTools(repoPath);
@@ -1506,7 +1512,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. O sandbox possui Chromium headless em /usr/bin/chromium e as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${dockerCliInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. O sandbox possui Chromium headless em /usr/bin/chromium e as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${dockerCliInstruction} ${githubCiInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
@@ -4145,6 +4151,7 @@ ${stderr}`);
     const browserTools = ['chromium'];
     const dockerTools: string[] = [];
     const cloudTools: string[] = [];
+    const githubCiTools: string[] = [];
     const hardRequirements = ['bash', 'git'];
     for (const tool of hardRequirements) {
       const available = await this.isCommandAvailable(tool);
@@ -4166,6 +4173,12 @@ ${stderr}`);
     if (await this.isCommandAvailable('aws')) {
       cloudTools.push('aws');
     }
+    if (await this.isCommandAvailable('gh')) {
+      githubCiTools.push('gh');
+    }
+    if (await this.isCommandAvailable('actionlint')) {
+      githubCiTools.push('actionlint');
+    }
     if (await this.isCommandAvailable('docker')) {
       dockerTools.push('docker');
     }
@@ -4186,6 +4199,7 @@ ${stderr}`);
       essentialTools,
       dockerTools,
       cloudTools,
+      githubCiTools,
       awsCredentialsAvailable,
       browserTools,
       supplementalBinPath,
@@ -4216,6 +4230,7 @@ ${stderr}`);
       `- [x] tools essenciais: ${state.essentialTools.join(', ')}`,
       `- [x] ferramentas Docker disponíveis: ${state.dockerTools.length > 0 ? state.dockerTools.join(', ') : 'nenhuma detectada'}`,
       `- [x] ferramentas cloud disponíveis: ${state.cloudTools.length > 0 ? state.cloudTools.join(', ') : 'nenhuma detectada'}`,
+      `- [x] ferramentas GitHub/CI disponíveis: ${state.githubCiTools.length > 0 ? state.githubCiTools.join(', ') : 'nenhuma detectada'}`,
       `- [x] credenciais AWS exportadas: ${state.awsCredentialsAvailable ? 'sim' : 'não'}`,
       `- [x] navegador headless disponível para screenshots: ${state.browserTools.join(', ')} (/usr/bin/chromium; CHROME_BIN/CHROMIUM_BIN/PUPPETEER_EXECUTABLE_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)`,
       `- [x] estado validado em: ${state.validatedAt}`,
