@@ -18,13 +18,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
             cr.id, cr.environment, cr.model, cr.version, cr.profile,
-            substring(cr.prompt, 1, 2000), cr.status, cr.rating, cr.externalId,
+            cr.prompt, cr.status, cr.rating, cr.externalId,
             cr.pullRequestUrl, cr.workBranch, cr.workBatchKey,
             cr.promptTokens, cr.cachedPromptTokens, cr.completionTokens, cr.totalTokens,
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title
+            problem.id, problem.title, ''
         )
         from CodexRequest cr
         left join cr.problem problem
@@ -35,13 +35,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
             cr.id, cr.environment, cr.model, cr.version, cr.profile,
-            substring(cr.prompt, 1, 2000), cr.status, cr.rating, cr.externalId,
+            cr.prompt, cr.status, cr.rating, cr.externalId,
             cr.pullRequestUrl, cr.workBranch, cr.workBatchKey,
             cr.promptTokens, cr.cachedPromptTokens, cr.completionTokens, cr.totalTokens,
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title
+            problem.id, problem.title, ''
         )
         from CodexRequest cr
         left join cr.problem problem
