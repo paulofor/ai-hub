@@ -225,6 +225,16 @@
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
 
+## 2026-07-18 20:33:36 UTC - jq na imagem da sandbox
+
+- Solicitação recebida: instalar `jq` na imagem da sandbox.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem `sandbox-orchestrator` instala várias ferramentas úteis via `apt-get`, mas o pacote `jq` não estava incluído na lista de dependências, deixando o utilitário ausente em sandboxes novas.
+- Alternativas avaliadas: (1) instalar `jq` apenas no container atual, rápido mas não persiste em rebuilds; (2) documentar a necessidade sem alterar a imagem, baixo risco mas mantém a falha operacional; (3) adicionar `jq` ao Dockerfile da `sandbox-orchestrator` e documentar a ferramenta disponível. Escolhida a alternativa 3 por corrigir a causa raiz e manter o ambiente reprodutível.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado `jq` à instalação de pacotes Debian da imagem de produção.
+- Documentação atualizada em `docs/sandbox-architecture.md`: registrado que `jq` fica pré-instalado para inspeção, transformação e validação de JSON dentro da sandbox.
+- Validação executada: `apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends jq && jq --version` passou no container atual com `jq-1.6`; `docker compose config --quiet` passou; `git diff --check` passou.
+- Limitação de ambiente: não foi possível executar build Docker local porque o daemon não está acessível em `/var/run/docker.sock`. Não foi criado Pull Request.
+
 ## 2026-07-18 19:47:32 UTC - Orientação sobre Playwright versionado no frontend
 
 - Solicitação recebida: avaliar como atender a sugestão “Ter Playwright já instalado no projeto facilitaria repetir validações visuais sem instalação temporária.”
