@@ -225,6 +225,17 @@
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
 
+## 2026-07-19 00:27:08 UTC - Consolidação da verificação do actionlint
+
+- Correção administrativa final: a entrada sobre `actionlint` na imagem da sandbox foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o trabalho no final correto do arquivo.
+- Solicitação recebida: colocar a instalação do `actionlint` na imagem da sandbox usada pelo modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a necessidade decorre do fato de o modelo validar e corrigir workflows GitHub Actions no runner; se a imagem `ai-hub-6-sandbox` não trouxer `actionlint`, a validação anunciada ao modelo ficaria indisponível.
+- Alternativas avaliadas: (1) instalar `actionlint` sob demanda por job, com maior latência e dependência de rede; (2) depender de pacote de distribuição, com menor manutenção mas menor controle de versão; (3) manter binário oficial versionado no Dockerfile da sandbox e validar no build. A alternativa 3 é a melhor para previsibilidade e já estava aplicada no repositório.
+- Evidências verificadas: `docker-compose.yml` usa `apps/sandbox-orchestrator` como build context da imagem `ghcr.io/paulofor/ai-hub-6-sandbox:latest`; `apps/sandbox-orchestrator/Dockerfile` já define `ARG ACTIONLINT_VERSION=1.7.12`, baixa `rhysd/actionlint`, instala em `/usr/local/bin/actionlint` e executa `actionlint --version`; `apps/sandbox-orchestrator/src/jobProcessor.ts` detecta `actionlint` no preflight e inclui a ferramenta na instrução enviada ao modelo.
+- Ajuste de código: nenhum ajuste necessário além deste registro, porque a instalação solicitada já está presente na imagem correta e coberta por teste.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala ferramentas" dist/tests/jobs.test.js` passou quando executado em `apps/sandbox-orchestrator`.
+- Observação de ambiente: o primeiro teste filtrado falhou quando executado a partir da raiz do repositório porque o teste resolve `Dockerfile` pelo diretório atual; a repetição no diretório correto passou. O `npm ci` reportou 7 vulnerabilidades existentes no grafo do pacote, sem alteração de dependências por estar fora do escopo. O cliente Docker está instalado, mas não há daemon acessível em `/var/run/docker.sock`, então não foi possível rebuildar a imagem localmente. Não foi criado Pull Request.
+
 ## 2026-07-18 20:57:47 UTC - GitHub CLI e actionlint na sandbox do modelo
 
 - Solicitação recebida: colocar `gh` e `actionlint` na sandbox para o modelo.
@@ -1973,6 +1984,16 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o diálogo é carregado do `localStorage` na inicialização e salvo após cada alteração, em chave separada para cada perfil ChatGPT. O conteúdo persistido é validado antes de ser usado; se o browser bloquear/limitar o armazenamento, a conversa continua funcionando na sessão atual sem interromper a interface.
 - Compatibilidade: o botão “Zerar e descartar lote” continua limpando o diálogo e, consequentemente, remove o estado persistido. Solicitações ainda em execução são restauradas e continuam sendo atualizadas pelo polling existente.
 - Validação executada: `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+
+## 2026-07-19 00:27:08 UTC - Verificação do actionlint na imagem da sandbox
+
+- Solicitação recebida: colocar a instalação do `actionlint` na imagem da sandbox usada pelo modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a necessidade existia porque o modelo precisa validar workflows GitHub Actions dentro do runner; sem `actionlint` na imagem `ai-hub-6-sandbox`, o prompt poderia recomendar validação que o ambiente não conseguiria executar.
+- Alternativas avaliadas: (1) instalar `actionlint` sob demanda em cada job, simples mas lento e dependente de rede por execução; (2) usar pacote de distribuição via gerenciador de pacotes, menor script mas sem garantia de versão atual/disponível no Debian; (3) instalar o binário oficial versionado no Dockerfile da sandbox, validando `actionlint --version` no build. A alternativa 3 é a mais aderente ao objetivo e já estava aplicada no repositório.
+- Evidências verificadas: `docker-compose.yml` usa `apps/sandbox-orchestrator` como build context da imagem `ghcr.io/paulofor/ai-hub-6-sandbox:latest`; `apps/sandbox-orchestrator/Dockerfile` define `ARG ACTIONLINT_VERSION=1.7.12`, baixa o release oficial `rhysd/actionlint`, instala em `/usr/local/bin/actionlint` e executa `actionlint --version`; `apps/sandbox-orchestrator/src/jobProcessor.ts` detecta `actionlint` no preflight e informa a disponibilidade ao modelo.
+- Ajuste de código: nenhum ajuste necessário, porque a instalação solicitada já está presente na imagem correta e coberta por teste automatizado.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala ferramentas" dist/tests/jobs.test.js` passou quando executado em `apps/sandbox-orchestrator`.
+- Observação de ambiente: o primeiro teste filtrado falhou quando executado a partir da raiz do repositório porque o teste usa `path.resolve('Dockerfile')`; a repetição no diretório correto passou. O `npm ci` reportou 7 vulnerabilidades existentes no grafo do pacote, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
 
 ## 2026-07-17 18:00:00 UTC - Proposta de construção com avaliação por persona
 
