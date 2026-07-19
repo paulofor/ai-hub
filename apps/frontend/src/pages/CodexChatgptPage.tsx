@@ -462,6 +462,17 @@ const MarkdownMessage = ({ content }: { content: string }) => {
   </div>;
 };
 
+const CopyIcon = ({ copied }: { copied: boolean }) => (
+  copied
+    ? <span aria-hidden="true" className="text-sm font-semibold">✓</span>
+    : (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+      </svg>
+    )
+);
+
 interface AssistantMessageBodyProps {
   content: string;
   marketing: boolean;
@@ -471,27 +482,27 @@ interface AssistantMessageBodyProps {
 
 const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
   const structured = marketing ? parseMarketingStructuredResponse(content) : null;
-  const [copiedOrientation, setCopiedOrientation] = useState(false);
-  const copiedOrientationTimeoutRef = useRef<number | null>(null);
+  const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
+  const copiedTimeoutRef = useRef<number | null>(null);
   const orientationRequested = structured?.orientacaoProximaAcao ? isOrientationRequested(structured.orientacaoProximaAcao) : false;
 
   useEffect(() => () => {
-    if (copiedOrientationTimeoutRef.current) {
-      window.clearTimeout(copiedOrientationTimeoutRef.current);
+    if (copiedTimeoutRef.current) {
+      window.clearTimeout(copiedTimeoutRef.current);
     }
   }, []);
 
-  const handleCopyOrientation = useCallback(async () => {
-    if (!structured?.orientacaoProximaAcao) {
+  const handleCopyStructuredText = useCallback(async (field: 'comentario' | 'orientacao' | 'melhoria', text?: string) => {
+    if (!text) {
       return;
     }
-    await copyTextToClipboard(structured.orientacaoProximaAcao);
-    setCopiedOrientation(true);
-    if (copiedOrientationTimeoutRef.current) {
-      window.clearTimeout(copiedOrientationTimeoutRef.current);
+    await copyTextToClipboard(text);
+    setCopiedField(field);
+    if (copiedTimeoutRef.current) {
+      window.clearTimeout(copiedTimeoutRef.current);
     }
-    copiedOrientationTimeoutRef.current = window.setTimeout(() => setCopiedOrientation(false), 2000);
-  }, [structured?.orientacaoProximaAcao]);
+    copiedTimeoutRef.current = window.setTimeout(() => setCopiedField(null), 2000);
+  }, []);
 
   const handleRequestOrientation = useCallback(() => {
     if (!structured?.orientacaoProximaAcao) {
@@ -510,7 +521,18 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
       <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">{structured.titulo}</p>
     </section> : null}
     {structured.comentario ? <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
+        <button
+          type="button"
+          onClick={() => handleCopyStructuredText('comentario', structured.comentario)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/80 text-slate-600 transition hover:border-slate-500 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-slate-100"
+          title="Copiar comentário"
+          aria-label="Copiar comentário"
+        >
+          <CopyIcon copied={copiedField === 'comentario'} />
+        </button>
+      </div>
       <MarkdownMessage content={structured.comentario} />
     </section> : null}
     {structured.orientacaoProximaAcao ? <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30">
@@ -529,12 +551,12 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
           </button>
           <button
             type="button"
-            onClick={handleCopyOrientation}
+            onClick={() => handleCopyStructuredText('orientacao', structured.orientacaoProximaAcao)}
             className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-emerald-300 bg-white/80 text-emerald-700 transition hover:border-emerald-500 hover:bg-white hover:text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:border-emerald-500 dark:hover:text-emerald-100"
             title="Copiar orientação"
             aria-label="Copiar orientação"
           >
-            {copiedOrientation ? '✓' : '⧉'}
+            <CopyIcon copied={copiedField === 'orientacao'} />
           </button>
         </div>
       </div>
@@ -543,7 +565,18 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
       </div>
     </section> : null}
     {structured.sugestaoMelhoriaAmbiente ? <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
-      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Sugestão de melhoria para o ambiente</h4>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Sugestão de melhoria para o ambiente</h4>
+        <button
+          type="button"
+          onClick={() => handleCopyStructuredText('melhoria', structured.sugestaoMelhoriaAmbiente)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-amber-300 bg-white/80 text-amber-700 transition hover:border-amber-500 hover:bg-white hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:border-amber-500 dark:hover:text-amber-100"
+          title="Copiar sugestão de melhoria"
+          aria-label="Copiar sugestão de melhoria"
+        >
+          <CopyIcon copied={copiedField === 'melhoria'} />
+        </button>
+      </div>
       <div className="text-amber-950 dark:text-amber-100">
         <MarkdownMessage content={structured.sugestaoMelhoriaAmbiente} />
       </div>
@@ -875,7 +908,9 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   historyTitle: 'Últimas execuções ChatGPT',
   placeholder: 'Digite sua mensagem para o modelo... Cole prints com Ctrl+V. Quando estiver pronto, use Pedir PR.',
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
-  promptExtraLines: []
+  promptExtraLines: [
+    'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.'
+  ]
 };
 
 const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
@@ -889,6 +924,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptExtraLines: [
     'Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub.',
     'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
+    'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
