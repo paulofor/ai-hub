@@ -340,6 +340,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly runnerEnvironmentStates: WeakMap<SandboxJob, RunnerEnvironmentState> = new WeakMap();
   private readonly codexAppServerClient?: CodexAppServerClient;
   private readonly codexTurnTimeoutMs: number;
+  private readonly codexTurnNoActivityTimeoutMs: number;
   private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
 
   constructor(
@@ -358,6 +359,7 @@ export class SandboxJobProcessor implements JobProcessor {
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
     this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 120 * 60 * 1000);
+    this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS, 3 * 60 * 1000);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
@@ -1199,10 +1201,16 @@ export class SandboxJobProcessor implements JobProcessor {
     let finalAgentMessage = '';
     let streamingAgentMessage = '';
     let firstEventAt: number | undefined;
+    let lastActivityAt: number | undefined;
+    const markActivity = (): void => {
+      const now = Date.now();
+      firstEventAt = firstEventAt ?? now;
+      lastActivityAt = now;
+    };
     const startedAt = Date.now();
     const unsubscribeCallbacks = [
       client.onNotification('item/agentMessage/delta', (params) => {
-        firstEventAt = firstEventAt ?? Date.now();
+        markActivity();
         const delta = this.extractCodexText(params) ?? '';
         if (delta) {
           streamingAgentMessage += delta;
@@ -1210,7 +1218,7 @@ export class SandboxJobProcessor implements JobProcessor {
         }
       }),
       client.onNotification('item/completed', (params) => {
-        firstEventAt = firstEventAt ?? Date.now();
+        markActivity();
         this.addCodexAppServerUsageMetrics(job, params);
         const text = this.extractCodexAgentMessageText(params);
         if (text) {
@@ -1221,15 +1229,15 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(job, `Codex App Server item/completed ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
       client.onNotification('item/started', (params) => {
-        firstEventAt = firstEventAt ?? Date.now();
+        markActivity();
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
       client.onNotification('thread/tokenUsage/updated', (params) => {
-        firstEventAt = firstEventAt ?? Date.now();
+        markActivity();
         this.addCodexAppServerUsageMetrics(job, params);
       }),
       client.onNotification('turn/completed', (params) => {
-        firstEventAt = firstEventAt ?? Date.now();
+        markActivity();
         this.addCodexAppServerUsageMetrics(job, params);
         const status = this.extractCodexStatus(params);
         const text = this.extractCodexText(params);
@@ -1243,7 +1251,7 @@ export class SandboxJobProcessor implements JobProcessor {
         completed = true;
       }),
       client.onNotification('error', (params) => {
-        firstEventAt = firstEventAt ?? Date.now();
+        markActivity();
         failedReason = this.extractCodexErrorMessage(params) ?? 'CODEX_APP_SERVER_ERROR';
         this.log(job, `Codex App Server error ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
@@ -1267,7 +1275,7 @@ export class SandboxJobProcessor implements JobProcessor {
       if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) {
         completed = true;
       }
-      await this.waitForCodexTurn(job, () => completed, () => failedReason);
+      await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt);
       if (failedReason) {
         throw new Error(failedReason);
       }
@@ -1353,7 +1361,12 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       || (attachment.dataUrl ?? '').toLowerCase().startsWith('data:image/');
   }
 
-  private async waitForCodexTurn(job: SandboxJob, isCompleted: () => boolean, failureReason: () => string | undefined): Promise<void> {
+  private async waitForCodexTurn(
+    job: SandboxJob,
+    isCompleted: () => boolean,
+    failureReason: () => string | undefined,
+    lastActivityAt: () => number | undefined = () => undefined,
+  ): Promise<void> {
     const startedAt = Date.now();
     while (!isCompleted()) {
       this.ensureNotCancelled(job);
@@ -1361,7 +1374,15 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       if (failure) {
         throw new Error(failure);
       }
-      if (Date.now() - startedAt > this.codexTurnTimeoutMs) {
+      const now = Date.now();
+      const lastActivity = lastActivityAt();
+      if (!lastActivity && now - startedAt > this.codexTurnNoActivityTimeoutMs) {
+        throw new Error('CODEX_TURN_NO_ACTIVITY');
+      }
+      if (lastActivity && now - lastActivity > this.codexTurnNoActivityTimeoutMs) {
+        throw new Error('CODEX_TURN_STALLED');
+      }
+      if (now - startedAt > this.codexTurnTimeoutMs) {
         throw new Error('CODEX_TURN_INTERRUPTED');
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
