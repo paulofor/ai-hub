@@ -61,8 +61,8 @@ infra/
 ### MCP Server para comandos no host
 
 - O serviço Java `mcp-server` publica o healthcheck em `GET /mcp`, exposto pelo Caddy em `https://iahub.xyz/mcp`.
-- A tool `POST /mcp/tools/linux-command` exige `Authorization: Bearer <MCP_SERVER_API_TOKEN>` e body `{ "command": "<comando>" }`.
-- Configure `MCP_SERVER_API_TOKEN` no `.env` operacional da VPS antes do deploy. O Compose falha de propósito quando essa variável não existe, evitando publicar execução remota de comando com token padrão.
+- A tool `POST /mcp/tools/linux-command` aceita body `{ "command": "<comando>" }`.
+- Quando `MCP_SERVER_API_TOKEN` estiver definido no `.env` operacional, a tool exige `Authorization: Bearer <MCP_SERVER_API_TOKEN>`. Sem essa variável, mantém compatibilidade com o contrato operacional simples usado pelo Tihub.
 - O container monta `/var/run/docker.sock` e a raiz do host em `/host:ro`, permitindo validar arquivos e consultar logs com comandos como `docker logs --tail 200 ai-hub-6-backend-1`.
 - Os limites operacionais são controlados por `MCP_SERVER_COMMAND_TIMEOUT_SECONDS` e `MCP_SERVER_MAX_OUTPUT_CHARS`.
 
