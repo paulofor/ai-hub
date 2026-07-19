@@ -66,6 +66,8 @@ O runner informa ao modelo que o comando `aws` está disponível e se as credenc
 
 O runner também informa ao modelo que o Docker CLI e o plugin Docker Compose v2 estão disponíveis pelos comandos `docker` e `docker compose`. Prefira `docker compose` ao binário legado `docker-compose`; antes de depender de containers, valide a engine/socket com `docker version` e o plugin com `docker compose version`.
 
+O runner informa ainda que o GitHub CLI (`gh`) e o `actionlint` estão disponíveis. Use `gh` para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use `actionlint` para validar arquivos `.github/workflows/*.yml` ou `.github/workflows/*.yaml` antes de concluir ajustes em GitHub Actions.
+
 ### Limites de contexto (`CONTEXT_*`)
 
 | Variável | Descrição | Default em código | Impacto operacional | Faixa sugerida |

@@ -2804,6 +2804,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
     assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
+    assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
+    assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
     assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
