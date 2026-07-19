@@ -693,6 +693,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Não criar Pull Request sem pedido explícito não significa evitar alterações'));
     assert.ok(input?.[0]?.text?.includes('altere os arquivos necessários'));
     assert.ok(input?.[0]?.text?.includes('apenas não abra nem publique o PR até o usuário pedir'));
+    assert.ok(input?.[0]?.text?.includes('precisa passar por um Pull Request executado pelo usuário antes de ser publicada'));
+    assert.ok(input?.[0]?.text?.includes('qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código'));
+    assert.ok(input?.[0]?.text?.includes('Dockerfile, Compose ou pipeline versionados neste repositório'));
     assert.ok(input?.[0]?.text?.includes('Nosso objetivo principal é gerar vendas em larga escala'));
     assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
@@ -3690,6 +3693,9 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.ok(input?.[0]?.text?.includes('Não criar Pull Request sem pedido explícito não significa evitar alterações'));
     assert.ok(input?.[0]?.text?.includes('altere os arquivos necessários'));
     assert.ok(input?.[0]?.text?.includes('apenas não abra nem publique o PR até o usuário pedir'));
+    assert.ok(input?.[0]?.text?.includes('precisa passar por um Pull Request executado pelo usuário antes de ser publicada'));
+    assert.ok(input?.[0]?.text?.includes('qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código'));
+    assert.ok(input?.[0]?.text?.includes('Dockerfile, Compose ou pipeline versionados neste repositório'));
     assert.ok(input?.[0]?.text?.includes('use app server'));
     assert.ok(input?.[0]?.text?.includes('Arquivos anexados pelo usuário'));
     assert.ok(input?.[0]?.text?.includes('.codex/attachments/job-chatgpt-codex-app-server/briefing.txt'));

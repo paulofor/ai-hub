@@ -21,6 +21,12 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 
 Jobs ficam armazenados em memória enquanto executam e são atualizados de forma assíncrona pelo `SandboxJobProcessor`.
 
+## Política de publicação
+
+- Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada.
+- O modelo pode editar arquivos e executar testes no sandbox quando o usuário solicitar ajuste, correção ou implementação, mas não deve abrir, publicar ou recomendar publicação direta sem pedido explícito.
+- Qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório. Não use imagem de produção gerada manualmente fora do fluxo do repositório.
+
 ## Variáveis de ambiente
 
 ### Gerais de execução
