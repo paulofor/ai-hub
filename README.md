@@ -16,6 +16,7 @@ AI Hub é um monorepo full-stack que centraliza experiências de governança, pr
 apps/
   backend/
   frontend/
+  mcp-server/
   sandbox-orchestrator/
 infra/
   nginx/
@@ -29,7 +30,7 @@ infra/
 1. Ajuste as variáveis em `.env` na raiz (já versionado com valores padrão compatíveis com a VPS) e, se necessário, personalize também `apps/backend/.env.example` e `apps/frontend/.env.example`. O campo `DB_PASS` já está configurado com a senha atual (`S3nh@Fort3!`); se a senha for rotacionada, atualize o valor nesses arquivos antes de reiniciar os contêineres.
 2. Garanta que você tenha um MySQL acessível (pode reutilizar o mesmo da produção ou apontar para outro ambiente) e então execute `docker-compose up --build` para subir backend, frontend e sandbox-orchestrator.
 3. Instale o Maven localmente para executar comandos do backend (`mvn test`, `mvn clean package`). A imagem do sandbox já vem com Maven, JDK, Docker CLI, plugin Docker Compose v2 (`docker compose`), AWS CLI, GitHub CLI (`gh`) e `actionlint` pré-instalados; se precisar configurar a sua máquina, siga [este passo a passo](docs/maven-setup.md).
-4. A UI estará disponível em `http://localhost:8082`, a API em `http://localhost:8081` e o sandbox-orchestrator em `http://localhost:8083`.
+4. A UI estará disponível em `http://localhost:8082`, a API em `http://localhost:8081`, o sandbox-orchestrator em `http://localhost:8083` e o MCP server internamente em `http://mcp-server:8084`.
 
 ### Persistência de credenciais OAuth (client_id/client_secret)
 
@@ -57,9 +58,18 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura em `/run/secrets/pepper-token`; se o arquivo existir, o conteúdo é exportado como `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner.
 - Caso prefira outro caminho no host, defina `PEPPER_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `pepper_api_token`.
 
+### MCP Server para comandos no host
+
+- O serviço Java `mcp-server` publica o healthcheck em `GET /mcp`, exposto pelo Caddy em `https://iahub.xyz/mcp`.
+- A tool `POST /mcp/tools/linux-command` exige `Authorization: Bearer <MCP_SERVER_API_TOKEN>` e body `{ "command": "<comando>" }`.
+- Configure `MCP_SERVER_API_TOKEN` no `.env` operacional da VPS antes do deploy. O Compose falha de propósito quando essa variável não existe, evitando publicar execução remota de comando com token padrão.
+- O container monta `/var/run/docker.sock` e a raiz do host em `/host:ro`, permitindo validar arquivos e consultar logs com comandos como `docker logs --tail 200 ai-hub-6-backend-1`.
+- Os limites operacionais são controlados por `MCP_SERVER_COMMAND_TIMEOUT_SECONDS` e `MCP_SERVER_MAX_OUTPUT_CHARS`.
+
 ## Testes
 
 - Backend: `mvn -f apps/backend test`
+- MCP Server: `mvn -f apps/mcp-server test`
 - Frontend: `npm --prefix apps/frontend run lint`
 - Sandbox Orchestrator: `npm --prefix apps/sandbox-orchestrator test`
 
