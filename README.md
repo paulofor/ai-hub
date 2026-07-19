@@ -51,6 +51,12 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura e, se os arquivos existirem, exporta `GITHUB_ACTOR`, `GITHUB_TOKEN` e `GITHUB_CLONE_TOKEN` antes de iniciar o runner; assim o valor não depende de editar o `.env` versionado/sincronizado.
 - Caso prefira outro caminho no host, defina `GITHUB_PACKAGES_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém esses dois arquivos.
 
+### Armazenamento do token da Pepper para a sandbox
+
+- Para chamadas à API da Pepper executadas pelo modelo, guarde o token fora do repositório em `/root/infra/pepper-token/pepper_api_token`.
+- O `sandbox-orchestrator` monta esse diretório como somente leitura em `/run/secrets/pepper-token`; se o arquivo existir, o conteúdo é exportado como `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner.
+- Caso prefira outro caminho no host, defina `PEPPER_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `pepper_api_token`.
+
 ## Testes
 
 - Backend: `mvn -f apps/backend test`

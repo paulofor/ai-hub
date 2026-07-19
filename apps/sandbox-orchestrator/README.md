@@ -50,6 +50,7 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `GITHUB_CLONE_USERNAME` | Usuário usado na URL autenticada (aplicado apenas se o token estiver presente) | `x-access-token` |
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
 | `GEMINI_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/gemini-token`; quando contém o arquivo `gemini_api_key`, o `docker-compose` exporta seu conteúdo como `GEMINI_API_KEY` antes de iniciar o runner, tornando a chave disponível aos comandos do modelo sem versionar o segredo. | `/root/infra/gemini-token` |
+| `PEPPER_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/pepper-token`; quando contém o arquivo `pepper_api_token`, o `docker-compose` exporta `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner, tornando o bearer disponível aos comandos do modelo sem versionar o segredo. | `/root/infra/pepper-token` |
 | `AWS_CREDENTIALS_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/aws`; quando contém o arquivo `acesso_aws`, o `docker-compose` exporta `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` e, opcionalmente, `AWS_SESSION_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/aws` |
 
 Formato esperado de `/root/infra/aws/acesso_aws` no host:
