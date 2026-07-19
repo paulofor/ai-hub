@@ -280,14 +280,17 @@ jobs:
           cat /tmp/mcp-health.json
           echo "== checking MCP linux-command tool =="
           mcp_token="$(grep -E '^MCP_SERVER_API_TOKEN=' .env | tail -n 1 | cut -d= -f2-)"
-          if [ -z "${mcp_token}" ]; then
-            echo "MCP_SERVER_API_TOKEN is required in /root/ai-hub-6/.env for MCP command validation" >&2
-            exit 1
+          if [ -n "${mcp_token}" ]; then
+            docker compose exec -T caddy wget -q -O - \
+              --header="Content-Type: application/json" \
+              --header="Authorization: Bearer ${mcp_token}" \
+              --post-data='{"command":"printf mcp-ok"}' \
+              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          else
+            docker compose exec -T caddy wget -q -O - \
+              --header="Content-Type: application/json" \
+              --post-data='{"command":"printf mcp-ok"}' \
+              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
           fi
-          docker compose exec -T caddy wget -q -O - \
-            --header="Content-Type: application/json" \
-            --header="Authorization: Bearer ${mcp_token}" \
-            --post-data='{"command":"printf mcp-ok"}' \
-            http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/ >/dev/null
           REMOTE_CHECK

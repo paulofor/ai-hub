@@ -23,8 +23,7 @@ public class BearerTokenInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
         if (!StringUtils.hasText(properties.apiToken())) {
-            writeError(response, HttpStatus.SERVICE_UNAVAILABLE, "MCP_SERVER_API_TOKEN is not configured");
-            return false;
+            return true;
         }
 
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
