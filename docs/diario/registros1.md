@@ -232,6 +232,17 @@
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
 
+## 2026-07-18 21:32:52 UTC-3
+
+- Correção administrativa: a entrada `2026-07-19 00:32:25 UTC - Contrato contextual para gh e actionlint` foi registrada com timestamp em UTC, mas este diário exige timestamp UTC-3 obtido via `TZ=America/Sao_Paulo date '+%Y-%m-%d %H:%M:%S UTC-3'`. Como o diário é append-only, a entrada anterior foi mantida e este registro consolida o trabalho no formato correto.
+- Solicitação recebida: seguir a alternativa escolhida para avisar o modelo sobre ferramentas críticas com regra de uso contextual.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instalação de `gh` e `actionlint` na imagem da sandbox não garante uso consistente; sem contrato operacional explícito e testado, o modelo pode não descobrir as ferramentas ou pode deixar de executar `actionlint` quando alterar workflows GitHub Actions.
+- Alternativas avaliadas: (1) listar todas as ferramentas da imagem, com alta cobertura mas prompt ruidoso; (2) depender de descoberta manual via shell, com prompt menor mas maior risco de subuso; (3) declarar ferramentas estratégicas no prompt com regra de uso contextual e manter teste/documentação de contrato. Escolhida a alternativa 3 por equilibrar clareza, baixo custo cognitivo e maior aderência à confiabilidade do runner.
+- Ajuste aplicado em `apps/sandbox-orchestrator/README.md`: documentado que o runner informa `gh` e `actionlint` ao modelo, com regra para usar `gh` em inspeções GitHub autenticadas e `actionlint` antes de concluir ajustes em `.github/workflows/*.yml`/`.yaml`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/tests/jobs.test.ts`: o teste do checklist inicial agora valida não apenas a disponibilidade de `GitHub CLI e actionlint`, mas também as instruções contextuais de uso de `gh` e `actionlint` no prompt enviado ao modelo.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `node --test --test-name-pattern="inclui checklist de ambiente OK" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `git diff --check`.
+- Observação de ambiente: o build inicial falhou porque as dependências locais do pacote não estavam instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou 7 vulnerabilidades existentes no grafo, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
 ## 2026-07-18 21:29:56 UTC-3
 - Correção administrativa: a entrada `2026-07-18 21:29:32 UTC-3` sobre avisar ao modelo as ferramentas disponíveis foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida a orientação no final correto do arquivo.
 - Solicitação recebida: avaliar se é necessário avisar ao modelo tudo que ele pode usar na sandbox.
@@ -2009,6 +2020,16 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala ferramentas" dist/tests/jobs.test.js` passou quando executado em `apps/sandbox-orchestrator`.
 - Observação de ambiente: o primeiro teste filtrado falhou quando executado a partir da raiz do repositório porque o teste usa `path.resolve('Dockerfile')`; a repetição no diretório correto passou. O `npm ci` reportou 7 vulnerabilidades existentes no grafo do pacote, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
 
+## 2026-07-19 00:32:25 UTC - Contrato contextual para gh e actionlint
+
+- Solicitação recebida: seguir a alternativa escolhida para avisar o modelo sobre ferramentas críticas com regra de uso contextual.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instalação de `gh` e `actionlint` na imagem da sandbox não garante uso consistente; sem contrato operacional explícito e testado, o modelo pode não descobrir as ferramentas ou pode deixar de executar `actionlint` quando alterar workflows GitHub Actions.
+- Alternativas avaliadas: (1) listar todas as ferramentas da imagem, com alta cobertura mas prompt ruidoso; (2) depender de descoberta manual via shell, com prompt menor mas maior risco de subuso; (3) declarar ferramentas estratégicas no prompt com regra de uso contextual e manter teste/documentação de contrato. Escolhida a alternativa 3 por equilibrar clareza, baixo custo cognitivo e maior aderência à confiabilidade do runner.
+- Ajuste aplicado em `apps/sandbox-orchestrator/README.md`: documentado que o runner informa `gh` e `actionlint` ao modelo, com regra para usar `gh` em inspeções GitHub autenticadas e `actionlint` antes de concluir ajustes em `.github/workflows/*.yml`/`.yaml`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/tests/jobs.test.ts`: o teste do checklist inicial agora valida não apenas a disponibilidade de `GitHub CLI e actionlint`, mas também as instruções contextuais de uso de `gh` e `actionlint` no prompt enviado ao modelo.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `node --test --test-name-pattern="inclui checklist de ambiente OK" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `git diff --check`.
+- Observação de ambiente: o build inicial falhou porque as dependências locais do pacote não estavam instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou 7 vulnerabilidades existentes no grafo, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
 ## 2026-07-17 18:00:00 UTC - Proposta de construção com avaliação por persona
 
 - Solicitação recebida: avaliar a possibilidade de uma solicitação com dois modelos, um construindo um produto digital e outro representando o público-alvo para avaliar o resultado e acelerar a evolução.
@@ -2082,3 +2103,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: removido `request.model` como fallback de `resolveRequestHistoryTitle` e alterada a renderização para mostrar `Modelo: ...` sempre que `item.model` existir.
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-18 21:32:52 UTC-3 - Consolidação final do contrato contextual gh/actionlint
+
+- Correção administrativa final: devido a correspondências repetidas no diário append-only, registros anteriores desta mesma tarefa foram inseridos em pontos intermediários e um deles usou timestamp UTC. Esta entrada preserva as anteriores e consolida no final do arquivo, com timestamp UTC-3 obtido pelo comando obrigatório.
+- Trabalho concluído: aplicada a alternativa 3, informando capacidades estratégicas com regra de uso contextual. O runner já enviava ao modelo a instrução sobre `gh` e `actionlint`; o trabalho reforçou a documentação operacional e o teste de contrato para evitar regressão.
+- Causa raiz registrada: ferramenta instalada sem contrato operacional explícito e testado pode ser subutilizada pelo modelo, especialmente em validações de GitHub Actions.
+- Arquivos alterados: `apps/sandbox-orchestrator/README.md`, `apps/sandbox-orchestrator/tests/jobs.test.ts` e `docs/diario/registros1.md`.
+- Validações executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `node --test --test-name-pattern="inclui checklist de ambiente OK" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `git diff --check`. Não foi criado Pull Request.
