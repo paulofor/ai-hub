@@ -696,6 +696,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Nosso objetivo principal é gerar vendas em larga escala'));
     assert.ok(input?.[0]?.text?.includes('sem encurtar a análise'));
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
+    assert.ok(input?.[0]?.text?.includes('Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
@@ -2803,6 +2804,7 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
     assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
+    assert.match(promptText, /Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
