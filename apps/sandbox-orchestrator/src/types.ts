@@ -121,6 +121,8 @@ export type CodexFunctionalErrorCode =
   | 'CODEX_THREAD_START_FAILED'
   | 'CODEX_TURN_FAILED'
   | 'CODEX_TURN_INTERRUPTED'
+  | 'CODEX_TURN_NO_ACTIVITY'
+  | 'CODEX_TURN_STALLED'
   | 'CODEX_INPUT_IMAGE_UNSUPPORTED';
 
 export interface CodexThreadStartResult {
