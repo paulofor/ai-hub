@@ -218,12 +218,26 @@
 
 ## 2026-07-17 23:43:10 UTC-3
 - Correção administrativa: a entrada `2026-07-17 23:42:44 UTC-3` sobre o texto do modelo piscando foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+
+## 2026-07-18 21:29:32 UTC-3
+- Solicitação recebida: avaliar se é necessário avisar ao modelo tudo que ele pode usar na sandbox.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instalação de uma ferramenta na imagem da sandbox não torna automaticamente o uso dela provável ou oportuno pelo modelo; o modelo precisa receber um contrato operacional curto, contextual e acionável sobre capacidades relevantes, especialmente quando a ferramenta deve ser usada em situações específicas, como `actionlint` para GitHub Actions.
+- Evidências analisadas: `README.md`, `docs/sandbox-architecture.md`, `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/sandbox-orchestrator/tests/jobs.test.ts` já documentam e/ou injetam no prompt capacidades como Docker Compose v2, AWS CLI, GitHub CLI, `actionlint`, Chromium headless e `sandbox-mail`.
+- Alternativas avaliadas: (1) listar todas as ferramentas instaladas no prompt, com alto risco de ruído; (2) não avisar nada e confiar em descoberta via shell, com maior chance de subuso; (3) informar apenas capacidades de alto valor com regras de uso por contexto e checklist dinâmico de disponibilidade. Escolhida a alternativa 3 por equilibrar aderência ao objetivo, custo cognitivo e confiabilidade operacional.
+- Orientação registrada: avisar o modelo sobre ferramentas estratégicas, mas não transformar o prompt em inventário completo da imagem; preferir instruções condicionais do tipo “use `actionlint` ao alterar `.github/workflows`” e manter validação/checklist automático para ferramentas críticas.
 - Solicitação recebida: corrigir o texto do modelo piscando na lista de últimas execuções quando a solicitação está pendente ou em execução.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI usava o modelo como fallback do título do histórico e escondia a linha `Modelo:` quando o título resolvido era igual ao modelo; em execuções pendentes/em execução, campos parciais retornados pelo polling faziam essa condição alternar entre exibir e ocultar.
 - Alternativas avaliadas: (1) remover animação do status `RUNNING`, baixo esforço mas não atacaria a alternância da linha; (2) reservar espaço fixo com CSS, reduziria o salto visual mas manteria lógica instável; (3) separar título de histórico da linha de modelo e renderizar `Modelo:` por presença do campo. Escolhida a alternativa 3 por corrigir a causa raiz com menor risco.
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: removido `request.model` como fallback de `resolveRequestHistoryTitle` e alterada a renderização para mostrar `Modelo: ...` sempre que `item.model` existir.
 - Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
 - Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-18 21:29:56 UTC-3
+- Correção administrativa: a entrada `2026-07-18 21:29:32 UTC-3` sobre avisar ao modelo as ferramentas disponíveis foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida a orientação no final correto do arquivo.
+- Solicitação recebida: avaliar se é necessário avisar ao modelo tudo que ele pode usar na sandbox.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: instalar uma ferramenta na imagem da sandbox não garante que o modelo saiba quando ela é relevante; a solução correta é informar capacidades estratégicas no prompt de forma contextual e acionável, sem transformar o prompt em inventário completo.
+- Alternativas avaliadas: (1) listar todas as ferramentas instaladas, com alto ruído e maior custo cognitivo; (2) não informar nada e depender de descoberta via terminal, com risco de subuso; (3) informar ferramentas de alto valor com regras condicionais de uso e checklist dinâmico de disponibilidade. Escolhida a alternativa 3.
+- Orientação registrada: manter instruções explícitas para ferramentas críticas como `actionlint`, Docker Compose v2, AWS CLI, `gh`, Chromium/headless e `sandbox-mail`, sempre ligadas ao contexto em que devem ser usadas.
 
 ## 2026-07-19 00:27:08 UTC - Consolidação da verificação do actionlint
 
