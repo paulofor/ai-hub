@@ -35,6 +35,7 @@ function App() {
         <Route path="/construir-com-persona" element={<PersonaReviewPage />} />
         <Route path="/codex-chatgpt" element={<CodexChatgptPage />} />
         <Route path="/codex-chatgpt-mkt" element={<CodexChatgptPage variant="marketing" />} />
+        <Route path="/codex-chatgpt-sandbox" element={<CodexChatgptPage variant="sandbox" />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
         <Route path="/source-repository-config" element={<SourceRepositoryConfigPage />} />

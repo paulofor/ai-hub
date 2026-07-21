@@ -722,7 +722,7 @@ export class SandboxJobProcessor implements JobProcessor {
     try {
       this.ensureNotCancelled(job);
       workspace = await this.prepareWorkspace(job);
-      repoPath = path.join(workspace, 'repo');
+      repoPath = path.join(workspace, this.isChatgptCodexSandbox(job) ? 'sandbox' : 'repo');
       job.sandboxPath = workspace;
       this.log(job, `workspace criado em ${workspace}`);
       this.log(job, `perfil ${job.profile} selecionado; modelo ${resolvedModel}`);
@@ -754,30 +754,40 @@ export class SandboxJobProcessor implements JobProcessor {
       } else if (this.isChatgptCodexFamily(job)) {
         this.log(
           job,
-          `modo ${this.isChatgptCodexMarketing(job) ? 'ChatGPT Codex MKT' : 'ChatGPT Codex'}: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
+          `modo ${this.resolveChatgptCodexModeLabel(job)}: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
         );
       }
 
-      this.ensureNotCancelled(job);
-      const githubAuth = this.resolveGithubAuth(job);
-      if (githubAuth.token) {
-        this.log(
-          job,
-          `token GitHub obtido de ${githubAuth.source} será usado para clone, push e criação de PR`,
-        );
+      let githubAuth: { token?: string; username: string; source: string } = { username: 'x-access-token', source: 'sandbox-only' };
+      let baseCommit: string | undefined;
+      if (this.isChatgptCodexSandbox(job)) {
+        await fs.mkdir(repoPath!, { recursive: true });
+        this.log(job, `modo ChatGPT Codex Sandbox: usando diretório temporário sem Git em ${repoPath}`);
       } else {
-        this.log(job, 'nenhum token GitHub configurado; operações autenticadas podem falhar');
-      }
+        this.ensureNotCancelled(job);
+        githubAuth = this.resolveGithubAuth(job);
+        if (githubAuth.token) {
+          this.log(
+            job,
+            `token GitHub obtido de ${githubAuth.source} será usado para clone, push e criação de PR`,
+          );
+        } else {
+          this.log(job, 'nenhum token GitHub configurado; operações autenticadas podem falhar');
+        }
 
-      const cloneUrl = buildAuthRepoUrl(job.repoUrl, githubAuth.token, githubAuth.username);
-      this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
-      await this.cloneRepository(job, repoPath!, cloneUrl);
-      this.ensureNotCancelled(job);
-      const baseCommit = await this.getHeadCommit(repoPath!);
-      this.ensureNotCancelled(job);
-      await this.checkoutExistingWorkBranchForContext(job, repoPath!);
-      this.ensureNotCancelled(job);
-      await this.runRunnerPreflight(job, repoPath!);
+        if (!job.repoUrl || !job.branch) {
+          throw new Error('repoUrl e branch são obrigatórios para perfis com repositório');
+        }
+        const cloneUrl = buildAuthRepoUrl(job.repoUrl, githubAuth.token, githubAuth.username);
+        this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
+        await this.cloneRepository(job, repoPath!, cloneUrl);
+        this.ensureNotCancelled(job);
+        baseCommit = await this.getHeadCommit(repoPath!);
+        this.ensureNotCancelled(job);
+        await this.checkoutExistingWorkBranchForContext(job, repoPath!);
+        this.ensureNotCancelled(job);
+        await this.runRunnerPreflight(job, repoPath!);
+      }
       this.ensureNotCancelled(job);
       await this.materializeJobAttachments(job, repoPath!);
       this.ensureNotCancelled(job);
@@ -789,14 +799,20 @@ export class SandboxJobProcessor implements JobProcessor {
         : await this.runWithOpenAIResponsesApi(job, repoPath!, resolvedModel);
       job.summary = summary;
       this.ensureNotCancelled(job);
-      job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
-      this.ensureNotCancelled(job);
-      job.patch = await this.generatePatch(repoPath!, baseCommit, job);
-      this.ensureNotCancelled(job);
-      await this.runConfiguredTestCommand(job, repoPath!);
-      this.advanceInvestigationStage(job, 'VALIDAR', 'testes configurados executados');
-      this.ensureNotCancelled(job);
-      await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
+      if (this.isChatgptCodexSandbox(job)) {
+        job.changedFiles = [];
+        job.patch = '';
+        this.advanceInvestigationStage(job, 'VALIDAR', 'execução sandbox-only concluída sem diff Git');
+      } else {
+        job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
+        this.ensureNotCancelled(job);
+        job.patch = await this.generatePatch(repoPath!, baseCommit, job);
+        this.ensureNotCancelled(job);
+        await this.runConfiguredTestCommand(job, repoPath!);
+        this.advanceInvestigationStage(job, 'VALIDAR', 'testes configurados executados');
+        this.ensureNotCancelled(job);
+        await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
+      }
       this.advanceInvestigationStage(job, 'ENCERRAR', 'fluxo finalizado após validação');
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
@@ -957,7 +973,7 @@ export class SandboxJobProcessor implements JobProcessor {
       { token: process.env.GITHUB_CLONE_TOKEN, source: 'GITHUB_CLONE_TOKEN' },
       { token: process.env.GITHUB_TOKEN, source: 'GITHUB_TOKEN' },
       { token: process.env.GITHUB_PR_TOKEN, source: 'GITHUB_PR_TOKEN' },
-      { token: extractTokenFromRepoUrl(job.repoUrl), source: 'repoUrl' },
+      { token: job.repoUrl ? extractTokenFromRepoUrl(job.repoUrl) : undefined, source: 'repoUrl' },
     ];
 
     const selected = candidates.find((candidate) => candidate.token);
@@ -1315,11 +1331,16 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'O GitHub CLI e o actionlint estão disponíveis para o modelo pelos comandos gh e actionlint; use gh para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em .github/workflows.';
   }
 
+  private buildCodexChatgptOperationalInstruction(): string {
+    return 'Orientacao importante para perfis Codex ChatGPT: quando a solicitacao for criar um artefato dentro do Marketing Hub, faca isso pelo front-end do sistema; se o front-end ainda nao tiver a funcionalidade necessaria, implemente essa funcionalidade, avise o usuario e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitacao for alterar uma funcionalidade de modulo, altere o codigo do repositorio, valide e deixe a mudanca pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteracao.';
+  }
+
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const localDevelopmentInstruction = 'Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local.';
     const noPrButEditInstruction = 'Não criar Pull Request sem pedido explícito não significa evitar alterações: quando o usuário solicitar ajuste, correção ou implementação e você identificar a solução, altere os arquivos necessários, valide e deixe as mudanças prontas na branch/worktree; apenas não abra nem publique o PR até o usuário pedir.';
     const productionPublicationInstruction = 'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.';
+    const codexChatgptOperationalInstruction = this.buildCodexChatgptOperationalInstruction();
     const marketingObjectiveInstruction = 'Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub.';
     const marketingDecisionInstruction = 'Nos pontos mais importantes do fluxo de solução, aplique um mecanismo explícito de raciocínio: elabore pelo menos 3 alternativas boas, compare benefícios, riscos, custo/esforço e aderência ao objetivo do usuário, escolha a melhor para a situação e siga por ela registrando a justificativa de forma objetiva.';
     const marketingStructuredResponseInstruction = 'Na resposta final do modo MKT, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use o campo comentario para todo o conteúdo normal da resposta. Use sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.';
@@ -1327,11 +1348,15 @@ export class SandboxJobProcessor implements JobProcessor {
     const awsCliInstruction = this.buildAwsCliInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${dockerCliInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${dockerCliInstruction}
+
+${job.taskDescription}${this.buildAttachmentContext(job)}`
+      : this.isChatgptCodexSandbox(job)
+        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${dockerCliInstruction} ${emailTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodex(job)
-        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${awsCliInstruction} ${dockerCliInstruction}
+        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${dockerCliInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
@@ -1354,7 +1379,8 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       const mimeType = attachment.mimeType ?? 'application/octet-stream';
       return `- ${index + 1}. ${attachment.name ?? attachment.path}: ${attachment.path} (${mimeType}, ${size})`;
     });
-    return `\n\nArquivos anexados pelo usuário foram salvos no repositório temporário. Leia-os quando forem relevantes:\n${lines.join('\n')}`;
+    const workspaceLabel = this.isChatgptCodexSandbox(job) ? 'diretório temporário da sandbox' : 'repositório temporário';
+    return `\n\nArquivos anexados pelo usuário foram salvos no ${workspaceLabel}. Leia-os quando forem relevantes:\n${lines.join('\n')}`;
   }
 
   private isImageAttachment(attachment: { mimeType?: string; dataUrl?: string }): boolean {
@@ -1493,6 +1519,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const repositoryModuleTestInstruction = 'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.';
     const noPrButEditInstruction = 'Não criar Pull Request sem pedido explícito não significa evitar alterações: quando o usuário solicitar ajuste, correção ou implementação e você identificar a solução, altere os arquivos necessários, valide e deixe as mudanças prontas na branch/worktree; apenas não abra nem publique o PR até o usuário pedir.';
     const productionPublicationInstruction = 'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.';
+    const codexChatgptOperationalInstruction = this.buildCodexChatgptOperationalInstruction();
 
     const tools = this.buildTools(repoPath);
     const profileInstruction = this.isEconomy(job)
@@ -1512,10 +1539,10 @@ Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`
               : this.isChatgptCodexMarketing(job)
               ? `
-Modo ChatGPT Codex MKT ativo: use a sandbox para baixar e analisar o repositório como base documental de marketing. Foque principalmente em arquivos .md com relatórios de marketing digital, campanhas, estratégias, resultados, métricas, canais, criativos e aprendizados. Gere relatórios de orientação com melhorias acionáveis para o usuário, preserve evidências dos arquivos analisados e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub. Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local. Nos pontos mais importantes do fluxo de solução, elabore pelo menos 3 alternativas boas, compare benefícios, riscos, custo/esforço e aderência ao objetivo, escolha a melhor para a situação e siga por ela com justificativa objetiva. Na resposta final do modo MKT, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use o campo comentario para todo o conteúdo normal da resposta. Use sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução. ${this.buildSandboxEmailInstruction()}`
+Modo ChatGPT Codex MKT ativo: use a sandbox para baixar e analisar o repositório como base documental de marketing. Foque principalmente em arquivos .md com relatórios de marketing digital, campanhas, estratégias, resultados, métricas, canais, criativos e aprendizados. Gere relatórios de orientação com melhorias acionáveis para o usuário, preserve evidências dos arquivos analisados e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub. Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local. Nos pontos mais importantes do fluxo de solução, elabore pelo menos 3 alternativas boas, compare benefícios, riscos, custo/esforço e aderência ao objetivo, escolha a melhor para a situação e siga por ela com justificativa objetiva. Na resposta final do modo MKT, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use o campo comentario para todo o conteúdo normal da resposta. Use sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução. ${this.buildSandboxEmailInstruction()}`
               : this.isChatgptCodex(job)
               ? `
-Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos. Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local. ${noPrButEditInstruction} ${productionPublicationInstruction}`
+Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) descrita em docs/estrategia-token/chatgpt-codex.md — organize squads paralelos, abra worktrees ou diretórios codex/<squad> para separar fluxos, registre owners/risco/custos a cada checkpoint, reutilize resultados entre agentes e prefira execuções curtas em ambientes em nuvem antes de compartilhar resumos objetivos. Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction}`
               : '';
     const userContent: Array<Record<string, string>> = [
       { type: 'input_text', text: `${job.taskDescription}${this.buildAttachmentContext(job)}` },
@@ -4218,7 +4245,7 @@ ${stderr}`);
     const state: RunnerEnvironmentState = {
       repoPath: realRepoPath,
       validatedCwd: realRepoPath,
-      branch: job.branch,
+      branch: job.branch ?? 'sandbox',
       permissionProfile: 'read-write-execute',
       essentialTools,
       dockerTools,
@@ -4923,6 +4950,9 @@ grep -R -n -- "$@"
     if (job.repoSlug) {
       return job.repoSlug;
     }
+    if (!job.repoUrl) {
+      return undefined;
+    }
 
     try {
       const parsed = new URL(job.repoUrl);
@@ -4968,6 +4998,10 @@ grep -R -n -- "$@"
     const repoSlug = this.resolveRepoSlug(job);
     if (!repoSlug) {
       this.log(job, 'repoSlug ausente e repoUrl não é github.com; não é possível criar PR');
+      return;
+    }
+    if (!job.repoUrl || !job.branch) {
+      this.log(job, 'repoUrl ou branch ausente; não é possível criar PR');
       return;
     }
 
@@ -5574,8 +5608,22 @@ grep -R -n -- "$@"
     return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX_MKT';
   }
 
+  private isChatgptCodexSandbox(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX_SANDBOX';
+  }
+
   private isChatgptCodexFamily(job: SandboxJob): boolean {
-    return this.isChatgptCodex(job) || this.isChatgptCodexMarketing(job);
+    return this.isChatgptCodex(job) || this.isChatgptCodexMarketing(job) || this.isChatgptCodexSandbox(job);
+  }
+
+  private resolveChatgptCodexModeLabel(job: SandboxJob): string {
+    if (this.isChatgptCodexMarketing(job)) {
+      return 'ChatGPT Codex MKT';
+    }
+    if (this.isChatgptCodexSandbox(job)) {
+      return 'ChatGPT Codex Sandbox';
+    }
+    return 'ChatGPT Codex';
   }
 
   private resolveTaskDescriptionLimit(job: SandboxJob): number {

@@ -1,5 +1,5 @@
 export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT';
+export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
 
 export type InteractionDirection = 'OUTBOUND' | 'INBOUND';
 
@@ -64,8 +64,8 @@ export interface SandboxDocumentAccessLog {
 export interface SandboxJob {
   jobId: string;
   repoSlug?: string;
-  repoUrl: string;
-  branch: string;
+  repoUrl?: string;
+  branch?: string;
   workBranch?: string;
   taskDescription: string;
   imageAttachments?: SandboxImageAttachment[];

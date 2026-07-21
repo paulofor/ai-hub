@@ -73,6 +73,7 @@ const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
+const SANDBOX_ONLY_ENVIRONMENT = 'sandbox';
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -139,7 +140,11 @@ const parseSavedConversation = (value: unknown): SavedConversation | null => {
   const id = typeof item.id === 'number' ? item.id : Number(item.id);
   if (!Number.isFinite(id)) return null;
   const profileRaw = typeof item.profile === 'string' ? item.profile.trim().toUpperCase().replace('-', '_') : 'CHATGPT_CODEX';
-  const profile: CodexProfile = profileRaw === 'CHATGPT_CODEX_MKT' ? 'CHATGPT_CODEX_MKT' : 'CHATGPT_CODEX';
+  const profile: CodexProfile = profileRaw === 'CHATGPT_CODEX_MKT'
+    ? 'CHATGPT_CODEX_MKT'
+    : profileRaw === 'CHATGPT_CODEX_SANDBOX'
+      ? 'CHATGPT_CODEX_SANDBOX'
+      : 'CHATGPT_CODEX';
   const messages = Array.isArray(item.messages)
     ? item.messages.map(parseSavedConversationMessage).filter((message): message is SavedConversationMessage => message !== null)
     : [];
@@ -886,7 +891,7 @@ const useModelResponseTabMarker = (conversation: ChatMessage[], title: string) =
 };
 
 interface CodexChatgptPageProps {
-  variant?: 'default' | 'marketing';
+  variant?: 'default' | 'marketing' | 'sandbox';
 }
 
 interface CodexChatgptVariantConfig {
@@ -900,6 +905,8 @@ interface CodexChatgptVariantConfig {
   promptExtraLines: string[];
 }
 
+const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
+
 const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX',
   title: 'Codex ChatGPT Managed',
@@ -910,7 +917,8 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
   promptExtraLines: [
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
-    'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.'
+    'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION
   ]
 };
 
@@ -927,6 +935,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
@@ -934,8 +943,29 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   ]
 };
 
+const SANDBOX_VARIANT_CONFIG: CodexChatgptVariantConfig = {
+  profile: 'CHATGPT_CODEX_SANDBOX',
+  title: 'Codex ChatGPT Sandbox',
+  formTitle: 'Execução direta na sandbox',
+  description: 'Envie uma solicitação para o Codex executar dentro da sandbox do modelo, sem Git, sem repositório e sem Pull Request.',
+  historyTitle: 'Últimas execuções ChatGPT Sandbox',
+  placeholder: 'Digite o que o modelo deve executar na sandbox... Ex.: gere um arquivo temporário, valide uma ideia, rode um comando seguro ou analise um anexo.',
+  promptModeLine: 'Você está em uma conversa interativa do Codex ChatGPT Sandbox.',
+  promptExtraLines: [
+    'Execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git e sem uso de repositório.',
+    'Não clone repositórios, não gere diff, não prepare branch e não crie Pull Request.',
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    'Use o diretório temporário da sandbox apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos.',
+    'Responda em português de forma objetiva e acionável.'
+  ]
+};
+
 const resolveVariantConfig = (variant: CodexChatgptPageProps['variant']): CodexChatgptVariantConfig =>
-  variant === 'marketing' ? MARKETING_VARIANT_CONFIG : DEFAULT_VARIANT_CONFIG;
+  variant === 'marketing'
+    ? MARKETING_VARIANT_CONFIG
+    : variant === 'sandbox'
+      ? SANDBOX_VARIANT_CONFIG
+      : DEFAULT_VARIANT_CONFIG;
 
 interface TelemetryEvent {
   id: string;
@@ -998,6 +1028,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const showProductSelector = config.profile === 'CHATGPT_CODEX_MKT';
+  const sandboxOnly = config.profile === 'CHATGPT_CODEX_SANDBOX';
+  const selectedEnvironment = sandboxOnly ? SANDBOX_ONLY_ENVIRONMENT : environment;
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProductSlug, setSelectedProductSlug] = useState('');
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
@@ -1459,7 +1492,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     try {
       const response = await client.post('/codex/conversations', {
         title,
-        environment,
+        environment: selectedEnvironment,
         model,
         profile: config.profile,
         messages
@@ -1481,7 +1514,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setSavingConversation(false);
     }
-  }, [config.profile, conversation, environment, loadSavedConversations, model, registerTelemetry, savingConversation]);
+  }, [config.profile, conversation, loadSavedConversations, model, registerTelemetry, savingConversation, selectedEnvironment]);
 
   const handleDeleteSavedConversation = useCallback(async () => {
     if (!selectedSavedConversationId || deletingSavedConversation) return;
@@ -1517,7 +1550,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setConversation((current) => [...current, userMessage]);
       const response = await client.post('/codex/requests', {
         prompt: requestPrompt,
-        environment,
+        environment: selectedEnvironment,
         model,
         profile: config.profile,
         imageAttachments: fileAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
@@ -1545,7 +1578,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, environment, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry, selectedEnvironment]);
 
 
   useEffect(() => {
@@ -1582,8 +1615,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const handleCreatePr = useCallback(async () => {
     setPrLoading(true);
     try {
+      if (sandboxOnly) {
+        setError('Este perfil executa sem Git/repositório e não gera Pull Request.');
+        registerTelemetry('pr_blocked', 'Pedido de PR bloqueado no perfil ChatGPT Codex Sandbox.');
+        return;
+      }
       const latestRequests = await loadRequests();
-      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === environment);
+      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === selectedEnvironment);
       const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
         ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
       const currentBatchRequests = currentBatchKey
@@ -1632,7 +1670,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setPrLoading(false);
     }
-  }, [conversation, environment, loadRequests, registerTelemetry]);
+  }, [conversation, loadRequests, registerTelemetry, sandboxOnly, selectedEnvironment]);
 
   const findUserMessageIndexForRequest = useCallback((requestId: number) => {
     const assistantIndex = conversation.findIndex((message) => message.role === 'assistant' && message.requestId === requestId);
@@ -1815,7 +1853,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setBulkDiscardLoading(true);
     try {
       const latestRequests = await loadRequests();
-      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === environment);
+      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === selectedEnvironment);
       const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
         ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
       const batchRequests = (currentBatchKey
@@ -1829,7 +1867,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         if (!confirmed) return;
 
         const response = await client.post<DiscardBatchResult>('/codex/requests/batch/discard', {
-          environment,
+          environment: selectedEnvironment,
           profile: config.profile,
           workBatchKey: currentBatchKey
         });
@@ -1852,9 +1890,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setBulkDiscardLoading(false);
     }
-  }, [bulkDiscardLoading, config.profile, environment, loadRequests, registerTelemetry]);
+  }, [bulkDiscardLoading, config.profile, loadRequests, registerTelemetry, selectedEnvironment]);
 
-  const currentEnvironmentRequests = requests.filter((item) => item.environment === environment);
+  const currentEnvironmentRequests = requests.filter((item) => item.environment === selectedEnvironment);
   const activeBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
     ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
   const activeBatchRequests = activeBatchKey
@@ -1870,7 +1908,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const selectedSavedConversation = selectedSavedConversationId
     ? savedConversations.find((item) => item.id === selectedSavedConversationId)
     : undefined;
-  const showProductSelector = config.profile === 'CHATGPT_CODEX_MKT';
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
   const visibleConversation = conversation.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
@@ -1882,7 +1919,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? 'Ainda não há solicitação concluída neste lote.'
       : 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
   const canRequestPr = Boolean(
-    environment
+    !sandboxOnly
+    && selectedEnvironment
     && model
     && !hasQueuedConversationRequest
     && !hasQueuedOrRunningBatchRequest
@@ -2023,9 +2061,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
         <div className="grid gap-3 md:grid-cols-2">
-          <select value={environment} onChange={(e) => setEnvironment(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
-            {environments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-          </select>
+          {sandboxOnly ? (
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+              Ambiente temporário: sandbox
+            </div>
+          ) : (
+            <select value={environment} onChange={(e) => setEnvironment(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
+              {environments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
+          )}
           <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.displayName ?? item.modelName}</option>)}
           </select>
@@ -2057,11 +2101,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </ul> : null}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="submit" disabled={actionLoading || !isExecutable || !environment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
-          <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} title={prBlockedReason} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button>
-          <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button>
+          <button type="submit" disabled={actionLoading || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
+          {!sandboxOnly ? <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} title={prBlockedReason} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button> : null}
+          {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
         </div>
-        <p className="text-xs text-slate-500">{prBlockedReason}</p>
+        {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}
         {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
       </form>

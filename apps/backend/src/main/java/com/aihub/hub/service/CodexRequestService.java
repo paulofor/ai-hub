@@ -894,8 +894,10 @@ public class CodexRequestService {
     }
 
     private void dispatchToSandbox(CodexRequest request, List<CreateCodexRequest.ImageAttachment> imageAttachments) {
+        boolean chatgptCodexProfile = isChatgptCodexProfile(request.getProfile());
+        boolean sandboxOnlyProfile = isChatgptCodexSandboxProfile(request.getProfile());
         RepoCoordinates coordinates = RepoCoordinates.from(request.getEnvironment());
-        if (coordinates == null) {
+        if (coordinates == null && !sandboxOnlyProfile) {
             log.info("Ambiente {} não corresponde a um repositório; ignorando envio para o sandbox", request.getEnvironment());
             request.setStatus(CodexRequestStatus.FAILED);
             if (!StringUtils.hasText(request.getResponseText())) {
@@ -912,14 +914,15 @@ public class CodexRequestService {
         }
 
         PromptMetadata metadata = extractMetadata(request.getEnvironment());
-        applyWorkBatch(request, metadata);
+        if (!sandboxOnlyProfile) {
+            applyWorkBatch(request, metadata);
+        }
         String baseBranch = StringUtils.hasText(metadata.branch()) ? metadata.branch().trim() : defaultBranch;
         String jobId = UUID.randomUUID().toString();
         log.info("Enviando CodexRequest {} para sandbox com jobId {} e branch base {}", request.getId(), jobId, baseBranch);
 
         String callbackUrl = this.sandboxCallbackUrl;
         String callbackSecret = callbackUrl != null ? this.sandboxCallbackSecret : null;
-        boolean chatgptCodexProfile = isChatgptCodexProfile(request.getProfile());
         if (chatgptCodexProfile && !ensureChatgptCodexExecutable(request)) {
             return;
         }
@@ -930,10 +933,12 @@ public class CodexRequestService {
             log.info("CodexRequest {} será executado sem sessão OAuth HTTP legada; credenciais de execução pertencem ao sandbox-orchestrator", request.getId());
         }
 
-        String repoSlug = coordinates.owner() + "/" + coordinates.repo();
-        String workBranch = StringUtils.hasText(request.getWorkBranch())
-            ? request.getWorkBranch().trim()
-            : buildGroupedWorkBranch(repoSlug, baseBranch, request.getProfile());
+        String repoSlug = coordinates != null ? coordinates.owner() + "/" + coordinates.repo() : null;
+        String workBranch = sandboxOnlyProfile
+            ? null
+            : StringUtils.hasText(request.getWorkBranch())
+                ? request.getWorkBranch().trim()
+                : buildGroupedWorkBranch(repoSlug, baseBranch, request.getProfile());
         SandboxJobRequest jobRequest = new SandboxJobRequest(
             jobId,
             repoSlug,
@@ -947,7 +952,7 @@ public class CodexRequestService {
             request.getModel(),
             accessToken,
             chatgptCodexProfile ? null : githubAppAuth.getInstallationToken(),
-            resolveDatabase(request.getEnvironment()),
+            sandboxOnlyProfile ? null : resolveDatabase(request.getEnvironment()),
             callbackUrl,
             callbackSecret,
             Optional.ofNullable(imageAttachments)
@@ -1059,7 +1064,12 @@ public class CodexRequestService {
 
     private boolean isChatgptCodexProfile(CodexIntegrationProfile profile) {
         return profile == CodexIntegrationProfile.CHATGPT_CODEX
-            || profile == CodexIntegrationProfile.CHATGPT_CODEX_MKT;
+            || profile == CodexIntegrationProfile.CHATGPT_CODEX_MKT
+            || profile == CodexIntegrationProfile.CHATGPT_CODEX_SANDBOX;
+    }
+
+    private boolean isChatgptCodexSandboxProfile(CodexIntegrationProfile profile) {
+        return profile == CodexIntegrationProfile.CHATGPT_CODEX_SANDBOX;
     }
 
 
