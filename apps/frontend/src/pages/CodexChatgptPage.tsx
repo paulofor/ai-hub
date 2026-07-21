@@ -905,6 +905,8 @@ interface CodexChatgptVariantConfig {
   promptExtraLines: string[];
 }
 
+const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
+
 const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX',
   title: 'Codex ChatGPT Managed',
@@ -915,7 +917,8 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
   promptExtraLines: [
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
-    'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.'
+    'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION
   ]
 };
 
@@ -932,6 +935,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
@@ -950,6 +954,7 @@ const SANDBOX_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptExtraLines: [
     'Execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git e sem uso de repositório.',
     'Não clone repositórios, não gere diff, não prepare branch e não crie Pull Request.',
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
     'Use o diretório temporário da sandbox apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos.',
     'Responda em português de forma objetiva e acionável.'
   ]
