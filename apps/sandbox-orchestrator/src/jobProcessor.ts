@@ -1332,7 +1332,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildCodexChatgptOperationalInstruction(): string {
-    return 'Orientacao importante para perfis Codex ChatGPT: quando a solicitacao for criar um artefato dentro do Marketing Hub, faca isso pelo front-end do sistema; quando a solicitacao for alterar uma funcionalidade de modulo, altere o codigo do repositorio, valide e deixe a mudanca pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteracao.';
+    return 'Orientacao importante para perfis Codex ChatGPT: quando a solicitacao for criar um artefato dentro do Marketing Hub, faca isso pelo front-end do sistema; se o front-end ainda nao tiver a funcionalidade necessaria, implemente essa funcionalidade, avise o usuario e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitacao for alterar uma funcionalidade de modulo, altere o codigo do repositorio, valide e deixe a mudanca pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteracao.';
   }
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {

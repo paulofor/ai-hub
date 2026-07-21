@@ -719,6 +719,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código'));
     assert.ok(input?.[0]?.text?.includes('Dockerfile, Compose ou pipeline versionados neste repositório'));
     assert.ok(input?.[0]?.text?.includes('quando a solicitacao for criar um artefato dentro do Marketing Hub'));
+    assert.ok(input?.[0]?.text?.includes('se o front-end ainda nao tiver a funcionalidade necessaria'));
+    assert.ok(input?.[0]?.text?.includes('implemente essa funcionalidade, avise o usuario e aguarde o deploy'));
     assert.ok(input?.[0]?.text?.includes('quando a solicitacao for alterar uma funcionalidade de modulo'));
     assert.ok(input?.[0]?.text?.includes('Nunca use SSH para publicar diretamente uma alteracao'));
     assert.ok(input?.[0]?.text?.includes('Nosso objetivo principal é gerar vendas em larga escala'));
@@ -3722,6 +3724,8 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.ok(input?.[0]?.text?.includes('qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código'));
     assert.ok(input?.[0]?.text?.includes('Dockerfile, Compose ou pipeline versionados neste repositório'));
     assert.ok(input?.[0]?.text?.includes('quando a solicitacao for criar um artefato dentro do Marketing Hub'));
+    assert.ok(input?.[0]?.text?.includes('se o front-end ainda nao tiver a funcionalidade necessaria'));
+    assert.ok(input?.[0]?.text?.includes('implemente essa funcionalidade, avise o usuario e aguarde o deploy'));
     assert.ok(input?.[0]?.text?.includes('quando a solicitacao for alterar uma funcionalidade de modulo'));
     assert.ok(input?.[0]?.text?.includes('Nunca use SSH para publicar diretamente uma alteracao'));
     assert.ok(input?.[0]?.text?.includes('use app server'));
@@ -3804,6 +3808,8 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('sem integração com Git'));
   assert.ok(input?.[0]?.text?.includes('sem clonar repositório'));
   assert.ok(input?.[0]?.text?.includes('quando a solicitacao for criar um artefato dentro do Marketing Hub'));
+  assert.ok(input?.[0]?.text?.includes('se o front-end ainda nao tiver a funcionalidade necessaria'));
+  assert.ok(input?.[0]?.text?.includes('implemente essa funcionalidade, avise o usuario e aguarde o deploy'));
   assert.ok(input?.[0]?.text?.includes('Nunca use SSH para publicar diretamente uma alteracao'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
 });
