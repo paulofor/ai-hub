@@ -15,6 +15,7 @@ const links = [
   { to: '/construir-com-persona', label: 'Construir com Persona' },
   { to: '/codex-chatgpt', label: 'Codex ChatGPT' },
   { to: '/codex-chatgpt-mkt', label: 'Codex ChatGPT MKT' },
+  { to: '/codex-chatgpt-sandbox', label: 'Codex ChatGPT Sandbox' },
   { to: '/codex/models', label: 'Modelos Codex' },
   { to: '/source-repository-config', label: 'Config. Repositório' },
   { to: '/audit', label: 'Audit Log' }

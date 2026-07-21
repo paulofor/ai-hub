@@ -722,7 +722,7 @@ export class SandboxJobProcessor implements JobProcessor {
     try {
       this.ensureNotCancelled(job);
       workspace = await this.prepareWorkspace(job);
-      repoPath = path.join(workspace, 'repo');
+      repoPath = path.join(workspace, this.isChatgptCodexSandbox(job) ? 'sandbox' : 'repo');
       job.sandboxPath = workspace;
       this.log(job, `workspace criado em ${workspace}`);
       this.log(job, `perfil ${job.profile} selecionado; modelo ${resolvedModel}`);
@@ -754,30 +754,40 @@ export class SandboxJobProcessor implements JobProcessor {
       } else if (this.isChatgptCodexFamily(job)) {
         this.log(
           job,
-          `modo ${this.isChatgptCodexMarketing(job) ? 'ChatGPT Codex MKT' : 'ChatGPT Codex'}: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
+          `modo ${this.resolveChatgptCodexModeLabel(job)}: limite prompt=${this.chatgptCodexMaxTaskDescriptionChars}, toolOutput=${this.chatgptCodexToolOutputStringLimit}, http_get=${this.chatgptCodexHttpToolMaxResponseChars}`,
         );
       }
 
-      this.ensureNotCancelled(job);
-      const githubAuth = this.resolveGithubAuth(job);
-      if (githubAuth.token) {
-        this.log(
-          job,
-          `token GitHub obtido de ${githubAuth.source} será usado para clone, push e criação de PR`,
-        );
+      let githubAuth: { token?: string; username: string; source: string } = { username: 'x-access-token', source: 'sandbox-only' };
+      let baseCommit: string | undefined;
+      if (this.isChatgptCodexSandbox(job)) {
+        await fs.mkdir(repoPath!, { recursive: true });
+        this.log(job, `modo ChatGPT Codex Sandbox: usando diretório temporário sem Git em ${repoPath}`);
       } else {
-        this.log(job, 'nenhum token GitHub configurado; operações autenticadas podem falhar');
-      }
+        this.ensureNotCancelled(job);
+        githubAuth = this.resolveGithubAuth(job);
+        if (githubAuth.token) {
+          this.log(
+            job,
+            `token GitHub obtido de ${githubAuth.source} será usado para clone, push e criação de PR`,
+          );
+        } else {
+          this.log(job, 'nenhum token GitHub configurado; operações autenticadas podem falhar');
+        }
 
-      const cloneUrl = buildAuthRepoUrl(job.repoUrl, githubAuth.token, githubAuth.username);
-      this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
-      await this.cloneRepository(job, repoPath!, cloneUrl);
-      this.ensureNotCancelled(job);
-      const baseCommit = await this.getHeadCommit(repoPath!);
-      this.ensureNotCancelled(job);
-      await this.checkoutExistingWorkBranchForContext(job, repoPath!);
-      this.ensureNotCancelled(job);
-      await this.runRunnerPreflight(job, repoPath!);
+        if (!job.repoUrl || !job.branch) {
+          throw new Error('repoUrl e branch são obrigatórios para perfis com repositório');
+        }
+        const cloneUrl = buildAuthRepoUrl(job.repoUrl, githubAuth.token, githubAuth.username);
+        this.log(job, `clonando repositório ${redactUrlCredentials(cloneUrl)} (branch ${job.branch})`);
+        await this.cloneRepository(job, repoPath!, cloneUrl);
+        this.ensureNotCancelled(job);
+        baseCommit = await this.getHeadCommit(repoPath!);
+        this.ensureNotCancelled(job);
+        await this.checkoutExistingWorkBranchForContext(job, repoPath!);
+        this.ensureNotCancelled(job);
+        await this.runRunnerPreflight(job, repoPath!);
+      }
       this.ensureNotCancelled(job);
       await this.materializeJobAttachments(job, repoPath!);
       this.ensureNotCancelled(job);
@@ -789,14 +799,20 @@ export class SandboxJobProcessor implements JobProcessor {
         : await this.runWithOpenAIResponsesApi(job, repoPath!, resolvedModel);
       job.summary = summary;
       this.ensureNotCancelled(job);
-      job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
-      this.ensureNotCancelled(job);
-      job.patch = await this.generatePatch(repoPath!, baseCommit, job);
-      this.ensureNotCancelled(job);
-      await this.runConfiguredTestCommand(job, repoPath!);
-      this.advanceInvestigationStage(job, 'VALIDAR', 'testes configurados executados');
-      this.ensureNotCancelled(job);
-      await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
+      if (this.isChatgptCodexSandbox(job)) {
+        job.changedFiles = [];
+        job.patch = '';
+        this.advanceInvestigationStage(job, 'VALIDAR', 'execução sandbox-only concluída sem diff Git');
+      } else {
+        job.changedFiles = await this.collectChangedFiles(repoPath!, baseCommit, job);
+        this.ensureNotCancelled(job);
+        job.patch = await this.generatePatch(repoPath!, baseCommit, job);
+        this.ensureNotCancelled(job);
+        await this.runConfiguredTestCommand(job, repoPath!);
+        this.advanceInvestigationStage(job, 'VALIDAR', 'testes configurados executados');
+        this.ensureNotCancelled(job);
+        await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
+      }
       this.advanceInvestigationStage(job, 'ENCERRAR', 'fluxo finalizado após validação');
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
       job.status = 'COMPLETED';
@@ -957,7 +973,7 @@ export class SandboxJobProcessor implements JobProcessor {
       { token: process.env.GITHUB_CLONE_TOKEN, source: 'GITHUB_CLONE_TOKEN' },
       { token: process.env.GITHUB_TOKEN, source: 'GITHUB_TOKEN' },
       { token: process.env.GITHUB_PR_TOKEN, source: 'GITHUB_PR_TOKEN' },
-      { token: extractTokenFromRepoUrl(job.repoUrl), source: 'repoUrl' },
+      { token: job.repoUrl ? extractTokenFromRepoUrl(job.repoUrl) : undefined, source: 'repoUrl' },
     ];
 
     const selected = candidates.find((candidate) => candidate.token);
@@ -1330,6 +1346,10 @@ export class SandboxJobProcessor implements JobProcessor {
       ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${dockerCliInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
+      : this.isChatgptCodexSandbox(job)
+        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${bestAnswerInstruction} ${awsCliInstruction} ${dockerCliInstruction} ${emailTestingInstruction}
+
+${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodex(job)
         ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${awsCliInstruction} ${dockerCliInstruction}
 
@@ -1354,7 +1374,8 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       const mimeType = attachment.mimeType ?? 'application/octet-stream';
       return `- ${index + 1}. ${attachment.name ?? attachment.path}: ${attachment.path} (${mimeType}, ${size})`;
     });
-    return `\n\nArquivos anexados pelo usuário foram salvos no repositório temporário. Leia-os quando forem relevantes:\n${lines.join('\n')}`;
+    const workspaceLabel = this.isChatgptCodexSandbox(job) ? 'diretório temporário da sandbox' : 'repositório temporário';
+    return `\n\nArquivos anexados pelo usuário foram salvos no ${workspaceLabel}. Leia-os quando forem relevantes:\n${lines.join('\n')}`;
   }
 
   private isImageAttachment(attachment: { mimeType?: string; dataUrl?: string }): boolean {
@@ -4218,7 +4239,7 @@ ${stderr}`);
     const state: RunnerEnvironmentState = {
       repoPath: realRepoPath,
       validatedCwd: realRepoPath,
-      branch: job.branch,
+      branch: job.branch ?? 'sandbox',
       permissionProfile: 'read-write-execute',
       essentialTools,
       dockerTools,
@@ -4923,6 +4944,9 @@ grep -R -n -- "$@"
     if (job.repoSlug) {
       return job.repoSlug;
     }
+    if (!job.repoUrl) {
+      return undefined;
+    }
 
     try {
       const parsed = new URL(job.repoUrl);
@@ -4968,6 +4992,10 @@ grep -R -n -- "$@"
     const repoSlug = this.resolveRepoSlug(job);
     if (!repoSlug) {
       this.log(job, 'repoSlug ausente e repoUrl não é github.com; não é possível criar PR');
+      return;
+    }
+    if (!job.repoUrl || !job.branch) {
+      this.log(job, 'repoUrl ou branch ausente; não é possível criar PR');
       return;
     }
 
@@ -5574,8 +5602,22 @@ grep -R -n -- "$@"
     return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX_MKT';
   }
 
+  private isChatgptCodexSandbox(job: SandboxJob): boolean {
+    return (job.profile ?? 'STANDARD') === 'CHATGPT_CODEX_SANDBOX';
+  }
+
   private isChatgptCodexFamily(job: SandboxJob): boolean {
-    return this.isChatgptCodex(job) || this.isChatgptCodexMarketing(job);
+    return this.isChatgptCodex(job) || this.isChatgptCodexMarketing(job) || this.isChatgptCodexSandbox(job);
+  }
+
+  private resolveChatgptCodexModeLabel(job: SandboxJob): string {
+    if (this.isChatgptCodexMarketing(job)) {
+      return 'ChatGPT Codex MKT';
+    }
+    if (this.isChatgptCodexSandbox(job)) {
+      return 'ChatGPT Codex Sandbox';
+    }
+    return 'ChatGPT Codex';
   }
 
   private resolveTaskDescriptionLimit(job: SandboxJob): number {

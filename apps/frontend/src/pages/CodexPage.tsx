@@ -656,6 +656,22 @@ export default function CodexPage() {
                 <input
                   type="radio"
                   name="codex-profile"
+                  value="CHATGPT_CODEX_SANDBOX"
+                  checked={profile === 'CHATGPT_CODEX_SANDBOX'}
+                  onChange={() => setProfile('CHATGPT_CODEX_SANDBOX')}
+                  className="h-4 w-4"
+                />
+                <span>
+                  Codex ChatGPT Sandbox
+                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                    Executa solicitações dentro da sandbox do modelo sem Git, sem repositório, sem diff e sem Pull Request.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="codex-profile"
                   value="ECO_1"
                   checked={profile === 'ECO_1'}
                   onChange={() => setProfile('ECO_1')}

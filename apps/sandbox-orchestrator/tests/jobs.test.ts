@@ -367,6 +367,28 @@ test('não persiste accessToken em jobs CHATGPT_CODEX_MKT', async () => {
   assert.equal(stored?.accessToken, undefined);
 });
 
+test('aceita job CHATGPT_CODEX_SANDBOX sem repositório e sem branch', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+  const payload = {
+    jobId: 'job-chatgpt-codex-sandbox-api',
+    taskDescription: 'execute uma tarefa temporária',
+    profile: 'CHATGPT_CODEX_SANDBOX',
+    githubToken: 'secret-github-token',
+  };
+
+  const creation = await request(app).post('/jobs').send(payload).expect(201);
+  assert.equal(creation.body.profile, 'CHATGPT_CODEX_SANDBOX');
+  assert.equal(creation.body.repoUrl, undefined);
+  assert.equal(creation.body.githubToken, undefined);
+
+  const stored = registry.get(payload.jobId);
+  assert.ok(stored);
+  assert.equal(stored!.repoUrl, undefined);
+  assert.equal(stored!.branch, undefined);
+  assert.equal(stored!.githubToken, undefined);
+});
+
 test('permite cancelar um job em execução', async () => {
   const registry = new Map<string, SandboxJob>();
   const processor = new SleepingProcessor();
@@ -3706,6 +3728,76 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
+});
+
+test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório', async () => {
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: unknown }> = [];
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') {
+        return { authMode: 'chatgpt', planType: 'plus' };
+      }
+      if (method === 'thread/start') {
+        return { id: 'thread-sandbox' };
+      }
+      if (method === 'turn/start') {
+        setTimeout(() => {
+          for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
+            listener({ delta: 'resultado sandbox' });
+          }
+          for (const listener of listeners.get('turn/completed') ?? []) {
+            listener({ status: 'completed', turnId: 'turn-sandbox' });
+          }
+        }, 5);
+        return { id: 'turn-sandbox' };
+      }
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+  const job: SandboxJob = {
+    jobId: 'job-chatgpt-codex-sandbox-app-server',
+    taskDescription: 'rode uma solicitação avulsa',
+    profile: 'CHATGPT_CODEX_SANDBOX',
+    status: 'PENDING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+  } as SandboxJob;
+
+  await processor.process(job);
+
+  assert.equal(job.status, 'COMPLETED');
+  assert.equal(job.summary, 'resultado sandbox');
+  assert.deepEqual(job.changedFiles, []);
+  assert.equal(job.patch, '');
+  assert.ok(job.logs.some((entry) => entry.includes('sem Git')));
+  assert.ok(!job.downloadLogs?.some((entry) => entry.source === 'git'));
+  const threadStartCall = calls.find((call) => call.method === 'thread/start');
+  assert.ok(threadStartCall);
+  const cwd = (threadStartCall.params as { cwd?: string }).cwd;
+  assert.ok(cwd?.endsWith('/sandbox'), `cwd esperado em /sandbox, recebido ${cwd}`);
+  assert.equal(await fs.stat(path.join(cwd!, '.git')).then(() => true).catch(() => false), false);
+  const turnStartCall = calls.find((call) => call.method === 'turn/start');
+  assert.ok(turnStartCall);
+  const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
+  assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT Sandbox ativo'));
+  assert.ok(input?.[0]?.text?.includes('sem integração com Git'));
+  assert.ok(input?.[0]?.text?.includes('sem clonar repositório'));
+  assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
 });
 
 test('permite configurar sandbox mode do Codex App Server em kebab-case', async () => {

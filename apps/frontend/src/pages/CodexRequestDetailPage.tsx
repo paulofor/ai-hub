@@ -483,6 +483,21 @@ export default function CodexRequestDetailPage() {
               </div>
             )}
 
+            {request.profile === 'CHATGPT_CODEX_SANDBOX' && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-slate-900 dark:border-indigo-900/60 dark:bg-indigo-900/20 dark:text-indigo-100">
+                <p className="font-semibold">Modo Codex ChatGPT Sandbox</p>
+                <p className="mt-2">
+                  Perfil para execução direta dentro da sandbox do modelo, sem integração com Git, sem clone de repositório,
+                  sem diff e sem criação de Pull Request.
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>Use para tarefas descartáveis, validações rápidas, análise de anexos e comandos seguros no ambiente isolado.</li>
+                  <li>Arquivos gerados ficam no workspace temporário da execução e não representam mudança versionada.</li>
+                  <li>Quando a tarefa precisar virar código de produção, execute novamente em um perfil com repositório e passe por PR.</li>
+                </ul>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />

@@ -170,6 +170,9 @@ export function createApp(options: AppOptions = {}) {
     if (normalized === 'CHATGPT_CODEX_MKT' || normalized === 'CODEX_UI_MKT') {
       return 'CHATGPT_CODEX_MKT';
     }
+    if (normalized === 'CHATGPT_CODEX_SANDBOX' || normalized === 'CODEX_UI_SANDBOX') {
+      return 'CHATGPT_CODEX_SANDBOX';
+    }
     return 'STANDARD';
   };
 
@@ -313,7 +316,8 @@ export function createApp(options: AppOptions = {}) {
     const callbackSecret = validateString(req.body?.callbackSecret);
     const imageAttachments = normalizeImageAttachments(req.body?.imageAttachments);
 
-    if (!jobId || (!repoUrl && !repoSlug) || !branch || !taskDescription) {
+    const sandboxOnly = profile === 'CHATGPT_CODEX_SANDBOX';
+    if (!jobId || !taskDescription || (!sandboxOnly && ((!repoUrl && !repoSlug) || !branch))) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
     }
 
@@ -325,14 +329,14 @@ export function createApp(options: AppOptions = {}) {
 
     const modelLabel = model ? `, modelo ${model}` : '';
     console.log(
-      `Sandbox orchestrator: registrando job ${jobId} para repo ${repoSlug ?? repoUrl} na branch ${branch} (perfil ${profile}${modelLabel})`,
+      `Sandbox orchestrator: registrando job ${jobId} para ${sandboxOnly ? 'sandbox sem repositório' : `repo ${repoSlug ?? repoUrl} na branch ${branch}`} (perfil ${profile}${modelLabel})`,
     );
 
     const now = new Date().toISOString();
     const job: SandboxJob = {
       jobId,
       repoSlug: repoSlug,
-      repoUrl: repoUrl ?? `https://github.com/${repoSlug}.git`,
+      repoUrl: repoUrl ?? (repoSlug ? `https://github.com/${repoSlug}.git` : undefined),
       branch,
       workBranch,
       taskDescription,
@@ -341,8 +345,8 @@ export function createApp(options: AppOptions = {}) {
       testCommand,
       profile,
       model: model ?? undefined,
-      accessToken: (profile === 'CHATGPT_CODEX' || profile === 'CHATGPT_CODEX_MKT') ? undefined : accessToken ?? undefined,
-      githubToken: githubToken ?? undefined,
+      accessToken: (profile === 'CHATGPT_CODEX' || profile === 'CHATGPT_CODEX_MKT' || profile === 'CHATGPT_CODEX_SANDBOX') ? undefined : accessToken ?? undefined,
+      githubToken: sandboxOnly ? undefined : githubToken ?? undefined,
       createPullRequest,
       database,
       callbackUrl: callbackUrl ?? undefined,
