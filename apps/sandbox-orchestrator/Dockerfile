@@ -9,6 +9,7 @@ RUN npm run build
 FROM node:20-bookworm-slim AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
+ARG PLAYWRIGHT_VERSION=1.54.2
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
   && mkdir -p /etc/apt/keyrings \
@@ -70,8 +71,9 @@ fi
 "$PATCH_BIN" -p0 -u -N --no-backup-if-mismatch <"${TMPFILE}.patch"
 EOF
 RUN chmod +x /usr/local/bin/apply_patch
-RUN npm install -g typescript @openai/codex@0.141.0 \
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g typescript @openai/codex@0.141.0 playwright@${PLAYWRIGHT_VERSION} @playwright/test@${PLAYWRIGHT_VERSION} \
   && codex --version \
+  && playwright --version \
   && mkdir -p /var/lib/ai-hub/codex \
   && chmod 700 /var/lib/ai-hub/codex
 COPY package*.json ./
@@ -84,5 +86,7 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMIUM_BIN=/usr/bin/chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV NODE_PATH=/usr/local/lib/node_modules
 EXPOSE 8083
 CMD ["node", "dist/src/index.js"]

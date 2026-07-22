@@ -75,8 +75,12 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
+  assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
+  assert.match(dockerfile, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g .*playwright@\$\{PLAYWRIGHT_VERSION\} .*@playwright\/test@\$\{PLAYWRIGHT_VERSION\}/);
+  assert.match(dockerfile, /playwright --version/);
+  assert.match(dockerfile, /NODE_PATH=\/usr\/local\/lib\/node_modules/);
   assert.doesNotMatch(dockerfile, /\bdocker\.io\b/);
 });
 
@@ -728,6 +732,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
     assert.ok(input?.[0]?.text?.includes('Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
+    assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
+    assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
+    assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
     assert.ok(input?.[0]?.text?.includes('"titulo"'));
@@ -2842,8 +2849,11 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
     assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
-    assert.match(promptText, /Chromium headless em \/usr\/bin\/chromium/i);
-    assert.match(promptText, /navegador headless disponível para screenshots: chromium/i);
+    assert.match(promptText, /Playwright, @playwright\/test e Chromium headless em \/usr\/bin\/chromium/i);
+    assert.match(promptText, /use Playwright com esse navegador para validar localmente/i);
+    assert.match(promptText, /navegador headless disponível para screenshots: playwright, chromium|navegador headless disponível para screenshots: chromium/i);
+    assert.match(promptText, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1/i);
+    assert.match(promptText, /NODE_PATH=\/usr\/local\/lib\/node_modules/i);
     assert.ok(job.logs.some((entry) => entry.includes('preflight do runner concluído com sucesso')));
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
@@ -3811,6 +3821,9 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('se o front-end ainda nao tiver a funcionalidade necessaria'));
   assert.ok(input?.[0]?.text?.includes('implemente essa funcionalidade, avise o usuario e aguarde o deploy'));
   assert.ok(input?.[0]?.text?.includes('Nunca use SSH para publicar diretamente uma alteracao'));
+  assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
+  assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
+  assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
 });
 

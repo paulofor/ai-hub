@@ -76,6 +76,8 @@ O runner também informa ao modelo que o Docker CLI e o plugin Docker Compose v2
 
 O runner informa ainda que o GitHub CLI (`gh`) e o `actionlint` estão disponíveis. Use `gh` para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use `actionlint` para validar arquivos `.github/workflows/*.yml` ou `.github/workflows/*.yaml` antes de concluir ajustes em GitHub Actions.
 
+O runner informa também que Playwright, `@playwright/test` e Chromium headless estão disponíveis para validações visuais. A imagem usa `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` e reaproveita o Chromium do sistema em `/usr/bin/chromium`, exposto por `CHROME_BIN`, `CHROMIUM_BIN`, `PUPPETEER_EXECUTABLE_PATH` e `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; `NODE_PATH=/usr/local/lib/node_modules` permite carregar os pacotes globais em scripts Node executados pelo modelo.
+
 ### Limites de contexto (`CONTEXT_*`)
 
 | Variável | Descrição | Default em código | Impacto operacional | Faixa sugerida |
