@@ -926,6 +926,42 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void chatgptCodexSandboxDispatchesWithoutRepositoryMetadata() {
+        CodexRequestService service = buildService(true);
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.readCodexAccount()).thenReturn(Map.of(
+            "connected", true,
+            "status", "connected",
+            "authMode", "chatgpt",
+            "executable", true
+        ));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        CreateCodexRequest payload = new CreateCodexRequest();
+        payload.setEnvironment("sandbox");
+        payload.setPrompt("vc consegue acessar www.google.com ?");
+        payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX_SANDBOX);
+
+        CodexRequest created = service.create(payload);
+
+        assertThat(created.getStatus()).isEqualTo(CodexRequestStatus.PENDING);
+        assertThat(created.getProfile().name()).hasSizeGreaterThan(20);
+        assertThat(created.getWorkBranch()).isNull();
+        assertThat(created.getWorkBatchKey()).isNull();
+        verify(promptRepository, never()).save(any());
+        ArgumentCaptor<SandboxJobRequest> requestCaptor = ArgumentCaptor.forClass(SandboxJobRequest.class);
+        verify(sandboxOrchestratorClient).createJob(requestCaptor.capture());
+        SandboxJobRequest jobRequest = requestCaptor.getValue();
+        assertThat(jobRequest.profile()).isEqualTo("CHATGPT_CODEX_SANDBOX");
+        assertThat(jobRequest.repoSlug()).isNull();
+        assertThat(jobRequest.repoUrl()).isNull();
+        assertThat(jobRequest.workBranch()).isNull();
+        assertThat(jobRequest.githubToken()).isNull();
+        assertThat(jobRequest.database()).isNull();
+        assertThat(jobRequest.createPullRequest()).isFalse();
+    }
+
+    @Test
     void workBatchUsesRepositoryBranchAndProfile() {
         CodexRequestService service = buildService(true);
         when(promptRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
