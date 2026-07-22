@@ -40,6 +40,12 @@ export interface CodexRequest {
   httpGetSuccessCount?: number;
   dbQueryCount?: number;
   interactionCount?: number;
+  documentAccesses: CodexDocumentAccess[];
+}
+
+export interface CodexDocumentAccess {
+  documentPath: string;
+  accessCount: number;
 }
 
 const parseNumber = (value: unknown): number | undefined => {
@@ -197,6 +203,32 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const interactionCount = parseNumber(
     item.interactionCount ?? (item as Record<string, unknown>).interaction_count
   );
+  const documentAccessesRaw = Array.isArray(item.documentAccesses)
+    ? item.documentAccesses
+    : Array.isArray((item as Record<string, unknown>).document_accesses)
+      ? ((item as Record<string, unknown>).document_accesses as unknown[])
+      : [];
+  const documentAccesses = documentAccessesRaw
+    .map((entry) => {
+      if (typeof entry !== 'object' || entry === null) {
+        return null;
+      }
+      const documentAccess = entry as Record<string, unknown>;
+      const documentPathRaw = typeof documentAccess.documentPath === 'string'
+        ? documentAccess.documentPath
+        : typeof documentAccess.document_path === 'string'
+          ? documentAccess.document_path
+          : '';
+      const documentPath = documentPathRaw.trim();
+      const accessCount = parseNumber(
+        documentAccess.accessCount ?? documentAccess.access_count ?? documentAccess.count
+      ) ?? 0;
+      if (!documentPath || accessCount <= 0) {
+        return null;
+      }
+      return { documentPath, accessCount };
+    })
+    .filter((entry): entry is CodexDocumentAccess => entry !== null);
   const problemId = parseNumber(item.problemId ?? (item as Record<string, unknown>).problem_id);
   const problemTitleRaw = typeof item.problemTitle === 'string'
     ? item.problemTitle
@@ -289,6 +321,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     httpGetSuccessCount,
     dbQueryCount,
     interactionCount,
+    documentAccesses,
     problemId: problemId ?? undefined,
     problemTitle: problemTitle ?? undefined,
     requestTitle: requestTitle ?? undefined

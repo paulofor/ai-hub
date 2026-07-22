@@ -545,6 +545,45 @@ export default function CodexRequestDetailPage() {
               </div>
             </div>
 
+            <div className="rounded-lg border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Documentos lidos</h4>
+                <span className="text-xs text-slate-500">
+                  {request.documentAccesses.length.toLocaleString('pt-BR')} documento{request.documentAccesses.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {request.documentAccesses.length > 0 ? (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th scope="col" className="px-3 py-2 font-semibold">Documento</th>
+                        <th scope="col" className="w-32 px-3 py-2 text-right font-semibold">Leituras</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {request.documentAccesses.map((documentAccess) => (
+                        <tr key={documentAccess.documentPath}>
+                          <td className="max-w-0 px-3 py-2">
+                            <span className="block truncate font-mono text-xs text-slate-700 dark:text-slate-200" title={documentAccess.documentPath}>
+                              {documentAccess.documentPath}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-slate-800 dark:text-slate-100">
+                            {documentAccess.accessCount.toLocaleString('pt-BR')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  Nenhum documento lido foi registrado para esta solicitação.
+                </p>
+              )}
+            </div>
+
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="mb-2 flex items-center justify-between">
