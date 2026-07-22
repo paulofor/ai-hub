@@ -158,6 +158,20 @@
 - Mantidas apenas as portas do `caddy` (`80/443`) como ponto de entrada externo, alinhando o desenho de rede com a causa raiz do incidente de bind em host compartilhado.
 - Ajustado workflow de deploy para não exportar mais `MCP_SERVER_HTTP_PORT`, já que não há publicação externa de porta do MCP no host.
 
+## 2026-07-22 00:59:48 UTC-3
+- Solicitação recebida: baixar/analisar o repositório no ambiente e tentar executar o Codex ChatGPT Sandbox.
+- Repositório já estava disponível no workspace local em `/root/ai-hub/src/ai-hub-a5307751-7e74-4050-bf99-ab8036fbee4c-3K0HnN/repo`.
+- Avaliadas três alternativas: subir a stack completa via Docker Compose, executar o `sandbox-orchestrator` isolado em Node e rodar a suíte de testes do módulo; escolhido iniciar pelo módulo isolado por reduzir dependências externas e permitir validar a causa raiz de eventuais falhas.
+- Validação de ambiente: `docker compose version` disponível, mas `docker version` não conseguiu conectar em `/var/run/docker.sock`, indicando ausência de Docker daemon/socket no ambiente local; por isso a stack completa não pôde ser executada localmente.
+- Executado `npm ci --prefix apps/sandbox-orchestrator`, com instalação concluída; `npm audit` reportou 7 vulnerabilidades, sem bloquear a execução.
+- Executado `npm --prefix apps/sandbox-orchestrator test`; resultado: 71/71 testes passaram, incluindo fluxos de `CHATGPT_CODEX`, `CHATGPT_CODEX_SANDBOX`, `thread/start`, `turn/start` e sandbox mode em kebab-case.
+- Executado `docker compose config --quiet`; resultado sem erros, validando a sintaxe/configuração do Compose apesar da ausência do daemon Docker.
+- Executado `npm --prefix apps/sandbox-orchestrator run build`; build TypeScript concluído com sucesso.
+- Tentativa inicial de iniciar `sandbox-orchestrator` com `CODEX_APP_SERVER_ENABLED=true` falhou porque `CODEX_HOME=/tmp/ai-hub-codex-home` apontava para diretório inexistente; causa raiz: pré-condição de diretório persistente do Codex não preparada no ambiente descartável.
+- Criado o diretório `/tmp/ai-hub-codex-home` e reiniciado o serviço em `PORT=18083`; `GET /health` retornou `status=ok` e `codexAppServer.status=ready`.
+- Validados endpoints internos: `GET /codex-app-server/account/read` retornou `connected=false`, `requiresOpenaiAuth=true`, `blockReason=CODEX_NOT_AUTHENTICATED`; `GET /codex-app-server/models` listou modelos; `POST /codex-app-server/account/login/start` iniciou device code e o login pendente foi cancelado em seguida.
+- Limitação real: execução de uma request real do modelo via ChatGPT Codex Sandbox depende de autenticação humana ChatGPT no Codex App Server; sem essa autenticação, o serviço fica pronto, mas `executable=false`.
+
 - 2026-05-13 20:12:24 UTC — Diagnóstico e correção de causa raiz no acesso por domínio: o `docker-compose.yml` aplicava fallback silencioso `CADDY_DOMAIN:-localhost`, fazendo o Caddy emitir certificado local para `localhost` e ignorar o domínio público quando a variável não era carregada. Ajustado para tornar `CADDY_DOMAIN` obrigatória com erro explícito no startup (`${CADDY_DOMAIN:?...}`), evitando reincidência e falha silenciosa em produção.
 
 - 2026-05-13 20:18:00 UTC — Complemento da correção de causa raiz: além de tornar `CADDY_DOMAIN` obrigatório no compose, incluída a variável no `.env.example` com o domínio informado (`iahub.xyz`) para evitar ausência da configuração durante deploy/bootstrap e impedir regressão para certificado local.
@@ -2203,3 +2217,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: a conversa interativa recebeu a mesma orientacao operacional.
 - Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts`: os prompts enviados ao Codex App Server agora verificam a presenca da regra nos modos `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX`.
 - Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent && node --test --test-name-pattern="CHATGPT_CODEX" apps/sandbox-orchestrator/dist/tests/jobs.test.js`; `npm --prefix apps/frontend run build`. O npm reportou vulnerabilidades ja presentes nos grafos dos pacotes, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-22 01:00:26 UTC-3
+- Correcao de registro: a entrada `2026-07-22 00:59:48 UTC-3` foi adicionada fora do final absoluto do arquivo porque o patch usou contexto repetido. Mantida sem remocao por politica append-only; este registro consolida corretamente a atividade no final do diario.
+- Solicitação recebida: baixar/analisar o repositório no ambiente e tentar executar o Codex ChatGPT Sandbox.
+- Repositório já estava disponível no workspace local em `/root/ai-hub/src/ai-hub-a5307751-7e74-4050-bf99-ab8036fbee4c-3K0HnN/repo`.
+- Alternativas avaliadas: subir a stack completa via Docker Compose, executar o `sandbox-orchestrator` isolado em Node ou rodar a suíte de testes do módulo. Escolhido iniciar pelo módulo isolado e testes por reduzir dependências externas e validar o núcleo do Sandbox ChatGPT com menor ruído.
+- Validação de ambiente: `docker compose version` disponível e `docker compose config --quiet` sem erros, mas `docker version` não conectou em `/var/run/docker.sock`; causa raiz da impossibilidade de subir a stack completa localmente foi ausência de Docker daemon/socket no ambiente.
+- Executado `npm ci --prefix apps/sandbox-orchestrator`; instalação concluída, com `npm audit` apontando 7 vulnerabilidades sem bloquear execução.
+- Executado `npm --prefix apps/sandbox-orchestrator test`; resultado: 71/71 testes passaram, incluindo fluxos de `CHATGPT_CODEX`, `CHATGPT_CODEX_SANDBOX`, `thread/start`, `turn/start` e sandbox mode em kebab-case.
+- Executado `npm --prefix apps/sandbox-orchestrator run build`; build TypeScript concluído com sucesso.
+- Tentativa inicial de iniciar o serviço com `CODEX_APP_SERVER_ENABLED=true` falhou porque `CODEX_HOME=/tmp/ai-hub-codex-home` não existia. Criado o diretório, reiniciado o serviço em `PORT=18083` e `GET /health` retornou `status=ok` com `codexAppServer.status=ready`.
+- Validados endpoints internos: `GET /codex-app-server/account/read` retornou `connected=false`, `requiresOpenaiAuth=true`, `blockReason=CODEX_NOT_AUTHENTICATED`; `GET /codex-app-server/models` listou modelos; `POST /codex-app-server/account/login/start` iniciou device code e o login pendente foi cancelado em seguida.
+- Limitação real: execução de uma request real do modelo via ChatGPT Codex Sandbox depende de autenticação humana ChatGPT no Codex App Server; sem essa autenticação, o serviço fica pronto, mas `executable=false`.
+- Servidor local de teste encerrado ao final; porta `18083` deixou de responder.
