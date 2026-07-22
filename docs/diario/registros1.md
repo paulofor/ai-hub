@@ -2231,3 +2231,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validados endpoints internos: `GET /codex-app-server/account/read` retornou `connected=false`, `requiresOpenaiAuth=true`, `blockReason=CODEX_NOT_AUTHENTICATED`; `GET /codex-app-server/models` listou modelos; `POST /codex-app-server/account/login/start` iniciou device code e o login pendente foi cancelado em seguida.
 - Limitação real: execução de uma request real do modelo via ChatGPT Codex Sandbox depende de autenticação humana ChatGPT no Codex App Server; sem essa autenticação, o serviço fica pronto, mas `executable=false`.
 - Servidor local de teste encerrado ao final; porta `18083` deixou de responder.
+
+## 2026-07-22 01:12:00 UTC - Novo dialogo no Codex ChatGPT Sandbox
+
+- Solicitacao recebida: adicionar um botao para limpar o dialogo e comecar um novo no tipo sandbox, conforme tela `/codex-chatgpt-sandbox`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o modo sandbox reaproveitou a pagina `CodexChatgptPage`, mas removeu os controles de PR/lote do fluxo managed; como a conversa e persistida por perfil no `localStorage` e incluida no proximo prompt, faltou uma acao propria do sandbox para reiniciar o contexto local sem apagar execucoes ja registradas.
+- Alternativas avaliadas: (1) reutilizar `Zerar e descartar lote`, inadequado porque sandbox nao usa lote/branch/PR; (2) criar endpoint backend para apagar execucoes, alto risco porque destruiria auditoria e nao era a necessidade; (3) criar uma acao local "Novo dialogo" para limpar conversa, prompt, anexos, edicao e contexto salvo selecionado, mantendo historico de execucoes. Escolhida a alternativa 3 por atacar a causa raiz com menor risco e melhor aderencia ao comportamento esperado do sandbox.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado `handleStartNewSandboxDialog` exclusivo para `CHATGPT_CODEX_SANDBOX`, com confirmacao quando ha conversa, limpeza de estado local da sessao e foco de volta no campo de prompt.
+- Ajuste de UI em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionado botao "Novo dialogo" no topo do formulario sandbox e junto dos botoes de acao, habilitado quando ha conversa, rascunho, anexo ou conversa salva selecionada.
+- Validacoes executadas: tentativa inicial de build sem dependencias locais expôs toolchain global inadequada; depois `npm ci --prefix apps/frontend` restaurou dependencias versionadas, `npm --prefix apps/frontend run build` passou e `npm --prefix apps/frontend run lint` passou.
+- Servidor Vite local iniciado em `http://127.0.0.1:18084/` para inspeção manual da rota. Nao foi criado Pull Request.
