@@ -906,6 +906,7 @@ interface CodexChatgptVariantConfig {
 }
 
 const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
+const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas; quando a solicitação envolver frontend, layout, UI ou experiência visual, use Playwright para validar localmente e gerar screenshots sempre que possível.';
 
 const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX',
@@ -918,7 +919,8 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptExtraLines: [
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
-    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION
+    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION
   ]
 };
 
@@ -936,6 +938,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
     CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
@@ -955,6 +958,7 @@ const SANDBOX_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git e sem uso de repositório.',
     'Não clone repositórios, não gere diff, não prepare branch e não crie Pull Request.',
     CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
     'Use o diretório temporário da sandbox apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos.',
     'Responda em português de forma objetiva e acionável.'
   ]
@@ -1768,6 +1772,30 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
   }, []);
 
+  const handleStartNewSandboxDialog = useCallback(() => {
+    if (!sandboxOnly) return;
+    const hasCurrentDialog = conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId);
+    if (!hasCurrentDialog) return;
+
+    const confirmed = conversation.length === 0
+      || window.confirm('Limpar o diálogo atual e começar uma nova conversa? As execuções já registradas continuarão no histórico.');
+    if (!confirmed) return;
+
+    setConversation([]);
+    setPrompt('');
+    setFileAttachments([]);
+    setSelectedSavedConversationId('');
+    setSelectedSavedConversationMessages([]);
+    setEditingRequestId(null);
+    setEditingDraft('');
+    setPrResult(null);
+    setError(null);
+    setCopiedMessageId(null);
+    setRequestedOrientations(new Set());
+    registerTelemetry('execution_success', 'Diálogo sandbox limpo para iniciar uma nova conversa.');
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, [conversation.length, fileAttachments.length, prompt, registerTelemetry, sandboxOnly, selectedSavedConversationId]);
+
   const handleDeletePendingRequest = useCallback(async (requestId: number) => {
     if (deletingRequestId) return;
     setDeletingRequestId(requestId);
@@ -1912,6 +1940,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
   const visibleConversation = conversation.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
   const hiddenConversationMessages = Math.max(0, conversation.length - visibleConversation.length);
+  const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
   const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
     ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'
@@ -1979,6 +2008,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
         <h3 className="text-lg font-semibold">{config.formTitle}</h3>
         <p className="text-sm text-slate-500">{config.description}</p>
+        {sandboxOnly ? <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={handleStartNewSandboxDialog}
+            disabled={!canStartNewSandboxDialog}
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Novo diálogo
+          </button>
+        </div> : null}
         <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm dark:border-slate-800 dark:bg-slate-950/40">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
             <label className="space-y-1">
@@ -2102,6 +2141,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
+          {sandboxOnly ? <button type="button" onClick={handleStartNewSandboxDialog} disabled={!canStartNewSandboxDialog} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Novo diálogo</button> : null}
           {!sandboxOnly ? <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} title={prBlockedReason} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button> : null}
           {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
         </div>

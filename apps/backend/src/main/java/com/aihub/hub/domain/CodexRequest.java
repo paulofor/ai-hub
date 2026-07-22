@@ -14,12 +14,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 
 @Entity
@@ -156,6 +158,12 @@ public class CodexRequest {
 
     @Column(name = "interaction_count")
     private Integer interactionCount;
+
+    @Transient
+    private List<DocumentAccessSummary> documentAccesses = List.of();
+
+    public record DocumentAccessSummary(String documentPath, long accessCount) {
+    }
 
     public CodexRequest() {
     }
@@ -489,5 +497,13 @@ public class CodexRequest {
 
     public void setInteractionCount(Integer interactionCount) {
         this.interactionCount = interactionCount;
+    }
+
+    public List<DocumentAccessSummary> getDocumentAccesses() {
+        return documentAccesses;
+    }
+
+    public void setDocumentAccesses(List<DocumentAccessSummary> documentAccesses) {
+        this.documentAccesses = documentAccesses != null ? List.copyOf(documentAccesses) : List.of();
     }
 }

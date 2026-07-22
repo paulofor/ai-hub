@@ -588,6 +588,13 @@ public class CodexRequestService {
         if (request.getInteractionCount() == null) {
             request.setInteractionCount(codexInteractionRepository.countByCodexRequestId(id));
         }
+        List<CodexDocumentAccessRepository.DocumentAccessCount> documentAccessCounts =
+            Optional.ofNullable(codexDocumentAccessRepository.countDocumentAccessesByRequestId(id)).orElse(List.of());
+        request.setDocumentAccesses(
+            documentAccessCounts.stream()
+                .map(row -> new CodexRequest.DocumentAccessSummary(row.getDocumentPath(), row.getAccessCount()))
+                .toList()
+        );
         return request;
     }
 

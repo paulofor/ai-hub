@@ -118,6 +118,7 @@ class CodexRequestServiceTest {
     void setup() {
         when(environmentRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
         when(githubAppAuth.getInstallationToken()).thenReturn("github-installation-token");
+        when(codexDocumentAccessRepository.countDocumentAccessesByRequestId(anyLong())).thenReturn(List.of());
     }
 
     @Test
@@ -684,6 +685,43 @@ class CodexRequestServiceTest {
         assertThat(captor.getValue().getDocumentPath()).isEqualTo("docs/briefing.md");
         assertThat(captor.getValue().getToolName()).isEqualTo("read_file");
         assertThat(captor.getValue().getRequestedPath()).isEqualTo("./docs/briefing.md");
+    }
+
+    @Test
+    void findAddsDocumentAccessCounts() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "analise docs");
+        ReflectionTestUtils.setField(request, "id", 123L);
+
+        when(codexRequestRepository.findById(123L)).thenReturn(Optional.of(request));
+        when(codexInteractionRepository.countByCodexRequestId(123L)).thenReturn(7);
+        when(codexDocumentAccessRepository.countDocumentAccessesByRequestId(123L)).thenReturn(List.of(
+            documentAccessCount("docs/briefing.md", 3),
+            documentAccessCount("README.md", 1)
+        ));
+
+        CodexRequest found = buildService().find(123L);
+
+        assertThat(found.getInteractionCount()).isEqualTo(7);
+        assertThat(found.getDocumentAccesses())
+            .extracting(CodexRequest.DocumentAccessSummary::documentPath, CodexRequest.DocumentAccessSummary::accessCount)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("docs/briefing.md", 3L),
+                org.assertj.core.groups.Tuple.tuple("README.md", 1L)
+            );
+    }
+
+    private CodexDocumentAccessRepository.DocumentAccessCount documentAccessCount(String documentPath, long accessCount) {
+        return new CodexDocumentAccessRepository.DocumentAccessCount() {
+            @Override
+            public String getDocumentPath() {
+                return documentPath;
+            }
+
+            @Override
+            public long getAccessCount() {
+                return accessCount;
+            }
+        };
     }
 
     @Test
