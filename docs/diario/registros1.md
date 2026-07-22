@@ -2266,3 +2266,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste adicionado em `CodexRequestServiceTest`: `findAddsDocumentAccessCounts` valida que o detalhe da solicitacao carrega as contagens agregadas e preserva `interactionCount`.
 - Validacoes executadas: `npm ci --prefix apps/frontend --include=dev`; `mvn -q -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `mvn -q -f apps/backend/pom.xml test`; `git diff --check`.
 - Observacao de ambiente: a primeira tentativa de Maven como `-pl apps/backend` falhou porque o repositorio nao esta configurado como reactor multi-modulo na raiz; a execucao correta foi com `-f apps/backend/pom.xml`. A primeira tentativa de build/lint do frontend falhou por ausencia de `node_modules`, resolvida com `npm ci` a partir do lockfile. Nao foi criado Pull Request.
+
+## 2026-07-22 13:06:47 UTC-3
+
+- Solicitacao recebida: investigar falha `Internal Server Error` em consulta simples no modo Codex ChatGPT Sandbox e fazer o mesmo esquema dos modos que funcionam.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta confirmada por logs do backend no host via MCP: `Data truncation: Data too long for column 'profile' at row 1` ao criar `CodexRequest` com perfil `CHATGPT_CODEX_SANDBOX`; a coluna `codex_requests.profile` foi criada como `VARCHAR(20)`, mas o nome do novo perfil possui mais de 20 caracteres.
+- Ajuste aplicado no backend: `CodexRequest.profile` passou a declarar `length = 64`, alinhado ao tamanho ja usado em `codex_saved_conversations.profile`.
+- Ajuste aplicado em migrations Flyway MySQL, PostgreSQL e H2: adicionada `V39__expand_codex_request_profile_length.sql` para aumentar `codex_requests.profile` para `VARCHAR(64)`.
+- Ajuste de fluxo aplicado em `CodexRequestService.create`: o perfil `CHATGPT_CODEX_SANDBOX` nao grava `PromptRecord` nem aplica `workBatch/workBranch`, evitando tratar execucao temporaria sem Git como metadado de repositorio.
+- Testes adicionados: `CodexRequestTest.profileColumnFitsSandboxProfileName` e `CodexRequestServiceTest.chatgptCodexSandboxDispatchesWithoutRepositoryMetadata`.
+- Limitacao de ambiente registrada: `docker version` falhou por ausencia do socket `/var/run/docker.sock`; validacoes dependentes de container local nao puderam ser usadas nesta sandbox. Nao foi criado Pull Request.

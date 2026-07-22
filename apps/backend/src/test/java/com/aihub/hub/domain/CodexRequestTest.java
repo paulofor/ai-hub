@@ -11,6 +11,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CodexRequestTest {
 
     @Test
+    void profileColumnFitsSandboxProfileName() throws Exception {
+        Field field = CodexRequest.class.getDeclaredField("profile");
+
+        Column column = field.getAnnotation(Column.class);
+
+        assertThat(column).isNotNull();
+        assertThat(column.length()).isGreaterThanOrEqualTo(CodexIntegrationProfile.CHATGPT_CODEX_SANDBOX.name().length());
+    }
+
+    @Test
     void interactionCountIsPersistedAsRequestSummary() throws Exception {
         Field field = CodexRequest.class.getDeclaredField("interactionCount");
 

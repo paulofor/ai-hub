@@ -44,7 +44,7 @@ public class CodexRequest {
     private String version = DEFAULT_VERSION;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "profile", nullable = false)
+    @Column(name = "profile", nullable = false, length = 64)
     private CodexIntegrationProfile profile = CodexIntegrationProfile.STANDARD;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)

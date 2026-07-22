@@ -178,17 +178,19 @@ public class CodexRequestService {
         codexRequest.setDbQueryCount(0);
         codexRequest.setImageAttachmentsJson(serializeImageAttachments(request.getImageAttachments()));
 
-        PromptMetadata metadata = extractMetadata(request.getEnvironment());
-        applyWorkBatch(codexRequest, metadata);
-        PromptRecord promptRecord = new PromptRecord(
-            metadata.repo(),
-            metadata.branch(),
-            metadata.runId(),
-            metadata.prNumber(),
-            model,
-            request.getPrompt().trim()
-        );
-        promptRepository.save(promptRecord);
+        if (!isChatgptCodexSandboxProfile(profile)) {
+            PromptMetadata metadata = extractMetadata(request.getEnvironment());
+            applyWorkBatch(codexRequest, metadata);
+            PromptRecord promptRecord = new PromptRecord(
+                metadata.repo(),
+                metadata.branch(),
+                metadata.runId(),
+                metadata.prNumber(),
+                model,
+                request.getPrompt().trim()
+            );
+            promptRepository.save(promptRecord);
+        }
 
         CodexRequest saved = saveRequest(codexRequest);
         log.info("CodexRequest {} salvo, avaliando fila de execução", saved.getId());

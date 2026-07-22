@@ -1,0 +1,2 @@
+ALTER TABLE codex_requests
+    MODIFY COLUMN profile VARCHAR(64) NOT NULL;
