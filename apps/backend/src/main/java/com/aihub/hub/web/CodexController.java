@@ -92,8 +92,8 @@ public class CodexController {
     }
 
     @GetMapping("/metrics")
-    public CodexDashboardMetrics metrics() {
-        return codexRequestService.dashboardMetrics();
+    public CodexDashboardMetrics metrics(@RequestParam(required = false) String profile) {
+        return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
     }
 
     @GetMapping("/{id}")
@@ -430,6 +430,18 @@ public class CodexController {
             return Optional.of(matcher.group());
         }
         return Optional.empty();
+    }
+
+    private static CodexIntegrationProfile resolveProfileParam(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        try {
+            return CodexIntegrationProfile.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Perfil de métricas inválido");
+        }
     }
 
     private String buildPullRequestErrorMessage(RestClientResponseException ex) {

@@ -32,6 +32,17 @@ interface DiscardBatchResult {
   total?: number;
 }
 
+interface CodexDashboardMetricWindow {
+  startsAt: string;
+  requestCount: number;
+  interactionCount: number;
+  durationMs: number;
+}
+
+interface CodexDashboardMetrics {
+  day: CodexDashboardMetricWindow;
+}
+
 interface EnvironmentOption {
   id: number;
   name: string;
@@ -118,6 +129,22 @@ const formatDocumentAccessCount = (count?: number) => {
     return '—';
   }
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'documento' : 'documentos'}`;
+};
+
+const formatOperationalDayDate = (value?: string) => {
+  if (!value) {
+    return '—';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'America/Sao_Paulo'
+  });
 };
 
 const formatRequestEnvironment = (environment?: string) => {
@@ -1045,6 +1072,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProductSlug, setSelectedProductSlug] = useState('');
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
+  const [dailyMetrics, setDailyMetrics] = useState<CodexDashboardMetrics | null>(null);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
@@ -1157,6 +1185,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [config.profile]);
 
+  const loadDailyMetrics = useCallback(async () => {
+    const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {
+      params: { profile: config.profile }
+    });
+    setDailyMetrics(response.data);
+    return response.data;
+  }, [config.profile]);
+
   const loadSavedConversations = useCallback(async () => {
     const response = await client.get('/codex/conversations', { params: { profile: config.profile } });
     const parsed = parseSavedConversations(response.data).filter((item) => item.profile === config.profile);
@@ -1212,7 +1248,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setModels(nextModels);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
-      await Promise.all([loadRequests(), loadSavedConversations(), loadProducts()]);
+      await Promise.all([loadRequests(), loadSavedConversations(), loadProducts(), loadDailyMetrics()]);
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
     } catch (err) {
@@ -1221,7 +1257,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setLoading(false);
     }
-  }, [loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
+  }, [loadDailyMetrics, loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -1229,12 +1265,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   useEffect(() => {
     const interval = setInterval(() => {
-      Promise.all([loadRequests(), loadAccount()])
+      Promise.all([loadRequests(), loadAccount(), loadDailyMetrics()])
         .then(() => registerTelemetry('poll_success', 'Polling periódico concluído.'))
         .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling periódico: ${err.message}`));
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [loadAccount, loadRequests, registerTelemetry]);
+  }, [loadAccount, loadDailyMetrics, loadRequests, registerTelemetry]);
 
   const isConnected = Boolean(account?.connected) && account?.status === 'connected';
   const isExecutable = Boolean(account?.executable) && isConnected;
@@ -1965,7 +2001,19 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   return (
     <section className="space-y-6">
-      <h2 className="text-2xl font-semibold">{config.title}</h2>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <h2 className="text-2xl font-semibold">{config.title}</h2>
+        <div className="min-w-[220px] rounded-lg border border-slate-200 bg-white/80 px-4 py-3 text-right shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
+          <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+            {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
+          </p>
+          <p className="mt-1 text-lg font-semibold text-emerald-700 dark:text-emerald-300">
+            {formatDuration(dailyMetrics?.day?.durationMs)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">Corte às 03:00 · São Paulo</p>
+        </div>
+      </div>
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-4">
         <h3 className="text-lg font-semibold">Estado da conta (tempo real)</h3>
         {loading ? <p className="text-sm text-slate-500">Carregando status...</p> : null}

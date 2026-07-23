@@ -53,7 +53,9 @@ import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
@@ -78,6 +80,7 @@ public class CodexRequestService {
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
     private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
     private static final int REQUEST_TITLE_LIMIT = 140;
+    private static final LocalTime DASHBOARD_DAY_CUTOFF = LocalTime.of(3, 0);
     private static final Pattern JSON_FENCE_PATTERN = Pattern.compile("(?is)```(?:json)?\\s*([\\s\\S]*?)\\s*```");
     private static final Pattern LAST_USER_MESSAGE_PATTERN = Pattern.compile(
         "(?s)(?:^|\\R)Última mensagem do usuário:\\s*\\R?(.+?)\\s*$"
@@ -315,11 +318,16 @@ public class CodexRequestService {
 
     @Transactional(readOnly = true)
     public CodexDashboardMetrics dashboardMetrics() {
+        return dashboardMetrics(null);
+    }
+
+    @Transactional(readOnly = true)
+    public CodexDashboardMetrics dashboardMetrics(CodexIntegrationProfile profile) {
         ZoneId zone = dashboardZone;
-        LocalDate today = LocalDate.now(dashboardClock);
-        Instant dayStart = today
-            .atStartOfDay(zone)
-            .toInstant();
+        ZonedDateTime now = ZonedDateTime.now(dashboardClock).withZoneSameInstant(zone);
+        LocalDate today = now.toLocalDate();
+        LocalDate operationalToday = operationalDate(now);
+        Instant dayStart = operationalDayStart(operationalToday, zone);
         Instant weekStart = today
             .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             .atStartOfDay(zone)
@@ -335,15 +343,21 @@ public class CodexRequestService {
             .toInstant();
 
         return new CodexDashboardMetrics(
-            buildMetricWindow(dayStart),
-            buildMetricWindow(weekStart),
-            buildMetricWindow(monthStart),
-            buildMetricSeries(seriesStart, today, zone)
+            buildMetricWindow(dayStart, profile),
+            buildMetricWindow(weekStart, profile),
+            buildMetricWindow(monthStart, profile),
+            buildMetricSeries(seriesStart, today, operationalToday, zone, profile)
         );
     }
 
     private CodexDashboardMetrics.CodexDashboardMetricWindow buildMetricWindow(Instant start) {
-        Object[] values = codexRequestRepository.summarizeMetricsSince(start);
+        return buildMetricWindow(start, null);
+    }
+
+    private CodexDashboardMetrics.CodexDashboardMetricWindow buildMetricWindow(Instant start, CodexIntegrationProfile profile) {
+        Object[] values = profile == null
+            ? codexRequestRepository.summarizeMetricsSince(start)
+            : codexRequestRepository.summarizeMetricsSinceAndProfile(start, profile);
         if (values != null && values.length == 1 && values[0] instanceof Object[] nested) {
             values = nested;
         }
@@ -363,13 +377,16 @@ public class CodexRequestService {
         return value instanceof Number number ? number.longValue() : 0L;
     }
 
-    private CodexDashboardMetrics.CodexDashboardMetricSeries buildMetricSeries(Instant start, LocalDate today, ZoneId zone) {
+    private CodexDashboardMetrics.CodexDashboardMetricSeries buildMetricSeries(Instant start, LocalDate today, LocalDate operationalToday, ZoneId zone, CodexIntegrationProfile profile) {
         LocalDate firstDay = start.atZone(zone).toLocalDate();
-        Map<LocalDate, MetricAccumulator> daily = initializeDailyBuckets(firstDay, today);
+        LocalDate firstOperationalDay = operationalDate(start.atZone(zone));
+        Map<LocalDate, MetricAccumulator> daily = initializeDailyBuckets(firstOperationalDay, operationalToday);
         Map<LocalDate, MetricAccumulator> weekly = initializeWeeklyBuckets(firstDay, today);
         Map<LocalDate, MetricAccumulator> monthly = initializeMonthlyBuckets(firstDay, today);
 
-        List<Object[]> rows = codexRequestRepository.findMetricRowsSince(start);
+        List<Object[]> rows = profile == null
+            ? codexRequestRepository.findMetricRowsSince(start)
+            : codexRequestRepository.findMetricRowsSinceAndProfile(start, profile);
         if (rows == null) {
             rows = List.of();
         }
@@ -378,17 +395,19 @@ public class CodexRequestService {
             if (createdAt == null) {
                 continue;
             }
-            LocalDate createdDate = createdAt.atZone(zone).toLocalDate();
+            ZonedDateTime createdDateTime = createdAt.atZone(zone);
+            LocalDate createdDate = createdDateTime.toLocalDate();
+            LocalDate createdOperationalDate = operationalDate(createdDateTime);
             long interactions = aggregateLong(row, 1);
             long duration = aggregateLong(row, 2);
 
-            accumulate(daily, createdDate, interactions, duration);
+            accumulate(daily, createdOperationalDate, interactions, duration);
             accumulate(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), interactions, duration);
             accumulate(monthly, createdDate.withDayOfMonth(1), interactions, duration);
         }
 
         return new CodexDashboardMetrics.CodexDashboardMetricSeries(
-            toMetricWindows(daily, zone),
+            toDailyMetricWindows(daily, zone),
             toMetricWindows(weekly, zone),
             toMetricWindows(monthly, zone)
         );
@@ -438,6 +457,26 @@ public class CodexRequestService {
                 entry.getValue().durationMs
             ))
             .toList();
+    }
+
+    private List<CodexDashboardMetrics.CodexDashboardMetricWindow> toDailyMetricWindows(Map<LocalDate, MetricAccumulator> buckets, ZoneId zone) {
+        return buckets.entrySet().stream()
+            .map(entry -> new CodexDashboardMetrics.CodexDashboardMetricWindow(
+                operationalDayStart(entry.getKey(), zone),
+                entry.getValue().requestCount,
+                entry.getValue().interactionCount,
+                entry.getValue().durationMs
+            ))
+            .toList();
+    }
+
+    private LocalDate operationalDate(ZonedDateTime dateTime) {
+        LocalDate date = dateTime.toLocalDate();
+        return dateTime.toLocalTime().isBefore(DASHBOARD_DAY_CUTOFF) ? date.minusDays(1) : date;
+    }
+
+    private Instant operationalDayStart(LocalDate date, ZoneId zone) {
+        return date.atTime(DASHBOARD_DAY_CUTOFF).atZone(zone).toInstant();
     }
 
     private Instant aggregateInstant(Object[] values, int index) {
