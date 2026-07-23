@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom';
 import { useFetch } from '../hooks/useFetch';
 import client from '../api/client';
+import { formatDuration } from '../lib/codex';
 
 interface Prompt {
   id: number;
@@ -16,8 +16,24 @@ interface SourceModuleChange {
   daysSinceLastChange: number | null;
 }
 
+interface CodexDashboardMetricWindow {
+  startsAt: string;
+  requestCount: number;
+  interactionCount: number;
+  durationMs: number;
+}
+
+interface CodexDashboardMetrics {
+  week: CodexDashboardMetricWindow;
+  month: CodexDashboardMetricWindow;
+}
+
 function formatModuleDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : 'indisponível';
+}
+
+function formatMetricNumber(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('pt-BR') : '—';
 }
 
 export default function DashboardPage() {
@@ -31,32 +47,32 @@ export default function DashboardPage() {
     []
   );
 
+  const { data: metrics } = useFetch<CodexDashboardMetrics>(
+    () => client.get('/codex/requests/metrics').then((res) => res.data),
+    []
+  );
+
   const recentPrompts = prompts?.slice(-5).reverse() ?? [];
 
   return (
     <section className="space-y-6">
       <h2 className="text-2xl font-semibold">Visão geral</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <DashboardCard title="Prompts" description="Acompanhe análises de falhas e respostas do modelo">
-          <Link to="/prompts" className="text-sm font-semibold text-emerald-600">
-            Abrir análises →
-          </Link>
-        </DashboardCard>
-        <DashboardCard title="Ambientes" description="Configure destinos e segredos para execuções">
-          <Link to="/environments" className="text-sm font-semibold text-emerald-600">
-            Gerenciar ambientes →
-          </Link>
-        </DashboardCard>
-        <DashboardCard title="Codex" description="Central de modelos e requisições sob medida">
-          <Link to="/codex" className="text-sm font-semibold text-emerald-600">
-            Abrir Codex →
-          </Link>
-        </DashboardCard>
-        <DashboardCard title="Codex ChatGPT" description="Fluxo managed com autenticação da conta ChatGPT">
-          <Link to="/codex-chatgpt" className="text-sm font-semibold text-emerald-600">
-            Abrir Codex ChatGPT →
-          </Link>
-        </DashboardCard>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <MetricCard
+          title="Solicitações"
+          weekValue={formatMetricNumber(metrics?.week.requestCount)}
+          monthValue={formatMetricNumber(metrics?.month.requestCount)}
+        />
+        <MetricCard
+          title="Interações"
+          weekValue={formatMetricNumber(metrics?.week.interactionCount)}
+          monthValue={formatMetricNumber(metrics?.month.interactionCount)}
+        />
+        <MetricCard
+          title="Tempo de processamento"
+          weekValue={formatDuration(metrics?.week.durationMs)}
+          monthValue={formatDuration(metrics?.month.durationMs)}
+        />
       </div>
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-4">
@@ -116,8 +132,8 @@ export default function DashboardPage() {
             e Codex enquanto preparamos novas funcionalidades.
           </p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            Use os atalhos acima para navegar e continue compartilhando feedback sobre o que devemos priorizar nas
-            próximas entregas.
+            Use as métricas acima para acompanhar o volume de execução e continue compartilhando feedback sobre o que
+            devemos priorizar nas próximas entregas.
           </p>
         </div>
       </div>
@@ -125,20 +141,28 @@ export default function DashboardPage() {
   );
 }
 
-function DashboardCard({
+function MetricCard({
   title,
-  description,
-  children
+  weekValue,
+  monthValue
 }: {
   title: string;
-  description: string;
-  children: React.ReactNode;
+  weekValue: string;
+  monthValue: string;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 shadow-sm">
       <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
-      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{description}</p>
-      <div className="mt-4">{children}</div>
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="text-xs font-medium uppercase text-slate-500">Semana</div>
+          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{weekValue}</div>
+        </div>
+        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="text-xs font-medium uppercase text-slate-500">Mês</div>
+          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{monthValue}</div>
+        </div>
+      </div>
     </div>
   );
 }

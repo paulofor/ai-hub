@@ -6,6 +6,7 @@ import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -88,6 +89,11 @@ public class CodexController {
         int resolvedSize = size != null ? size : 5;
         Page<CodexRequestSummary> result = codexRequestService.listPage(resolvedPage, resolvedSize, rating);
         return result;
+    }
+
+    @GetMapping("/metrics")
+    public CodexDashboardMetrics metrics() {
+        return codexRequestService.dashboardMetrics();
     }
 
     @GetMapping("/{id}")
