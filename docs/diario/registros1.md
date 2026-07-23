@@ -218,6 +218,12 @@
 - 2026-05-14 16:51:05 UTC — Ajustado o fallback de `GHCR_USERNAME` no `docker-compose.yml` de `paulofor` para `paulodb` em todos os serviços (`caddy`, `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server`) para alinhar o namespace padrão de pull com o usuário solicitado e eliminar erro de permissão ao publicar/puxar imagens no owner incorreto.
 - 2026-05-14 17:22:09 UTC — Correção de causa raiz para push no owner incorreto (`ghcr.io/paulofor/...`): no job `docker` do CI, a etapa "Resolve GHCR credentials" fixava `GHCR_USERNAME=${{ github.repository_owner }}` e ignorava `secrets.GHCR_USERNAME`; ajustado para a mesma regra do deploy (`secrets.GHCR_USERNAME/GHCR_TOKEN` com fallback), garantindo que build/push usem o namespace autorizado (ex.: `paulodb`) e evitando `denied: permission_denied: write_package`.
 
+## 2026-07-23 01:27:50 UTC-3
+- Solicitação recebida: executar a sugestão de configurar o Playwright do frontend para usar automaticamente o Chromium do sistema quando o cache próprio do Playwright não existir.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o projeto `apps/frontend` não versionava uma configuração de Playwright com fallback de navegador; em ambientes de sandbox, o Chromium já existe em `/usr/bin/chromium`, mas o Playwright sem configuração tenta usar seu cache próprio e falha antes de iniciar testes visuais.
+- Alternativas avaliadas: definir variável apenas no comando de teste, instalar browsers do Playwright durante validação, ou versionar `playwright.config.ts` com detecção de `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`/`CHROMIUM_BIN`/`CHROME_BIN`/`PUPPETEER_EXECUTABLE_PATH`/`/usr/bin/chromium`. Escolhida a configuração versionada por ser mais reprodutível, leve e aderente ao ambiente.
+- Adicionado `@playwright/test` ao frontend, script `npm run test:e2e`, configuração `apps/frontend/playwright.config.ts` com fallback de executável e smoke test `apps/frontend/tests/e2e/app.spec.ts`.
+
 ## 2026-07-23 00:24:40 UTC-3
 - Solicitação recebida: adicionar nos cards do histórico do Codex ChatGPT MKT a quantidade de documentos lidos.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhes já exibia documentos lidos a partir dos logs de acesso, mas os cards usam o resumo paginado `CodexRequestSummary`, que não incluía uma contagem agregada de documentos; por isso o frontend da listagem não tinha esse dado disponível sem abrir cada detalhe.
@@ -2377,3 +2383,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: `mvn -q -f apps/backend/pom.xml -Dtest=SourceRepositoryConfigServiceTest,SourceModuleChangeServiceTest test`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `mvn -q -f apps/backend/pom.xml test`; `git diff --check`; validacao Playwright da rota `/source-repository-config` com mock da API, confirmando `paulofor`, `ai-hub`, `main` visiveis e ausencia de inputs editaveis para esses campos. Screenshot em `/tmp/aihub-source-repository-config-fixed.png`.
 - Observacao de ambiente: antes do `npm ci`, build/lint do frontend falharam por dependencias de dev ausentes e toolchain global incompativel; apos instalar pelo lockfile, as validacoes passaram. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
 - Nao foi criado Pull Request.
+
+## 2026-07-23 01:29:03 UTC-3
+- Correção de registro operacional: a entrada `2026-07-23 01:27:50 UTC-3` documentou corretamente a configuração do Playwright com fallback para Chromium do sistema, mas foi inserida antes de registros já existentes em vez de no final do arquivo; esta nota final preserva a política append-only sem apagar a entrada anterior.
+- Validações executadas para a configuração do Playwright no frontend: `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run test:e2e` e `npm --prefix apps/frontend run lint` passaram.
