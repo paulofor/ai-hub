@@ -42,6 +42,30 @@ function formatMetricNumber(value?: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('pt-BR') : '—';
 }
 
+function formatChartDate(value: string, options: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit' }) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return date.toLocaleDateString('pt-BR', options);
+}
+
+function formatShortDuration(milliseconds?: number) {
+  if (milliseconds === undefined || milliseconds === null || !Number.isFinite(milliseconds) || milliseconds < 0) {
+    return '0s';
+  }
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h${minutes > 0 ? ` ${minutes}min` : ''}`;
+  }
+  if (minutes > 0) {
+    return `${minutes}min`;
+  }
+  return `${totalSeconds}s`;
+}
+
 export default function DashboardPage() {
   const { data: prompts } = useFetch<Prompt[]>(
     () => client.get('/prompts').then((res) => res.data),
@@ -59,6 +83,8 @@ export default function DashboardPage() {
   );
 
   const recentPrompts = prompts?.slice(-5).reverse() ?? [];
+  const last14Days = metrics?.series.daily.slice(-14) ?? [];
+  const last10Weeks = metrics?.series.weekly.slice(-10) ?? [];
 
   return (
     <section className="space-y-6">
@@ -81,6 +107,31 @@ export default function DashboardPage() {
           dayValue={formatDuration(metrics?.day.durationMs)}
           weekValue={formatDuration(metrics?.week.durationMs)}
           monthValue={formatDuration(metrics?.month.durationMs)}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <MetricSeriesPanel
+          title="Últimos 14 dias"
+          emptyMessage="Sem dados diários para exibir."
+          buckets={last14Days}
+          labelForBucket={(bucket, index) => {
+            if (index === 0 || index === last14Days.length - 1 || index % 4 === 0) {
+              return formatChartDate(bucket.startsAt);
+            }
+            return '';
+          }}
+        />
+        <MetricSeriesPanel
+          title="Últimas 10 semanas"
+          emptyMessage="Sem dados semanais para exibir."
+          buckets={last10Weeks}
+          labelForBucket={(bucket, index) => {
+            if (index === 0 || index === last10Weeks.length - 1 || index % 3 === 0) {
+              return formatChartDate(bucket.startsAt);
+            }
+            return '';
+          }}
         />
       </div>
 
@@ -147,6 +198,120 @@ export default function DashboardPage() {
         </div>
       </div>
     </section>
+  );
+}
+
+function MetricSeriesPanel({
+  title,
+  emptyMessage,
+  buckets,
+  labelForBucket
+}: {
+  title: string;
+  emptyMessage: string;
+  buckets: CodexDashboardMetricWindow[];
+  labelForBucket: (bucket: CodexDashboardMetricWindow, index: number) => string;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            Totais agregados para gráficos de volume, uso e tempo.
+          </p>
+        </div>
+      </div>
+      {buckets.length > 0 ? (
+        <div className="mt-4 space-y-5">
+          <MiniBarChart
+            title="Solicitações"
+            buckets={buckets}
+            getValue={(bucket) => bucket.requestCount}
+            formatValue={formatMetricNumber}
+            labelForBucket={labelForBucket}
+            barClassName="bg-emerald-500"
+          />
+          <MiniBarChart
+            title="Interações"
+            buckets={buckets}
+            getValue={(bucket) => bucket.interactionCount}
+            formatValue={formatMetricNumber}
+            labelForBucket={labelForBucket}
+            barClassName="bg-sky-500"
+          />
+          <MiniBarChart
+            title="Tempo"
+            buckets={buckets}
+            getValue={(bucket) => bucket.durationMs}
+            formatValue={formatShortDuration}
+            labelForBucket={labelForBucket}
+            barClassName="bg-amber-500"
+          />
+        </div>
+      ) : (
+        <div className="mt-4 rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500 dark:border-slate-800">
+          {emptyMessage}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MiniBarChart({
+  title,
+  buckets,
+  getValue,
+  formatValue,
+  labelForBucket,
+  barClassName
+}: {
+  title: string;
+  buckets: CodexDashboardMetricWindow[];
+  getValue: (bucket: CodexDashboardMetricWindow) => number;
+  formatValue: (value: number) => string;
+  labelForBucket: (bucket: CodexDashboardMetricWindow, index: number) => string;
+  barClassName: string;
+}) {
+  const values = buckets.map((bucket) => getValue(bucket));
+  const maxValue = Math.max(1, ...values);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const periodLabel =
+    buckets.length > 0
+      ? `${formatChartDate(buckets[0].startsAt)} a ${formatChartDate(buckets[buckets.length - 1].startsAt)}`
+      : '';
+
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</h4>
+          <div className="mt-0.5 text-[10px] leading-none text-slate-500 sm:hidden">{periodLabel}</div>
+        </div>
+        <span className="text-xs font-medium text-slate-500">Total: {formatValue(total)}</span>
+      </div>
+      <div className="flex h-36 items-end gap-1 rounded-lg border border-slate-100 bg-slate-50/80 px-2 pb-7 pt-3 dark:border-slate-800 dark:bg-slate-950/40">
+        {buckets.map((bucket, index) => {
+          const value = getValue(bucket);
+          const height = value > 0 ? Math.max(8, Math.round((value / maxValue) * 100)) : 2;
+          const label = labelForBucket(bucket, index);
+          const fullLabel = formatChartDate(bucket.startsAt, { day: '2-digit', month: '2-digit', year: '2-digit' });
+          return (
+            <div key={`${bucket.startsAt}-${index}`} className="relative flex h-full min-w-0 flex-1 items-end justify-center">
+              <div
+                className={`w-full max-w-8 rounded-t-sm ${barClassName}`}
+                style={{ height: `${height}%` }}
+                title={`${fullLabel}: ${formatValue(value)}`}
+                aria-label={`${fullLabel}: ${formatValue(value)}`}
+              />
+              <span className="absolute top-full mt-1 hidden w-12 -translate-x-1/2 left-1/2 truncate text-center text-[10px] leading-none text-slate-500 sm:block">
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
