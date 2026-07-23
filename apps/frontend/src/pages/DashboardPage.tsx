@@ -24,8 +24,14 @@ interface CodexDashboardMetricWindow {
 }
 
 interface CodexDashboardMetrics {
+  day: CodexDashboardMetricWindow;
   week: CodexDashboardMetricWindow;
   month: CodexDashboardMetricWindow;
+  series: {
+    daily: CodexDashboardMetricWindow[];
+    weekly: CodexDashboardMetricWindow[];
+    monthly: CodexDashboardMetricWindow[];
+  };
 }
 
 function formatModuleDate(value: string | null) {
@@ -60,16 +66,19 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <MetricCard
           title="Solicitações"
+          dayValue={formatMetricNumber(metrics?.day.requestCount)}
           weekValue={formatMetricNumber(metrics?.week.requestCount)}
           monthValue={formatMetricNumber(metrics?.month.requestCount)}
         />
         <MetricCard
           title="Interações"
+          dayValue={formatMetricNumber(metrics?.day.interactionCount)}
           weekValue={formatMetricNumber(metrics?.week.interactionCount)}
           monthValue={formatMetricNumber(metrics?.month.interactionCount)}
         />
         <MetricCard
           title="Tempo de processamento"
+          dayValue={formatDuration(metrics?.day.durationMs)}
           weekValue={formatDuration(metrics?.week.durationMs)}
           monthValue={formatDuration(metrics?.month.durationMs)}
         />
@@ -143,17 +152,23 @@ export default function DashboardPage() {
 
 function MetricCard({
   title,
+  dayValue,
   weekValue,
   monthValue
 }: {
   title: string;
+  dayValue: string;
   weekValue: string;
   monthValue: string;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 shadow-sm">
       <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="text-xs font-medium uppercase text-slate-500">Dia</div>
+          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{dayValue}</div>
+        </div>
         <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <div className="text-xs font-medium uppercase text-slate-500">Semana</div>
           <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{weekValue}</div>
