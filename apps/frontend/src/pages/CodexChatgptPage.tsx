@@ -152,8 +152,32 @@ const formatRequestEnvironment = (environment?: string) => {
   return value ? value : 'Ambiente não informado';
 };
 
+const maxDefinedNumber = (...values: Array<number | undefined>) => {
+  const definedValues = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
+  return definedValues.length > 0 ? Math.max(...definedValues) : undefined;
+};
+
+const mergeCodexRequestItem = (current: CodexRequest | undefined, updated: CodexRequest): CodexRequest => {
+  if (!current) return updated;
+
+  const merged: CodexRequest = { ...current, ...updated };
+  if (!isTerminalStatus(updated.status)) {
+    merged.interactionCount = maxDefinedNumber(current.interactionCount, updated.interactionCount);
+    merged.documentAccessCount = maxDefinedNumber(current.documentAccessCount, updated.documentAccessCount);
+    merged.documentAccesses = updated.documentAccesses.length >= current.documentAccesses.length
+      ? updated.documentAccesses
+      : current.documentAccesses;
+  }
+  return merged;
+};
+
+const mergeCodexRequestList = (current: CodexRequest[], updated: CodexRequest[]) => {
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  return updated.map((item) => mergeCodexRequestItem(currentById.get(item.id), item));
+};
+
 const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
-  current.map((item) => item.id === updated.id ? { ...item, ...updated } : item);
+  current.map((item) => item.id === updated.id ? mergeCodexRequestItem(item, updated) : item);
 
 const parseSavedConversationMessage = (value: unknown): SavedConversationMessage | null => {
   if (typeof value !== 'object' || value === null) return null;
@@ -941,6 +965,7 @@ interface CodexChatgptVariantConfig {
 
 const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
 const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas; quando a solicitação envolver frontend, layout, UI ou experiência visual, use Playwright para validar localmente e gerar screenshots sempre que possível.';
+const CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION = 'A sandbox dos modelos possui ffprobe disponível pelo comando ffprobe; quando a solicitação envolver vídeos, use ffprobe para inspecionar metadados, codecs, resolução, duração, streams e integridade básica.';
 
 const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX',
@@ -954,6 +979,7 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
     CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
     CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION
   ]
 };
@@ -972,6 +998,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
     'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
     CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
     CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
@@ -992,6 +1019,7 @@ const SANDBOX_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git e sem uso de repositório.',
     'Não clone repositórios, não gere diff, não prepare branch e não crie Pull Request.',
     CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
     CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
     'Use o diretório temporário da sandbox apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos.',
     'Responda em português de forma objetiva e acionável.'
@@ -1160,26 +1188,23 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     try {
       const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
-      setRequests(parsed);
+      let nextRequests = parsed;
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
-      if (activeRequests.length === 0) {
-        return parsed;
+      if (activeRequests.length > 0) {
+        const detailResponses = await Promise.allSettled(
+          activeRequests.map((item) => client.get(`/codex/requests/${item.id}`))
+        );
+        const detailedRequests = detailResponses
+          .map((result) => result.status === 'fulfilled' ? parseCodexRequest(result.value.data) : null)
+          .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
+        if (detailedRequests.length > 0) {
+          const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
+          nextRequests = parsed.map((item) => mergeCodexRequestItem(item, detailedById.get(item.id) ?? item));
+        }
       }
 
-      const detailResponses = await Promise.allSettled(
-        activeRequests.map((item) => client.get(`/codex/requests/${item.id}`))
-      );
-      const detailedRequests = detailResponses
-        .map((result) => result.status === 'fulfilled' ? parseCodexRequest(result.value.data) : null)
-        .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
-      if (detailedRequests.length === 0) {
-        return parsed;
-      }
-
-      const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
-      const merged = parsed.map((item) => detailedById.get(item.id) ?? item);
-      setRequests(merged);
-      return merged;
+      setRequests((current) => mergeCodexRequestList(current, nextRequests));
+      return nextRequests;
     } finally {
       setRequestsLoading(false);
     }

@@ -85,6 +85,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /\bdocker-ce-cli\b/);
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
+  assert.match(dockerfile, /\bffmpeg\b/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
@@ -746,6 +747,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
     assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
+    assert.ok(input?.[0]?.text?.includes('O ffprobe está disponível para o modelo pelo comando ffprobe'));
+    assert.ok(input?.[0]?.text?.includes('metadados, codecs, resolução, duração, streams'));
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
     assert.ok(input?.[0]?.text?.includes('"titulo"'));
@@ -2856,9 +2859,12 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
+    assert.match(promptText, /O ffprobe está disponível para o modelo pelo comando ffprobe/i);
+    assert.match(promptText, /use-o para inspecionar metadados, codecs, resolução, duração, streams/i);
     assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
+    assert.match(promptText, /ferramentas de mídia disponíveis: ffprobe|ferramentas de mídia disponíveis: nenhuma detectada/i);
     assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
     assert.match(promptText, /Playwright, @playwright\/test e Chromium headless em \/usr\/bin\/chromium/i);
     assert.match(promptText, /use Playwright com esse navegador para validar localmente/i);
@@ -3631,7 +3637,10 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
   execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
   execSync('git config user.name "CI Bot"', { cwd: tempRepo });
   await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  await fs.mkdir(path.join(tempRepo, 'docs'), { recursive: true });
+  await fs.writeFile(path.join(tempRepo, 'docs', 'briefing.md'), 'briefing');
   execSync('git add README.md', { cwd: tempRepo });
+  execSync('git add docs/briefing.md', { cwd: tempRepo });
   execSync('git commit -m "init"', { cwd: tempRepo });
   execSync('git branch -M main', { cwd: tempRepo });
 
@@ -3649,6 +3658,26 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
       }
       if (method === 'turn/start') {
         setTimeout(() => {
+          for (const listener of listeners.get('item/started') ?? []) {
+            listener({
+              item: {
+                type: 'commandExecution',
+                id: 'cmd-read-docs',
+                command: `sed -n '1,20p' README.md docs/briefing.md`,
+                cwd: tempRepo,
+              },
+            });
+          }
+          for (const listener of listeners.get('item/completed') ?? []) {
+            listener({
+              item: {
+                type: 'commandExecution',
+                id: 'cmd-read-docs',
+                command: `sed -n '1,20p' README.md docs/briefing.md`,
+                cwd: tempRepo,
+              },
+            });
+          }
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
             listener({ delta: 'resumo via app server' });
           }
@@ -3756,6 +3785,10 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal(input?.length, 2);
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
     assert.deepEqual(job.changedFiles, []);
+    assert.deepEqual(
+      job.documentAccesses?.map((entry) => entry.documentPath),
+      ['README.md', 'docs/briefing.md'],
+    );
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
@@ -3835,6 +3868,7 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
   assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
   assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
+  assert.ok(input?.[0]?.text?.includes('O ffprobe está disponível para o modelo pelo comando ffprobe'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
 });
 
