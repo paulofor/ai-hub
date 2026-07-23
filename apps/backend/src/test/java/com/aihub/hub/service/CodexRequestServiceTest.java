@@ -33,6 +33,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -112,6 +113,7 @@ class CodexRequestServiceTest {
             "gpt-4.1-mini",
             "main",
             1_500_000,
+            "America/Sao_Paulo",
             codexAppServerEnabled,
             null,
             null
@@ -225,7 +227,7 @@ class CodexRequestServiceTest {
 
     @Test
     void dashboardMetricsIncludesDayWindowAndBucketedSeries() {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = ZoneId.of("America/Sao_Paulo");
         LocalDate today = LocalDate.now(zone);
         Instant todayStart = today.atStartOfDay(zone).toInstant();
         Instant previousMonthStart = today.minusMonths(1).withDayOfMonth(1).atStartOfDay(zone).toInstant();
@@ -272,6 +274,27 @@ class CodexRequestServiceTest {
 
         verify(codexRequestRepository, times(3)).summarizeMetricsSince(any(Instant.class));
         verify(codexRequestRepository).findMetricRowsSince(any(Instant.class));
+    }
+
+    @Test
+    void dashboardMetricsUsesSaoPauloDayBoundaryAtLocalMidnight() {
+        ZoneId zone = ZoneId.of("America/Sao_Paulo");
+        Instant localMidnight = Instant.parse("2026-07-23T03:14:00Z");
+        CodexRequestService service = buildService();
+        ReflectionTestUtils.setField(service, "dashboardClock", Clock.fixed(localMidnight, zone));
+
+        when(codexRequestRepository.summarizeMetricsSince(any(Instant.class)))
+            .thenReturn(new Object[] {0L, 0L, 0L});
+
+        var metrics = service.dashboardMetrics();
+
+        assertThat(metrics.day().startsAt()).isEqualTo(Instant.parse("2026-07-23T03:00:00Z"));
+        assertThat(metrics.week().startsAt()).isEqualTo(Instant.parse("2026-07-20T03:00:00Z"));
+        assertThat(metrics.month().startsAt()).isEqualTo(Instant.parse("2026-07-01T03:00:00Z"));
+        assertThat(metrics.series().daily().getLast().startsAt()).isEqualTo(Instant.parse("2026-07-23T03:00:00Z"));
+
+        verify(codexRequestRepository, times(3)).summarizeMetricsSince(any(Instant.class));
+        verify(codexRequestRepository).findMetricRowsSince(Instant.parse("2025-08-01T03:00:00Z"));
     }
 
     @Test

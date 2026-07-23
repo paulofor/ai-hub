@@ -178,6 +178,13 @@
 - 2026-05-13 20:40:00 UTC — Correção de causa raiz da falha `yaml: line 11: mapping values are not allowed in this context` durante deploy remoto: o passo de publicação montava um blob único em `REMOTE_IMAGES_ENV` (vários pares `KEY=VALUE` com tags `:latest`) e injetava via `export`, combinação frágil a parsing/quoting em diferentes shells/contexts do runner.
 - Ajustado `.github/workflows/ci.yml` para definir as imagens diretamente como variáveis de ambiente inline no comando remoto do `docker compose` (`CADDY_IMAGE=... BACKEND_IMAGE=... ... docker compose pull && docker compose up -d`), eliminando a camada intermediária e evitando erro de interpretação YAML/shell.
 
+## 2026-07-23 00:17:13 UTC-3
+- Solicitação recebida: investigar dashboard que, após meia-noite no Windows em São Paulo, não somou corretamente o novo dia e exibiu a virada diária como dia anterior.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: `CodexRequestService.dashboardMetrics()` usava `ZoneId.systemDefault()`, que no container/backend tende a ser UTC; na virada de meia-noite de `America/Sao_Paulo`, os buckets de dia/semana/mês e os `startsAt` eram calculados a partir de `00:00Z`, fazendo o frontend em São Paulo renderizar o último bucket como `22/07` e agregando a janela diária fora do calendário local do usuário.
+- Alternativas avaliadas: corrigir apenas a formatação no frontend, configurar `TZ` global do container, ou tornar o timezone do dashboard explícito no backend. Escolhida a terceira por atacar a regra de negócio na origem, manter UTC para persistência e permitir configuração operacional.
+- Ajustado o backend para usar `hub.dashboard.time-zone` com padrão `America/Sao_Paulo` nas métricas do dashboard.
+- Adicionado teste de regressão para `2026-07-23T03:14:00Z` (`00:14` em São Paulo), garantindo início do dia em `2026-07-23T03:00:00Z` e não `2026-07-23T00:00:00Z`.
+
 - 2026-05-13 20:55:00 UTC — Correção de causa raiz do erro `yaml: line 11: mapping values are not allowed in this context` no `docker compose` durante deploy: a expressão de variável obrigatória em `docker-compose.yml` continha mensagem com `": "` (`ex.: ...`) em escalar YAML sem aspas (`CADDY_DOMAIN: ${...}`), o que quebra parsing YAML na linha 11.
 - Ajustado `CADDY_DOMAIN` para valor entre aspas (`CADDY_DOMAIN: "${...}"`), preservando validação obrigatória da variável e eliminando ambiguidade de parsing YAML.
 
@@ -2303,3 +2310,7 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: adicionados paineis "Ultimos 14 dias" e "Ultimas 10 semanas", cada um com graficos de barras para solicitacoes, interacoes e tempo de processamento, usando respectivamente `metrics.series.daily.slice(-14)` e `metrics.series.weekly.slice(-10)`.
 - Ajuste responsivo aplicado: os graficos mantem detalhes completos no `title` de cada barra, mostram total por metrica e ocultam rotulos por barra em larguras muito estreitas, exibindo o intervalo do periodo no cabecalho do grafico para evitar sobreposicao no mobile.
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao Playwright desktop e mobile com mocks das APIs do dashboard, screenshots em `/tmp/aihub-dashboard-charts-desktop.png` e `/tmp/aihub-dashboard-charts-mobile.png`. Nao foi criado Pull Request.
+
+## 2026-07-23 00:19:02 UTC-3
+- Correção de registro operacional: a entrada `2026-07-23 00:17:13 UTC-3` documentou corretamente a causa raiz e o ajuste das métricas do dashboard, mas foi inserida antes de registros já existentes em vez de no final do arquivo; esta nota final preserva a política append-only sem apagar a entrada anterior.
+- Validação executada para a correção do timezone do dashboard: `mvn -f apps/backend/pom.xml test -Dtest=CodexRequestServiceTest` passou com 36 testes, 0 falhas e 0 erros.

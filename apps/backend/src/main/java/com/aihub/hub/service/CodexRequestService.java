@@ -48,6 +48,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -100,6 +101,8 @@ public class CodexRequestService {
     private final TransactionTemplate sandboxRefreshTemplate;
     private final String sandboxCallbackUrl;
     private final String sandboxCallbackSecret;
+    private final ZoneId dashboardZone;
+    private Clock dashboardClock;
     private final int smartEconomyEconomyTokenCeiling;
     private final boolean codexAppServerEnabled;
     private final ObjectMapper objectMapper;
@@ -122,6 +125,7 @@ public class CodexRequestService {
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch,
                                @Value("${hub.codex.smart-economy.max-economy-tokens:1500000}") int smartEconomyEconomyTokenCeiling,
+                               @Value("${hub.dashboard.time-zone:America/Sao_Paulo}") String dashboardTimeZone,
                                @Value("${hub.codex.app-server-enabled:false}") boolean codexAppServerEnabled,
                                @Value("${hub.sandbox.callback.url:}") String sandboxCallbackUrl,
                                @Value("${hub.sandbox.callback.secret:}") String sandboxCallbackSecret) {
@@ -143,6 +147,8 @@ public class CodexRequestService {
         this.defaultBranch = defaultBranch;
         this.sandboxCallbackUrl = StringUtils.hasText(sandboxCallbackUrl) ? sandboxCallbackUrl.trim() : null;
         this.sandboxCallbackSecret = StringUtils.hasText(sandboxCallbackSecret) ? sandboxCallbackSecret.trim() : null;
+        this.dashboardZone = ZoneId.of(StringUtils.hasText(dashboardTimeZone) ? dashboardTimeZone.trim() : "America/Sao_Paulo");
+        this.dashboardClock = Clock.system(dashboardZone);
         this.smartEconomyEconomyTokenCeiling = smartEconomyEconomyTokenCeiling > 0 ? smartEconomyEconomyTokenCeiling : 1_500_000;
         this.codexAppServerEnabled = codexAppServerEnabled;
         Objects.requireNonNull(transactionManager, "transactionManager is required");
@@ -309,8 +315,8 @@ public class CodexRequestService {
 
     @Transactional(readOnly = true)
     public CodexDashboardMetrics dashboardMetrics() {
-        ZoneId zone = ZoneId.systemDefault();
-        LocalDate today = LocalDate.now(zone);
+        ZoneId zone = dashboardZone;
+        LocalDate today = LocalDate.now(dashboardClock);
         Instant dayStart = today
             .atStartOfDay(zone)
             .toInstant();
