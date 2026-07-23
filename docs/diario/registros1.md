@@ -2314,3 +2314,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 ## 2026-07-23 00:19:02 UTC-3
 - Correção de registro operacional: a entrada `2026-07-23 00:17:13 UTC-3` documentou corretamente a causa raiz e o ajuste das métricas do dashboard, mas foi inserida antes de registros já existentes em vez de no final do arquivo; esta nota final preserva a política append-only sem apagar a entrada anterior.
 - Validação executada para a correção do timezone do dashboard: `mvn -f apps/backend/pom.xml test -Dtest=CodexRequestServiceTest` passou com 36 testes, 0 falhas e 0 erros.
+
+## 2026-07-23 00:21:34 UTC-3
+- Solicitação recebida: ajustar a exibição de tempo para mostrar somente hora e minuto, sem segundos, no contexto da correção de virada de dia em São Paulo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o helper compartilhado `formatDateTime()` usava `toLocaleString('pt-BR')` sem opções explícitas, deixando o navegador decidir incluir segundos; além disso, os helpers de duração (`formatDuration` e `formatShortDuration`) exibiam segundos por padrão, inclusive nos cards/gráficos de "Tempo" do dashboard.
+- Alternativas avaliadas: (1) alterar pontualmente apenas a tela visível, rápido mas reincidente; (2) esconder segundos via CSS/texto renderizado, frágil e sem corrigir a origem; (3) centralizar a regra nos helpers de formatação e fixar `America/Sao_Paulo` nos pontos de data do dashboard. Escolhida a alternativa 3 por atacar a causa raiz, reduzir duplicação e manter consistência nas telas Codex/ChatGPT.
+- Ajuste aplicado em `apps/frontend/src/lib/codex.ts`: `formatDateTime()` agora formata `dd/mm/aaaa, HH:mm` em `America/Sao_Paulo`, sem segundos; `formatDuration()` passou a retornar horas/minutos, com `<1min` para durações positivas abaixo de um minuto.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: rótulos de datas dos gráficos usam `America/Sao_Paulo`, e `formatShortDuration()` também remove segundos.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`. Nao foi criado Pull Request.
+- Observação de ambiente: as primeiras tentativas de build/lint falharam por ausência de `node_modules` e uso de toolchain global incompatível; resolvido com instalação via lockfile. O npm reportou vulnerabilidades já existentes no grafo do frontend, sem alteração de versões por estar fora do escopo.

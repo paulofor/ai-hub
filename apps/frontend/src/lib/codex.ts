@@ -132,7 +132,15 @@ export const formatDateTime = (value?: string) => {
   if (Number.isNaN(date.getTime())) {
     return '—';
   }
-  return date.toLocaleString('pt-BR');
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Sao_Paulo'
+  });
 };
 
 export const formatDuration = (milliseconds?: number) => {
@@ -140,9 +148,11 @@ export const formatDuration = (milliseconds?: number) => {
     return '—';
   }
   const totalSeconds = Math.floor(milliseconds / 1000);
+  if (totalSeconds > 0 && totalSeconds < 60) {
+    return '<1min';
+  }
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
   const parts: string[] = [];
   if (hours > 0) {
     parts.push(`${hours}h`);
@@ -150,7 +160,9 @@ export const formatDuration = (milliseconds?: number) => {
   if (minutes > 0 || hours > 0) {
     parts.push(`${minutes}min`);
   }
-  parts.push(`${seconds}s`);
+  if (parts.length === 0) {
+    parts.push('0min');
+  }
   return parts.join(' ');
 };
 

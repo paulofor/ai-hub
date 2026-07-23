@@ -47,14 +47,20 @@ function formatChartDate(value: string, options: Intl.DateTimeFormatOptions = { 
   if (Number.isNaN(date.getTime())) {
     return '—';
   }
-  return date.toLocaleDateString('pt-BR', options);
+  return date.toLocaleDateString('pt-BR', {
+    ...options,
+    timeZone: 'America/Sao_Paulo'
+  });
 }
 
 function formatShortDuration(milliseconds?: number) {
   if (milliseconds === undefined || milliseconds === null || !Number.isFinite(milliseconds) || milliseconds < 0) {
-    return '0s';
+    return '0min';
   }
   const totalSeconds = Math.floor(milliseconds / 1000);
+  if (totalSeconds > 0 && totalSeconds < 60) {
+    return '<1min';
+  }
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   if (hours > 0) {
@@ -63,7 +69,7 @@ function formatShortDuration(milliseconds?: number) {
   if (minutes > 0) {
     return `${minutes}min`;
   }
-  return `${totalSeconds}s`;
+  return '0min';
 }
 
 export default function DashboardPage() {
