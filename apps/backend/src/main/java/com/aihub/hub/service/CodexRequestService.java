@@ -12,6 +12,7 @@ import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.PromptRecord;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -48,8 +49,12 @@ import org.springframework.web.client.RestClientResponseException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -300,6 +305,46 @@ public class CodexRequestService {
             ? codexRequestRepository.findSummariesByOrderByCreatedAtDesc(pageRequest)
             : codexRequestRepository.findSummariesByRatingOrderByCreatedAtDesc(rating, pageRequest);
         return summaries.map(this::prepareRequestSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public CodexDashboardMetrics dashboardMetrics() {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        Instant weekStart = today
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            .atStartOfDay(zone)
+            .toInstant();
+        Instant monthStart = today
+            .withDayOfMonth(1)
+            .atStartOfDay(zone)
+            .toInstant();
+
+        return new CodexDashboardMetrics(
+            buildMetricWindow(weekStart),
+            buildMetricWindow(monthStart)
+        );
+    }
+
+    private CodexDashboardMetrics.CodexDashboardMetricWindow buildMetricWindow(Instant start) {
+        Object[] values = codexRequestRepository.summarizeMetricsSince(start);
+        if (values != null && values.length == 1 && values[0] instanceof Object[] nested) {
+            values = nested;
+        }
+        return new CodexDashboardMetrics.CodexDashboardMetricWindow(
+            start,
+            aggregateLong(values, 0),
+            aggregateLong(values, 1),
+            aggregateLong(values, 2)
+        );
+    }
+
+    private long aggregateLong(Object[] values, int index) {
+        if (values == null || index >= values.length || values[index] == null) {
+            return 0L;
+        }
+        Object value = values[index];
+        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     private CodexRequestSummary prepareRequestSummary(CodexRequestSummary summary) {
