@@ -9,10 +9,11 @@ interface SourceRepositoryConfig {
   updatedAt?: string | null;
 }
 
+const FIXED_OWNER = 'paulofor';
+const FIXED_REPO = 'ai-hub';
+const FIXED_BRANCH = 'main';
+
 export default function SourceRepositoryConfigPage() {
-  const [owner, setOwner] = useState('');
-  const [repo, setRepo] = useState('');
-  const [branch, setBranch] = useState('main');
   const [token, setToken] = useState('');
   const [tokenConfigured, setTokenConfigured] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -25,9 +26,6 @@ export default function SourceRepositoryConfigPage() {
     client
       .get<SourceRepositoryConfig>('/source-repository-config')
       .then((response) => {
-        setOwner(response.data.owner ?? '');
-        setRepo(response.data.repo ?? '');
-        setBranch(response.data.branch || 'main');
         setTokenConfigured(response.data.tokenConfigured);
         setUpdatedAt(response.data.updatedAt ?? null);
       })
@@ -37,14 +35,6 @@ export default function SourceRepositoryConfigPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    const trimmedOwner = owner.trim();
-    const trimmedRepo = repo.trim();
-    const trimmedBranch = branch.trim();
-
-    if (!trimmedOwner || !trimmedRepo || !trimmedBranch) {
-      setError('Informe usuário/organização, repositório e branch.');
-      return;
-    }
     if (!tokenConfigured && !token.trim()) {
       setError('Cole o token do GitHub antes de salvar.');
       return;
@@ -56,14 +46,11 @@ export default function SourceRepositoryConfigPage() {
 
     try {
       const response = await client.put<SourceRepositoryConfig>('/source-repository-config', {
-        owner: trimmedOwner,
-        repo: trimmedRepo,
-        branch: trimmedBranch,
+        owner: FIXED_OWNER,
+        repo: FIXED_REPO,
+        branch: FIXED_BRANCH,
         token: token.trim() || undefined
       });
-      setOwner(response.data.owner);
-      setRepo(response.data.repo);
-      setBranch(response.data.branch);
       setToken('');
       setTokenConfigured(response.data.tokenConfigured);
       setUpdatedAt(response.data.updatedAt ?? null);
@@ -90,43 +77,19 @@ export default function SourceRepositoryConfigPage() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid gap-4 md:grid-cols-3">
-              <div className="flex flex-col gap-2">
-                <label htmlFor="source-owner" className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <div>
+                <p className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">
                   Usuário ou organização
-                </label>
-                <input
-                  id="source-owner"
-                  value={owner}
-                  onChange={(event) => setOwner(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  placeholder="Ex.: paulofor"
-                />
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{FIXED_OWNER}</p>
               </div>
-
-              <div className="flex flex-col gap-2">
-                <label htmlFor="source-repo" className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                  Repositório
-                </label>
-                <input
-                  id="source-repo"
-                  value={repo}
-                  onChange={(event) => setRepo(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  placeholder="Ex.: ai-hub"
-                />
+              <div>
+                <p className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">Repositório</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{FIXED_REPO}</p>
               </div>
-
-              <div className="flex flex-col gap-2">
-                <label htmlFor="source-branch" className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                  Branch
-                </label>
-                <input
-                  id="source-branch"
-                  value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  placeholder="Ex.: main"
-                />
+              <div>
+                <p className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">Branch</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{FIXED_BRANCH}</p>
               </div>
             </div>
 
