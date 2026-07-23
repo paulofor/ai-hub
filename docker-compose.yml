@@ -88,6 +88,8 @@ services:
       - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
       - ${GEMINI_TOKEN_HOST_DIR:-/root/infra/gemini-token}:/run/secrets/gemini-token:ro
       - ${PEPPER_TOKEN_HOST_DIR:-/root/infra/pepper-token}:/run/secrets/pepper-token:ro
+      - ${LUMA_TOKEN_HOST_DIR:-/root/infra/luma-token}:/run/secrets/luma-token:ro
+      - ${KLING_TOKEN_HOST_DIR:-/root/infra/kling-token}:/run/secrets/kling-token:ro
       - ${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}:/run/secrets/aws:ro
       - codex-auth-data:/var/lib/ai-hub/codex
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
@@ -108,6 +110,12 @@ services:
       if [ -f /run/secrets/pepper-token/pepper_api_token ]; then
         export PEPPER_API_TOKEN=$(cat /run/secrets/pepper-token/pepper_api_token);
         export PEPPER_AUTHORIZATION=$(printf 'Bearer %s' "$$PEPPER_API_TOKEN");
+      fi;
+      if [ -f /run/secrets/luma-token/luma_api_key ]; then
+        export LUMA_API_KEY=$(cat /run/secrets/luma-token/luma_api_key);
+      fi;
+      if [ -f /run/secrets/kling-token/kling_api_key ]; then
+        export KLING_API_KEY=$(cat /run/secrets/kling-token/kling_api_key);
       fi;
       if [ -f /run/secrets/aws/acesso_aws ]; then
         AWS_ACCESS_KEY_ID_VALUE=$(grep -E '^AWS_ACCESS_KEY_ID=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);

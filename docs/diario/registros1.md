@@ -218,6 +218,16 @@
 - 2026-05-14 16:51:05 UTC — Ajustado o fallback de `GHCR_USERNAME` no `docker-compose.yml` de `paulofor` para `paulodb` em todos os serviços (`caddy`, `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server`) para alinhar o namespace padrão de pull com o usuário solicitado e eliminar erro de permissão ao publicar/puxar imagens no owner incorreto.
 - 2026-05-14 17:22:09 UTC — Correção de causa raiz para push no owner incorreto (`ghcr.io/paulofor/...`): no job `docker` do CI, a etapa "Resolve GHCR credentials" fixava `GHCR_USERNAME=${{ github.repository_owner }}` e ignorava `secrets.GHCR_USERNAME`; ajustado para a mesma regra do deploy (`secrets.GHCR_USERNAME/GHCR_TOKEN` com fallback), garantindo que build/push usem o namespace autorizado (ex.: `paulodb`) e evitando `denied: permission_denied: write_package`.
 
+## 2026-07-23 10:49:09 UTC-3
+- Solicitação recebida: disponibilizar as API keys Luma e Kling para o modelo na sandbox em todos os modos Codex ChatGPT, seguindo o padrão já usado para tokens OpenAI/Gemini/Pepper.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os arquivos de chave já existiam no host (`/root/infra/luma-token/luma_api_key` e `/root/infra/kling-token/kling_api_key`), mas o `docker-compose.yml` ainda não montava esses diretórios no `sandbox-orchestrator` nem exportava `LUMA_API_KEY`/`KLING_API_KEY` antes de iniciar o runner/Codex App Server.
+- Alternativas avaliadas: apenas documentar os caminhos; montar/exportar as chaves no compose como os tokens atuais; criar um gerenciador genérico de segredos. Escolhida a montagem/exportação explícita por repetir o contrato operacional existente, reduzir risco e atender diretamente à solicitação sem redesenhar o stack.
+- Ajustado `docker-compose.yml` para montar `LUMA_TOKEN_HOST_DIR` e `KLING_TOKEN_HOST_DIR` como volumes read-only e exportar `LUMA_API_KEY` e `KLING_API_KEY` quando os arquivos existirem.
+- Atualizado o prompt operacional do `sandbox-orchestrator` para informar aos modos Codex ChatGPT que as variáveis Luma/Kling podem estar disponíveis, sem imprimir valores.
+- Atualizados `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` com o contrato dos novos segredos.
+- Adicionado teste de contrato garantindo mount/export das credenciais Luma e Kling no compose.
+- Validação: `docker compose config --quiet` passou; após reinstalar dependências dev com `npm ci --prefix apps/sandbox-orchestrator --include=dev`, `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes.
+
 ## 2026-07-23 01:27:50 UTC-3
 - Solicitação recebida: executar a sugestão de configurar o Playwright do frontend para usar automaticamente o Chromium do sistema quando o cache próprio do Playwright não existir.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o projeto `apps/frontend` não versionava uma configuração de Playwright com fallback de navegador; em ambientes de sandbox, o Chromium já existe em `/usr/bin/chromium`, mas o Playwright sem configuração tenta usar seu cache próprio e falha antes de iniciar testes visuais.

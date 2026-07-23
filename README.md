@@ -58,6 +58,12 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura em `/run/secrets/pepper-token`; se o arquivo existir, o conteúdo é exportado como `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner.
 - Caso prefira outro caminho no host, defina `PEPPER_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `pepper_api_token`.
 
+### Armazenamento dos tokens Luma e Kling para a sandbox
+
+- Para chamadas às APIs Luma e Kling executadas pelo modelo, guarde as chaves fora do repositório em `/root/infra/luma-token/luma_api_key` e `/root/infra/kling-token/kling_api_key`.
+- O `sandbox-orchestrator` monta esses diretórios como somente leitura em `/run/secrets/luma-token` e `/run/secrets/kling-token`; se os arquivos existirem, exporta `LUMA_API_KEY` e `KLING_API_KEY` antes de iniciar o runner e o Codex App Server.
+- Caso prefira outros caminhos no host, defina `LUMA_TOKEN_HOST_DIR` e `KLING_TOKEN_HOST_DIR` no `.env` operacional apontando para as pastas que contêm os arquivos `luma_api_key` e `kling_api_key`.
+
 ### MCP Server para comandos no host
 
 - O serviço Java `mcp-server` publica o healthcheck em `GET /mcp`, exposto pelo Caddy em `https://iahub.xyz/mcp`.
