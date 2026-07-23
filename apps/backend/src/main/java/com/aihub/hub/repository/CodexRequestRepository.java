@@ -57,6 +57,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         where cr.createdAt >= :start
         """)
     Object[] summarizeMetricsSince(@Param("start") Instant start);
+    @Query("""
+        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0)
+        from CodexRequest cr
+        where cr.createdAt >= :start
+        order by cr.createdAt asc
+        """)
+    List<Object[]> findMetricRowsSince(@Param("start") Instant start);
     List<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating);
     List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
     List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);

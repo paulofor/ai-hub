@@ -311,6 +311,9 @@ public class CodexRequestService {
     public CodexDashboardMetrics dashboardMetrics() {
         ZoneId zone = ZoneId.systemDefault();
         LocalDate today = LocalDate.now(zone);
+        Instant dayStart = today
+            .atStartOfDay(zone)
+            .toInstant();
         Instant weekStart = today
             .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             .atStartOfDay(zone)
@@ -319,10 +322,17 @@ public class CodexRequestService {
             .withDayOfMonth(1)
             .atStartOfDay(zone)
             .toInstant();
+        Instant seriesStart = today
+            .minusMonths(11)
+            .withDayOfMonth(1)
+            .atStartOfDay(zone)
+            .toInstant();
 
         return new CodexDashboardMetrics(
+            buildMetricWindow(dayStart),
             buildMetricWindow(weekStart),
-            buildMetricWindow(monthStart)
+            buildMetricWindow(monthStart),
+            buildMetricSeries(seriesStart, today, zone)
         );
     }
 
@@ -345,6 +355,97 @@ public class CodexRequestService {
         }
         Object value = values[index];
         return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private CodexDashboardMetrics.CodexDashboardMetricSeries buildMetricSeries(Instant start, LocalDate today, ZoneId zone) {
+        LocalDate firstDay = start.atZone(zone).toLocalDate();
+        Map<LocalDate, MetricAccumulator> daily = initializeDailyBuckets(firstDay, today);
+        Map<LocalDate, MetricAccumulator> weekly = initializeWeeklyBuckets(firstDay, today);
+        Map<LocalDate, MetricAccumulator> monthly = initializeMonthlyBuckets(firstDay, today);
+
+        List<Object[]> rows = codexRequestRepository.findMetricRowsSince(start);
+        if (rows == null) {
+            rows = List.of();
+        }
+        for (Object[] row : rows) {
+            Instant createdAt = aggregateInstant(row, 0);
+            if (createdAt == null) {
+                continue;
+            }
+            LocalDate createdDate = createdAt.atZone(zone).toLocalDate();
+            long interactions = aggregateLong(row, 1);
+            long duration = aggregateLong(row, 2);
+
+            accumulate(daily, createdDate, interactions, duration);
+            accumulate(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), interactions, duration);
+            accumulate(monthly, createdDate.withDayOfMonth(1), interactions, duration);
+        }
+
+        return new CodexDashboardMetrics.CodexDashboardMetricSeries(
+            toMetricWindows(daily, zone),
+            toMetricWindows(weekly, zone),
+            toMetricWindows(monthly, zone)
+        );
+    }
+
+    private Map<LocalDate, MetricAccumulator> initializeDailyBuckets(LocalDate start, LocalDate end) {
+        Map<LocalDate, MetricAccumulator> buckets = new java.util.TreeMap<>();
+        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+            buckets.put(date, new MetricAccumulator());
+        }
+        return buckets;
+    }
+
+    private Map<LocalDate, MetricAccumulator> initializeWeeklyBuckets(LocalDate start, LocalDate end) {
+        Map<LocalDate, MetricAccumulator> buckets = new java.util.TreeMap<>();
+        LocalDate firstWeek = start.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate lastWeek = end.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        for (LocalDate date = firstWeek; !date.isAfter(lastWeek); date = date.plusWeeks(1)) {
+            buckets.put(date, new MetricAccumulator());
+        }
+        return buckets;
+    }
+
+    private Map<LocalDate, MetricAccumulator> initializeMonthlyBuckets(LocalDate start, LocalDate end) {
+        Map<LocalDate, MetricAccumulator> buckets = new java.util.TreeMap<>();
+        LocalDate firstMonth = start.withDayOfMonth(1);
+        LocalDate lastMonth = end.withDayOfMonth(1);
+        for (LocalDate date = firstMonth; !date.isAfter(lastMonth); date = date.plusMonths(1)) {
+            buckets.put(date, new MetricAccumulator());
+        }
+        return buckets;
+    }
+
+    private void accumulate(Map<LocalDate, MetricAccumulator> buckets, LocalDate startsAt, long interactions, long durationMs) {
+        MetricAccumulator accumulator = buckets.computeIfAbsent(startsAt, ignored -> new MetricAccumulator());
+        accumulator.requestCount++;
+        accumulator.interactionCount += interactions;
+        accumulator.durationMs += durationMs;
+    }
+
+    private List<CodexDashboardMetrics.CodexDashboardMetricWindow> toMetricWindows(Map<LocalDate, MetricAccumulator> buckets, ZoneId zone) {
+        return buckets.entrySet().stream()
+            .map(entry -> new CodexDashboardMetrics.CodexDashboardMetricWindow(
+                entry.getKey().atStartOfDay(zone).toInstant(),
+                entry.getValue().requestCount,
+                entry.getValue().interactionCount,
+                entry.getValue().durationMs
+            ))
+            .toList();
+    }
+
+    private Instant aggregateInstant(Object[] values, int index) {
+        if (values == null || index >= values.length || values[index] == null) {
+            return null;
+        }
+        Object value = values[index];
+        return value instanceof Instant instant ? instant : null;
+    }
+
+    private static class MetricAccumulator {
+        private long requestCount;
+        private long interactionCount;
+        private long durationMs;
     }
 
     private CodexRequestSummary prepareRequestSummary(CodexRequestSummary summary) {

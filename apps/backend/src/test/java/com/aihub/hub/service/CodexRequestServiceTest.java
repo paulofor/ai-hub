@@ -34,7 +34,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -219,7 +223,56 @@ class CodexRequestServiceTest {
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
 
+    @Test
+    void dashboardMetricsIncludesDayWindowAndBucketedSeries() {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        Instant todayStart = today.atStartOfDay(zone).toInstant();
+        Instant previousMonthStart = today.minusMonths(1).withDayOfMonth(1).atStartOfDay(zone).toInstant();
 
+        when(codexRequestRepository.summarizeMetricsSince(any(Instant.class)))
+            .thenReturn(new Object[] {1L, 3L, 1_000L})
+            .thenReturn(new Object[] {2L, 5L, 3_000L})
+            .thenReturn(new Object[] {4L, 9L, 7_000L});
+        when(codexRequestRepository.findMetricRowsSince(any(Instant.class))).thenReturn(List.of(
+            new Object[] {todayStart.plusSeconds(3_600), 3, 1_000L},
+            new Object[] {previousMonthStart.plusSeconds(7_200), 2, 2_000L}
+        ));
+
+        var metrics = buildService().dashboardMetrics();
+
+        assertThat(metrics.day().requestCount()).isEqualTo(1);
+        assertThat(metrics.day().interactionCount()).isEqualTo(3);
+        assertThat(metrics.week().requestCount()).isEqualTo(2);
+        assertThat(metrics.month().durationMs()).isEqualTo(7_000L);
+
+        assertThat(metrics.series().daily())
+            .filteredOn(window -> window.startsAt().equals(todayStart))
+            .singleElement()
+            .satisfies(window -> {
+                assertThat(window.requestCount()).isEqualTo(1);
+                assertThat(window.interactionCount()).isEqualTo(3);
+                assertThat(window.durationMs()).isEqualTo(1_000L);
+            });
+
+        Instant thisWeekBucket = today
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            .atStartOfDay(zone)
+            .toInstant();
+        assertThat(metrics.series().weekly())
+            .filteredOn(window -> window.startsAt().equals(thisWeekBucket))
+            .singleElement()
+            .satisfies(window -> assertThat(window.requestCount()).isEqualTo(1));
+
+        Instant thisMonthBucket = today.withDayOfMonth(1).atStartOfDay(zone).toInstant();
+        assertThat(metrics.series().monthly())
+            .filteredOn(window -> window.startsAt().equals(thisMonthBucket))
+            .singleElement()
+            .satisfies(window -> assertThat(window.interactionCount()).isEqualTo(3));
+
+        verify(codexRequestRepository, times(3)).summarizeMetricsSince(any(Instant.class));
+        verify(codexRequestRepository).findMetricRowsSince(any(Instant.class));
+    }
 
     @Test
     void listDoesNotRefreshRunningRequestDuringPolling() {
