@@ -58,6 +58,8 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `GITHUB_PR_TOKEN` | (Opcional) Fallback para `GITHUB_CLONE_TOKEN`/`GITHUB_TOKEN`; o token escolhido é reutilizado em todas as operações no GitHub. | *(vazio)* |
 | `GEMINI_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/gemini-token`; quando contém o arquivo `gemini_api_key`, o `docker-compose` exporta seu conteúdo como `GEMINI_API_KEY` antes de iniciar o runner, tornando a chave disponível aos comandos do modelo sem versionar o segredo. | `/root/infra/gemini-token` |
 | `PEPPER_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/pepper-token`; quando contém o arquivo `pepper_api_token`, o `docker-compose` exporta `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner, tornando o bearer disponível aos comandos do modelo sem versionar o segredo. | `/root/infra/pepper-token` |
+| `LUMA_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/luma-token`; quando contém o arquivo `luma_api_key`, o `docker-compose` exporta seu conteúdo como `LUMA_API_KEY` antes de iniciar o runner/Codex App Server. | `/root/infra/luma-token` |
+| `KLING_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/kling-token`; quando contém o arquivo `kling_api_key`, o `docker-compose` exporta seu conteúdo como `KLING_API_KEY` antes de iniciar o runner/Codex App Server. | `/root/infra/kling-token` |
 | `AWS_CREDENTIALS_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/aws`; quando contém o arquivo `acesso_aws`, o `docker-compose` exporta `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` e, opcionalmente, `AWS_SESSION_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/aws` |
 
 Formato esperado de `/root/infra/aws/acesso_aws` no host:
@@ -71,6 +73,8 @@ AWS_SESSION_TOKEN=xxxxxxxx
 ```
 
 O runner informa ao modelo que o comando `aws` está disponível e se as credenciais foram exportadas. Para validar acesso sem expor segredo, use comandos como `aws sts get-caller-identity`; não imprima variáveis `AWS_*` em logs.
+
+Os tokens Luma e Kling devem ficar fora do repositório nos arquivos `/root/infra/luma-token/luma_api_key` e `/root/infra/kling-token/kling_api_key`. Quando os arquivos existem, o `sandbox-orchestrator` exporta `LUMA_API_KEY` e `KLING_API_KEY` para os comandos do modelo e para o Codex App Server; nunca registre os valores dessas variáveis em logs, respostas ou arquivos.
 
 O runner também informa ao modelo que o Docker CLI e o plugin Docker Compose v2 estão disponíveis pelos comandos `docker` e `docker compose`. Prefira `docker compose` ao binário legado `docker-compose`; antes de depender de containers, valide a engine/socket com `docker version` e o plugin com `docker compose version`.
 

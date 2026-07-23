@@ -1323,6 +1323,16 @@ export class SandboxJobProcessor implements JobProcessor {
       : 'O AWS CLI está disponível pelo comando aws para verificações e operações AWS quando o ambiente fornecer credenciais e permissões adequadas; se precisar de AWS e as credenciais não estiverem presentes, pare e relate a ausência sem inventar valores.';
   }
 
+  private buildExternalApiKeysInstruction(): string {
+    const availableKeys = [
+      process.env.LUMA_API_KEY?.trim() ? 'LUMA_API_KEY' : undefined,
+      process.env.KLING_API_KEY?.trim() ? 'KLING_API_KEY' : undefined,
+    ].filter(Boolean);
+    return availableKeys.length > 0
+      ? `As seguintes credenciais de APIs externas estao exportadas no ambiente para uso por comandos do modelo: ${availableKeys.join(', ')}. Nunca imprima esses valores em logs, respostas ou arquivos.`
+      : 'Credenciais Luma/Kling podem ser disponibilizadas via LUMA_API_KEY e KLING_API_KEY; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.';
+  }
+
   private buildDockerCliInstruction(): string {
     return 'O Docker CLI e o plugin Docker Compose v2 estão disponíveis para o modelo pelos comandos docker e docker compose; use docker compose preferencialmente a docker-compose, e valide a engine com docker version/docker compose version antes de depender de containers.';
   }
@@ -1346,18 +1356,19 @@ export class SandboxJobProcessor implements JobProcessor {
     const marketingStructuredResponseInstruction = 'Na resposta final do modo MKT, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use o campo comentario para todo o conteúdo normal da resposta. Use sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.';
     const emailTestingInstruction = this.buildSandboxEmailInstruction();
     const awsCliInstruction = this.buildAwsCliInstruction();
+    const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
     const browserTestingInstruction = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD e NODE_PATH configuradas. Use Playwright para validações visuais, screenshots e testes de UI quando a solicitação envolver frontend, layout ou experiência visual.';
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${dockerCliInstruction} ${browserTestingInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodexSandbox(job)
-        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${dockerCliInstruction} ${emailTestingInstruction} ${browserTestingInstruction}
+        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${emailTestingInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodex(job)
-        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${dockerCliInstruction} ${browserTestingInstruction}
+        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
@@ -1515,6 +1526,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const environmentState = this.getOrThrowRunnerEnvironmentState(job, repoPath);
     const checklist = this.buildEnvironmentChecklist(environmentState);
     const awsCliInstruction = this.buildAwsCliInstruction();
+    const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
     const githubCiInstruction = this.buildGithubCiInstruction();
     const repositoryModuleTestInstruction = 'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.';
@@ -1564,7 +1576,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. O sandbox possui Playwright, @playwright/test e Chromium headless em /usr/bin/chromium, com as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD e NODE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use Playwright com esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${dockerCliInstruction} ${githubCiInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. O sandbox possui Playwright, @playwright/test e Chromium headless em /usr/bin/chromium, com as variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD e NODE_PATH configuradas; quando a tarefa envolver UI, layout ou mudança visual, use Playwright com esse navegador para validar localmente e gerar screenshot automatizado sempre que possível; use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${githubCiInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
