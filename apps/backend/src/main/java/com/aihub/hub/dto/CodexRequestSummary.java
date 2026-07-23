@@ -39,6 +39,7 @@ public record CodexRequestSummary(
     Integer interactionCount,
     Long problemId,
     String problemTitle,
+    Long documentAccessCount,
     @JsonIgnore
     String responseText,
     String requestTitle
@@ -49,7 +50,7 @@ public record CodexRequestSummary(
             workBranch, workBatchKey, promptTokens, cachedPromptTokens, completionTokens, totalTokens,
             promptCost, cachedPromptCost, completionCost, cost, timeoutCount, httpGetCount, httpGetSuccessCount,
             dbQueryCount, startedAt, finishedAt, durationMs, createdAt, interactionCount, problemId, problemTitle,
-            responseText, requestTitle
+            documentAccessCount, responseText, requestTitle
         );
     }
 }

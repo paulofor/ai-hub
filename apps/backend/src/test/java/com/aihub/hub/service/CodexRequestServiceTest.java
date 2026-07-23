@@ -335,7 +335,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, null, null
+            null, null, 2L, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -346,6 +346,7 @@ class CodexRequestServiceTest {
         assertThat(summaries).hasSize(1);
         assertThat(summaries.get(0).requestTitle())
             .isEqualTo("coloque para aparecer os titulos das solicitações nos historico");
+        assertThat(summaries.get(0).documentAccessCount()).isEqualTo(2L);
         assertThat(summaries.get(0).prompt()).hasSizeLessThanOrEqualTo(2000);
         verify(sandboxOrchestratorClient, never()).getJob("job-running-page");
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
@@ -370,7 +371,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, request.getResponseText(), null
+            null, null, 1L, request.getResponseText(), null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));

@@ -40,6 +40,7 @@ export interface CodexRequest {
   httpGetSuccessCount?: number;
   dbQueryCount?: number;
   interactionCount?: number;
+  documentAccessCount?: number;
   documentAccesses: CodexDocumentAccess[];
 }
 
@@ -215,6 +216,9 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const interactionCount = parseNumber(
     item.interactionCount ?? (item as Record<string, unknown>).interaction_count
   );
+  const documentAccessCount = parseNumber(
+    item.documentAccessCount ?? (item as Record<string, unknown>).document_access_count
+  );
   const documentAccessesRaw = Array.isArray(item.documentAccesses)
     ? item.documentAccesses
     : Array.isArray((item as Record<string, unknown>).document_accesses)
@@ -333,6 +337,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     httpGetSuccessCount,
     dbQueryCount,
     interactionCount,
+    documentAccessCount: documentAccessCount ?? (documentAccesses.length > 0 ? documentAccesses.length : undefined),
     documentAccesses,
     problemId: problemId ?? undefined,
     problemTitle: problemTitle ?? undefined,

@@ -218,6 +218,14 @@
 - 2026-05-14 16:51:05 UTC — Ajustado o fallback de `GHCR_USERNAME` no `docker-compose.yml` de `paulofor` para `paulodb` em todos os serviços (`caddy`, `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server`) para alinhar o namespace padrão de pull com o usuário solicitado e eliminar erro de permissão ao publicar/puxar imagens no owner incorreto.
 - 2026-05-14 17:22:09 UTC — Correção de causa raiz para push no owner incorreto (`ghcr.io/paulofor/...`): no job `docker` do CI, a etapa "Resolve GHCR credentials" fixava `GHCR_USERNAME=${{ github.repository_owner }}` e ignorava `secrets.GHCR_USERNAME`; ajustado para a mesma regra do deploy (`secrets.GHCR_USERNAME/GHCR_TOKEN` com fallback), garantindo que build/push usem o namespace autorizado (ex.: `paulodb`) e evitando `denied: permission_denied: write_package`.
 
+## 2026-07-23 00:24:40 UTC-3
+- Solicitação recebida: adicionar nos cards do histórico do Codex ChatGPT MKT a quantidade de documentos lidos.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhes já exibia documentos lidos a partir dos logs de acesso, mas os cards usam o resumo paginado `CodexRequestSummary`, que não incluía uma contagem agregada de documentos; por isso o frontend da listagem não tinha esse dado disponível sem abrir cada detalhe.
+- Alternativas avaliadas: calcular no frontend a partir de `documentAccesses`, fazer requisições extras de detalhes para cada card, ou incluir um campo agregado no resumo paginado. Escolhida a terceira opção por corrigir o contrato na origem e evitar N requisições adicionais na listagem.
+- Ajustado `CodexRequestSummary` e as queries de resumo para retornarem `documentAccessCount` com contagem distinta de documentos lidos por solicitação.
+- Atualizado o parser do frontend e os cards da `CodexChatgptPage` para exibirem `Documentos lidos: N documento(s)` junto de tempo, interações, tokens e custo.
+- Atualizados testes de serviço para preservar a nova métrica ao preparar o título/resumo do card.
+
 - 2026-05-14 17:40:00 UTC — Correção adicional da causa raiz para persistência de push no owner incorreto (`paulofor`): o fallback de `GHCR_USERNAME` no workflow ainda dependia de `github.repository_owner` quando segredo não existia, mantendo namespace errado em forks/migrações; padronizado fallback para `secrets.GHCR_USERNAME` -> `vars.GHCR_USERNAME` -> `paulodb` tanto no job `docker` quanto no `deploy` e no cleanup (`GHCR_OWNER`), garantindo consistência total do namespace no build, pull e limpeza de tags.
 
 ## 2026-07-17 23:06:59 UTC-3

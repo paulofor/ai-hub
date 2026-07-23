@@ -113,6 +113,13 @@ const formatInteractionCount = (count?: number) => {
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'interação' : 'interações'}`;
 };
 
+const formatDocumentAccessCount = (count?: number) => {
+  if (count === undefined || count === null || !Number.isFinite(count)) {
+    return '—';
+  }
+  return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'documento' : 'documentos'}`;
+};
+
 const formatRequestEnvironment = (environment?: string) => {
   const value = environment?.trim();
   return value ? value : 'Ambiente não informado';
@@ -2169,9 +2176,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Perfil:</span> {formatProfile(item.profile)}
               </p>
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
-              {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+              {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.documentAccessCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                 {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
                 {item.interactionCount !== undefined ? <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span> : null}
+                {item.documentAccessCount !== undefined ? <span>Documentos lidos: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDocumentAccessCount(item.documentAccessCount)}</strong></span> : null}
                 {item.status === 'COMPLETED' || item.totalTokens !== undefined ? <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span> : null}
                 {item.status === 'COMPLETED' || item.cost !== undefined ? <span>Custo estimado: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatCost(item.cost)}</strong></span> : null}
               </div> : null}
