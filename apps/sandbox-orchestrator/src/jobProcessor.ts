@@ -1219,6 +1219,7 @@ export class SandboxJobProcessor implements JobProcessor {
     let streamingAgentMessage = '';
     let firstEventAt: number | undefined;
     let lastActivityAt: number | undefined;
+    const recordedCodexDocumentAccessKeys = new Set<string>();
     const markActivity = (): void => {
       const now = Date.now();
       firstEventAt = firstEventAt ?? now;
@@ -1237,6 +1238,7 @@ export class SandboxJobProcessor implements JobProcessor {
       client.onNotification('item/completed', (params) => {
         markActivity();
         this.addCodexAppServerUsageMetrics(job, params);
+        this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         const text = this.extractCodexAgentMessageText(params);
         if (text) {
           finalAgentMessage = text;
@@ -1247,6 +1249,7 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       client.onNotification('item/started', (params) => {
         markActivity();
+        this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
       client.onNotification('thread/tokenUsage/updated', (params) => {
@@ -1523,6 +1526,111 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
   private sanitizeCodexEvent(value: unknown): unknown {
     return sanitizeOpenAIExchange(value);
+  }
+
+  private recordCodexAppServerDocumentAccesses(job: SandboxJob, params: unknown, recordedKeys: Set<string>): void {
+    for (const access of this.extractCodexAppServerDocumentAccesses(params)) {
+      const key = [
+        access.itemId ?? '',
+        access.toolName,
+        access.documentPath,
+        access.requestedPath ?? '',
+        access.command ?? '',
+      ].join('|');
+      if (recordedKeys.has(key)) {
+        continue;
+      }
+      recordedKeys.add(key);
+      this.recordDocumentAccess(job, access);
+    }
+  }
+
+  private extractCodexAppServerDocumentAccesses(params: unknown): Array<Omit<SandboxDocumentAccessLog, 'accessedAt' | 'accessId'> & { itemId?: string }> {
+    const accesses: Array<Omit<SandboxDocumentAccessLog, 'accessedAt' | 'accessId'> & { itemId?: string }> = [];
+    const visit = (value: unknown): void => {
+      if (!value || typeof value !== 'object') {
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+
+      const record = value as Record<string, unknown>;
+      const itemId = typeof record.id === 'string' ? record.id : undefined;
+      const type = typeof record.type === 'string' ? record.type : '';
+      const toolName = typeof record.toolName === 'string'
+        ? record.toolName
+        : typeof record.tool_name === 'string'
+          ? record.tool_name
+          : typeof record.name === 'string'
+            ? record.name
+            : type;
+      const command = typeof record.command === 'string' ? record.command : undefined;
+      const cwd = typeof record.cwd === 'string' ? record.cwd : undefined;
+
+      if (command && (type === 'commandExecution' || type === 'command_execution' || toolName === 'exec_command')) {
+        for (const documentPath of this.extractDocumentPathsFromCommand(command, cwd)) {
+          accesses.push({
+            itemId,
+            documentPath,
+            requestedPath: documentPath,
+            toolName: 'exec_command',
+            command,
+          });
+        }
+      }
+
+      const requestedPath = this.extractCodexAppServerRequestedPath(record);
+      if (requestedPath && (toolName === 'read_file' || toolName === 'readFile' || type === 'fileRead' || type === 'file_read')) {
+        accesses.push({
+          itemId,
+          documentPath: requestedPath,
+          requestedPath,
+          toolName: 'read_file',
+        });
+      }
+
+      for (const child of Object.values(record)) {
+        visit(child);
+      }
+    };
+
+    visit(params);
+    return accesses;
+  }
+
+  private extractCodexAppServerRequestedPath(record: Record<string, unknown>): string | undefined {
+    for (const key of ['path', 'documentPath', 'document_path', 'requestedPath', 'requested_path']) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private extractDocumentPathsFromCommand(command: string, cwd?: string): string[] {
+    const matches = command.matchAll(/(?:^|[\s"'=])((?:\.{1,2}\/|\/|[A-Za-z0-9_.@+-]+\/)?[A-Za-z0-9_.@+/-]+\.(?:md|markdown|mdown|mkd|txt|rst|adoc|asc|csv|tsv|pdf|docx?|odt|rtf))(?=[:),\]"'\s]|$)/gi);
+    const paths = Array.from(matches, (match) => this.normalizeCodexAppServerDocumentPath(match[1], cwd))
+      .filter((value): value is string => Boolean(value));
+    return this.uniquePaths(paths);
+  }
+
+  private normalizeCodexAppServerDocumentPath(value: string | undefined, cwd?: string): string | undefined {
+    const sanitized = this.sanitizeRequestedPath(value);
+    if (!sanitized) {
+      return undefined;
+    }
+    if (!path.isAbsolute(sanitized)) {
+      return sanitized.replace(/\\/g, '/').replace(/^\.\/+/, '');
+    }
+    const normalizedPath = path.resolve(sanitized);
+    const normalizedCwd = cwd && path.isAbsolute(cwd) ? path.resolve(cwd) : undefined;
+    if (normalizedCwd && (normalizedPath === normalizedCwd || normalizedPath.startsWith(normalizedCwd + path.sep))) {
+      return path.relative(normalizedCwd, normalizedPath).replace(/\\/g, '/');
+    }
+    return path.basename(normalizedPath);
   }
 
   private async runCodexLoop(job: SandboxJob, repoPath: string, model: string, openai: OpenAI): Promise<string> {

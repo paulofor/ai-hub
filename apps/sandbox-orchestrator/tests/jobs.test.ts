@@ -3637,7 +3637,10 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
   execSync('git config user.email "ci@example.com"', { cwd: tempRepo });
   execSync('git config user.name "CI Bot"', { cwd: tempRepo });
   await fs.writeFile(path.join(tempRepo, 'README.md'), 'initial');
+  await fs.mkdir(path.join(tempRepo, 'docs'), { recursive: true });
+  await fs.writeFile(path.join(tempRepo, 'docs', 'briefing.md'), 'briefing');
   execSync('git add README.md', { cwd: tempRepo });
+  execSync('git add docs/briefing.md', { cwd: tempRepo });
   execSync('git commit -m "init"', { cwd: tempRepo });
   execSync('git branch -M main', { cwd: tempRepo });
 
@@ -3655,6 +3658,26 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
       }
       if (method === 'turn/start') {
         setTimeout(() => {
+          for (const listener of listeners.get('item/started') ?? []) {
+            listener({
+              item: {
+                type: 'commandExecution',
+                id: 'cmd-read-docs',
+                command: `sed -n '1,20p' README.md docs/briefing.md`,
+                cwd: tempRepo,
+              },
+            });
+          }
+          for (const listener of listeners.get('item/completed') ?? []) {
+            listener({
+              item: {
+                type: 'commandExecution',
+                id: 'cmd-read-docs',
+                command: `sed -n '1,20p' README.md docs/briefing.md`,
+                cwd: tempRepo,
+              },
+            });
+          }
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
             listener({ delta: 'resumo via app server' });
           }
@@ -3762,6 +3785,10 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal(input?.length, 2);
     assert.ok(!calls.some((call) => call.method === 'responses.create'));
     assert.deepEqual(job.changedFiles, []);
+    assert.deepEqual(
+      job.documentAccesses?.map((entry) => entry.documentPath),
+      ['README.md', 'docs/briefing.md'],
+    );
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
   }
