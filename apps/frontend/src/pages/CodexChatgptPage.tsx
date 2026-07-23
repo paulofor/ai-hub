@@ -1,4 +1,4 @@
-import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
@@ -58,6 +58,14 @@ interface ProductOption {
   id: number;
   name: string;
   slug: string;
+}
+
+interface PromptHintOption {
+  id: number;
+  label: string;
+  phrase: string;
+  environmentId?: number | null;
+  environmentName?: string | null;
 }
 
 interface SavedConversationMessage {
@@ -1099,6 +1107,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const selectedEnvironment = sandboxOnly ? SANDBOX_ONLY_ENVIRONMENT : environment;
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProductSlug, setSelectedProductSlug] = useState('');
+  const [promptHints, setPromptHints] = useState<PromptHintOption[]>([]);
+  const [selectedPromptHintIds, setSelectedPromptHintIds] = useState<number[]>([]);
+  const [promptHintsError, setPromptHintsError] = useState<string | null>(null);
+  const [loadingPromptHints, setLoadingPromptHints] = useState(false);
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [dailyMetrics, setDailyMetrics] = useState<CodexDashboardMetrics | null>(null);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
@@ -1159,6 +1171,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         ...current
       ];
       return next.slice(0, TELEMETRY_WINDOW_SIZE);
+    });
+  }, []);
+
+  const handlePromptHintToggle = useCallback((hintId: number, checked: boolean) => {
+    setSelectedPromptHintIds((current) => {
+      if (checked) {
+        return current.includes(hintId) ? current : [...current, hintId];
+      }
+      return current.filter((id) => id !== hintId);
     });
   }, []);
 
@@ -1296,6 +1317,43 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [loadAccount, loadDailyMetrics, loadRequests, registerTelemetry]);
+
+  useEffect(() => {
+    const trimmedEnvironment = selectedEnvironment.trim();
+    if (!trimmedEnvironment) {
+      setPromptHints([]);
+      setSelectedPromptHintIds([]);
+      setPromptHintsError(null);
+      setLoadingPromptHints(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLoadingPromptHints(true);
+    client
+      .get<PromptHintOption[]>('/prompt-hints', {
+        params: { environment: trimmedEnvironment }
+      })
+      .then((response) => {
+        if (cancelled) return;
+        setPromptHints(response.data);
+        setPromptHintsError(null);
+        setSelectedPromptHintIds((current) => current.filter((id) => response.data.some((hint) => hint.id === id)));
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setPromptHintsError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingPromptHints(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEnvironment]);
 
   const isConnected = Boolean(account?.connected) && account?.status === 'connected';
   const isExecutable = Boolean(account?.executable) && isConnected;
@@ -1462,6 +1520,26 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
   }, [selectedSavedConversationMessages]);
 
+  const selectedPromptHints = useMemo(() => {
+    if (promptHints.length === 0 || selectedPromptHintIds.length === 0) {
+      return [];
+    }
+    const hintsById = new Map(promptHints.map((hint) => [hint.id, hint]));
+    return selectedPromptHintIds
+      .map((id) => hintsById.get(id))
+      .filter((hint): hint is PromptHintOption => Boolean(hint));
+  }, [promptHints, selectedPromptHintIds]);
+
+  const generalPromptHints = useMemo(
+    () => promptHints.filter((hint) => !hint.environmentId),
+    [promptHints]
+  );
+
+  const scopedPromptHints = useMemo(
+    () => promptHints.filter((hint) => hint.environmentId),
+    [promptHints]
+  );
+
   const buildConversationPromptFromHistory = useCallback((message: string, historyMessages: ChatMessage[]) => {
     const savedContextMessages = conversationMessagesMatchSavedContext(historyMessages)
       ? []
@@ -1480,17 +1558,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const productSourceInstruction = selectedProduct
       ? `Antes de começar leia o documento em http://191.252.181.168:8000/api/products/public/${selectedProduct.slug}/marketing-definition.md e use como fonte de verdade sobre o PDE.`
       : '';
+    const selectedPromptHintPhrases = selectedPromptHints
+      .map((hint) => hint.phrase.trim())
+      .filter((value) => value.length > 0);
     return [
       productSourceInstruction,
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
       ...config.promptExtraLines,
+      selectedPromptHintPhrases.length > 0 ? `Itens opcionais selecionados pelo usuário para complementar o prompt:\n${selectedPromptHintPhrases.join('\n')}` : '',
       selectedConversation ? `Contexto selecionado pelo usuário: conversa salva "${selectedConversation.title}" (${selectedConversation.messageCount} mensagem(ns), atualizada em ${formatDateTime(selectedConversation.updatedAt)}).` : '',
       history ? `Histórico da conversa:\n${history}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedSavedConversationId, selectedSavedConversationMessages]);
+  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -1641,6 +1723,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       }
       setPrompt('');
       setFileAttachments([]);
+      setSelectedPromptHintIds([]);
       await loadRequests();
       registerTelemetry('execution_success', `Execução enviada com profile ${config.profile}.`);
       setError(null);
@@ -2198,6 +2281,78 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {products.map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
         </select> : null}
         <textarea ref={promptTextareaRef} value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
+            <Link
+              to="/prompt-hints"
+              className="text-xs font-semibold text-emerald-600 hover:text-emerald-500"
+            >
+              Gerenciar itens
+            </Link>
+          </div>
+          {loadingPromptHints ? <p className="text-xs text-slate-500 dark:text-slate-400">Carregando itens disponíveis...</p> : null}
+          {promptHintsError ? <p className="text-xs text-red-500">{promptHintsError}</p> : null}
+          {!loadingPromptHints && !promptHintsError && promptHints.length === 0 ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Nenhum item configurado para este ambiente.
+            </p>
+          ) : null}
+          {(generalPromptHints.length > 0 || scopedPromptHints.length > 0) ? (
+            <div className="space-y-4">
+              {generalPromptHints.length > 0 ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Itens gerais
+                  </p>
+                  <div className="space-y-2">
+                    {generalPromptHints.map((hint) => (
+                      <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={selectedPromptHintIds.includes(hint.id)}
+                          onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                          className="mt-0.5 h-4 w-4"
+                        />
+                        <span>
+                          {hint.label}
+                          <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
+                            {hint.phrase}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {scopedPromptHints.length > 0 ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Itens para {selectedEnvironment || 'o ambiente selecionado'}
+                  </p>
+                  <div className="space-y-2">
+                    {scopedPromptHints.map((hint) => (
+                      <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={selectedPromptHintIds.includes(hint.id)}
+                          onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                          className="mt-0.5 h-4 w-4"
+                        />
+                        <span>
+                          {hint.label}
+                          <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
+                            {hint.phrase}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
             Anexar arquivos
