@@ -2397,3 +2397,16 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 ## 2026-07-23 01:29:03 UTC-3
 - Correção de registro operacional: a entrada `2026-07-23 01:27:50 UTC-3` documentou corretamente a configuração do Playwright com fallback para Chromium do sistema, mas foi inserida antes de registros já existentes em vez de no final do arquivo; esta nota final preserva a política append-only sem apagar a entrada anterior.
 - Validações executadas para a configuração do Playwright no frontend: `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run test:e2e` e `npm --prefix apps/frontend run lint` passaram.
+
+## 2026-07-23 15:17:31 UTC - ffprobe na sandbox Codex ChatGPT
+- Solicitação recebida: colocar `ffprobe` disponível nas sandboxes de `codex-chatgpt` para o modelo usar com vídeos.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem versionada do `sandbox-orchestrator` instalava ferramentas de execução, validação, navegador e automação, mas não instalava nenhum pacote que fornecesse `ffprobe`; por isso sandboxes novas não teriam como inspecionar metadados de vídeo sem instalação manual.
+- Alternativas avaliadas: (1) instruir o modelo a instalar `ffmpeg` sob demanda, baixo esforço mas frágil e lento; (2) apenas documentar a necessidade de `ffprobe`, melhora descoberta mas não entrega o binário; (3) instalar `ffmpeg` na imagem e explicitar `ffprobe` nos prompts/checklists/documentação. Escolhida a alternativa 3 por corrigir a disponibilidade real e reduzir atrito operacional em tarefas com vídeos.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado o pacote Debian `ffmpeg`, que fornece o comando `ffprobe`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: criada instrução operacional de mídia para informar o modelo sobre `ffprobe`, adicionada a detecção no preflight e incluída a linha de ferramentas de mídia no checklist inicial.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: os prompts dos perfis Codex ChatGPT, MKT e Sandbox passaram a declarar que `ffprobe` está disponível para inspeção de vídeos.
+- Documentação atualizada em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para registrar a disponibilidade de `ffprobe`.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a instalação de `ffmpeg`, a instrução de `ffprobe` nos prompts e a linha do checklist de mídia.
+- Validações executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `cd apps/sandbox-orchestrator && node --test --test-name-pattern="imagem da sandbox instala ferramentas|CHATGPT_CODEX_MKT|CHATGPT_CODEX_SANDBOX|Checklist inicial" dist/tests/jobs.test.js`; `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Limitação de ambiente: a sandbox atual ainda não possui `ffprobe` antes do rebuild/deploy da imagem, e `docker version` falhou porque não há Docker daemon acessível em `/var/run/docker.sock`; por isso não foi possível validar um build local da imagem Docker nesta execução.
+- Nao foi criado Pull Request.

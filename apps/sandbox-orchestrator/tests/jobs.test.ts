@@ -85,6 +85,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /\bdocker-ce-cli\b/);
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
+  assert.match(dockerfile, /\bffmpeg\b/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
@@ -746,6 +747,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
     assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
+    assert.ok(input?.[0]?.text?.includes('O ffprobe está disponível para o modelo pelo comando ffprobe'));
+    assert.ok(input?.[0]?.text?.includes('metadados, codecs, resolução, duração, streams'));
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
     assert.ok(input?.[0]?.text?.includes('"titulo"'));
@@ -2856,9 +2859,12 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
+    assert.match(promptText, /O ffprobe está disponível para o modelo pelo comando ffprobe/i);
+    assert.match(promptText, /use-o para inspecionar metadados, codecs, resolução, duração, streams/i);
     assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
+    assert.match(promptText, /ferramentas de mídia disponíveis: ffprobe|ferramentas de mídia disponíveis: nenhuma detectada/i);
     assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
     assert.match(promptText, /Playwright, @playwright\/test e Chromium headless em \/usr\/bin\/chromium/i);
     assert.match(promptText, /use Playwright com esse navegador para validar localmente/i);
@@ -3835,6 +3841,7 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
   assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
   assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
+  assert.ok(input?.[0]?.text?.includes('O ffprobe está disponível para o modelo pelo comando ffprobe'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
 });
 
