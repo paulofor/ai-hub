@@ -152,8 +152,32 @@ const formatRequestEnvironment = (environment?: string) => {
   return value ? value : 'Ambiente não informado';
 };
 
+const maxDefinedNumber = (...values: Array<number | undefined>) => {
+  const definedValues = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
+  return definedValues.length > 0 ? Math.max(...definedValues) : undefined;
+};
+
+const mergeCodexRequestItem = (current: CodexRequest | undefined, updated: CodexRequest): CodexRequest => {
+  if (!current) return updated;
+
+  const merged: CodexRequest = { ...current, ...updated };
+  if (!isTerminalStatus(updated.status)) {
+    merged.interactionCount = maxDefinedNumber(current.interactionCount, updated.interactionCount);
+    merged.documentAccessCount = maxDefinedNumber(current.documentAccessCount, updated.documentAccessCount);
+    merged.documentAccesses = updated.documentAccesses.length >= current.documentAccesses.length
+      ? updated.documentAccesses
+      : current.documentAccesses;
+  }
+  return merged;
+};
+
+const mergeCodexRequestList = (current: CodexRequest[], updated: CodexRequest[]) => {
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  return updated.map((item) => mergeCodexRequestItem(currentById.get(item.id), item));
+};
+
 const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
-  current.map((item) => item.id === updated.id ? { ...item, ...updated } : item);
+  current.map((item) => item.id === updated.id ? mergeCodexRequestItem(item, updated) : item);
 
 const parseSavedConversationMessage = (value: unknown): SavedConversationMessage | null => {
   if (typeof value !== 'object' || value === null) return null;
@@ -1164,26 +1188,23 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     try {
       const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
-      setRequests(parsed);
+      let nextRequests = parsed;
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
-      if (activeRequests.length === 0) {
-        return parsed;
+      if (activeRequests.length > 0) {
+        const detailResponses = await Promise.allSettled(
+          activeRequests.map((item) => client.get(`/codex/requests/${item.id}`))
+        );
+        const detailedRequests = detailResponses
+          .map((result) => result.status === 'fulfilled' ? parseCodexRequest(result.value.data) : null)
+          .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
+        if (detailedRequests.length > 0) {
+          const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
+          nextRequests = parsed.map((item) => mergeCodexRequestItem(item, detailedById.get(item.id) ?? item));
+        }
       }
 
-      const detailResponses = await Promise.allSettled(
-        activeRequests.map((item) => client.get(`/codex/requests/${item.id}`))
-      );
-      const detailedRequests = detailResponses
-        .map((result) => result.status === 'fulfilled' ? parseCodexRequest(result.value.data) : null)
-        .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
-      if (detailedRequests.length === 0) {
-        return parsed;
-      }
-
-      const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
-      const merged = parsed.map((item) => detailedById.get(item.id) ?? item);
-      setRequests(merged);
-      return merged;
+      setRequests((current) => mergeCodexRequestList(current, nextRequests));
+      return nextRequests;
     } finally {
       setRequestsLoading(false);
     }
