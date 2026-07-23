@@ -26,7 +26,9 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, cr.responseText, ''
+            problem.id, problem.title,
+            (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
+            cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
@@ -43,7 +45,9 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, cr.responseText, ''
+            problem.id, problem.title,
+            (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
+            cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
@@ -58,12 +62,27 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         """)
     Object[] summarizeMetricsSince(@Param("start") Instant start);
     @Query("""
+        select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0)
+        from CodexRequest cr
+        where cr.createdAt >= :start
+          and cr.profile = :profile
+        """)
+    Object[] summarizeMetricsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
+    @Query("""
         select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0)
         from CodexRequest cr
         where cr.createdAt >= :start
         order by cr.createdAt asc
         """)
     List<Object[]> findMetricRowsSince(@Param("start") Instant start);
+    @Query("""
+        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0)
+        from CodexRequest cr
+        where cr.createdAt >= :start
+          and cr.profile = :profile
+        order by cr.createdAt asc
+        """)
+    List<Object[]> findMetricRowsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     List<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating);
     List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
     List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);

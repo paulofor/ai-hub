@@ -40,6 +40,7 @@ export interface CodexRequest {
   httpGetSuccessCount?: number;
   dbQueryCount?: number;
   interactionCount?: number;
+  documentAccessCount?: number;
   documentAccesses: CodexDocumentAccess[];
 }
 
@@ -132,7 +133,15 @@ export const formatDateTime = (value?: string) => {
   if (Number.isNaN(date.getTime())) {
     return '—';
   }
-  return date.toLocaleString('pt-BR');
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Sao_Paulo'
+  });
 };
 
 export const formatDuration = (milliseconds?: number) => {
@@ -140,9 +149,11 @@ export const formatDuration = (milliseconds?: number) => {
     return '—';
   }
   const totalSeconds = Math.floor(milliseconds / 1000);
+  if (totalSeconds > 0 && totalSeconds < 60) {
+    return '<1min';
+  }
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
   const parts: string[] = [];
   if (hours > 0) {
     parts.push(`${hours}h`);
@@ -150,7 +161,9 @@ export const formatDuration = (milliseconds?: number) => {
   if (minutes > 0 || hours > 0) {
     parts.push(`${minutes}min`);
   }
-  parts.push(`${seconds}s`);
+  if (parts.length === 0) {
+    parts.push('0min');
+  }
   return parts.join(' ');
 };
 
@@ -202,6 +215,9 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const dbQueryCount = parseNumber(item.dbQueryCount ?? (item as Record<string, unknown>).db_query_count);
   const interactionCount = parseNumber(
     item.interactionCount ?? (item as Record<string, unknown>).interaction_count
+  );
+  const documentAccessCount = parseNumber(
+    item.documentAccessCount ?? (item as Record<string, unknown>).document_access_count
   );
   const documentAccessesRaw = Array.isArray(item.documentAccesses)
     ? item.documentAccesses
@@ -321,6 +337,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     httpGetSuccessCount,
     dbQueryCount,
     interactionCount,
+    documentAccessCount: documentAccessCount ?? (documentAccesses.length > 0 ? documentAccesses.length : undefined),
     documentAccesses,
     problemId: problemId ?? undefined,
     problemTitle: problemTitle ?? undefined,

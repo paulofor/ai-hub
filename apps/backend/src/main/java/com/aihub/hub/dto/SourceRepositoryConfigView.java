@@ -11,17 +11,25 @@ public record SourceRepositoryConfigView(
     boolean tokenConfigured,
     Instant updatedAt
 ) {
+    public static final String DEFAULT_OWNER = "paulofor";
+    public static final String DEFAULT_REPO = "ai-hub";
+    public static final String DEFAULT_BRANCH = "main";
+
     public static SourceRepositoryConfigView empty() {
-        return new SourceRepositoryConfigView("", "", "main", false, null);
+        return new SourceRepositoryConfigView(DEFAULT_OWNER, DEFAULT_REPO, DEFAULT_BRANCH, false, null);
     }
 
     public static SourceRepositoryConfigView from(SourceRepositoryConfig config) {
         return new SourceRepositoryConfigView(
-            config.getGithubOwner(),
-            config.getGithubRepo(),
-            config.getGithubBranch(),
+            valueOrDefault(config.getGithubOwner(), DEFAULT_OWNER),
+            valueOrDefault(config.getGithubRepo(), DEFAULT_REPO),
+            valueOrDefault(config.getGithubBranch(), DEFAULT_BRANCH),
             config.getGithubToken() != null && !config.getGithubToken().isBlank(),
             config.getUpdatedAt()
         );
+    }
+
+    private static String valueOrDefault(String value, String defaultValue) {
+        return value == null || value.isBlank() ? defaultValue : value;
     }
 }

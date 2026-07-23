@@ -40,8 +40,8 @@ public class SourceModuleChangeService {
         Clock clock,
         GithubApiClient githubApiClient,
         SourceRepositoryConfigService sourceRepositoryConfigService,
-        @Value("${hub.source.repository.owner:${GITHUB_SOURCE_OWNER:}}") String githubOwner,
-        @Value("${hub.source.repository.repo:${GITHUB_SOURCE_REPO:}}") String githubRepo,
+        @Value("${hub.source.repository.owner:${GITHUB_SOURCE_OWNER:paulofor}}") String githubOwner,
+        @Value("${hub.source.repository.repo:${GITHUB_SOURCE_REPO:ai-hub}}") String githubRepo,
         @Value("${hub.source.repository.branch:${GITHUB_SOURCE_BRANCH:main}}") String githubBranch,
         @Value("${hub.source.repository.root:${HUB_SOURCE_REPOSITORY_ROOT:}}") String configuredRepositoryRoot
     ) {

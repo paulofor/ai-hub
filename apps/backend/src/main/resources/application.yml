@@ -22,6 +22,8 @@ management:
         include: health,info,prometheus
 
 hub:
+  dashboard:
+    time-zone: ${HUB_DASHBOARD_TIME_ZONE:America/Sao_Paulo}
   github:
     org-default: ${GITHUB_ORG_DEFAULT:}
     app-id: ${GITHUB_APP_ID:}
