@@ -2442,3 +2442,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao Playwright em `http://127.0.0.1:4173/codex-chatgpt` com APIs mockadas, confirmando que o quadro aparece, o item geral e visivel e a frase marcada entra no payload de `POST /api/codex/requests`. Screenshot salvo em `/tmp/aihub-codex-chatgpt-prompt-hints.png`.
 - Observacao de ambiente: a primeira tentativa de build falhou por dependencias locais ausentes/toolchain global incompatível; apos `npm ci --include=dev`, build e lint passaram. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
 - Nao foi criado Pull Request.
+
+## 2026-07-23 17:09:19 UTC - Investigacao das metricas por perfil Codex ChatGPT
+
+- Solicitacao recebida: verificar se as metricas de tempo, solicitacoes e interacoes contam tanto `codex-chatgpt` quanto `codex-chatgpt-mkt`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a agregacao de metricas tem dois caminhos: quando a API `/codex/requests/metrics` e chamada sem `profile`, o backend usa queries sem filtro e soma todos os perfis; quando e chamada com `profile`, usa queries filtradas por `cr.profile`.
+- Evidencias coletadas: `CodexController.metrics()` aceita `profile` opcional; `CodexRequestService.dashboardMetrics(profile)` escolhe entre `summarizeMetricsSince`/`findMetricRowsSince` e suas variantes `AndProfile`; `CodexChatgptPage` chama `/codex/requests/metrics` com `params: { profile: config.profile }`; `DashboardPage` chama a mesma rota sem parametro de perfil.
+- Conclusao: na tela especifica do Codex ChatGPT/MKT, as metricas ficam separadas pelo perfil ativo; na dashboard geral, as metricas agregam todos os perfis, incluindo `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
+- Nenhuma alteracao de codigo foi aplicada nesta investigacao. Nao foi criado Pull Request.
