@@ -82,7 +82,7 @@ export default function DashboardPage() {
   return (
     <section className="space-y-6">
       <h2 className="text-2xl font-semibold">Visão geral</h2>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <MetricCard
           title="Solicitações"
           dayValue={formatMetricNumber(metrics?.day.requestCount)}
@@ -283,20 +283,26 @@ function MetricCard({
   monthValue: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 sm:p-5">
       <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <div className="text-xs font-medium uppercase text-slate-500">Dia</div>
-          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{dayValue}</div>
+          <div className="mt-2 whitespace-nowrap text-xl font-bold leading-tight text-emerald-600 sm:text-[clamp(1.0625rem,1.2vw,1.25rem)]">
+            {dayValue}
+          </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <div className="text-xs font-medium uppercase text-slate-500">Semana</div>
-          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{weekValue}</div>
+          <div className="mt-2 whitespace-nowrap text-xl font-bold leading-tight text-emerald-600 sm:text-[clamp(1.0625rem,1.2vw,1.25rem)]">
+            {weekValue}
+          </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40 sm:col-span-2">
           <div className="text-xs font-medium uppercase text-slate-500">Mês</div>
-          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{monthValue}</div>
+          <div className="mt-2 whitespace-nowrap text-xl font-bold leading-tight text-emerald-600 sm:text-[clamp(1.0625rem,1.2vw,1.25rem)]">
+            {monthValue}
+          </div>
         </div>
       </div>
     </div>

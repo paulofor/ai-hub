@@ -2482,3 +2482,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
 - Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
 - Nao foi criado Pull Request.
+
+## 2026-07-24 07:54:48 UTC - Layout dos cards de metricas do dashboard
+
+- Solicitacao recebida: melhorar o layout para evitar quebra de valores maiores nos cards superiores, aproveitando os espacos em branco marcados em vermelho na imagem enviada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o componente `MetricCard` usava grade interna `sm:grid-cols-2`, deixando um quarto quadrante vazio em desktop e fazendo valores maiores disputarem largura dentro de cards estreitos, especialmente em `Interações` e `Tempo de processamento`.
+- Alternativas avaliadas: (1) reduzir a fonte global dos valores, baixo esforco mas pioraria a leitura e so esconderia o problema; (2) alterar apenas o grid externo da dashboard para menos cards por linha, daria mais largura mas nao aproveitaria o espaco vazio interno marcado; (3) manter duas colunas internas, fazer `Mes` ocupar a largura inteira, controlar os valores com `whitespace-nowrap`/`clamp` e adiar tres cards por linha para `xl`. Escolhida a alternativa 3 por usar o espaco vazio indicado no print, preservar densidade em telas largas e evitar cards estreitos em larguras intermediarias.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: os cards superiores agora usam tres cards por linha apenas em `xl`, os blocos Dia/Semana ficam em duas colunas internas e o bloco Mes ocupa a linha inteira, com valores em uma linha e tamanho responsivo limitado por `clamp`.
+- Validacoes executadas: Playwright com dados simulados equivalentes ao print passou em 1024, 1280 e 1366px sem quebra/overflow dos valores; `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Nao foi criado Pull Request.
