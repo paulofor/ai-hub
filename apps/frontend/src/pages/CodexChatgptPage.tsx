@@ -1,6 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
+import MarkdownFileReference, { isFileReferenceHref } from '../components/MarkdownFileReference';
 import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
@@ -247,25 +248,8 @@ const stripModelThinking = (content: string): string => {
   return trimmed;
 };
 
-const isFileReferenceHref = (href: string) => {
-  const normalized = href.replace(/^<|>$/g, '');
-  return /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.@+-]+\/).+\.[A-Za-z0-9]+(?::\d+)?$/.test(normalized);
-};
-
 const renderFileReference = (label: string, href: string, key: string) => {
-  const normalizedHref = href.replace(/^<|>$/g, '');
-  const displayLabel = label.trim() || normalizedHref.split('/').pop() || normalizedHref;
-
-  return (
-    <span
-      key={key}
-      className="mx-0.5 inline-flex max-w-full flex-col rounded-md border border-slate-200 bg-slate-50 px-2 py-1 align-middle shadow-sm dark:border-slate-700 dark:bg-slate-900/80"
-      title={normalizedHref}
-    >
-      <span className="min-w-0 break-all font-mono text-[0.95em] font-semibold leading-tight text-slate-900 dark:text-slate-100">{displayLabel}</span>
-      <span className="min-w-0 break-all font-mono text-[0.78em] leading-tight text-slate-500 dark:text-slate-400">{normalizedHref}</span>
-    </span>
-  );
+  return <MarkdownFileReference key={key} label={label} href={href} />;
 };
 
 const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
@@ -290,6 +274,20 @@ const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
   }
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
   return nodes;
+};
+
+const renderMarkdownListItem = (item: string, keyPrefix: string) => {
+  const filePrefixMatch = item.match(/^\[([^\]]+)\]\(([^)\s]+)\):\s*(.*)$/);
+  if (filePrefixMatch && isFileReferenceHref(filePrefixMatch[2])) {
+    return (
+      <div className="space-y-1">
+        <div>{renderFileReference(filePrefixMatch[1], filePrefixMatch[2], `${keyPrefix}-file-reference`)}</div>
+        {filePrefixMatch[3] ? <div>{renderInlineMarkdown(filePrefixMatch[3], `${keyPrefix}-description`)}</div> : null}
+      </div>
+    );
+  }
+
+  return renderInlineMarkdown(item, keyPrefix);
 };
 
 const splitMarkdownTableRow = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
@@ -404,8 +402,8 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
         items.push(itemMatch[1]);
         lineIndex += 1;
       }
-      nodes.push(<ul key={`ul-${blockIndex}-${nodes.length}`} className="list-disc space-y-1 pl-5">
-        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInlineMarkdown(item, `ul-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
+      nodes.push(<ul key={`ul-${blockIndex}-${nodes.length}`} className="list-disc space-y-2 pl-5">
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderMarkdownListItem(item, `ul-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
       </ul>);
       continue;
     }
@@ -420,8 +418,8 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
         items.push(itemMatch[1]);
         lineIndex += 1;
       }
-      nodes.push(<ol key={`ol-${blockIndex}-${nodes.length}`} className="list-decimal space-y-1 pl-5">
-        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInlineMarkdown(item, `ol-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
+      nodes.push(<ol key={`ol-${blockIndex}-${nodes.length}`} className="list-decimal space-y-2 pl-5">
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderMarkdownListItem(item, `ol-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
       </ol>);
       continue;
     }
@@ -2120,11 +2118,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const hiddenConversationMessages = Math.max(0, conversation.length - visibleConversation.length);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
+  const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchCompleted > 0 && !activeBatchPrUrl);
+  const accumulatedCodeWarning = hasAccumulatedCodeAwaitingPr
+    ? `${activeBatchCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
+    : null;
   const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
     ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'
     : !hasCompletedConversationRequest && activeBatchCompleted === 0 && !activeBatchPrUrl
       ? 'Ainda não há solicitação concluída neste lote.'
-      : 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
+      : accumulatedCodeWarning ?? 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
   const canRequestPr = Boolean(
     !sandboxOnly
     && selectedEnvironment
@@ -2193,6 +2195,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">{activeBatchPending} pendente(s)</span>
           </div>
         </div> : <p className="mt-3 text-slate-500">Nenhum lote aberto para o ambiente selecionado.</p>}
+        {accumulatedCodeWarning ? (
+          <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            Código acumulado para merge: {accumulatedCodeWarning}
+          </p>
+        ) : null}
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
@@ -2404,7 +2411,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
           {sandboxOnly ? <button type="button" onClick={handleStartNewSandboxDialog} disabled={!canStartNewSandboxDialog} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Novo diálogo</button> : null}
-          {!sandboxOnly ? <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} title={prBlockedReason} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button> : null}
+          {!sandboxOnly ? (
+            <button
+              type="button"
+              onClick={handleCreatePr}
+              disabled={prLoading || !canRequestPr}
+              title={prBlockedReason}
+              className={`inline-flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+                hasAccumulatedCodeAwaitingPr
+                  ? 'border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50'
+                  : 'border-emerald-600 text-emerald-700'
+              }`}
+            >
+              <span>{prLoading ? 'Pedindo PR...' : 'Pedir PR'}</span>
+              {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900 dark:text-amber-100">Código pendente</span> : null}
+            </button>
+          ) : null}
           {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
         </div>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}

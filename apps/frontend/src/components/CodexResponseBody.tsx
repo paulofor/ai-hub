@@ -1,4 +1,5 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import MarkdownFileReference, { isFileReferenceHref } from './MarkdownFileReference';
 
 interface StructuredResponse {
   titulo: string;
@@ -43,25 +44,8 @@ const stripModelThinking = (content: string): string => {
   return trimmed;
 };
 
-const isFileReferenceHref = (href: string) => {
-  const normalized = href.replace(/^<|>$/g, '');
-  return /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.@+-]+\/).+\.[A-Za-z0-9]+(?::\d+)?$/.test(normalized);
-};
-
 const renderFileReference = (label: string, href: string, key: string) => {
-  const normalizedHref = href.replace(/^<|>$/g, '');
-  const displayLabel = label.trim() || normalizedHref.split('/').pop() || normalizedHref;
-
-  return (
-    <span
-      key={key}
-      className="mx-0.5 inline-flex max-w-full flex-col rounded-md border border-slate-200 bg-slate-50 px-2 py-1 align-middle shadow-sm dark:border-slate-700 dark:bg-slate-900/80"
-      title={normalizedHref}
-    >
-      <span className="min-w-0 break-all font-mono text-[0.95em] font-semibold leading-tight text-slate-900 dark:text-slate-100">{displayLabel}</span>
-      <span className="min-w-0 break-all font-mono text-[0.78em] leading-tight text-slate-500 dark:text-slate-400">{normalizedHref}</span>
-    </span>
-  );
+  return <MarkdownFileReference key={key} label={label} href={href} />;
 };
 
 const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
@@ -86,6 +70,20 @@ const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
   }
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
   return nodes;
+};
+
+const renderMarkdownListItem = (item: string, keyPrefix: string) => {
+  const filePrefixMatch = item.match(/^\[([^\]]+)\]\(([^)\s]+)\):\s*(.*)$/);
+  if (filePrefixMatch && isFileReferenceHref(filePrefixMatch[2])) {
+    return (
+      <div className="space-y-1">
+        <div>{renderFileReference(filePrefixMatch[1], filePrefixMatch[2], `${keyPrefix}-file-reference`)}</div>
+        {filePrefixMatch[3] ? <div>{renderInlineMarkdown(filePrefixMatch[3], `${keyPrefix}-description`)}</div> : null}
+      </div>
+    );
+  }
+
+  return renderInlineMarkdown(item, keyPrefix);
 };
 
 const splitMarkdownTableRow = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
@@ -200,8 +198,8 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
         items.push(itemMatch[1]);
         lineIndex += 1;
       }
-      nodes.push(<ul key={`ul-${blockIndex}-${nodes.length}`} className="list-disc space-y-1 pl-5">
-        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInlineMarkdown(item, `ul-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
+      nodes.push(<ul key={`ul-${blockIndex}-${nodes.length}`} className="list-disc space-y-2 pl-5">
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderMarkdownListItem(item, `ul-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
       </ul>);
       continue;
     }
@@ -216,8 +214,8 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
         items.push(itemMatch[1]);
         lineIndex += 1;
       }
-      nodes.push(<ol key={`ol-${blockIndex}-${nodes.length}`} className="list-decimal space-y-1 pl-5">
-        {items.map((item, itemIndex) => <li key={itemIndex}>{renderInlineMarkdown(item, `ol-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
+      nodes.push(<ol key={`ol-${blockIndex}-${nodes.length}`} className="list-decimal space-y-2 pl-5">
+        {items.map((item, itemIndex) => <li key={itemIndex}>{renderMarkdownListItem(item, `ol-${blockIndex}-${nodes.length}-${itemIndex}`)}</li>)}
       </ol>);
       continue;
     }

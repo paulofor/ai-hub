@@ -5202,7 +5202,7 @@ grep -R -n -- "$@"
       }
 
       const prTitle = this.buildPrTitle(job.summary);
-      const prBody = this.buildPrBody(job.summary, job.taskDescription);
+      const prBody = this.buildPrBody(job.taskDescription);
       const pr = await this.createOrReusePullRequest(
         job,
         repoSlug,
@@ -5624,14 +5624,16 @@ grep -R -n -- "$@"
     return `${prefix}${truncatedSummary}`;
   }
 
-  private buildPrBody(summary: string | undefined, taskDescription: string): string {
-    const sections = [
-      'Correção automática gerada pelo sandbox do AI Hub.',
-      taskDescription ? `\n**Descrição da tarefa:**\n${taskDescription}` : undefined,
-      summary ? `\n**Resumo das alterações:**\n${summary}` : undefined,
-    ].filter(Boolean);
+  private buildPrBody(taskDescription: string): string {
+    const topic = this.normalizePrTopic(taskDescription) || 'Solicitação de código registrada pelo AI Hub.';
+    return `- ${topic}`;
+  }
 
-    return sections.join('\n');
+  private normalizePrTopic(value: string | undefined): string {
+    if (!value) {
+      return '';
+    }
+    return this.truncateWithEllipsis(value.trim().replace(/\s+/g, ' '), 500);
   }
 
   private truncateWithEllipsis(value: string, maxLength: number): string {

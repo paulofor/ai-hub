@@ -2535,3 +2535,37 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao visual com Playwright em `http://127.0.0.1:8082/codex-chatgpt`, APIs mockadas e conversa local reproduzindo o print, com screenshot salvo em `/tmp/aihub-codex-chat-file-formatting.png`.
 - Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
 - Nao foi criado Pull Request.
+
+## 2026-07-24 17:00:58 UTC - Descricao de PRs com topicos das solicitacoes
+
+- Solicitacao recebida: melhorar a descricao dos PRs para conter apenas topicos com as solicitacoes que geraram codigo.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os fluxos de criacao de PR usavam o resumo final completo do modelo ou uma explicacao narrativa do lote como corpo do PR; isso misturava contexto, validacao e detalhes operacionais com a lista de pedidos que originaram as alteracoes.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o corpo do PR automatico agora e um bullet normalizado da `taskDescription`, sem incluir resumo narrativo do modelo.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: PR manual e PR de lote agora enviam como explicacao apenas bullets das solicitacoes concluidas, usando o prompt original e o ID da solicitacao.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` e `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java` para validar que o corpo do PR nao inclui resumo/narrativa e fica restrito aos topicos.
+- Validacoes executadas: primeira tentativa de build do sandbox-orchestrator falhou por dependencias Node ausentes; apos `npm ci --include=dev`, `npm run build --silent && node --test --test-name-pattern="pull request title|code-generating request topics" dist/tests/jobs.test.js` passou. A primeira tentativa Maven a partir da raiz falhou porque o projeto nao e um reactor; executado corretamente em `apps/backend`, `mvn test -Dtest=CodexControllerTest` passou com 10 testes. `git diff --check` passou.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 17:06:24 UTC - Aviso de codigo acumulado no botao Pedir PR
+
+- Solicitacao recebida: colocar algum tipo de aviso no botao de Pedir PR quando tiver codigo acumulado para ser mergeado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela Codex ChatGPT ja mantinha o estado de lote aberto e sabia quantas solicitacoes estavam concluidas, mas usava esse dado apenas para habilitar/desabilitar o botao e para um `title`/texto generico; nao havia destaque visual persistente indicando que existiam alteracoes acumuladas ainda sem PR.
+- Alternativas avaliadas: (1) alterar apenas o texto auxiliar abaixo dos botoes, baixo risco mas pouco visivel; (2) abrir confirmacao ao clicar em Pedir PR, mais intrusivo e atrasaria um fluxo esperado; (3) destacar o estado diretamente no botao e no card do lote quando houver solicitacao concluida sem PR. Escolhida a alternativa 3 por atacar a causa da baixa visibilidade sem bloquear a acao.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado o estado `hasAccumulatedCodeAwaitingPr`, exibindo aviso "Codigo acumulado para merge" no card do lote e selo "Codigo pendente" dentro do botao `Pedir PR`, com estilo ambar quando houver lote concluido sem PR.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright com APIs mockadas para validar o aviso no card e o selo no botao quando um lote tem solicitacao concluida sem link de PR.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "warns on the request PR button"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas os 2 testes Playwright passaram.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 14:15:14 UTC-3 - Refinamento visual de referencias de arquivo
+
+- Solicitacao recebida: melhorar novamente a formatacao dos nomes de arquivo nas respostas do Codex ChatGPT, pesquisando algo esteticamente interessante e facil de visualizar.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o ajuste anterior ainda tratava a referencia Markdown de arquivo como um chip inline grande demais dentro de um item de lista; em caminhos absolutos longos, isso fazia o card competir com a descricao, quebrar pontuacao como `:` em linhas ruins e dar peso visual ao caminho completo em vez do nome do arquivo.
+- Pesquisa de UI/UX realizada: referencias de breadcrumbs e truncamento de nomes longos indicam priorizar uma trilha curta, manter itens escaneaveis, mostrar tooltip quando truncar e preservar o fim/nome do arquivo como informacao mais importante.
+- Ajuste aplicado em `apps/frontend/src/components/MarkdownFileReference.tsx`: criado componente compartilhado para referencia de arquivo com badge de extensao, nome do arquivo em destaque, diretorio relativo ao repo como contexto secundario truncado e caminho absoluto completo apenas no `title`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/frontend/src/components/CodexResponseBody.tsx`: os renderizadores Markdown agora usam o componente compartilhado e separam itens no formato `[arquivo](caminho): descricao` em duas partes, evitando pontuacao solta e melhorando leitura em desktop/mobile.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright que valida o chip de arquivo, o badge de extensao, o diretorio relativo e a ausencia do caminho `/root/ai-hub/...` como texto visivel.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "formats markdown file references"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
+- Validacao visual executada com Playwright em desktop e mobile contra `http://127.0.0.1:5177/codex-chatgpt`, APIs mockadas e conversa local reproduzindo links longos do print.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas todos os 3 testes Playwright passaram.
+- Nao foi criado Pull Request.
