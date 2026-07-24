@@ -123,6 +123,36 @@ const isClosedBatchRequest = (request: CodexRequest): boolean =>
 const isOpenBatchRequest = (request: CodexRequest): boolean =>
   Boolean(request.workBatchKey || request.workBranch) && !isClosedBatchRequest(request);
 
+const getBatchKey = (request?: CodexRequest): string | undefined =>
+  request?.workBatchKey || request?.workBranch;
+
+const findOpenBatchKey = (
+  requests: CodexRequest[],
+  environment: string,
+  profile: CodexProfile
+): string | undefined =>
+  getBatchKey(requests
+    .filter((item) => item.environment === environment && item.profile === profile)
+    .find((item) => isOpenBatchRequest(item)));
+
+const getOpenBatchRequests = (
+  requests: CodexRequest[],
+  environment: string,
+  profile: CodexProfile,
+  batchKey?: string
+): CodexRequest[] => {
+  const resolvedBatchKey = batchKey ?? findOpenBatchKey(requests, environment, profile);
+  if (!resolvedBatchKey) {
+    return [];
+  }
+  return requests.filter((item) => {
+    if (item.profile !== profile || isClosedBatchRequest(item)) {
+      return false;
+    }
+    return item.workBatchKey === resolvedBatchKey || item.workBranch === resolvedBatchKey;
+  });
+};
+
 const isCancellableRequestStatus = (status?: CodexRequest['status']): boolean =>
   status === 'RUNNING';
 
@@ -1801,12 +1831,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         return;
       }
       const latestRequests = await loadRequests();
-      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === selectedEnvironment);
-      const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
-        ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
+      const currentEnvironmentProfileRequests = latestRequests
+        .filter((item) => item.environment === selectedEnvironment && item.profile === config.profile);
+      const currentBatchKey = findOpenBatchKey(latestRequests, selectedEnvironment, config.profile);
       const currentBatchRequests = currentBatchKey
-        ? latestRequests.filter((item) => !isClosedBatchRequest(item) && (item.workBatchKey === currentBatchKey || item.workBranch === currentBatchKey))
-        : currentEnvironmentRequests.filter((item) => !isClosedBatchRequest(item));
+        ? getOpenBatchRequests(latestRequests, selectedEnvironment, config.profile, currentBatchKey)
+        : currentEnvironmentProfileRequests.filter((item) => !isClosedBatchRequest(item));
       const existingPrUrl = currentBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
 
       if (existingPrUrl) {
@@ -1850,7 +1880,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setPrLoading(false);
     }
-  }, [conversation, loadRequests, registerTelemetry, sandboxOnly, selectedEnvironment]);
+  }, [config.profile, conversation, loadRequests, registerTelemetry, sandboxOnly, selectedEnvironment]);
 
   const findUserMessageIndexForRequest = useCallback((requestId: number) => {
     const assistantIndex = conversation.findIndex((message) => message.role === 'assistant' && message.requestId === requestId);
@@ -2057,13 +2087,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setBulkDiscardLoading(true);
     try {
       const latestRequests = await loadRequests();
-      const currentEnvironmentRequests = latestRequests.filter((item) => item.environment === selectedEnvironment);
-      const currentBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
-        ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
-      const batchRequests = (currentBatchKey
-        ? latestRequests.filter((item) => !isClosedBatchRequest(item) && (item.workBatchKey === currentBatchKey || item.workBranch === currentBatchKey))
-        : [])
-        .filter((item) => item.profile === config.profile);
+      const currentBatchKey = findOpenBatchKey(latestRequests, selectedEnvironment, config.profile);
+      const batchRequests = getOpenBatchRequests(latestRequests, selectedEnvironment, config.profile, currentBatchKey);
       const requestsToDiscard = batchRequests.filter((item) => item.status === 'PENDING' || item.status === 'RUNNING');
 
       if (currentBatchKey && batchRequests.length > 0) {
@@ -2096,12 +2121,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [bulkDiscardLoading, config.profile, loadRequests, registerTelemetry, selectedEnvironment]);
 
-  const currentEnvironmentRequests = requests.filter((item) => item.environment === selectedEnvironment);
-  const activeBatchKey = currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBatchKey
-    ?? currentEnvironmentRequests.find((item) => isOpenBatchRequest(item))?.workBranch;
-  const activeBatchRequests = activeBatchKey
-    ? requests.filter((item) => !isClosedBatchRequest(item) && (item.workBatchKey === activeBatchKey || item.workBranch === activeBatchKey))
-    : [];
+  const activeBatchKey = findOpenBatchKey(requests, selectedEnvironment, config.profile);
+  const activeBatchRequests = getOpenBatchRequests(requests, selectedEnvironment, config.profile, activeBatchKey);
   const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;

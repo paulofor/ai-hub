@@ -55,6 +55,158 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await expect(page.getByRole('button', { name: /Pedir PR Código pendente/ })).toBeEnabled();
 });
 
+test('request PR button only uses the active dialog profile batch', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-24T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 2000 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/products', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({
+      json: {
+        content: [
+          {
+            id: 601,
+            environment: 'paulofor/marketing-hub@main',
+            model: 'gpt-5',
+            version: 'aihub-6',
+            profile: 'CHATGPT_CODEX',
+            prompt: 'Criar arquivo tecnico',
+            status: 'COMPLETED',
+            createdAt: '2026-07-24T12:00:00Z',
+            workBatchKey: 'ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex'
+          },
+          {
+            id: 602,
+            environment: 'paulofor/marketing-hub@main',
+            model: 'gpt-5',
+            version: 'aihub-6',
+            profile: 'CHATGPT_CODEX_MKT',
+            prompt: 'Criar docs/aihub-pedir-pr-mkt-test.md',
+            status: 'COMPLETED',
+            createdAt: '2026-07-24T12:01:00Z',
+            workBatchKey: 'ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt'
+          }
+        ]
+      }
+    });
+  });
+  let requestedPrId: string | null = null;
+  await page.route('**/api/codex/requests/*/create-pr', async (route) => {
+    requestedPrId = route.request().url().match(/requests\/(\d+)\/create-pr/)?.[1] ?? null;
+    await route.fulfill({
+      json: {
+        url: 'https://github.com/paulofor/marketing-hub/pull/602',
+        title: 'AI Hub: lote Codex #602'
+      }
+    });
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt')).toBeVisible();
+  await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: /Pedir PR Código pendente/ }).click();
+  await expect(page.getByText('PR solicitado:')).toBeVisible();
+  expect(requestedPrId).toBe('602');
+});
+
+test('default dialog does not enable PR from a marketing-only batch', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-24T00:00:00Z', requestCount: 1, interactionCount: 1, durationMs: 1000 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({
+      json: {
+        content: [
+          {
+            id: 602,
+            environment: 'paulofor/marketing-hub@main',
+            model: 'gpt-5',
+            version: 'aihub-6',
+            profile: 'CHATGPT_CODEX_MKT',
+            prompt: 'Criar docs/aihub-pedir-pr-mkt-test.md',
+            status: 'COMPLETED',
+            createdAt: '2026-07-24T12:01:00Z',
+            workBatchKey: 'ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt'
+          }
+        ]
+      }
+    });
+  });
+
+  await page.goto('/codex-chatgpt');
+
+  await expect(page.getByText('Nenhum lote aberto para o ambiente selecionado.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pedir PR' })).toBeDisabled();
+});
+
+test('sandbox dialog does not render the request PR button', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-24T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({ json: { content: [] } });
+  });
+
+  await page.goto('/codex-chatgpt-sandbox');
+
+  await expect(page.getByText('Ambiente temporário: sandbox')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Pedir PR/ })).toHaveCount(0);
+});
+
 test('formats markdown file references with a readable filename chip', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
