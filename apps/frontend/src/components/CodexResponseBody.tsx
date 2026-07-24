@@ -346,28 +346,62 @@ const CopyIcon = ({ copied }: { copied: boolean }) => (
     )
 );
 
+const CodeGeneratedIcon = () => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m16 18 6-6-6-6" />
+    <path d="m8 6-6 6 6 6" />
+    <path d="m14.5 4-5 16" />
+  </svg>
+);
+
+const CODE_FILE_PATTERN = /\b[\w./@+-]+\.(?:adoc|asc|css|dockerfile|env|gradle|graphql|html|java|js|json|jsx|kt|md|mdx|mjs|properties|py|rs|scss|sh|sql|ts|tsx|vue|xml|yaml|yml)\b/i;
+const CODE_CHANGE_PATTERN = /\b(?:ajuste|alteracao|alteração|arquivo|componente|correcao|correção|implementacao|implementação|mudanca|mudança|teste|validacao|validação)s?\s+(?:aplicad[oa]s?|atualizad[oa]s?|criad[oa]s?|executad[oa]s?|implementad[oa]s?|incluid[oa]s?|passaram|realizad[oa]s?|removid[oa]s?)\b/i;
+const CODE_COMMAND_PATTERN = /\b(?:docker|git|mvn|npm|pnpm|yarn|node|playwright|tsc|vite)\s+(?:--prefix\s+\S+\s+)?(?:run\s+)?[\w:.-]+/i;
+
+export const hasCodeGenerationSignal = (content: string): boolean => {
+  const normalized = content.trim();
+  if (!normalized) return false;
+  return (CODE_FILE_PATTERN.test(normalized) && CODE_CHANGE_PATTERN.test(normalized)) || CODE_COMMAND_PATTERN.test(normalized);
+};
+
+const CodeGeneratedBadge = () => (
+  <span
+    className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200"
+    title="Esta resposta indica que foram geradas ou alteradas mudanças no repositório"
+  >
+    <CodeGeneratedIcon />
+    <span>Gerou código</span>
+  </span>
+);
+
 interface StructuredCardProps {
   label: string;
   content: string;
   copyField: 'comentario' | 'orientacao' | 'melhoria';
   copied: boolean;
   accentClassName: string;
+  showCodeGeneratedBadge?: boolean;
   onCopy: (field: 'comentario' | 'orientacao' | 'melhoria', text: string) => void;
 }
 
-const StructuredCard = ({ label, content, copyField, copied, accentClassName, onCopy }: StructuredCardProps) => (
+const StructuredCard = ({ label, content, copyField, copied, accentClassName, showCodeGeneratedBadge = false, onCopy }: StructuredCardProps) => (
   <section className={`rounded-lg border p-4 shadow-sm ${accentClassName}`}>
     <div className="mb-3 flex items-center justify-between gap-2">
-      <h4 className="text-xs font-semibold uppercase tracking-wide">{label}</h4>
-      <button
-        type="button"
-        onClick={() => onCopy(copyField, content)}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-current bg-white/70 transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-current dark:bg-slate-950/30"
-        title={`Copiar ${label.toLowerCase()}`}
-        aria-label={`Copiar ${label.toLowerCase()}`}
-      >
-        <CopyIcon copied={copied} />
-      </button>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide">{label}</h4>
+        {showCodeGeneratedBadge ? <CodeGeneratedBadge /> : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onCopy(copyField, content)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-current bg-white/70 transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-current dark:bg-slate-950/30"
+          title={`Copiar ${label.toLowerCase()}`}
+          aria-label={`Copiar ${label.toLowerCase()}`}
+        >
+          <CopyIcon copied={copied} />
+        </button>
+      </div>
     </div>
     <MarkdownMessage content={content} />
   </section>
@@ -408,6 +442,7 @@ export default function CodexResponseBody({ content }: { content: string }) {
       copyField="comentario"
       copied={copiedField === 'comentario'}
       accentClassName="border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      showCodeGeneratedBadge={hasCodeGenerationSignal(structured.comentario)}
       onCopy={handleCopyStructuredText}
     /> : null}
     {structured.orientacaoProximaAcao ? <StructuredCard
