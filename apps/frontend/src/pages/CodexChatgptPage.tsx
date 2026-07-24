@@ -1,7 +1,6 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { hasCodeGenerationSignal } from '../components/CodexResponseBody';
 import MarkdownFileReference, { isFileReferenceHref } from '../components/MarkdownFileReference';
 import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
@@ -466,6 +465,8 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
 interface MarketingStructuredResponse {
   titulo: string;
   comentario: string;
+  alterouCodigoRepositorio?: boolean;
+  resumoCodigoPr: string;
   orientacaoProximaAcao: string;
   sugestaoMelhoriaAmbiente: string;
 }
@@ -529,6 +530,21 @@ const readStructuredResponseString = (record: Record<string, unknown>, keys: str
   return '';
 };
 
+const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: string[]): boolean | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', 'sim', 'yes', '1'].includes(normalized)) return true;
+      if (['false', 'nao', 'não', 'no', '0'].includes(normalized)) return false;
+    }
+  }
+  return undefined;
+};
+
 const parseMarketingStructuredResponse = (content: string): MarketingStructuredResponse | null => {
   const candidate = extractJsonObjectCandidate(content);
   if (!candidate) return null;
@@ -540,6 +556,20 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
 
   const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
+  const alterouCodigoRepositorio = readStructuredResponseBoolean(record, [
+    'alterouCodigoRepositorio',
+    'alterou_codigo_repositorio',
+    'codigoAlterado',
+    'codeChanged',
+    'changedRepositoryCode'
+  ]);
+  const resumoCodigoPr = readStructuredResponseString(record, [
+    'resumoCodigoPr',
+    'resumo_codigo_pr',
+    'resumoPr',
+    'prSummary',
+    'codePrSummary'
+  ]).trim();
   const orientacaoProximaAcao = readStructuredResponseString(record, [
     'orientacaoProximaAcao',
     'orientaçãoProximaAção',
@@ -556,11 +586,14 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
     'sugestãoAmbiente',
     'environmentImprovementSuggestion'
   ]).trim();
-  if (!titulo && !comentario && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
+  if (!titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { titulo, comentario, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+  return { titulo, comentario, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
 };
+
+const marketingResponseIndicatesCodeChange = (content?: string): boolean =>
+  parseMarketingStructuredResponse(content ?? '')?.alterouCodigoRepositorio === true;
 
 const parseMarketingStructuredTitle = (content?: string): string => {
   if (!content) return '';
@@ -659,7 +692,7 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
   if (!structured) {
     return <MarkdownMessage content={content} />;
   }
-  const commentGeneratedCode = hasCodeGenerationSignal(structured.comentario);
+  const commentGeneratedCode = structured.alterouCodigoRepositorio === true;
 
   return <div className="space-y-3">
     {structured.titulo ? <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm dark:border-sky-900 dark:bg-sky-950/30">
@@ -1091,7 +1124,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
+    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 
@@ -2149,6 +2182,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const activeBatchKey = findOpenBatchKey(requests, selectedEnvironment, config.profile);
   const activeBatchRequests = getOpenBatchRequests(requests, selectedEnvironment, config.profile, activeBatchKey);
   const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
+  const activeBatchCompletedCodeChanges = activeBatchRequests
+    .filter((item) => item.status === 'COMPLETED' && marketingResponseIndicatesCodeChange(item.responseText))
+    .length;
+  const activeBatchPrRelevantCompleted = config.profile === 'CHATGPT_CODEX_MKT'
+    ? activeBatchCompletedCodeChanges
+    : activeBatchCompleted;
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
   const activeBatchDiscardableRequests = (activeBatchKey ? activeBatchRequests : [])
@@ -2164,9 +2203,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const hiddenConversationMessages = Math.max(0, conversation.length - visibleConversation.length);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
-  const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchCompleted > 0 && !activeBatchPrUrl);
+  const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchPrRelevantCompleted > 0 && !activeBatchPrUrl);
   const accumulatedCodeWarning = hasAccumulatedCodeAwaitingPr
-    ? `${activeBatchCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
+    ? config.profile === 'CHATGPT_CODEX_MKT'
+      ? `${activeBatchPrRelevantCompleted} solicitação(ões) com alteração de código neste lote ainda precisam passar por PR antes do merge.`
+      : `${activeBatchPrRelevantCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
     : null;
   const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
     ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'

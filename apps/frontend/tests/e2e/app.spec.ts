@@ -103,6 +103,13 @@ test('request PR button only uses the active dialog profile batch', async ({ pag
             prompt: 'Criar docs/aihub-pedir-pr-mkt-test.md',
             status: 'COMPLETED',
             createdAt: '2026-07-24T12:01:00Z',
+            responseText: JSON.stringify({
+              titulo: 'Arquivo criado',
+              comentario: 'Implementado.',
+              alterouCodigoRepositorio: true,
+              resumoCodigoPr: 'Cria arquivo de teste para o fluxo Pedir PR do MKT.',
+              sugestaoMelhoriaAmbiente: ''
+            }),
             workBatchKey: 'ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt'
           }
         ]
@@ -288,6 +295,8 @@ test('shows a code generation icon on marketing comment cards with repository ch
         content: JSON.stringify({
           titulo: 'Aviso no comentário',
           comentario: 'Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card de comentário agora mostra alerta visual quando há mudança no repositório.\n\nValidações executadas: `npm --prefix apps/frontend run build` passou.',
+          alterouCodigoRepositorio: true,
+          resumoCodigoPr: 'Mostra alerta visual quando a resposta MKT declara alteração no repositório.',
           sugestaoMelhoriaAmbiente: ''
         }),
         createdAt: '2026-07-24T12:00:00Z'
@@ -298,6 +307,8 @@ test('shows a code generation icon on marketing comment cards with repository ch
         content: JSON.stringify({
           titulo: 'Análise de campanha',
           comentario: 'Recomendo testar uma promessa mais específica para o criativo de topo de funil e separar públicos frios de remarketing.',
+          alterouCodigoRepositorio: false,
+          resumoCodigoPr: '',
           sugestaoMelhoriaAmbiente: ''
         }),
         createdAt: '2026-07-24T12:01:00Z'

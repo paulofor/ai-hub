@@ -4,6 +4,8 @@ import MarkdownFileReference, { isFileReferenceHref } from './MarkdownFileRefere
 interface StructuredResponse {
   titulo: string;
   comentario: string;
+  alterouCodigoRepositorio?: boolean;
+  resumoCodigoPr: string;
   orientacaoProximaAcao: string;
   sugestaoMelhoriaAmbiente: string;
 }
@@ -287,6 +289,21 @@ const readStructuredResponseString = (record: Record<string, unknown>, keys: str
   return '';
 };
 
+const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: string[]): boolean | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', 'sim', 'yes', '1'].includes(normalized)) return true;
+      if (['false', 'nao', 'não', 'no', '0'].includes(normalized)) return false;
+    }
+  }
+  return undefined;
+};
+
 export const parseCodexStructuredResponse = (content?: string): StructuredResponse | null => {
   if (!content) return null;
   const candidate = extractJsonObjectCandidate(content);
@@ -299,6 +316,20 @@ export const parseCodexStructuredResponse = (content?: string): StructuredRespon
 
   const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
+  const alterouCodigoRepositorio = readStructuredResponseBoolean(record, [
+    'alterouCodigoRepositorio',
+    'alterou_codigo_repositorio',
+    'codigoAlterado',
+    'codeChanged',
+    'changedRepositoryCode'
+  ]);
+  const resumoCodigoPr = readStructuredResponseString(record, [
+    'resumoCodigoPr',
+    'resumo_codigo_pr',
+    'resumoPr',
+    'prSummary',
+    'codePrSummary'
+  ]).trim();
   const orientacaoProximaAcao = readStructuredResponseString(record, [
     'orientacaoProximaAcao',
     'orientaçãoProximaAção',
@@ -315,10 +346,10 @@ export const parseCodexStructuredResponse = (content?: string): StructuredRespon
     'sugestãoAmbiente',
     'environmentImprovementSuggestion'
   ]).trim();
-  if (!titulo && !comentario && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
+  if (!titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { titulo, comentario, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+  return { titulo, comentario, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
 };
 
 export const MarkdownMessage = ({ content }: { content: string }) => {
@@ -442,7 +473,7 @@ export default function CodexResponseBody({ content }: { content: string }) {
       copyField="comentario"
       copied={copiedField === 'comentario'}
       accentClassName="border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-      showCodeGeneratedBadge={hasCodeGenerationSignal(structured.comentario)}
+      showCodeGeneratedBadge={structured.alterouCodigoRepositorio === true}
       onCopy={handleCopyStructuredText}
     /> : null}
     {structured.orientacaoProximaAcao ? <StructuredCard

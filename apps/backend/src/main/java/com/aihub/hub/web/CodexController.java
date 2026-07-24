@@ -507,12 +507,94 @@ public class CodexController {
         if (request == null) {
             return "- Solicitação de código registrada pelo AI Hub.";
         }
-        String prompt = normalizePrTopic(request.getPrompt());
+        String prompt = extractStructuredPrSummary(request.getResponseText()).orElseGet(() -> normalizePrTopic(request.getPrompt()));
         if (!StringUtils.hasText(prompt)) {
             prompt = "Solicitação de código registrada pelo AI Hub.";
         }
         Long id = request.getId();
         return id != null ? "- #" + id + " - " + prompt : "- " + prompt;
+    }
+
+    private Optional<String> extractStructuredPrSummary(String responseText) {
+        JsonNode structured = parseStructuredResponseObject(responseText).orElse(null);
+        if (structured == null) {
+            return Optional.empty();
+        }
+        JsonNode changedNode = firstPresent(structured, "alterouCodigoRepositorio", "alterou_codigo_repositorio", "codigoAlterado", "codeChanged", "changedRepositoryCode");
+        if (!isTruthy(changedNode)) {
+            return Optional.empty();
+        }
+        JsonNode summaryNode = firstPresent(structured, "resumoCodigoPr", "resumo_codigo_pr", "resumoPr", "prSummary", "codePrSummary");
+        if (summaryNode == null || !summaryNode.isTextual()) {
+            return Optional.empty();
+        }
+        String summary = normalizePrTopic(summaryNode.asText());
+        return StringUtils.hasText(summary) ? Optional.of(summary) : Optional.empty();
+    }
+
+    private Optional<JsonNode> parseStructuredResponseObject(String responseText) {
+        if (!StringUtils.hasText(responseText)) {
+            return Optional.empty();
+        }
+        String candidate = extractJsonCandidate(responseText.trim());
+        if (!StringUtils.hasText(candidate)) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(candidate);
+            if (node != null && node.isTextual()) {
+                return parseStructuredResponseObject(node.asText());
+            }
+            return node != null && node.isObject() ? Optional.of(node) : Optional.empty();
+        } catch (IOException ex) {
+            return Optional.empty();
+        }
+    }
+
+    private String extractJsonCandidate(String value) {
+        if (value.startsWith("{") && value.endsWith("}")) {
+            return value;
+        }
+        Matcher fencedMatcher = Pattern.compile("(?s)```(?:json)?\\s*(.*?)\\s*```", Pattern.CASE_INSENSITIVE).matcher(value);
+        if (fencedMatcher.find()) {
+            return extractJsonCandidate(fencedMatcher.group(1).trim());
+        }
+        int start = value.indexOf('{');
+        int end = value.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return value.substring(start, end + 1);
+        }
+        return "";
+    }
+
+    private JsonNode firstPresent(JsonNode node, String... fieldNames) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.get(fieldName);
+            if (value != null && !value.isNull()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private boolean isTruthy(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return false;
+        }
+        if (node.isBoolean()) {
+            return node.asBoolean();
+        }
+        if (node.isTextual()) {
+            String normalized = node.asText().trim().toLowerCase(Locale.ROOT);
+            return normalized.equals("true") || normalized.equals("sim") || normalized.equals("yes") || normalized.equals("1");
+        }
+        if (node.isNumber()) {
+            return node.asInt() == 1;
+        }
+        return false;
     }
 
     private String normalizePrTopic(String value) {

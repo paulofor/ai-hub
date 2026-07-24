@@ -88,7 +88,7 @@ class CodexControllerTest {
 
 
     @Test
-    void createPrUsesOnlyRequestTopicAsExplanation() {
+    void createPrUsesRequestTopicAsExplanationWhenStructuredPrSummaryIsAbsent() {
         CodexRequestService codexRequestService = mock(CodexRequestService.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);
         ObjectMapper objectMapper = new ObjectMapper();
@@ -129,6 +129,51 @@ class CodexControllerTest {
         );
         assertThat(explanationCaptor.getValue()).isEqualTo("- #730 - prompt");
         assertThat(explanationCaptor.getValue()).doesNotContain("Resumo final completo do modelo para o PR.");
+    }
+
+    @Test
+    void createPrUsesStructuredCodeSummaryAsExplanation() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, objectMapper);
+
+        CodexRequest completedRequest = new CodexRequest("paulofor/marketing-hub", "gpt-5.5", null, "prompt longo original");
+        ReflectionTestUtils.setField(completedRequest, "id", 731L);
+        completedRequest.setStatus(CodexRequestStatus.COMPLETED);
+        completedRequest.setResponseText("""
+            {"titulo":"Contrato PR","comentario":"Implementado.","alterouCodigoRepositorio":true,"resumoCodigoPr":"Adiciona campos estruturados para controlar alterações de código no modo MKT.","sugestaoMelhoriaAmbiente":""}
+            """);
+
+        ResponseRecord response = new ResponseRecord();
+        response.setUnifiedDiff("diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1 +1 @@\n-antigo\n+novo");
+
+        when(codexRequestService.find(731L)).thenReturn(completedRequest);
+        when(codexRequestService.findLatestResponseForEnvironment("paulofor/marketing-hub")).thenReturn(Optional.of(response));
+        when(pullRequestService.createFixPr(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("AI Hub: Correção da solicitação #731"),
+            eq(response.getUnifiedDiff()),
+            org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(objectMapper.createObjectNode().put("html_url", "https://github.com/paulofor/marketing-hub/pull/2").put("number", 2));
+
+        controller.createPr(731L, "owner", "codex-ui");
+
+        ArgumentCaptor<String> explanationCaptor = ArgumentCaptor.forClass(String.class);
+        verify(pullRequestService).createFixPr(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("AI Hub: Correção da solicitação #731"),
+            eq(response.getUnifiedDiff()),
+            explanationCaptor.capture()
+        );
+        assertThat(explanationCaptor.getValue()).isEqualTo("- #731 - Adiciona campos estruturados para controlar alterações de código no modo MKT.");
+        assertThat(explanationCaptor.getValue()).doesNotContain("prompt longo original");
     }
 
     @Test
@@ -246,12 +291,18 @@ class CodexControllerTest {
         firstRequest.setStatus(CodexRequestStatus.COMPLETED);
         firstRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
         firstRequest.setWorkBatchKey("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+        firstRequest.setResponseText("""
+            {"titulo":"Cria doc","comentario":"Feito.","alterouCodigoRepositorio":true,"resumoCodigoPr":"Cria documento de teste do lote MKT.","sugestaoMelhoriaAmbiente":""}
+            """);
 
         CodexRequest secondRequest = new CodexRequest("paulofor/marketing-hub@main", "gpt-5.4-mini", null, "ajustar teste");
         ReflectionTestUtils.setField(secondRequest, "id", 741L);
         secondRequest.setStatus(CodexRequestStatus.COMPLETED);
         secondRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
         secondRequest.setWorkBatchKey("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
+        secondRequest.setResponseText("""
+            {"titulo":"Ajusta teste","comentario":"Feito.","alterouCodigoRepositorio":true,"resumoCodigoPr":"Ajusta teste E2E do aviso de PR pendente.","sugestaoMelhoriaAmbiente":""}
+            """);
 
         when(codexRequestService.find(740L)).thenReturn(firstRequest);
         when(codexRequestService.listBatch(firstRequest)).thenReturn(List.of(firstRequest, secondRequest));
@@ -295,7 +346,7 @@ class CodexControllerTest {
             eq("AI Hub: lote Codex #740"),
             explanationCaptor.capture()
         );
-        assertThat(explanationCaptor.getValue()).isEqualTo("- #740 - criar md\n- #741 - ajustar teste");
+        assertThat(explanationCaptor.getValue()).isEqualTo("- #740 - Cria documento de teste do lote MKT.\n- #741 - Ajusta teste E2E do aviso de PR pendente.");
         assertThat(explanationCaptor.getValue()).doesNotContain("Draft PR criado");
         verify(codexRequestService).markPullRequestCreatedForBatch(firstRequest, "https://github.com/paulofor/marketing-hub/pull/740");
     }

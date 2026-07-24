@@ -759,6 +759,12 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('pelo menos 3 alternativas boas'));
     assert.ok(input?.[0]?.text?.includes('compare benefícios, riscos, custo/esforço'));
     assert.ok(input?.[0]?.text?.includes('"titulo"'));
+    assert.ok(input?.[0]?.text?.includes('"alterouCodigoRepositorio"'));
+    assert.ok(input?.[0]?.text?.includes('é obrigatório'));
+    assert.ok(input?.[0]?.text?.includes('true somente quando você tiver criado, removido ou alterado arquivos'));
+    assert.ok(input?.[0]?.text?.includes('"resumoCodigoPr"'));
+    assert.ok(input?.[0]?.text?.includes('resumo muito curto'));
+    assert.ok(input?.[0]?.text?.includes('string vazia quando "alterouCodigoRepositorio" for false'));
     assert.ok(input?.[0]?.text?.includes('O campo opcional "orientacaoProximaAcao"'));
     assert.ok(input?.[0]?.text?.includes('quando a solicitação já tiver sido implementada'));
     assert.ok(input?.[0]?.text?.includes('omita esse campo'));
