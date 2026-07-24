@@ -2120,11 +2120,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const hiddenConversationMessages = Math.max(0, conversation.length - visibleConversation.length);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
+  const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchCompleted > 0 && !activeBatchPrUrl);
+  const accumulatedCodeWarning = hasAccumulatedCodeAwaitingPr
+    ? `${activeBatchCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
+    : null;
   const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
     ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'
     : !hasCompletedConversationRequest && activeBatchCompleted === 0 && !activeBatchPrUrl
       ? 'Ainda não há solicitação concluída neste lote.'
-      : 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
+      : accumulatedCodeWarning ?? 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
   const canRequestPr = Boolean(
     !sandboxOnly
     && selectedEnvironment
@@ -2193,6 +2197,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">{activeBatchPending} pendente(s)</span>
           </div>
         </div> : <p className="mt-3 text-slate-500">Nenhum lote aberto para o ambiente selecionado.</p>}
+        {accumulatedCodeWarning ? (
+          <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            Código acumulado para merge: {accumulatedCodeWarning}
+          </p>
+        ) : null}
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
@@ -2404,7 +2413,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={actionLoading || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
           {sandboxOnly ? <button type="button" onClick={handleStartNewSandboxDialog} disabled={!canStartNewSandboxDialog} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Novo diálogo</button> : null}
-          {!sandboxOnly ? <button type="button" onClick={handleCreatePr} disabled={prLoading || !canRequestPr} title={prBlockedReason} className="rounded-md border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 disabled:opacity-50">Pedir PR</button> : null}
+          {!sandboxOnly ? (
+            <button
+              type="button"
+              onClick={handleCreatePr}
+              disabled={prLoading || !canRequestPr}
+              title={prBlockedReason}
+              className={`inline-flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+                hasAccumulatedCodeAwaitingPr
+                  ? 'border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50'
+                  : 'border-emerald-600 text-emerald-700'
+              }`}
+            >
+              <span>{prLoading ? 'Pedindo PR...' : 'Pedir PR'}</span>
+              {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900 dark:text-amber-100">Código pendente</span> : null}
+            </button>
+          ) : null}
           {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
         </div>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}

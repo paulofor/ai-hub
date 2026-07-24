@@ -2545,3 +2545,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` e `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java` para validar que o corpo do PR nao inclui resumo/narrativa e fica restrito aos topicos.
 - Validacoes executadas: primeira tentativa de build do sandbox-orchestrator falhou por dependencias Node ausentes; apos `npm ci --include=dev`, `npm run build --silent && node --test --test-name-pattern="pull request title|code-generating request topics" dist/tests/jobs.test.js` passou. A primeira tentativa Maven a partir da raiz falhou porque o projeto nao e um reactor; executado corretamente em `apps/backend`, `mvn test -Dtest=CodexControllerTest` passou com 10 testes. `git diff --check` passou.
 - Nao foi criado Pull Request.
+
+## 2026-07-24 17:06:24 UTC - Aviso de codigo acumulado no botao Pedir PR
+
+- Solicitacao recebida: colocar algum tipo de aviso no botao de Pedir PR quando tiver codigo acumulado para ser mergeado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela Codex ChatGPT ja mantinha o estado de lote aberto e sabia quantas solicitacoes estavam concluidas, mas usava esse dado apenas para habilitar/desabilitar o botao e para um `title`/texto generico; nao havia destaque visual persistente indicando que existiam alteracoes acumuladas ainda sem PR.
+- Alternativas avaliadas: (1) alterar apenas o texto auxiliar abaixo dos botoes, baixo risco mas pouco visivel; (2) abrir confirmacao ao clicar em Pedir PR, mais intrusivo e atrasaria um fluxo esperado; (3) destacar o estado diretamente no botao e no card do lote quando houver solicitacao concluida sem PR. Escolhida a alternativa 3 por atacar a causa da baixa visibilidade sem bloquear a acao.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado o estado `hasAccumulatedCodeAwaitingPr`, exibindo aviso "Codigo acumulado para merge" no card do lote e selo "Codigo pendente" dentro do botao `Pedir PR`, com estilo ambar quando houver lote concluido sem PR.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright com APIs mockadas para validar o aviso no card e o selo no botao quando um lote tem solicitacao concluida sem link de PR.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "warns on the request PR button"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas os 2 testes Playwright passaram.
+- Nao foi criado Pull Request.
