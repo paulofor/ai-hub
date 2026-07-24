@@ -418,6 +418,16 @@
 - Ação objetiva: alinhar origem do workflow e vínculo do package no mesmo repo (`paulofor/ai-hub-6`), revisar `Manage Actions access` no package com esse repositório e validar secrets/variables no mesmo projeto onde o workflow roda.
 
 ## 2026-05-14 16:45:45 UTC-3
+
+## 2026-07-24 16:13:20 UTC-3 - Controle estruturado de alteração de código no JSON MKT
+
+- Solicitação recebida: ajustar o JSON de retorno do modo Codex ChatGPT MKT para informar se houve alteração de código no repositório e trazer um resumo curtíssimo para compor a descrição do PR.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato final do modo MKT só estruturava título, comentário, sugestão de ambiente e orientação opcional; por isso a UI precisava inferir alteração de código por texto e o backend não tinha um resumo confiável e acumulável para descrição de PR.
+- Alternativas avaliadas: (1) inferir mudança apenas por `git diff` no orquestrador, robusto para detectar diff mas sem resumo semântico; (2) manter heurística textual no frontend, baixo esforço mas impreciso; (3) exigir campos estruturados no JSON final e fazer UI/backend consumirem esses campos. Escolhida a alternativa 3 por corrigir a causa raiz e reduzir ambiguidade.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: o contrato MKT agora exige `alterouCodigoRepositorio` booleano e `resumoCodigoPr` string curta, além de manter `orientacaoProximaAcao` opcional.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: o badge “Gerou código” e o alerta de código pendente no botão `Pedir PR` do MKT passaram a depender de `alterouCodigoRepositorio=true`.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: a descrição do PR passa a usar `#id - resumoCodigoPr` quando a resposta estruturada indicar alteração de código, acumulando os resumos das solicitações concluídas do lote; sem resumo estruturado, mantém fallback para o prompt.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts`, `apps/frontend/tests/e2e/app.spec.ts` e `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java`.
 - Alinhamento aplicado na configuração para o contexto correto do owner/repositório atual (`paulofor` / stack `ai-hub-6`), atacando a causa raiz de mismatch entre defaults locais e destino real de publicação no GHCR.
 - Atualizado `.github/workflows/ci.yml` para fallback padrão de `GHCR_USERNAME` em `paulofor` (jobs `docker`, `deploy` e `cleanup`), evitando fallback legado para `paulodb` quando secrets/vars não estiverem definidos.
 - Atualizado `docker-compose.yml` para fallback de `GHCR_USERNAME` em `paulofor` e para `SANDBOX_WORKDIR` default em `/root/ai-hub-6/...`, mantendo consistência com `REMOTE_PATH=/root/ai-hub-6` no deploy.
