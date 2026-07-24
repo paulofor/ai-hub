@@ -67,15 +67,18 @@ test('docker compose monta e exporta credenciais AWS para o sandbox-orchestrator
   assert.match(compose, /AWS_SESSION_TOKEN=/);
 });
 
-test('docker compose monta e exporta credenciais Luma e Kling para o sandbox-orchestrator', async () => {
+test('docker compose monta e exporta credenciais Luma, Kling e HeyGen para o sandbox-orchestrator', async () => {
   const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
 
   assert.match(compose, /\$\{LUMA_TOKEN_HOST_DIR:-\/root\/infra\/luma-token\}:\/run\/secrets\/luma-token:ro/);
   assert.match(compose, /\$\{KLING_TOKEN_HOST_DIR:-\/root\/infra\/kling-token\}:\/run\/secrets\/kling-token:ro/);
+  assert.match(compose, /\$\{HEYGEN_TOKEN_HOST_DIR:-\/root\/infra\/heygen-token\}:\/run\/secrets\/heygen-token:ro/);
   assert.match(compose, /\/run\/secrets\/luma-token\/luma_api_key/);
   assert.match(compose, /\/run\/secrets\/kling-token\/kling_api_key/);
+  assert.match(compose, /\/run\/secrets\/heygen-token\/heygen_api_key/);
   assert.match(compose, /export LUMA_API_KEY=\$\(cat \/run\/secrets\/luma-token\/luma_api_key\)/);
   assert.match(compose, /export KLING_API_KEY=\$\(cat \/run\/secrets\/kling-token\/kling_api_key\)/);
+  assert.match(compose, /export HEYGEN_API_KEY=\$\(cat \/run\/secrets\/heygen-token\/heygen_api_key\)/);
 });
 
 test('imagem da sandbox instala ferramentas de execução e validação do runner', async () => {

@@ -2450,3 +2450,15 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Evidencias coletadas: `CodexController.metrics()` aceita `profile` opcional; `CodexRequestService.dashboardMetrics(profile)` escolhe entre `summarizeMetricsSince`/`findMetricRowsSince` e suas variantes `AndProfile`; `CodexChatgptPage` chama `/codex/requests/metrics` com `params: { profile: config.profile }`; `DashboardPage` chama a mesma rota sem parametro de perfil.
 - Conclusao: na tela especifica do Codex ChatGPT/MKT, as metricas ficam separadas pelo perfil ativo; na dashboard geral, as metricas agregam todos os perfis, incluindo `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
 - Nenhuma alteracao de codigo foi aplicada nesta investigacao. Nao foi criado Pull Request.
+
+## 2026-07-24 07:42:00 UTC - Token HeyGen na sandbox Codex ChatGPT
+
+- Solicitacao recebida: deixar disponivel para o modelo usar em seu ambiente um novo token, agora do HeyGen.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o arquivo do token HeyGen ja havia sido colocado no host em `/root/infra/heygen-token/heygen_api_key`, mas o fluxo versionado do `sandbox-orchestrator` ainda nao montava esse diretorio nem exportava `HEYGEN_API_KEY`; por isso novas sandboxes do modelo nao teriam acesso a essa credencial.
+- Alternativas avaliadas: (1) orientar export manual da variavel, rapido mas volatil apos recriacao de container; (2) colocar valor no `.env`, simples mas com risco operacional de segredo versionado/copiad; (3) seguir o padrao Luma/Kling com volume read-only fora do repositorio e export no startup. Escolhida a alternativa 3 por corrigir a origem, preservar segredo fora do git e manter consistencia operacional.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume `${HEYGEN_TOKEN_HOST_DIR:-/root/infra/heygen-token}:/run/secrets/heygen-token:ro` e export de `HEYGEN_API_KEY` quando `/run/secrets/heygen-token/heygen_api_key` existir.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrucao de credenciais externas agora reconhece `HEYGEN_API_KEY` quando estiver exportada e menciona HeyGen no fallback.
+- Documentacao atualizada em `README.md`, `apps/sandbox-orchestrator/README.md`, `docs/sandbox-architecture.md` e `apps/sandbox-orchestrator/.env.example`.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar montagem e export de Luma, Kling e HeyGen.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/sandbox-orchestrator run build --silent` falhou por dependencias TypeScript ausentes no workspace local; apos `npm --prefix apps/sandbox-orchestrator ci --include=dev`, `npm --prefix apps/sandbox-orchestrator run build --silent`, teste focado `node --test --test-name-pattern="docker compose monta e exporta credenciais Luma, Kling e HeyGen" dist/tests/jobs.test.js`, `npm --prefix apps/sandbox-orchestrator test` e `git diff --check` passaram.
+- Nenhum valor de token foi lido, impresso ou versionado. Nao foi criado Pull Request.
