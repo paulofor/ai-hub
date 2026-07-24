@@ -1,9 +1,12 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import MarkdownFileReference, { isFileReferenceHref } from './MarkdownFileReference';
 
+type SalesImpactLevel = 'baixo' | 'medio' | 'alto';
+
 interface StructuredResponse {
   titulo: string;
   comentario: string;
+  impactoAumentoVendas?: SalesImpactLevel;
   alterouCodigoRepositorio?: boolean;
   resumoCodigoPr: string;
   orientacaoProximaAcao: string;
@@ -304,6 +307,27 @@ const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: st
   return undefined;
 };
 
+const normalizeSalesImpactLevel = (value: string): SalesImpactLevel | undefined => {
+  const normalized = value.trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  if (normalized === 'baixo' || normalized === 'medio' || normalized === 'alto') {
+    return normalized;
+  }
+  return undefined;
+};
+
+const readStructuredSalesImpactLevel = (record: Record<string, unknown>): SalesImpactLevel | undefined => {
+  const value = readStructuredResponseString(record, [
+    'impactoAumentoVendas',
+    'impacto_aumento_vendas',
+    'contribuicaoAumentoVendas',
+    'contribuiçãoAumentoVendas',
+    'contribuicao_vendas',
+    'impactoVendas',
+    'salesImpact'
+  ]);
+  return normalizeSalesImpactLevel(value);
+};
+
 export const parseCodexStructuredResponse = (content?: string): StructuredResponse | null => {
   if (!content) return null;
   const candidate = extractJsonObjectCandidate(content);
@@ -316,6 +340,7 @@ export const parseCodexStructuredResponse = (content?: string): StructuredRespon
 
   const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
+  const impactoAumentoVendas = readStructuredSalesImpactLevel(record);
   const alterouCodigoRepositorio = readStructuredResponseBoolean(record, [
     'alterouCodigoRepositorio',
     'alterou_codigo_repositorio',
@@ -349,7 +374,7 @@ export const parseCodexStructuredResponse = (content?: string): StructuredRespon
   if (!titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { titulo, comentario, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+  return { titulo, comentario, impactoAumentoVendas, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
 };
 
 export const MarkdownMessage = ({ content }: { content: string }) => {
@@ -405,6 +430,27 @@ const CodeGeneratedBadge = () => (
   </span>
 );
 
+const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
+  const styles: Record<SalesImpactLevel, string> = {
+    baixo: 'border-red-300 bg-red-500 dark:border-red-700',
+    medio: 'border-yellow-300 bg-yellow-400 dark:border-yellow-700',
+    alto: 'border-emerald-300 bg-emerald-500 dark:border-emerald-700'
+  };
+  const labels: Record<SalesImpactLevel, string> = {
+    baixo: 'Impacto em vendas: baixo',
+    medio: 'Impacto em vendas: médio',
+    alto: 'Impacto em vendas: alto'
+  };
+  return (
+    <span
+      className={`inline-flex h-4 w-4 rounded-full border shadow-sm ${styles[level]}`}
+      title={labels[level]}
+      aria-label={labels[level]}
+      role="img"
+    />
+  );
+};
+
 interface StructuredCardProps {
   label: string;
   content: string;
@@ -412,14 +458,16 @@ interface StructuredCardProps {
   copied: boolean;
   accentClassName: string;
   showCodeGeneratedBadge?: boolean;
+  salesImpactLevel?: SalesImpactLevel;
   onCopy: (field: 'comentario' | 'orientacao' | 'melhoria', text: string) => void;
 }
 
-const StructuredCard = ({ label, content, copyField, copied, accentClassName, showCodeGeneratedBadge = false, onCopy }: StructuredCardProps) => (
+const StructuredCard = ({ label, content, copyField, copied, accentClassName, showCodeGeneratedBadge = false, salesImpactLevel, onCopy }: StructuredCardProps) => (
   <section className={`rounded-lg border p-4 shadow-sm ${accentClassName}`}>
     <div className="mb-3 flex items-center justify-between gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide">{label}</h4>
+        {salesImpactLevel ? <SalesImpactIcon level={salesImpactLevel} /> : null}
         {showCodeGeneratedBadge ? <CodeGeneratedBadge /> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -473,6 +521,7 @@ export default function CodexResponseBody({ content }: { content: string }) {
       copyField="comentario"
       copied={copiedField === 'comentario'}
       accentClassName="border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      salesImpactLevel={structured.impactoAumentoVendas}
       showCodeGeneratedBadge={structured.alterouCodigoRepositorio === true}
       onCopy={handleCopyStructuredText}
     /> : null}
