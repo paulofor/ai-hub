@@ -1331,10 +1331,11 @@ export class SandboxJobProcessor implements JobProcessor {
     const availableKeys = [
       process.env.LUMA_API_KEY?.trim() ? 'LUMA_API_KEY' : undefined,
       process.env.KLING_API_KEY?.trim() ? 'KLING_API_KEY' : undefined,
+      process.env.HEYGEN_API_KEY?.trim() ? 'HEYGEN_API_KEY' : undefined,
     ].filter(Boolean);
     return availableKeys.length > 0
       ? `As seguintes credenciais de APIs externas estao exportadas no ambiente para uso por comandos do modelo: ${availableKeys.join(', ')}. Nunca imprima esses valores em logs, respostas ou arquivos.`
-      : 'Credenciais Luma/Kling podem ser disponibilizadas via LUMA_API_KEY e KLING_API_KEY; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.';
+      : 'Credenciais Luma/Kling/HeyGen podem ser disponibilizadas via LUMA_API_KEY, KLING_API_KEY e HEYGEN_API_KEY; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.';
   }
 
   private buildDockerCliInstruction(): string {

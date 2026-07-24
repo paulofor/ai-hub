@@ -2450,3 +2450,44 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Evidencias coletadas: `CodexController.metrics()` aceita `profile` opcional; `CodexRequestService.dashboardMetrics(profile)` escolhe entre `summarizeMetricsSince`/`findMetricRowsSince` e suas variantes `AndProfile`; `CodexChatgptPage` chama `/codex/requests/metrics` com `params: { profile: config.profile }`; `DashboardPage` chama a mesma rota sem parametro de perfil.
 - Conclusao: na tela especifica do Codex ChatGPT/MKT, as metricas ficam separadas pelo perfil ativo; na dashboard geral, as metricas agregam todos os perfis, incluindo `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
 - Nenhuma alteracao de codigo foi aplicada nesta investigacao. Nao foi criado Pull Request.
+
+## 2026-07-24 07:42:00 UTC - Token HeyGen na sandbox Codex ChatGPT
+
+- Solicitacao recebida: deixar disponivel para o modelo usar em seu ambiente um novo token, agora do HeyGen.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o arquivo do token HeyGen ja havia sido colocado no host em `/root/infra/heygen-token/heygen_api_key`, mas o fluxo versionado do `sandbox-orchestrator` ainda nao montava esse diretorio nem exportava `HEYGEN_API_KEY`; por isso novas sandboxes do modelo nao teriam acesso a essa credencial.
+- Alternativas avaliadas: (1) orientar export manual da variavel, rapido mas volatil apos recriacao de container; (2) colocar valor no `.env`, simples mas com risco operacional de segredo versionado/copiad; (3) seguir o padrao Luma/Kling com volume read-only fora do repositorio e export no startup. Escolhida a alternativa 3 por corrigir a origem, preservar segredo fora do git e manter consistencia operacional.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume `${HEYGEN_TOKEN_HOST_DIR:-/root/infra/heygen-token}:/run/secrets/heygen-token:ro` e export de `HEYGEN_API_KEY` quando `/run/secrets/heygen-token/heygen_api_key` existir.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrucao de credenciais externas agora reconhece `HEYGEN_API_KEY` quando estiver exportada e menciona HeyGen no fallback.
+- Documentacao atualizada em `README.md`, `apps/sandbox-orchestrator/README.md`, `docs/sandbox-architecture.md` e `apps/sandbox-orchestrator/.env.example`.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar montagem e export de Luma, Kling e HeyGen.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/sandbox-orchestrator run build --silent` falhou por dependencias TypeScript ausentes no workspace local; apos `npm --prefix apps/sandbox-orchestrator ci --include=dev`, `npm --prefix apps/sandbox-orchestrator run build --silent`, teste focado `node --test --test-name-pattern="docker compose monta e exporta credenciais Luma, Kling e HeyGen" dist/tests/jobs.test.js`, `npm --prefix apps/sandbox-orchestrator test` e `git diff --check` passaram.
+- Nenhum valor de token foi lido, impresso ou versionado. Nao foi criado Pull Request.
+
+## 2026-07-24 07:49:37 UTC - Remocao dos totais nos graficos do dashboard
+
+- Solicitacao recebida: retirar os valores totais exibidos nos graficos do dashboard, conforme marcacoes na imagem enviada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o componente `MiniBarChart` calculava `total` e renderizava `Total: ...` no cabecalho de cada grafico como apoio visual; isso duplicava informacao ja resumida nos cards superiores e poluia a leitura dos graficos.
+- Alternativas avaliadas: (1) esconder os totais por CSS, baixo esforco mas manteria markup e texto acessivel indesejado; (2) adicionar uma prop para ligar/desligar totais por grafico, flexivel mas desnecessario porque todos os graficos dessa tela devem seguir a mesma regra; (3) remover o calculo/renderizacao do total no `MiniBarChart` e ajustar o texto do painel para nao prometer totais agregados. Escolhida a alternativa 3 por corrigir a origem com menor complexidade.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: removido o rótulo `Total: ...` dos graficos de solicitacoes, interacoes e tempo, preservando barras, labels por periodo e tooltip/aria-label por barra.
+- Ajuste de copy aplicado: a descricao dos paineis passou de "Totais agregados para graficos de volume, uso e tempo." para "Graficos de volume, uso e tempo por periodo.".
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-24 07:59:00 UTC - Ordem dos graficos do dashboard
+
+- Solicitacao recebida: alterar a ordem dos graficos do dashboard para tempo, solicitacoes e interacoes.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a ordem dos graficos estava definida diretamente no JSX de `MetricSeriesPanel` como solicitacoes, interacoes e tempo; apos a remocao dos totais, essa hierarquia visual ainda colocava volume antes de tempo, diferente da prioridade de leitura solicitada.
+- Alternativas avaliadas: (1) reordenar os dados no backend, maior risco e desnecessario porque os dados ja chegam completos; (2) criar configuracao dinamica de ordem, mais flexivel mas com complexidade sem demanda atual; (3) reordenar os tres componentes `MiniBarChart` no frontend mantendo dados, cores e formatadores. Escolhida a alternativa 3 por ser a correcao de menor escopo e aderir exatamente a mudanca visual pedida.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: os graficos dos paineis de series agora renderizam primeiro `Tempo`, depois `Solicitações` e por ultimo `Interações`.
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 07:54:48 UTC - Layout dos cards de metricas do dashboard
+
+- Solicitacao recebida: melhorar o layout para evitar quebra de valores maiores nos cards superiores, aproveitando os espacos em branco marcados em vermelho na imagem enviada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o componente `MetricCard` usava grade interna `sm:grid-cols-2`, deixando um quarto quadrante vazio em desktop e fazendo valores maiores disputarem largura dentro de cards estreitos, especialmente em `Interações` e `Tempo de processamento`.
+- Alternativas avaliadas: (1) reduzir a fonte global dos valores, baixo esforco mas pioraria a leitura e so esconderia o problema; (2) alterar apenas o grid externo da dashboard para menos cards por linha, daria mais largura mas nao aproveitaria o espaco vazio interno marcado; (3) manter duas colunas internas, fazer `Mes` ocupar a largura inteira, controlar os valores com `whitespace-nowrap`/`clamp` e adiar tres cards por linha para `xl`. Escolhida a alternativa 3 por usar o espaco vazio indicado no print, preservar densidade em telas largas e evitar cards estreitos em larguras intermediarias.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: os cards superiores agora usam tres cards por linha apenas em `xl`, os blocos Dia/Semana ficam em duas colunas internas e o bloco Mes ocupa a linha inteira, com valores em uma linha e tamanho responsivo limitado por `clamp`.
+- Validacoes executadas: Playwright com dados simulados equivalentes ao print passou em 1024, 1280 e 1366px sem quebra/overflow dos valores; `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Nao foi criado Pull Request.

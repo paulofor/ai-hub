@@ -82,7 +82,7 @@ export default function DashboardPage() {
   return (
     <section className="space-y-6">
       <h2 className="text-2xl font-semibold">Visão geral</h2>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <MetricCard
           title="Solicitações"
           dayValue={formatMetricNumber(metrics?.day.requestCount)}
@@ -176,12 +176,20 @@ function MetricSeriesPanel({
         <div>
           <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Totais agregados para gráficos de volume, uso e tempo.
+            Gráficos de volume, uso e tempo por período.
           </p>
         </div>
       </div>
       {buckets.length > 0 ? (
         <div className="mt-4 space-y-5">
+          <MiniBarChart
+            title="Tempo"
+            buckets={buckets}
+            getValue={(bucket) => bucket.durationMs}
+            formatValue={formatShortDuration}
+            labelForBucket={labelForBucket}
+            barClassName="bg-amber-500"
+          />
           <MiniBarChart
             title="Solicitações"
             buckets={buckets}
@@ -197,14 +205,6 @@ function MetricSeriesPanel({
             formatValue={formatMetricNumber}
             labelForBucket={labelForBucket}
             barClassName="bg-sky-500"
-          />
-          <MiniBarChart
-            title="Tempo"
-            buckets={buckets}
-            getValue={(bucket) => bucket.durationMs}
-            formatValue={formatShortDuration}
-            labelForBucket={labelForBucket}
-            barClassName="bg-amber-500"
           />
         </div>
       ) : (
@@ -233,7 +233,6 @@ function MiniBarChart({
 }) {
   const values = buckets.map((bucket) => getValue(bucket));
   const maxValue = Math.max(1, ...values);
-  const total = values.reduce((sum, value) => sum + value, 0);
   const periodLabel =
     buckets.length > 0
       ? `${formatChartDate(buckets[0].startsAt)} a ${formatChartDate(buckets[buckets.length - 1].startsAt)}`
@@ -246,7 +245,6 @@ function MiniBarChart({
           <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</h4>
           <div className="mt-0.5 text-[10px] leading-none text-slate-500 sm:hidden">{periodLabel}</div>
         </div>
-        <span className="text-xs font-medium text-slate-500">Total: {formatValue(total)}</span>
       </div>
       <div className="flex h-36 items-end gap-1 rounded-lg border border-slate-100 bg-slate-50/80 px-2 pb-7 pt-3 dark:border-slate-800 dark:bg-slate-950/40">
         {buckets.map((bucket, index) => {
@@ -285,20 +283,26 @@ function MetricCard({
   monthValue: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 sm:p-5">
       <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <div className="text-xs font-medium uppercase text-slate-500">Dia</div>
-          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{dayValue}</div>
+          <div className="mt-2 whitespace-nowrap text-xl font-bold leading-tight text-emerald-600 sm:text-[clamp(1.0625rem,1.2vw,1.25rem)]">
+            {dayValue}
+          </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <div className="text-xs font-medium uppercase text-slate-500">Semana</div>
-          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{weekValue}</div>
+          <div className="mt-2 whitespace-nowrap text-xl font-bold leading-tight text-emerald-600 sm:text-[clamp(1.0625rem,1.2vw,1.25rem)]">
+            {weekValue}
+          </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40 sm:col-span-2">
           <div className="text-xs font-medium uppercase text-slate-500">Mês</div>
-          <div className="mt-2 text-xl font-bold text-emerald-600 sm:text-2xl">{monthValue}</div>
+          <div className="mt-2 whitespace-nowrap text-xl font-bold leading-tight text-emerald-600 sm:text-[clamp(1.0625rem,1.2vw,1.25rem)]">
+            {monthValue}
+          </div>
         </div>
       </div>
     </div>

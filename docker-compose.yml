@@ -90,6 +90,7 @@ services:
       - ${PEPPER_TOKEN_HOST_DIR:-/root/infra/pepper-token}:/run/secrets/pepper-token:ro
       - ${LUMA_TOKEN_HOST_DIR:-/root/infra/luma-token}:/run/secrets/luma-token:ro
       - ${KLING_TOKEN_HOST_DIR:-/root/infra/kling-token}:/run/secrets/kling-token:ro
+      - ${HEYGEN_TOKEN_HOST_DIR:-/root/infra/heygen-token}:/run/secrets/heygen-token:ro
       - ${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}:/run/secrets/aws:ro
       - codex-auth-data:/var/lib/ai-hub/codex
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
@@ -116,6 +117,9 @@ services:
       fi;
       if [ -f /run/secrets/kling-token/kling_api_key ]; then
         export KLING_API_KEY=$(cat /run/secrets/kling-token/kling_api_key);
+      fi;
+      if [ -f /run/secrets/heygen-token/heygen_api_key ]; then
+        export HEYGEN_API_KEY=$(cat /run/secrets/heygen-token/heygen_api_key);
       fi;
       if [ -f /run/secrets/aws/acesso_aws ]; then
         AWS_ACCESS_KEY_ID_VALUE=$(grep -E '^AWS_ACCESS_KEY_ID=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
