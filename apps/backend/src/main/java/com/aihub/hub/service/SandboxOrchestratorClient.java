@@ -215,8 +215,62 @@ public class SandboxOrchestratorClient {
         Integer interactionCount,
         List<Interaction> interactions,
         List<HttpRequest> httpRequests,
-        List<DocumentAccess> documentAccesses
+        List<DocumentAccess> documentAccesses,
+        String workBranch
     ) {
+        public SandboxOrchestratorJobResponse(
+            String jobId,
+            String status,
+            String summary,
+            List<String> changedFiles,
+            String patch,
+            String pullRequestUrl,
+            String error,
+            Integer promptTokens,
+            Integer cachedPromptTokens,
+            Integer completionTokens,
+            Integer totalTokens,
+            BigDecimal cost,
+            String startedAt,
+            String finishedAt,
+            Long durationMs,
+            Integer timeoutCount,
+            Integer httpGetCount,
+            Integer httpGetSuccessCount,
+            Integer dbQueryCount,
+            Integer interactionCount,
+            List<Interaction> interactions,
+            List<HttpRequest> httpRequests,
+            List<DocumentAccess> documentAccesses
+        ) {
+            this(
+                jobId,
+                status,
+                summary,
+                changedFiles,
+                patch,
+                pullRequestUrl,
+                error,
+                promptTokens,
+                cachedPromptTokens,
+                completionTokens,
+                totalTokens,
+                cost,
+                startedAt,
+                finishedAt,
+                durationMs,
+                timeoutCount,
+                httpGetCount,
+                httpGetSuccessCount,
+                dbQueryCount,
+                interactionCount,
+                interactions,
+                httpRequests,
+                documentAccesses,
+                null
+            );
+        }
+
         public static SandboxOrchestratorJobResponse from(JsonNode node) {
             if (node == null || node.isMissingNode()) {
                 return null;
@@ -331,7 +385,8 @@ public class SandboxOrchestratorClient {
                 resolveInteractionCount(node, interactions),
                 interactions,
                 httpRequests,
-                documentAccesses
+                documentAccesses,
+                readText(node, "workBranch", "work_branch")
             );
         }
 

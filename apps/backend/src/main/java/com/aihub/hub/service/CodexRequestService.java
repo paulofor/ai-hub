@@ -1539,6 +1539,16 @@ public class CodexRequestService {
             updated = true;
         }
 
+        String responseWorkBranch = Optional.ofNullable(response.workBranch())
+            .map(String::trim)
+            .filter(StringUtils::hasText)
+            .orElse(null);
+        if (responseWorkBranch != null && !Objects.equals(request.getWorkBranch(), responseWorkBranch)) {
+            request.setWorkBranch(responseWorkBranch);
+            request.setWorkBatchKey(responseWorkBranch);
+            updated = true;
+        }
+
         Instant startedAt = parseInstant(response.startedAt());
         if (!Objects.equals(request.getStartedAt(), startedAt)) {
             request.setStartedAt(startedAt);
