@@ -118,6 +118,27 @@ class SandboxOrchestratorClientTest {
         }
     }
 
+    @Test
+    void getJobParsesWorkBranchForBatchPullRequestCreation() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                    {
+                      "jobId": "job-work-branch",
+                      "status": "COMPLETED",
+                      "workBranch": "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt"
+                    }
+                    """));
+            SandboxOrchestratorClient client = clientFor(server);
+
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = client.getJob("job-work-branch");
+
+            assertThat(response.workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex_mkt");
+        }
+    }
+
     private SandboxOrchestratorClient clientFor(MockWebServer server) {
         RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())
