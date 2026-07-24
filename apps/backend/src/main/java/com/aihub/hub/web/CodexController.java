@@ -485,32 +485,46 @@ public class CodexController {
     }
 
     private String buildBatchPrExplanation(CodexRequest request, List<CodexRequest> batchRequests) {
-        StringBuilder body = new StringBuilder();
-        body.append("Draft PR criado a partir da branch de trabalho acumulada do AI Hub.");
-        if (request.getWorkBranch() != null && !request.getWorkBranch().isBlank()) {
-            body.append("\n\nBranch de trabalho: `").append(request.getWorkBranch().trim()).append("`.");
+        List<CodexRequest> completedRequests = Optional.ofNullable(batchRequests).orElse(List.of()).stream()
+            .filter(item -> item != null && item.getStatus() == CodexRequestStatus.COMPLETED)
+            .toList();
+        if (completedRequests.isEmpty()) {
+            return buildPrTopic(request);
         }
-        if (batchRequests != null && !batchRequests.isEmpty()) {
-            body.append("\n\nSolicitações incluídas:\n");
-            batchRequests.forEach(item -> body
-                .append("- #")
-                .append(item.getId())
-                .append(" - ")
-                .append(Optional.ofNullable(item.getStatus()).map(Enum::name).orElse("PENDING"))
-                .append("\n"));
-        }
-        body.append("\nEste fluxo preserva várias solicitações em uma única branch até o usuário pedir PR.");
-        return body.toString();
+        return completedRequests.stream()
+            .map(this::buildPrTopic)
+            .filter(StringUtils::hasText)
+            .distinct()
+            .reduce((left, right) -> left + "\n" + right)
+            .orElse("- Solicitação de código registrada pelo AI Hub.");
     }
 
     private String buildPrExplanation(CodexRequest request, ResponseRecord response) {
-        return Optional.ofNullable(request.getResponseText())
-            .map(String::trim)
-            .filter(value -> !value.isBlank())
-            .or(() -> Optional.ofNullable(response.getFixPlan())
-                .map(String::trim)
-                .filter(value -> !value.isBlank()))
-            .orElse("PR criado a partir da resposta final registrada pelo AI Hub.");
+        return buildPrTopic(request);
+    }
+
+    private String buildPrTopic(CodexRequest request) {
+        if (request == null) {
+            return "- Solicitação de código registrada pelo AI Hub.";
+        }
+        String prompt = normalizePrTopic(request.getPrompt());
+        if (!StringUtils.hasText(prompt)) {
+            prompt = "Solicitação de código registrada pelo AI Hub.";
+        }
+        Long id = request.getId();
+        return id != null ? "- #" + id + " - " + prompt : "- " + prompt;
+    }
+
+    private String normalizePrTopic(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        String normalized = value.trim().replaceAll("\\s+", " ");
+        int maxLength = 500;
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength - 1) + "…";
     }
 
     private byte[] zipSingleEntry(String entryName, byte[] data) {

@@ -88,7 +88,7 @@ class CodexControllerTest {
 
 
     @Test
-    void createPrUsesFinalAssistantResponseAsCompleteExplanation() {
+    void createPrUsesOnlyRequestTopicAsExplanation() {
         CodexRequestService codexRequestService = mock(CodexRequestService.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);
         ObjectMapper objectMapper = new ObjectMapper();
@@ -127,7 +127,8 @@ class CodexControllerTest {
             eq(response.getUnifiedDiff()),
             explanationCaptor.capture()
         );
-        assertThat(explanationCaptor.getValue()).isEqualTo("Resumo final completo do modelo para o PR.");
+        assertThat(explanationCaptor.getValue()).isEqualTo("- #730 - prompt");
+        assertThat(explanationCaptor.getValue()).doesNotContain("Resumo final completo do modelo para o PR.");
     }
 
     @Test
@@ -246,7 +247,7 @@ class CodexControllerTest {
         firstRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
         firstRequest.setWorkBatchKey("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
 
-        CodexRequest secondRequest = new CodexRequest("paulofor/marketing-hub@main", "gpt-5.4-mini", null, "analisar sem mudanca");
+        CodexRequest secondRequest = new CodexRequest("paulofor/marketing-hub@main", "gpt-5.4-mini", null, "ajustar teste");
         ReflectionTestUtils.setField(secondRequest, "id", 741L);
         secondRequest.setStatus(CodexRequestStatus.COMPLETED);
         secondRequest.setWorkBranch("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
@@ -284,6 +285,18 @@ class CodexControllerTest {
             .containsEntry("workBranch", "ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt");
         assertThat(payload.get("changedFiles")).isEqualTo(List.of("docs/aihub-lote-mkt-pr-test-20260711.md", "docs/diario/registros1.md"));
         assertThat(payload.get("functionalFiles")).isEqualTo(List.of("docs/aihub-lote-mkt-pr-test-20260711.md"));
+        ArgumentCaptor<String> explanationCaptor = ArgumentCaptor.forClass(String.class);
+        verify(pullRequestService).createDraftPrFromBranch(
+            eq("codex-ui"),
+            eq("paulofor"),
+            eq("marketing-hub"),
+            eq("main"),
+            eq("ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt"),
+            eq("AI Hub: lote Codex #740"),
+            explanationCaptor.capture()
+        );
+        assertThat(explanationCaptor.getValue()).isEqualTo("- #740 - criar md\n- #741 - ajustar teste");
+        assertThat(explanationCaptor.getValue()).doesNotContain("Draft PR criado");
         verify(codexRequestService).markPullRequestCreatedForBatch(firstRequest, "https://github.com/paulofor/marketing-hub/pull/740");
     }
 

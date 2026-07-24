@@ -2453,7 +2453,7 @@ test('loads existing work branch before model execution and diffs against base b
   await fs.rm(seedRepo, { recursive: true, force: true });
 });
 
-test('limits pull request title and keeps full summary in body', async () => {
+test('limits pull request title and describes only code-generating request topics', async () => {
   const bareRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-pr-long-remote-'));
   execSync('git init --bare', { cwd: bareRepo });
 
@@ -2538,11 +2538,9 @@ test('limits pull request title and keeps full summary in body', async () => {
   const payload = JSON.parse(fetchCalls[0].init.body);
   assert.ok(payload.title.length <= 256, 'título do PR deve respeitar o limite do GitHub');
   assert.equal(payload.title, `AI Hub: ${longSummary.slice(0, 247)}…`);
-  assert.ok(
-    payload.body.includes(longSummary),
-    'corpo do PR deve conter o resumo completo, sem truncar',
-  );
-  assert.ok(payload.body.includes('Descrição da tarefa'), 'corpo do PR deve incluir a tarefa');
+  assert.equal(payload.body, '- update readme');
+  assert.ok(!payload.body.includes(longSummary), 'corpo do PR não deve conter resumo narrativo do modelo');
+  assert.ok(!payload.body.includes('Descrição da tarefa'), 'corpo do PR deve conter apenas tópicos');
 
   process.env.GITHUB_PR_TOKEN = originalToken;
   await fs.rm(bareRepo, { recursive: true, force: true });

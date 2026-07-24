@@ -2535,3 +2535,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao visual com Playwright em `http://127.0.0.1:8082/codex-chatgpt`, APIs mockadas e conversa local reproduzindo o print, com screenshot salvo em `/tmp/aihub-codex-chat-file-formatting.png`.
 - Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
 - Nao foi criado Pull Request.
+
+## 2026-07-24 17:00:58 UTC - Descricao de PRs com topicos das solicitacoes
+
+- Solicitacao recebida: melhorar a descricao dos PRs para conter apenas topicos com as solicitacoes que geraram codigo.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os fluxos de criacao de PR usavam o resumo final completo do modelo ou uma explicacao narrativa do lote como corpo do PR; isso misturava contexto, validacao e detalhes operacionais com a lista de pedidos que originaram as alteracoes.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o corpo do PR automatico agora e um bullet normalizado da `taskDescription`, sem incluir resumo narrativo do modelo.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: PR manual e PR de lote agora enviam como explicacao apenas bullets das solicitacoes concluidas, usando o prompt original e o ID da solicitacao.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` e `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java` para validar que o corpo do PR nao inclui resumo/narrativa e fica restrito aos topicos.
+- Validacoes executadas: primeira tentativa de build do sandbox-orchestrator falhou por dependencias Node ausentes; apos `npm ci --include=dev`, `npm run build --silent && node --test --test-name-pattern="pull request title|code-generating request topics" dist/tests/jobs.test.js` passou. A primeira tentativa Maven a partir da raiz falhou porque o projeto nao e um reactor; executado corretamente em `apps/backend`, `mvn test -Dtest=CodexControllerTest` passou com 10 testes. `git diff --check` passou.
+- Nao foi criado Pull Request.
