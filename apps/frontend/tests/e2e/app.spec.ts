@@ -295,6 +295,7 @@ test('shows a code generation icon on marketing comment cards with repository ch
         content: JSON.stringify({
           titulo: 'Aviso no comentário',
           comentario: 'Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card de comentário agora mostra alerta visual quando há mudança no repositório.\n\nValidações executadas: `npm --prefix apps/frontend run build` passou.',
+          impactoAumentoVendas: 'baixo',
           alterouCodigoRepositorio: true,
           resumoCodigoPr: 'Mostra alerta visual quando a resposta MKT declara alteração no repositório.',
           sugestaoMelhoriaAmbiente: ''
@@ -307,11 +308,25 @@ test('shows a code generation icon on marketing comment cards with repository ch
         content: JSON.stringify({
           titulo: 'Análise de campanha',
           comentario: 'Recomendo testar uma promessa mais específica para o criativo de topo de funil e separar públicos frios de remarketing.',
+          impactoAumentoVendas: 'alto',
           alterouCodigoRepositorio: false,
           resumoCodigoPr: '',
           sugestaoMelhoriaAmbiente: ''
         }),
         createdAt: '2026-07-24T12:01:00Z'
+      },
+      {
+        id: 'assistant-marketing-medium',
+        role: 'assistant',
+        content: JSON.stringify({
+          titulo: 'Instrumentação de métricas',
+          comentario: 'Ajuste a leitura de métricas para separar leads qualificados de visitantes frios antes de mexer nos criativos.',
+          impactoAumentoVendas: 'medio',
+          alterouCodigoRepositorio: false,
+          resumoCodigoPr: '',
+          sugestaoMelhoriaAmbiente: ''
+        }),
+        createdAt: '2026-07-24T12:02:00Z'
       }
     ]));
   });
@@ -320,6 +335,9 @@ test('shows a code generation icon on marketing comment cards with repository ch
 
   const codeCommentCard = page.locator('section').filter({ hasText: 'Ajuste aplicado em' }).first();
   await expect(codeCommentCard.getByText('Gerou código')).toBeVisible();
+  await expect(codeCommentCard.getByLabel('Impacto em vendas: baixo')).toBeVisible();
   await expect(page.getByText('Recomendo testar uma promessa')).toBeVisible();
+  await expect(page.getByLabel('Impacto em vendas: alto')).toBeVisible();
+  await expect(page.getByLabel('Impacto em vendas: médio')).toBeVisible();
   await expect(page.getByText('Gerou código')).toHaveCount(1);
 });

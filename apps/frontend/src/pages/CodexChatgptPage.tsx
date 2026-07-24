@@ -462,9 +462,12 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
   return nodes;
 };
 
+type SalesImpactLevel = 'baixo' | 'medio' | 'alto';
+
 interface MarketingStructuredResponse {
   titulo: string;
   comentario: string;
+  impactoAumentoVendas?: SalesImpactLevel;
   alterouCodigoRepositorio?: boolean;
   resumoCodigoPr: string;
   orientacaoProximaAcao: string;
@@ -545,6 +548,27 @@ const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: st
   return undefined;
 };
 
+const normalizeSalesImpactLevel = (value: string): SalesImpactLevel | undefined => {
+  const normalized = value.trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  if (normalized === 'baixo' || normalized === 'medio' || normalized === 'alto') {
+    return normalized;
+  }
+  return undefined;
+};
+
+const readStructuredSalesImpactLevel = (record: Record<string, unknown>): SalesImpactLevel | undefined => {
+  const value = readStructuredResponseString(record, [
+    'impactoAumentoVendas',
+    'impacto_aumento_vendas',
+    'contribuicaoAumentoVendas',
+    'contribuiçãoAumentoVendas',
+    'contribuicao_vendas',
+    'impactoVendas',
+    'salesImpact'
+  ]);
+  return normalizeSalesImpactLevel(value);
+};
+
 const parseMarketingStructuredResponse = (content: string): MarketingStructuredResponse | null => {
   const candidate = extractJsonObjectCandidate(content);
   if (!candidate) return null;
@@ -556,6 +580,7 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
 
   const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
+  const impactoAumentoVendas = readStructuredSalesImpactLevel(record);
   const alterouCodigoRepositorio = readStructuredResponseBoolean(record, [
     'alterouCodigoRepositorio',
     'alterou_codigo_repositorio',
@@ -589,7 +614,7 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
   if (!titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { titulo, comentario, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+  return { titulo, comentario, impactoAumentoVendas, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
 };
 
 const marketingResponseIndicatesCodeChange = (content?: string): boolean =>
@@ -651,6 +676,27 @@ const CodeGeneratedBadge = () => (
   </span>
 );
 
+const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
+  const styles: Record<SalesImpactLevel, string> = {
+    baixo: 'border-red-300 bg-red-500 dark:border-red-700',
+    medio: 'border-yellow-300 bg-yellow-400 dark:border-yellow-700',
+    alto: 'border-emerald-300 bg-emerald-500 dark:border-emerald-700'
+  };
+  const labels: Record<SalesImpactLevel, string> = {
+    baixo: 'Impacto em vendas: baixo',
+    medio: 'Impacto em vendas: médio',
+    alto: 'Impacto em vendas: alto'
+  };
+  return (
+    <span
+      className={`inline-flex h-4 w-4 rounded-full border shadow-sm ${styles[level]}`}
+      title={labels[level]}
+      aria-label={labels[level]}
+      role="img"
+    />
+  );
+};
+
 interface AssistantMessageBodyProps {
   content: string;
   marketing: boolean;
@@ -703,6 +749,7 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
+          {structured.impactoAumentoVendas ? <SalesImpactIcon level={structured.impactoAumentoVendas} /> : null}
           {commentGeneratedCode ? <CodeGeneratedBadge /> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -1124,7 +1171,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
+    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos níveis: "baixo", "medio" ou "alto". Use "alto" quando a entrega mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação, campanhas ou alavancas claras de conversão/receita; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando for ajuste técnico, organização ou investigação com impacto comercial distante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 

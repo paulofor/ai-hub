@@ -2473,6 +2473,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: primeira tentativa de `npm --prefix apps/sandbox-orchestrator run build --silent` falhou por dependencias TypeScript ausentes no workspace local; apos `npm --prefix apps/sandbox-orchestrator ci --include=dev`, `npm --prefix apps/sandbox-orchestrator run build --silent`, teste focado `node --test --test-name-pattern="docker compose monta e exporta credenciais Luma, Kling e HeyGen" dist/tests/jobs.test.js`, `npm --prefix apps/sandbox-orchestrator test` e `git diff --check` passaram.
 - Nenhum valor de token foi lido, impresso ou versionado. Nao foi criado Pull Request.
 
+## 2026-07-24 22:56:10 UTC - Impacto em vendas na resposta MKT
+
+- Solicitacao recebida: no ambiente `marketing-hub`, pedir para o modelo indicar no JSON de resposta se a solicitacao contribui para aumentar vendas nos niveis `baixo`, `medio` e `alto`, e mostrar no quadro de comentario um icone vermelho, amarelo ou verde conforme o nivel.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o contrato estruturado do modo MKT nao tinha um campo dedicado para impacto em vendas, e os renderizadores da conversa/detalhe conheciam apenas campos como `comentario`, `alterouCodigoRepositorio` e `sugestaoMelhoriaAmbiente`; portanto a interface nao tinha dado confiavel para exibir o indicador colorido.
+- Alternativas avaliadas: (1) inferir impacto por palavras do `comentario`, rapido mas sujeito a falsos positivos; (2) criar metadado persistido no backend, robusto mas maior escopo e migracao para uma informacao que ja vem da resposta do modelo; (3) adicionar o campo estruturado `impactoAumentoVendas` ao contrato MKT e fazer o frontend renderizar o icone a partir dele. Escolhida a alternativa 3 por atacar a origem do problema com baixo risco e preservar compatibilidade com respostas antigas.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: o prompt MKT agora exige `impactoAumentoVendas` com valores `baixo`, `medio` ou `alto` e orienta quando usar cada nivel.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: os parsers aceitam `impactoAumentoVendas` e aliases, e o card de comentario mostra um icone circular vermelho para baixo, amarelo para medio e verde para alto.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` e `apps/frontend/tests/e2e/app.spec.ts` para cobrir o novo campo do contrato MKT e os tres indicadores visuais no card de comentario.
+- Validacoes executadas: a primeira tentativa de build/testes falhou por dependencias dev ausentes; apos `npm --prefix apps/frontend ci --include=dev` e `npm --prefix apps/sandbox-orchestrator ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "code generation icon"`, `npm --prefix apps/sandbox-orchestrator run build --silent && node --test --test-name-pattern="instruções de marketing" ...` e `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes nos grafos npm do frontend e do sandbox-orchestrator. Nao foi criado Pull Request.
+
 ## 2026-07-24 18:07:06 UTC - Alerta de codigo no card de comentario MKT
 
 - Solicitacao recebida: quando uma solicitacao gerar codigo, colocar um icone no card de comentario para alertar o usuario.
