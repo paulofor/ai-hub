@@ -176,7 +176,7 @@ function MetricSeriesPanel({
         <div>
           <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Totais agregados para gráficos de volume, uso e tempo.
+            Gráficos de volume, uso e tempo por período.
           </p>
         </div>
       </div>
@@ -233,7 +233,6 @@ function MiniBarChart({
 }) {
   const values = buckets.map((bucket) => getValue(bucket));
   const maxValue = Math.max(1, ...values);
-  const total = values.reduce((sum, value) => sum + value, 0);
   const periodLabel =
     buckets.length > 0
       ? `${formatChartDate(buckets[0].startsAt)} a ${formatChartDate(buckets[buckets.length - 1].startsAt)}`
@@ -246,7 +245,6 @@ function MiniBarChart({
           <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</h4>
           <div className="mt-0.5 text-[10px] leading-none text-slate-500 sm:hidden">{periodLabel}</div>
         </div>
-        <span className="text-xs font-medium text-slate-500">Total: {formatValue(total)}</span>
       </div>
       <div className="flex h-36 items-end gap-1 rounded-lg border border-slate-100 bg-slate-50/80 px-2 pb-7 pt-3 dark:border-slate-800 dark:bg-slate-950/40">
         {buckets.map((bucket, index) => {

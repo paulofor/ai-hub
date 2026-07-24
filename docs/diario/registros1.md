@@ -2462,3 +2462,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar montagem e export de Luma, Kling e HeyGen.
 - Validacoes executadas: primeira tentativa de `npm --prefix apps/sandbox-orchestrator run build --silent` falhou por dependencias TypeScript ausentes no workspace local; apos `npm --prefix apps/sandbox-orchestrator ci --include=dev`, `npm --prefix apps/sandbox-orchestrator run build --silent`, teste focado `node --test --test-name-pattern="docker compose monta e exporta credenciais Luma, Kling e HeyGen" dist/tests/jobs.test.js`, `npm --prefix apps/sandbox-orchestrator test` e `git diff --check` passaram.
 - Nenhum valor de token foi lido, impresso ou versionado. Nao foi criado Pull Request.
+
+## 2026-07-24 07:49:37 UTC - Remocao dos totais nos graficos do dashboard
+
+- Solicitacao recebida: retirar os valores totais exibidos nos graficos do dashboard, conforme marcacoes na imagem enviada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o componente `MiniBarChart` calculava `total` e renderizava `Total: ...` no cabecalho de cada grafico como apoio visual; isso duplicava informacao ja resumida nos cards superiores e poluia a leitura dos graficos.
+- Alternativas avaliadas: (1) esconder os totais por CSS, baixo esforco mas manteria markup e texto acessivel indesejado; (2) adicionar uma prop para ligar/desligar totais por grafico, flexivel mas desnecessario porque todos os graficos dessa tela devem seguir a mesma regra; (3) remover o calculo/renderizacao do total no `MiniBarChart` e ajustar o texto do painel para nao prometer totais agregados. Escolhida a alternativa 3 por corrigir a origem com menor complexidade.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: removido o rótulo `Total: ...` dos graficos de solicitacoes, interacoes e tempo, preservando barras, labels por periodo e tooltip/aria-label por barra.
+- Ajuste de copy aplicado: a descricao dos paineis passou de "Totais agregados para graficos de volume, uso e tempo." para "Graficos de volume, uso e tempo por periodo.".
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
