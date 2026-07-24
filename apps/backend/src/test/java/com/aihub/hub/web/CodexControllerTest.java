@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.zip.ZipInputStream;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.client.RestClientResponseException;
@@ -32,6 +33,34 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 
 class CodexControllerTest {
+
+    @Test
+    void previousReturnsNearestLowerRequestId() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        when(codexRequestService.previousRequestId(10L)).thenReturn(Optional.of(9L));
+
+        ResponseEntity<Map<String, Long>> response = controller.previous(10L);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("id", 9L);
+    }
+
+    @Test
+    void previousReturnsNoContentWhenThereIsNoLowerRequestId() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        when(codexRequestService.previousRequestId(1L)).thenReturn(Optional.empty());
+
+        ResponseEntity<Map<String, Long>> response = controller.previous(1L);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(response.getBody()).isNull();
+    }
 
     @Test
     void downloadInteractionsUsesPersistedSummaryCountWhenDetailedRowsAreEmpty() throws Exception {

@@ -1347,7 +1347,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildMediaToolsInstruction(): string {
-    return 'O ffprobe está disponível para o modelo pelo comando ffprobe; use-o para inspecionar metadados, codecs, resolução, duração, streams e integridade básica de arquivos de vídeo quando a tarefa envolver vídeos.';
+    return 'O ffprobe está disponível para o modelo pelo comando ffprobe; use-o para inspecionar metadados, codecs, resolução, duração, streams e integridade básica de arquivos de vídeo quando a tarefa envolver vídeos. O comando sandbox-media-player <arquivo-video-ou-audio> [saida.html] gera um player HTML local com controles nativos de vídeo/áudio; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.';
   }
 
   private buildCodexChatgptOperationalInstruction(): string {
@@ -4371,6 +4371,9 @@ ${stderr}`);
     }
     if (await this.isCommandAvailable('ffprobe')) {
       mediaTools.push('ffprobe');
+    }
+    if (await this.isCommandAvailable('sandbox-media-player')) {
+      mediaTools.push('sandbox-media-player');
     }
     const awsCredentialsAvailable = Boolean(
       process.env.AWS_ACCESS_KEY_ID?.trim()

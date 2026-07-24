@@ -83,7 +83,7 @@ O runner informa ainda que o GitHub CLI (`gh`) e o `actionlint` estão disponív
 
 O runner informa também que Playwright, `@playwright/test` e Chromium headless estão disponíveis para validações visuais. A imagem usa `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` e reaproveita o Chromium do sistema em `/usr/bin/chromium`, exposto por `CHROME_BIN`, `CHROMIUM_BIN`, `PUPPETEER_EXECUTABLE_PATH` e `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; `NODE_PATH=/usr/local/lib/node_modules` permite carregar os pacotes globais em scripts Node executados pelo modelo.
 
-O runner informa ainda que `ffprobe` está disponível para inspeção de vídeos. Use `ffprobe` para conferir metadados, codecs, resolução, duração, streams e integridade básica de arquivos de vídeo recebidos ou gerados na sandbox.
+O runner informa ainda que `ffprobe` está disponível para inspeção de vídeos. Use `ffprobe` para conferir metadados, codecs, resolução, duração, streams e integridade básica de arquivos de vídeo recebidos ou gerados na sandbox. Para avaliação perceptual, o helper `sandbox-media-player <arquivo-video-ou-audio> [saida.html]` gera uma página HTML local com player nativo; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.
 
 ### Limites de contexto (`CONTEXT_*`)
 

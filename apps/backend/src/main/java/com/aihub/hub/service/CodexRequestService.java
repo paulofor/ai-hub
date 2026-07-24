@@ -317,6 +317,12 @@ public class CodexRequestService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<Long> previousRequestId(Long id) {
+        return codexRequestRepository.findFirstByIdLessThanOrderByIdDesc(id)
+            .map(CodexRequest::getId);
+    }
+
+    @Transactional(readOnly = true)
     public CodexDashboardMetrics dashboardMetrics() {
         return dashboardMetrics(null);
     }
