@@ -183,6 +183,14 @@ function MetricSeriesPanel({
       {buckets.length > 0 ? (
         <div className="mt-4 space-y-5">
           <MiniBarChart
+            title="Tempo"
+            buckets={buckets}
+            getValue={(bucket) => bucket.durationMs}
+            formatValue={formatShortDuration}
+            labelForBucket={labelForBucket}
+            barClassName="bg-amber-500"
+          />
+          <MiniBarChart
             title="Solicitações"
             buckets={buckets}
             getValue={(bucket) => bucket.requestCount}
@@ -197,14 +205,6 @@ function MetricSeriesPanel({
             formatValue={formatMetricNumber}
             labelForBucket={labelForBucket}
             barClassName="bg-sky-500"
-          />
-          <MiniBarChart
-            title="Tempo"
-            buckets={buckets}
-            getValue={(bucket) => bucket.durationMs}
-            formatValue={formatShortDuration}
-            labelForBucket={labelForBucket}
-            barClassName="bg-amber-500"
           />
         </div>
       ) : (

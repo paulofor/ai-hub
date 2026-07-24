@@ -2472,3 +2472,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste de copy aplicado: a descricao dos paineis passou de "Totais agregados para graficos de volume, uso e tempo." para "Graficos de volume, uso e tempo por periodo.".
 - Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
 - Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-24 07:59:00 UTC - Ordem dos graficos do dashboard
+
+- Solicitacao recebida: alterar a ordem dos graficos do dashboard para tempo, solicitacoes e interacoes.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a ordem dos graficos estava definida diretamente no JSX de `MetricSeriesPanel` como solicitacoes, interacoes e tempo; apos a remocao dos totais, essa hierarquia visual ainda colocava volume antes de tempo, diferente da prioridade de leitura solicitada.
+- Alternativas avaliadas: (1) reordenar os dados no backend, maior risco e desnecessario porque os dados ja chegam completos; (2) criar configuracao dinamica de ordem, mais flexivel mas com complexidade sem demanda atual; (3) reordenar os tres componentes `MiniBarChart` no frontend mantendo dados, cores e formatadores. Escolhida a alternativa 3 por ser a correcao de menor escopo e aderir exatamente a mudanca visual pedida.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: os graficos dos paineis de series agora renderizam primeiro `Tempo`, depois `Solicitações` e por ultimo `Interações`.
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
