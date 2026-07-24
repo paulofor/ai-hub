@@ -1,6 +1,7 @@
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
+import { hasCodeGenerationSignal } from '../components/CodexResponseBody';
 import MarkdownFileReference, { isFileReferenceHref } from '../components/MarkdownFileReference';
 import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
@@ -599,6 +600,24 @@ const CopyIcon = ({ copied }: { copied: boolean }) => (
     )
 );
 
+const CodeGeneratedIcon = () => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m16 18 6-6-6-6" />
+    <path d="m8 6-6 6 6 6" />
+    <path d="m14.5 4-5 16" />
+  </svg>
+);
+
+const CodeGeneratedBadge = () => (
+  <span
+    className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200"
+    title="Esta resposta indica que foram geradas ou alteradas mudanças no repositório"
+  >
+    <CodeGeneratedIcon />
+    <span>Gerou código</span>
+  </span>
+);
+
 interface AssistantMessageBodyProps {
   content: string;
   marketing: boolean;
@@ -640,6 +659,7 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
   if (!structured) {
     return <MarkdownMessage content={content} />;
   }
+  const commentGeneratedCode = hasCodeGenerationSignal(structured.comentario);
 
   return <div className="space-y-3">
     {structured.titulo ? <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm dark:border-sky-900 dark:bg-sky-950/30">
@@ -648,16 +668,21 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
     </section> : null}
     {structured.comentario ? <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
-        <button
-          type="button"
-          onClick={() => handleCopyStructuredText('comentario', structured.comentario)}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/80 text-slate-600 transition hover:border-slate-500 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-slate-100"
-          title="Copiar comentário"
-          aria-label="Copiar comentário"
-        >
-          <CopyIcon copied={copiedField === 'comentario'} />
-        </button>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
+          {commentGeneratedCode ? <CodeGeneratedBadge /> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleCopyStructuredText('comentario', structured.comentario)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/80 text-slate-600 transition hover:border-slate-500 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-slate-100"
+            title="Copiar comentário"
+            aria-label="Copiar comentário"
+          >
+            <CopyIcon copied={copiedField === 'comentario'} />
+          </button>
+        </div>
       </div>
       <MarkdownMessage content={structured.comentario} />
     </section> : null}

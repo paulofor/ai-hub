@@ -2463,6 +2463,18 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: primeira tentativa de `npm --prefix apps/sandbox-orchestrator run build --silent` falhou por dependencias TypeScript ausentes no workspace local; apos `npm --prefix apps/sandbox-orchestrator ci --include=dev`, `npm --prefix apps/sandbox-orchestrator run build --silent`, teste focado `node --test --test-name-pattern="docker compose monta e exporta credenciais Luma, Kling e HeyGen" dist/tests/jobs.test.js`, `npm --prefix apps/sandbox-orchestrator test` e `git diff --check` passaram.
 - Nenhum valor de token foi lido, impresso ou versionado. Nao foi criado Pull Request.
 
+## 2026-07-24 18:07:06 UTC - Alerta de codigo no card de comentario MKT
+
+- Solicitacao recebida: quando uma solicitacao gerar codigo, colocar um icone no card de comentario para alertar o usuario.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela ja destacava codigo acumulado no botao `Pedir PR`, mas os cards de resposta estruturada tratavam o campo `comentario` apenas como Markdown, sem classificar sinais de alteracao no repositorio; alem disso, a tela de conversa MKT tinha uma renderizacao propria separada do componente compartilhado de detalhe.
+- Alternativas avaliadas: (1) criar novo metadado backend `generatedCode`, mais preciso mas exige contrato/persistencia/processamento; (2) marcar todos os comentarios Codex como codigo, simples mas geraria falsos positivos em analises MKT; (3) detectar sinais fortes no texto da resposta, como arquivo alterado, ajuste aplicado e comandos de validacao, e exibir um selo visual no card. Escolhida a alternativa 3 por entregar o alerta no ponto certo com baixo risco e sem alterar contrato.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx`: criada a funcao `hasCodeGenerationSignal` e um selo com icone de codigo `Gerou codigo` para cards de comentario estruturado que indicam alteracao no repositorio.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o mesmo alerta visual passou a aparecer no card `Comentario` da conversa MKT.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright com uma resposta MKT que gera codigo e outra apenas consultiva, validando que o selo aparece somente no card correto.
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes e toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "code generation icon"`, `npm --prefix apps/frontend run test:e2e` e `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas todos os 7 testes Playwright passaram.
+- Nao foi criado Pull Request.
+
 ## 2026-07-24 07:49:37 UTC - Remocao dos totais nos graficos do dashboard
 
 - Solicitacao recebida: retirar os valores totais exibidos nos graficos do dashboard, conforme marcacoes na imagem enviada.
