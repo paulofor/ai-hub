@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
+import CodexResponseBody from '../components/CodexResponseBody';
 import { useToasts } from '../components/ToastContext';
 import {
   CodexRequest,
@@ -12,8 +13,7 @@ import {
   formatStatus,
   formatTokens,
   isTerminalStatus,
-  parseCodexRequest,
-  parseCodexRequests
+  parseCodexRequest
 } from '../lib/codex';
 
 export default function CodexRequestDetailPage() {
@@ -31,8 +31,8 @@ export default function CodexRequestDetailPage() {
   const [creatingPr, setCreatingPr] = useState(false);
   const [downloadingInteractions, setDownloadingInteractions] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [nextRequestId, setNextRequestId] = useState<number | null>(null);
-  const [loadingNext, setLoadingNext] = useState(false);
+  const [previousRequestId, setPreviousRequestId] = useState<number | null>(null);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
   const navigate = useNavigate();
   const feedbackDirtyRef = useRef(false);
   const { pushToast } = useToasts();
@@ -105,41 +105,27 @@ export default function CodexRequestDetailPage() {
     fetchRequest();
   }, [fetchRequest]);
 
-  const fetchNextRequestId = useCallback(async () => {
+  const fetchPreviousRequestId = useCallback(async () => {
     if (!id) {
-      setNextRequestId(null);
+      setPreviousRequestId(null);
       return;
     }
 
-    setLoadingNext(true);
+    setLoadingPrevious(true);
     try {
-      const response = await client.get('/codex/requests');
-      const requests = parseCodexRequests(response.data);
-      const sorted = [...requests].sort((a, b) => {
-        const aDate = new Date(a.createdAt).getTime();
-        const bDate = new Date(b.createdAt).getTime();
-        if (Number.isFinite(aDate) && Number.isFinite(bDate) && aDate !== bDate) {
-          return bDate - aDate;
-        }
-        return b.id - a.id;
-      });
-
-      const currentIndex = sorted.findIndex((item) => item.id === Number(id));
-      if (currentIndex >= 0 && currentIndex < sorted.length - 1) {
-        setNextRequestId(sorted[currentIndex + 1].id);
-      } else {
-        setNextRequestId(null);
-      }
+      const response = await client.get(`/codex/requests/${id}/previous`);
+      const previousId = Number(response.data?.id);
+      setPreviousRequestId(Number.isFinite(previousId) ? previousId : null);
     } catch (err) {
-      setNextRequestId(null);
+      setPreviousRequestId(null);
     } finally {
-      setLoadingNext(false);
+      setLoadingPrevious(false);
     }
   }, [id]);
 
   useEffect(() => {
-    fetchNextRequestId();
-  }, [fetchNextRequestId]);
+    fetchPreviousRequestId();
+  }, [fetchPreviousRequestId]);
 
   useEffect(() => {
     if (!request || isTerminalStatus(request.status)) {
@@ -251,10 +237,10 @@ export default function CodexRequestDetailPage() {
     );
   }, [handleRating, request, savingRating]);
 
-  const handleGoToNext = useCallback(() => {
-    if (!nextRequestId) return;
-    navigate(`/codex/requests/${nextRequestId}`);
-  }, [navigate, nextRequestId]);
+  const handleGoToPrevious = useCallback(() => {
+    if (!previousRequestId) return;
+    navigate(`/codex/requests/${previousRequestId}`);
+  }, [navigate, previousRequestId]);
 
 
   const handleDownloadInteractions = useCallback(async () => {
@@ -353,12 +339,12 @@ export default function CodexRequestDetailPage() {
           </button>
           <button
             type="button"
-            onClick={handleGoToNext}
-            disabled={!nextRequestId || loadingNext}
+            onClick={handleGoToPrevious}
+            disabled={!previousRequestId || loadingPrevious}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-            title={nextRequestId ? `Ir para a solicitação ${nextRequestId}` : 'Sem próximas solicitações'}
+            title={previousRequestId ? `Ir para a solicitação ${previousRequestId}` : 'Sem solicitação anterior'}
           >
-            {loadingNext ? 'Carregando...' : 'Próximo'}
+            {loadingPrevious ? 'Carregando...' : 'Anterior'}
           </button>
           <Link
             to="/codex"
@@ -610,9 +596,9 @@ export default function CodexRequestDetailPage() {
                     {request.responseText ? `${request.responseText.length.toLocaleString('pt-BR')} caracteres` : 'Sem resposta'}
                   </span>
                 </div>
-                <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md bg-slate-900/90 p-4 text-xs leading-relaxed text-emerald-100">
-                  {request.responseText ?? '—'}
-                </pre>
+                <div className="max-h-[420px] overflow-auto rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-100">
+                  {request.responseText ? <CodexResponseBody content={request.responseText} /> : '—'}
+                </div>
               </div>
             </div>
 

@@ -96,6 +96,13 @@ public class CodexController {
         return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
     }
 
+    @GetMapping("/{id}/previous")
+    public ResponseEntity<Map<String, Long>> previous(@PathVariable Long id) {
+        return codexRequestService.previousRequestId(id)
+            .map(previousId -> ResponseEntity.ok(Map.of("id", previousId)))
+            .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/{id}")
     public CodexRequest get(@PathVariable Long id) {
         return codexRequestService.find(id);
