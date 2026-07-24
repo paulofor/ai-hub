@@ -2556,3 +2556,16 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "warns on the request PR button"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
 - Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas os 2 testes Playwright passaram.
 - Nao foi criado Pull Request.
+
+## 2026-07-24 14:15:14 UTC-3 - Refinamento visual de referencias de arquivo
+
+- Solicitacao recebida: melhorar novamente a formatacao dos nomes de arquivo nas respostas do Codex ChatGPT, pesquisando algo esteticamente interessante e facil de visualizar.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o ajuste anterior ainda tratava a referencia Markdown de arquivo como um chip inline grande demais dentro de um item de lista; em caminhos absolutos longos, isso fazia o card competir com a descricao, quebrar pontuacao como `:` em linhas ruins e dar peso visual ao caminho completo em vez do nome do arquivo.
+- Pesquisa de UI/UX realizada: referencias de breadcrumbs e truncamento de nomes longos indicam priorizar uma trilha curta, manter itens escaneaveis, mostrar tooltip quando truncar e preservar o fim/nome do arquivo como informacao mais importante.
+- Ajuste aplicado em `apps/frontend/src/components/MarkdownFileReference.tsx`: criado componente compartilhado para referencia de arquivo com badge de extensao, nome do arquivo em destaque, diretorio relativo ao repo como contexto secundario truncado e caminho absoluto completo apenas no `title`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/frontend/src/components/CodexResponseBody.tsx`: os renderizadores Markdown agora usam o componente compartilhado e separam itens no formato `[arquivo](caminho): descricao` em duas partes, evitando pontuacao solta e melhorando leitura em desktop/mobile.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright que valida o chip de arquivo, o badge de extensao, o diretorio relativo e a ausencia do caminho `/root/ai-hub/...` como texto visivel.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "formats markdown file references"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
+- Validacao visual executada com Playwright em desktop e mobile contra `http://127.0.0.1:5177/codex-chatgpt`, APIs mockadas e conversa local reproduzindo links longos do print.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas todos os 3 testes Playwright passaram.
+- Nao foi criado Pull Request.
