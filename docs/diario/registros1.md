@@ -2517,3 +2517,21 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a instalacao do helper e a presenca das instrucoes nos prompts/checklists.
 - Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; smoke real extraindo o helper do Dockerfile, gerando um WAV sintetico com `ffmpeg`, criando `/tmp/aihub-test-tone.player.html` e abrindo no Chromium headless com screenshot `/tmp/aihub-test-tone.player.png`; `npm --prefix apps/sandbox-orchestrator test` passou com 72 testes; `git diff --check` passou.
 - Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes nos grafos do frontend e sandbox-orchestrator, sem alteracao de dependencias por estar fora do escopo. A validacao local confirmou o helper extraido do Dockerfile; a disponibilidade do comando em sandboxes futuras depende de rebuild/deploy da imagem versionada. Nao foi criado Pull Request.
+
+## 2026-07-24 14:23:03 UTC - Layout vertical no detalhe da solicitacao Codex
+
+- Solicitacao recebida: na tela de detalhe da solicitacao Codex, trocar o bloco com "Prompt enviado" e "Resposta do Codex" de duas colunas para uma coluna com duas linhas.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o wrapper desses dois cards usava `lg:grid-cols-2`, fazendo o layout mudar para duas colunas em telas largas; a necessidade atual e comparar os conteudos em largura total, um abaixo do outro.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexRequestDetailPage.tsx`: o grid do bloco "Prompt enviado" / "Resposta do Codex" agora usa uma unica coluna em todos os breakpoints, preservando os cards e seus scrolls internos.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build`/`lint` falhou por dependencias de desenvolvimento ausentes e toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram. Validacao visual com Playwright em `http://127.0.0.1:8082/codex/requests/151`, APIs mockadas, confirmou que os cards "Prompt enviado" e "Resposta do Codex" renderizam empilhados, com mesma largura; screenshot salvo em `/tmp/aihub-codex-request-detail-one-column.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 14:43:10 UTC - Formatacao de referencias de arquivos no Codex ChatGPT
+
+- Solicitacao recebida: melhorar a formatacao visual quando o modelo mostra nomes de arquivos nas respostas do Codex ChatGPT.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o renderizador Markdown local nao reconhecia links Markdown (`[arquivo](caminho:linha)`) como referencias de arquivo; por isso o texto ficava cru ou espremido em linha, deixando caminhos longos poluirem a leitura.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/frontend/src/components/CodexResponseBody.tsx`: o Markdown inline agora reconhece links, renderiza links web como ancora comum e renderiza referencias de arquivo como um bloco compacto com nome em destaque e caminho completo em fonte menor, com quebra dentro do card.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao visual com Playwright em `http://127.0.0.1:8082/codex-chatgpt`, APIs mockadas e conversa local reproduzindo o print, com screenshot salvo em `/tmp/aihub-codex-chat-file-formatting.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
