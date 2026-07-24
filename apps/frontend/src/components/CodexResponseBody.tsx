@@ -43,17 +43,44 @@ const stripModelThinking = (content: string): string => {
   return trimmed;
 };
 
+const isFileReferenceHref = (href: string) => {
+  const normalized = href.replace(/^<|>$/g, '');
+  return /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.@+-]+\/).+\.[A-Za-z0-9]+(?::\d+)?$/.test(normalized);
+};
+
+const renderFileReference = (label: string, href: string, key: string) => {
+  const normalizedHref = href.replace(/^<|>$/g, '');
+  const displayLabel = label.trim() || normalizedHref.split('/').pop() || normalizedHref;
+
+  return (
+    <span
+      key={key}
+      className="mx-0.5 inline-flex max-w-full flex-col rounded-md border border-slate-200 bg-slate-50 px-2 py-1 align-middle shadow-sm dark:border-slate-700 dark:bg-slate-900/80"
+      title={normalizedHref}
+    >
+      <span className="min-w-0 break-all font-mono text-[0.95em] font-semibold leading-tight text-slate-900 dark:text-slate-100">{displayLabel}</span>
+      <span className="min-w-0 break-all font-mono text-[0.78em] leading-tight text-slate-500 dark:text-slate-400">{normalizedHref}</span>
+    </span>
+  );
+};
+
 const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
   const nodes: ReactNode[] = [];
-  const pattern = /(`([^`]+)`|\*\*([^*]+)\*\*)/g;
+  const pattern = /(\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`|\*\*([^*]+)\*\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
-    if (match[2] !== undefined) {
-      nodes.push(<code key={`${keyPrefix}-code-${match.index}`} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.95em] text-slate-900 dark:bg-slate-800 dark:text-slate-100">{match[2]}</code>);
-    } else if (match[3] !== undefined) {
-      nodes.push(<strong key={`${keyPrefix}-strong-${match.index}`}>{match[3]}</strong>);
+    if (match[2] !== undefined && match[3] !== undefined) {
+      if (isFileReferenceHref(match[3])) {
+        nodes.push(renderFileReference(match[2], match[3], `${keyPrefix}-file-${match.index}`));
+      } else {
+        nodes.push(<a key={`${keyPrefix}-link-${match.index}`} href={match[3]} className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900 dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-100" target="_blank" rel="noreferrer">{match[2]}</a>);
+      }
+    } else if (match[4] !== undefined) {
+      nodes.push(<code key={`${keyPrefix}-code-${match.index}`} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.95em] text-slate-900 dark:bg-slate-800 dark:text-slate-100">{match[4]}</code>);
+    } else if (match[5] !== undefined) {
+      nodes.push(<strong key={`${keyPrefix}-strong-${match.index}`}>{match[5]}</strong>);
     }
     lastIndex = pattern.lastIndex;
   }

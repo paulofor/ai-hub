@@ -2526,3 +2526,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build`/`lint` falhou por dependencias de desenvolvimento ausentes e toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram. Validacao visual com Playwright em `http://127.0.0.1:8082/codex/requests/151`, APIs mockadas, confirmou que os cards "Prompt enviado" e "Resposta do Codex" renderizam empilhados, com mesma largura; screenshot salvo em `/tmp/aihub-codex-request-detail-one-column.png`.
 - Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
 - Nao foi criado Pull Request.
+
+## 2026-07-24 14:43:10 UTC - Formatacao de referencias de arquivos no Codex ChatGPT
+
+- Solicitacao recebida: melhorar a formatacao visual quando o modelo mostra nomes de arquivos nas respostas do Codex ChatGPT.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o renderizador Markdown local nao reconhecia links Markdown (`[arquivo](caminho:linha)`) como referencias de arquivo; por isso o texto ficava cru ou espremido em linha, deixando caminhos longos poluirem a leitura.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/frontend/src/components/CodexResponseBody.tsx`: o Markdown inline agora reconhece links, renderiza links web como ancora comum e renderiza referencias de arquivo como um bloco compacto com nome em destaque e caminho completo em fonte menor, com quebra dentro do card.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao visual com Playwright em `http://127.0.0.1:8082/codex-chatgpt`, APIs mockadas e conversa local reproduzindo o print, com screenshot salvo em `/tmp/aihub-codex-chat-file-formatting.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
