@@ -133,6 +133,10 @@ test('request PR button only uses the active dialog profile batch', async ({ pag
   await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: /Pedir PR Código pendente/ }).click();
   await expect(page.getByText('PR solicitado:')).toBeVisible();
+  const prFeedMarker = page.getByRole('article').filter({ hasText: 'Pedido de PR registrado no lote.' });
+  await expect(prFeedMarker.getByText(/Sistema · \d{2}\/\d{2}\/\d{4}/)).toBeVisible();
+  await expect(prFeedMarker.getByText('Pedido de PR registrado no lote.')).toBeVisible();
+  await expect(prFeedMarker.getByRole('link', { name: 'AI Hub: lote Codex #602' })).toHaveAttribute('href', 'https://github.com/paulofor/marketing-hub/pull/602');
   expect(requestedPrId).toBe('602');
 });
 

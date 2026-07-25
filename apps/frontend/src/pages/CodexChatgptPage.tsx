@@ -880,7 +880,7 @@ const isImageAttachment = (attachment: FileAttachment): boolean => attachment.mi
 
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   requestId?: number;
   status?: CodexRequest['status'];
@@ -892,7 +892,7 @@ const chatConversationStorageKey = (profile: CodexProfile) => `${CHAT_CONVERSATI
 const parsePersistedChatMessage = (value: unknown): ChatMessage | null => {
   if (typeof value !== 'object' || value === null) return null;
   const item = value as Record<string, unknown>;
-  const role = item.role === 'assistant' ? 'assistant' : item.role === 'user' ? 'user' : null;
+  const role = item.role === 'assistant' ? 'assistant' : item.role === 'user' ? 'user' : item.role === 'system' ? 'system' : null;
   const content = typeof item.content === 'string' ? item.content : '';
   const id = typeof item.id === 'string' ? item.id : '';
   const createdAt = typeof item.createdAt === 'string' ? item.createdAt : '';
@@ -923,6 +923,14 @@ const resolveAssistantMessageTimestamp = (request: CodexRequest, currentCreatedA
   }
 
   return request.finishedAt ?? currentCreatedAt ?? new Date().toISOString();
+};
+
+const buildPrRequestMarkerContent = (url?: string, title?: string) => {
+  const label = title?.trim() || 'Abrir PR solicitado';
+  if (url?.trim()) {
+    return `Pedido de PR registrado no lote. [${label}](${url.trim()})`;
+  }
+  return `Pedido de PR registrado no lote. ${label}`;
 };
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
@@ -1706,7 +1714,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       : selectedSavedConversationMessages;
     const promptHistoryMessages = [
       ...savedContextMessages.map((item) => ({ role: item.role, content: item.content })),
-      ...historyMessages.map((item) => ({ role: item.role, content: item.content }))
+      ...historyMessages
+        .filter((item) => item.role === 'user' || item.role === 'assistant')
+        .map((item) => ({ role: item.role, content: item.content }))
     ];
     const history = promptHistoryMessages.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
     const selectedConversation = selectedSavedConversationId
@@ -1790,7 +1800,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const handleSaveConversation = useCallback(async () => {
     if (savingConversation) return;
     const messages = conversation
-      .filter((message) => message.content.trim())
+      .filter((message) => (message.role === 'user' || message.role === 'assistant') && message.content.trim())
       .map((message) => ({
         role: message.role,
         content: message.content,
@@ -1946,6 +1956,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
       if (existingPrUrl) {
         setPrResult({ url: existingPrUrl, title: 'Abrir PR do lote' });
+        setConversation((current) => [...current, {
+          id: `${Date.now()}-pr-requested`,
+          role: 'system',
+          content: buildPrRequestMarkerContent(existingPrUrl, 'Abrir PR do lote'),
+          createdAt: new Date().toISOString()
+        }]);
         setError(null);
         return;
       }
@@ -1977,7 +1993,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           }
         }
       );
-      setPrResult({ url: response.data?.url, title: response.data?.title });
+      const nextPrResult = { url: response.data?.url, title: response.data?.title };
+      setPrResult(nextPrResult);
+      setConversation((current) => [...current, {
+        id: `${Date.now()}-pr-requested`,
+        role: 'system',
+        content: buildPrRequestMarkerContent(nextPrResult.url, nextPrResult.title),
+        createdAt: new Date().toISOString()
+      }]);
       await loadRequests();
       setError(null);
     } catch (err) {
@@ -2396,16 +2419,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {visibleConversation.map((message, messageIndex) => {
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
-            return <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100' : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'}`}>
+            return <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${
+              message.role === 'user'
+                ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100'
+                : message.role === 'system'
+                  ? 'mx-auto max-w-2xl border border-dashed border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100'
+                  : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'
+            }`}>
               <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <span>{message.role === 'user' ? 'Usuário' : 'Modelo'} · {formatDateTime(message.createdAt)}</span>
+                <span>{message.role === 'user' ? 'Usuário' : message.role === 'system' ? 'Sistema' : 'Modelo'} · {formatDateTime(message.createdAt)}</span>
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => handleCopyConversationMessage(message)}
                     className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/70 text-slate-600 transition hover:border-emerald-400 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
-                    title={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : 'modelo'}`}
-                    aria-label={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : 'modelo'}`}
+                    title={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : message.role === 'system' ? 'sistema' : 'modelo'}`}
+                    aria-label={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : message.role === 'system' ? 'sistema' : 'modelo'}`}
                   >
                     {copiedMessageId === message.id ? '✓' : '⧉'}
                   </button>
