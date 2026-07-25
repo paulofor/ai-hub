@@ -2621,3 +2621,15 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/SandboxOrchestratorClient.java`: a resposta de job agora parseia `workBranch`/`work_branch`.
 - Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/CodexRequestService.java`: a sincronizacao de metadados do sandbox agora grava `workBranch` e `workBatchKey` quando o job informa a branch de trabalho, permitindo que solicitacoes ja concluidas usem o fluxo de PR de lote.
 - Teste atualizado em `apps/backend/src/test/java/com/aihub/hub/service/SandboxOrchestratorClientTest.java`: adicionado cenario garantindo o parse de `workBranch` retornado pelo sandbox-orchestrator.
+
+## 2026-07-25 21:10:00 UTC - Marcacao do pedido de PR no feed Codex ChatGPT
+
+- Solicitacao recebida: colocar no feed de dialogo uma marcacao de quando aconteceu o pedido de PR na tela de solicitacao Codex ChatGPT.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o fluxo `Pedir PR` criava ou reutilizava o PR e mostrava apenas um resultado separado abaixo do formulario, mas nao registrava a acao como item cronologico dentro da lista `conversation`, que e o feed visivel do dialogo.
+- Alternativas avaliadas: (1) criar um novo registro backend de interacao para o pedido de PR, mais persistente mas com maior escopo de API/migracao; (2) transformar o resultado `PR solicitado` fora do feed em um bloco mais destacado, baixo custo mas ainda fora da cronologia; (3) adicionar uma mensagem local de sistema no feed quando o PR for solicitado ou reutilizado. Escolhida a alternativa 3 por corrigir a visibilidade no ponto exato da acao, com baixo risco e sem alterar contrato backend.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: `ChatMessage` agora aceita `system`; o prompt e o salvamento de conversas ignoram mensagens de sistema; `handleCreatePr` adiciona a marcacao "Pedido de PR registrado no lote" no feed com horario e link quando disponivel; a renderizacao do feed mostra o item como "Sistema".
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario do botao `Pedir PR` no MKT agora valida a marcacao no feed, o horario e o link retornado pelo endpoint mockado.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` falhou por dependencias de desenvolvimento ausentes; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "request PR button only uses"` e `git diff --check`.
+- Validacao visual executada com Playwright em `http://127.0.0.1:5178/codex-chatgpt-mkt`, APIs mockadas, confirmando o marcador "Sistema" com data/hora e link do PR; screenshot salvo em `/tmp/aihub-pr-feed-marker.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
