@@ -51,8 +51,13 @@ test('warns on the request PR button when a batch has accumulated code', async (
 
   await page.goto('/codex-chatgpt');
 
-  await expect(page.getByText('Código acumulado para merge: 1 solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Pedir PR Código pendente/ })).toBeEnabled();
+  const accumulatedCodeNotice = page.getByText('Código acumulado para merge: 1 solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.');
+  const requestPrButton = page.getByRole('button', { name: /Pedir PR Código pendente/ });
+  await expect(accumulatedCodeNotice).toBeVisible();
+  await expect(accumulatedCodeNotice).toHaveClass(/bg-indigo-50/);
+  await expect(requestPrButton).toBeEnabled();
+  await expect(requestPrButton).toHaveClass(/border-indigo-500/);
+  await expect(requestPrButton.getByText('Código pendente')).toHaveClass(/bg-indigo-200/);
 });
 
 test('request PR button only uses the active dialog profile batch', async ({ page }) => {
