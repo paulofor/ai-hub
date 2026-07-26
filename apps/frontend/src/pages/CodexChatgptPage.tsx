@@ -725,15 +725,15 @@ const CommentReadStatusBadge = ({ read }: { read: boolean }) => (
 
 interface AssistantMessageBodyProps {
   content: string;
-  marketing: boolean;
+  structuredResponse: boolean;
   commentRead?: boolean;
   onCommentReadChange?: (read: boolean) => void;
   isOrientationRequested: (orientation: string) => boolean;
   onRequestOrientation: (orientation: string) => void;
 }
 
-const AssistantMessageBody = ({ content, marketing, commentRead = false, onCommentReadChange, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
-  const structured = marketing ? parseMarketingStructuredResponse(content) : null;
+const AssistantMessageBody = ({ content, structuredResponse, commentRead = false, onCommentReadChange, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
+  const structured = structuredResponse ? parseMarketingStructuredResponse(content) : null;
   const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
   const copiedTimeoutRef = useRef<number | null>(null);
   const orientationRequested = structured?.orientacaoProximaAcao ? isOrientationRequested(structured.orientacaoProximaAcao) : false;
@@ -2516,9 +2516,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 </div>
               </div> : <AssistantMessageBody
                 content={message.content}
-                marketing={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant'}
+                structuredResponse={message.role === 'assistant'}
                 commentRead={readCommentIds.has(message.id)}
-                onCommentReadChange={message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
+                onCommentReadChange={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
                 isOrientationRequested={isOrientationRequested}
                 onRequestOrientation={handleRequestOrientation}
               />}
