@@ -457,20 +457,38 @@ interface StructuredCardProps {
   copyField: 'comentario' | 'orientacao' | 'melhoria';
   copied: boolean;
   accentClassName: string;
+  read?: boolean;
+  onReadChange?: (read: boolean) => void;
   showCodeGeneratedBadge?: boolean;
   salesImpactLevel?: SalesImpactLevel;
   onCopy: (field: 'comentario' | 'orientacao' | 'melhoria', text: string) => void;
 }
 
-const StructuredCard = ({ label, content, copyField, copied, accentClassName, showCodeGeneratedBadge = false, salesImpactLevel, onCopy }: StructuredCardProps) => (
-  <section className={`rounded-lg border p-4 shadow-sm ${accentClassName}`}>
+const StructuredCard = ({ label, content, copyField, copied, accentClassName, read = false, onReadChange, showCodeGeneratedBadge = false, salesImpactLevel, onCopy }: StructuredCardProps) => (
+  <section className={`rounded-lg border p-4 shadow-sm transition ${accentClassName}`}>
     <div className="mb-3 flex items-center justify-between gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide">{label}</h4>
         {salesImpactLevel ? <SalesImpactIcon level={salesImpactLevel} /> : null}
         {showCodeGeneratedBadge ? <CodeGeneratedBadge /> : null}
+        {onReadChange && read ? (
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+            Comentário lido
+          </span>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {onReadChange ? (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium normal-case tracking-normal text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+            <input
+              type="checkbox"
+              checked={read}
+              onChange={(event) => onReadChange(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            Lido
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={() => onCopy(copyField, content)}
@@ -486,9 +504,26 @@ const StructuredCard = ({ label, content, copyField, copied, accentClassName, sh
   </section>
 );
 
-export default function CodexResponseBody({ content }: { content: string }) {
+const readTrackingStorageKey = (key: string) => `ai-hub:codex-response-read:${key}`;
+
+const loadReadTrackingState = (key?: string): boolean => {
+  if (!key) return false;
+  try {
+    return window.localStorage.getItem(readTrackingStorageKey(key)) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+interface CodexResponseBodyProps {
+  content: string;
+  commentReadTrackingKey?: string;
+}
+
+export default function CodexResponseBody({ content, commentReadTrackingKey }: CodexResponseBodyProps) {
   const structured = parseCodexStructuredResponse(content);
   const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
+  const [commentRead, setCommentRead] = useState(() => loadReadTrackingState(commentReadTrackingKey));
   const copiedTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -496,6 +531,10 @@ export default function CodexResponseBody({ content }: { content: string }) {
       window.clearTimeout(copiedTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    setCommentRead(loadReadTrackingState(commentReadTrackingKey));
+  }, [commentReadTrackingKey]);
 
   const handleCopyStructuredText = useCallback(async (field: 'comentario' | 'orientacao' | 'melhoria', text: string) => {
     await copyTextToClipboard(text);
@@ -505,6 +544,21 @@ export default function CodexResponseBody({ content }: { content: string }) {
     }
     copiedTimeoutRef.current = window.setTimeout(() => setCopiedField(null), 2000);
   }, []);
+
+  const handleCommentReadChange = useCallback((read: boolean) => {
+    if (!commentReadTrackingKey) return;
+    setCommentRead(read);
+    try {
+      const key = readTrackingStorageKey(commentReadTrackingKey);
+      if (read) {
+        window.localStorage.setItem(key, 'true');
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // A marcacao visual ainda funciona na sessao mesmo se o navegador bloquear storage.
+    }
+  }, [commentReadTrackingKey]);
 
   if (!structured) {
     return <MarkdownMessage content={content} />;
@@ -520,7 +574,11 @@ export default function CodexResponseBody({ content }: { content: string }) {
       content={structured.comentario}
       copyField="comentario"
       copied={copiedField === 'comentario'}
-      accentClassName="border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      accentClassName={commentReadTrackingKey && commentRead
+        ? 'border-emerald-200 bg-emerald-50/50 text-slate-800 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-slate-100'
+        : 'border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'}
+      read={commentRead}
+      onReadChange={commentReadTrackingKey ? handleCommentReadChange : undefined}
       salesImpactLevel={structured.impactoAumentoVendas}
       showCodeGeneratedBadge={structured.alterouCodigoRepositorio === true}
       onCopy={handleCopyStructuredText}

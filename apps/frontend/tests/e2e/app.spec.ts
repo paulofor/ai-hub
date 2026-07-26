@@ -307,6 +307,44 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(page.getByRole('checkbox', { name: 'Lido' })).toBeChecked();
 });
 
+test('marks a marketing request detail comment as read', async ({ page }) => {
+  const responseText = JSON.stringify({
+    titulo: 'Analise pronta',
+    comentario: 'Comentário do detalhe que precisa ser acompanhado.',
+    impactoAumentoVendas: 'medio',
+    alterouCodigoRepositorio: false,
+    resumoCodigoPr: '',
+    sugestaoMelhoriaAmbiente: ''
+  });
+  await page.route('**/api/codex/requests/884/previous', (route) => route.fulfill({ json: {} }));
+  await page.route('**/api/codex/requests/884', (route) => route.fulfill({
+    json: {
+      id: 884,
+      environment: 'paulofor/marketing-hub@main',
+      model: 'gpt-5',
+      version: 'aihub-6',
+      profile: 'CHATGPT_CODEX_MKT',
+      prompt: 'Analisar campanhas em Markdown',
+      responseText,
+      status: 'COMPLETED',
+      createdAt: '2026-07-26T12:00:00Z',
+      documentAccesses: []
+    }
+  }));
+
+  await page.goto('/codex/requests/884');
+
+  const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
+  await expect(readCheckbox).not.toBeChecked();
+  await readCheckbox.check();
+  await expect(readCheckbox).toBeChecked();
+  await expect(page.getByText('Comentário lido')).toBeVisible();
+  await expect(page.getByText('Comentário do detalhe que precisa ser acompanhado.').locator('xpath=ancestor::section[1]')).toHaveClass(/bg-emerald-50/);
+
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Lido' })).toBeChecked();
+});
+
 test('shows a code generation icon on marketing comment cards with repository changes', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
