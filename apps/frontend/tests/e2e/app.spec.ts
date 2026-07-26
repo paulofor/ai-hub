@@ -269,6 +269,44 @@ test('formats markdown file references with a readable filename chip', async ({ 
   await expect(page.getByText('PR automático agora usa apenas bullets.')).toBeVisible();
 });
 
+test('marks a marketing comment as read and keeps the choice after reload', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({
+    json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
+  }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
+    json: { day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } }
+  }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      {
+        id: 'assistant-read-comment',
+        role: 'assistant',
+        content: JSON.stringify({ titulo: 'Análise pronta', comentario: 'Comentário que precisa ser acompanhado.', impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-26T12:00:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
+  await expect(readCheckbox).not.toBeChecked();
+  await readCheckbox.check();
+  await expect(readCheckbox).toBeChecked();
+  await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]')).toHaveClass(/bg-emerald-50/);
+
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Lido' })).toBeChecked();
+});
+
 test('shows a code generation icon on marketing comment cards with repository changes', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
