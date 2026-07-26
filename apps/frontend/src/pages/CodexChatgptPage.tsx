@@ -93,6 +93,7 @@ const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
+const READ_COMMENTS_STORAGE_PREFIX = 'ai-hub:codex-chat-read-comments:';
 const SANDBOX_ONLY_ENVIRONMENT = 'sandbox';
 
 const copyTextToClipboard = async (text: string) => {
@@ -114,6 +115,17 @@ const copyTextToClipboard = async (text: string) => {
   document.body.removeChild(textarea);
   if (!copied) {
     throw new Error('document.execCommand(copy) retornou falso');
+  }
+};
+
+const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORAGE_PREFIX}${profile}`;
+
+const loadReadCommentIds = (profile: CodexProfile): Set<string> => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(readCommentsStorageKey(profile)) ?? '[]');
+    return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : []);
+  } catch {
+    return new Set();
   }
 };
 
@@ -700,11 +712,13 @@ const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
 interface AssistantMessageBodyProps {
   content: string;
   marketing: boolean;
+  commentRead?: boolean;
+  onCommentReadChange?: (read: boolean) => void;
   isOrientationRequested: (orientation: string) => boolean;
   onRequestOrientation: (orientation: string) => void;
 }
 
-const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
+const AssistantMessageBody = ({ content, marketing, commentRead = false, onCommentReadChange, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
   const structured = marketing ? parseMarketingStructuredResponse(content) : null;
   const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
   const copiedTimeoutRef = useRef<number | null>(null);
@@ -745,7 +759,7 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
       <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">Título</h4>
       <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">{structured.titulo}</p>
     </section> : null}
-    {structured.comentario ? <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    {structured.comentario ? <section className={`rounded-lg border p-4 shadow-sm transition ${commentRead ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'}`}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
@@ -753,6 +767,15 @@ const AssistantMessageBody = ({ content, marketing, isOrientationRequested, onRe
           {commentGeneratedCode ? <CodeGeneratedBadge /> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {onCommentReadChange ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium normal-case tracking-normal text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+            <input
+              type="checkbox"
+              checked={commentRead}
+              onChange={(event) => onCommentReadChange(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            Lido
+          </label> : null}
           <button
             type="button"
             onClick={() => handleCopyStructuredText('comentario', structured.comentario)}
@@ -1302,6 +1325,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [savingConversation, setSavingConversation] = useState(false);
   const [deletingSavedConversation, setDeletingSavedConversation] = useState(false);
   const [requestedOrientations, setRequestedOrientations] = useState<Set<string>>(() => new Set());
+  const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
   const conversationPollInFlight = useRef(false);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1326,6 +1350,26 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       // A conversa continua na sessão atual caso o navegador bloqueie ou limite o armazenamento local.
     }
   }, [config.profile, conversation]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(readCommentsStorageKey(config.profile), JSON.stringify([...readCommentIds]));
+    } catch {
+      // O estado continua disponível na sessão atual caso o armazenamento local esteja indisponível.
+    }
+  }, [config.profile, readCommentIds]);
+
+  const handleCommentReadChange = useCallback((messageId: string, read: boolean) => {
+    setReadCommentIds((current) => {
+      const next = new Set(current);
+      if (read) {
+        next.add(messageId);
+      } else {
+        next.delete(messageId);
+      }
+      return next;
+    });
+  }, []);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
     setTelemetry((current) => {
@@ -2453,6 +2497,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               </div> : <AssistantMessageBody
                 content={message.content}
                 marketing={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant'}
+                commentRead={readCommentIds.has(message.id)}
+                onCommentReadChange={message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
                 isOrientationRequested={isOrientationRequested}
                 onRequestOrientation={handleRequestOrientation}
               />}

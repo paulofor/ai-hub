@@ -2669,3 +2669,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o limite de 180 segundos era curto para operações externas ou comandos legítimos que podem permanecer alguns minutos sem emitir eventos, fazendo o monitor confundir uma operação longa com um turno definitivamente paralisado.
 - Alternativas avaliadas: remover o monitor, o que permitiria jobs presos até o timeout total de duas horas; aumentar apenas para cinco minutos, ainda suscetível a operações longas; ou ampliar para quinze minutos, preservando a proteção contra jobs realmente travados. Escolhida a terceira alternativa.
 - Ajuste aplicado: o padrão interno e `apps/sandbox-orchestrator/.env.example` passaram de `180000` para `900000` ms, e a documentação operacional foi atualizada. Configurações explícitas continuam prevalecendo sobre o padrão.
+
+## 2026-07-26 12:30:00 UTC - Marcacao de comentarios lidos no dialogo MKT
+
+- Solicitacao recebida: adicionar uma opcao para marcar os comentarios do modelo que ja foram lidos.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o card estruturado de comentario oferecia apenas a acao de copiar e o estado da conversa, mas nao mantinha nenhum metadado local de acompanhamento por mensagem; por isso, ao voltar ao dialogo, todos os comentarios tinham a mesma aparencia e nao havia como distinguir os ja revisados.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: comentarios estruturados do dialogo Codex ChatGPT MKT agora exibem o checkbox `Lido`; a selecao e vinculada ao ID estavel da mensagem, persistida por perfil no `localStorage` e destacada visualmente em verde, podendo tambem ser desmarcada.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca um comentario como lido, valida o destaque visual e recarrega a pagina para confirmar a persistencia.
+- Validacoes executadas: `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `git diff --check`.
+- Validacao visual realizada com Playwright e APIs mockadas em `/codex-chatgpt-mkt`; screenshot salvo em `/tmp/aihub-comentario-lido.png`.
