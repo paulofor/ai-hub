@@ -597,7 +597,12 @@ export default function CodexRequestDetailPage() {
                   </span>
                 </div>
                 <div className="max-h-[420px] overflow-auto rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-100">
-                  {request.responseText ? <CodexResponseBody content={request.responseText} /> : '—'}
+                  {request.responseText ? (
+                    <CodexResponseBody
+                      content={request.responseText}
+                      commentReadTrackingKey={request.profile === 'CHATGPT_CODEX_MKT' ? `request-${request.id}-comentario` : undefined}
+                    />
+                  ) : '—'}
                 </div>
               </div>
             </div>

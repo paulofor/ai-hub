@@ -2678,3 +2678,24 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca um comentario como lido, valida o destaque visual e recarrega a pagina para confirmar a persistencia.
 - Validacoes executadas: `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `git diff --check`.
 - Validacao visual realizada com Playwright e APIs mockadas em `/codex-chatgpt-mkt`; screenshot salvo em `/tmp/aihub-comentario-lido.png`.
+
+## 2026-07-26 14:50:58 UTC - Cards estruturados no dialogo Codex ChatGPT
+
+- Solicitacao recebida: ajustar a formatacao da resposta estruturada exibida em `/codex-chatgpt`, que estava aparecendo como JSON cru no dialogo, para ficar igual ao visual do MKT.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela de conversa tinha um renderizador duplicado que so tentava parsear o JSON estruturado quando o perfil ativo era `CHATGPT_CODEX_MKT`; quando uma resposta no mesmo contrato aparecia em `/codex-chatgpt`, o componente caia no Markdown comum e mostrava o objeto JSON literal com escapes.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: mensagens do modelo agora tentam renderizar respostas estruturadas em cards independentemente da rota, mantendo o controle de leitura restrito ao MKT.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: valida que o dialogo `/codex-chatgpt` renderiza `titulo`, `comentario`, alerta de codigo e sugestao como cards, sem expor `{"titulo"` como texto cru.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` falhou por dependencias de desenvolvimento ausentes; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "renders structured model JSON as cards"` e `git diff --check`.
+- Validacao visual realizada com Playwright e APIs mockadas em `/codex-chatgpt`; o DOM retornou `rawJsonVisible=0` e screenshot salvo em `/tmp/aihub-codex-chatgpt-structured-cards.png`.
+
+## 2026-07-26 13:05:00 UTC - Marcacao de comentario lido no detalhe MKT
+
+- Solicitacao recebida: no dialogo/telas de solicitacoes `codex-chatgpt-mkt`, adicionar nos quadros de comentarios uma forma de tickar que o comentario ja foi lido, com indicacao visual do que ja foi tratado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a conversa principal do MKT ja tinha estado local para mensagens lidas, mas a tela de detalhe da solicitacao renderizava o card estruturado pelo componente compartilhado `CodexResponseBody` sem receber nem controlar nenhum estado de leitura; assim o comentario do detalhe continuava igual aos nao revisados.
+- Alternativas avaliadas: (1) persistir leitura no backend por solicitacao, mais robusto entre usuarios/dispositivos, mas exigiria novo contrato de API e migracao; (2) reaproveitar campos de comentario do usuario, baixo custo aparente, mas misturaria anotacao operacional com estado de UI; (3) adicionar estado local persistido por request no componente de resposta estruturada, menor escopo e aderente ao comportamento ja existente no dialogo MKT. Escolhida a alternativa 3.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx`: o card estruturado de `Comentario` passou a aceitar chave de acompanhamento, checkbox `Lido`, selo `Comentario lido`, destaque visual verde e persistencia em `localStorage`, com fallback visual mesmo se o storage falhar.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexRequestDetailPage.tsx`: respostas de solicitacoes `CHATGPT_CODEX_MKT` passam uma chave estavel por solicitacao para habilitar a marcacao apenas no detalhe MKT.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: valida marcar comentario do detalhe como lido, exibicao do selo/destaque e persistencia apos reload.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing request detail comment as read"`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read|marks a marketing request detail comment as read"`; `git diff --check`.
+- Validacao visual realizada com Playwright e APIs mockadas em `/codex/requests/884`; screenshot salvo em `/tmp/aihub-detalhe-comentario-lido.png`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nao foi criado Pull Request.

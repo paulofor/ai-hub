@@ -60,6 +60,60 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await expect(requestPrButton.getByText('Código pendente')).toHaveClass(/bg-indigo-200/);
 });
 
+test('renders structured model JSON as cards in the default ChatGPT dialog', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5.5', modelName: 'gpt-5.5', displayName: 'GPT-5.5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 1, interactionCount: 1, durationMs: 1000 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX', JSON.stringify([
+      {
+        id: 'assistant-structured-default',
+        role: 'assistant',
+        content: JSON.stringify({
+          titulo: 'Comentários lidos no MKT',
+          comentario: 'Implementado nos cards de comentário do `codex-chatgpt-mkt`.',
+          impactoAumentoVendas: 'medio',
+          alterouCodigoRepositorio: true,
+          resumoCodigoPr: 'Adiciona marcação visual de leitura nos comentários MKT.',
+          sugestaoMelhoriaAmbiente: 'Expor o checkout Git ativo na interface.'
+        }),
+        createdAt: '2026-07-26T12:00:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt');
+
+  const modelArticle = page.getByRole('article').filter({ hasText: 'Comentários lidos no MKT' });
+  await expect(modelArticle.getByText('Título')).toBeVisible();
+  await expect(modelArticle.getByRole('heading', { name: 'Comentário' })).toBeVisible();
+  await expect(modelArticle.getByText('Implementado nos cards de comentário do')).toBeVisible();
+  await expect(modelArticle.getByText('Gerou código')).toBeVisible();
+  await expect(modelArticle.getByText('Sugestão de melhoria para o ambiente')).toBeVisible();
+  await expect(modelArticle.getByText('{"titulo"')).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: 'Lido' })).toHaveCount(0);
+});
+
 test('request PR button only uses the active dialog profile batch', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
@@ -297,14 +351,61 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
 
   await page.goto('/codex-chatgpt-mkt');
 
+  const commentCard = page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]');
   const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
   await expect(readCheckbox).not.toBeChecked();
+  await expect(commentCard.locator('[title="Comentário pendente de leitura"]')).toBeVisible();
+  await expect(commentCard).toHaveClass(/bg-amber-50/);
   await readCheckbox.check();
   await expect(readCheckbox).toBeChecked();
-  await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]')).toHaveClass(/bg-emerald-50/);
+  await expect(commentCard.locator('[title="Comentário lido"]')).toBeVisible();
+  await expect(commentCard).toHaveClass(/bg-emerald-50/);
 
   await page.reload();
   await expect(page.getByRole('checkbox', { name: 'Lido' })).toBeChecked();
+  await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
+});
+
+test('marks a marketing request detail comment as read', async ({ page }) => {
+  const responseText = JSON.stringify({
+    titulo: 'Analise pronta',
+    comentario: 'Comentário do detalhe que precisa ser acompanhado.',
+    impactoAumentoVendas: 'medio',
+    alterouCodigoRepositorio: false,
+    resumoCodigoPr: '',
+    sugestaoMelhoriaAmbiente: ''
+  });
+  await page.route('**/api/codex/requests/884/previous', (route) => route.fulfill({ json: {} }));
+  await page.route('**/api/codex/requests/884', (route) => route.fulfill({
+    json: {
+      id: 884,
+      environment: 'paulofor/marketing-hub@main',
+      model: 'gpt-5',
+      version: 'aihub-6',
+      profile: 'CHATGPT_CODEX_MKT',
+      prompt: 'Analisar campanhas em Markdown',
+      responseText,
+      status: 'COMPLETED',
+      createdAt: '2026-07-26T12:00:00Z',
+      documentAccesses: []
+    }
+  }));
+
+  await page.goto('/codex/requests/884');
+
+  const commentCard = page.getByText('Comentário do detalhe que precisa ser acompanhado.').locator('xpath=ancestor::section[1]');
+  const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
+  await expect(readCheckbox).not.toBeChecked();
+  await expect(commentCard.locator('[title="Comentário pendente de leitura"]')).toBeVisible();
+  await expect(commentCard).toHaveClass(/bg-amber-50/);
+  await readCheckbox.check();
+  await expect(readCheckbox).toBeChecked();
+  await expect(commentCard.locator('[title="Comentário lido"]')).toBeVisible();
+  await expect(commentCard).toHaveClass(/bg-emerald-50/);
+
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Lido' })).toBeChecked();
+  await expect(page.getByText('Comentário do detalhe que precisa ser acompanhado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
 });
 
 test('shows a code generation icon on marketing comment cards with repository changes', async ({ page }) => {
