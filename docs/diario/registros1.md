@@ -2653,3 +2653,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a presença de `ffmpeg` nos prompts e no checklist inicial.
 - Validações executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes; smoke real `ffmpeg` gerando `/tmp/aihub-ffmpeg-smoke.wav` e `ffprobe` retornando duração `0.200000`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
 - Limitação real de ambiente: `docker version` confirmou Docker CLI, mas falhou ao conectar em `/var/run/docker.sock`; não foi possível rebuildar a imagem Docker localmente nesta sandbox. Não foi criado Pull Request.
+
+## 2026-07-26 05:30:00 UTC - Investigação da solicitação 335
+
+- Solicitação recebida: esclarecer o que aconteceu na CodexRequest 335.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução do Codex App Server deixou de emitir atividade por mais de 180 segundos; o `SandboxJobProcessor` interpreta esse intervalo como turno paralisado e encerra o job com `CODEX_TURN_STALLED`. Não foi uma recusa da Meta nem uma falha do deploy investigado na conversa.
+- Evidências operacionais consultadas pelo MCP Server e pela API: request 335 em `FAILED`, job `8e3c901f-1df4-4910-8e61-f1a5f7870ba2`, início em `2026-07-26T04:51:25.101Z`, término em `2026-07-26T05:05:37.027Z`, resposta `CODEX_TURN_STALLED`, 1.480 eventos de interação e 3.053.259 tokens contabilizados. O container estava configurado com `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=180000` e timeout total de duas horas.
+- Antes da paralisação, o modelo recebeu o histórico completo da conversa sobre publicar o vídeo do experimento 71 e a última orientação para aguardar o deploy, ajustar o público se necessário e seguir com a publicação. A solicitação não produziu resposta final útil, Pull Request ou confirmação de publicação do criativo.
+- Causa técnica imediata confirmada: ausência de eventos do App Server durante a janela de inatividade. A evidência preservada não permite afirmar qual operação interna específica deixou de responder; atribuir a falha à Meta, GitHub ou FFmpeg sem um último evento de ferramenta seria especulação.
+- Nenhuma correção funcional foi implementada nesta etapa; apenas este registro de investigação foi adicionado ao diário obrigatório do projeto.
+
+## 2026-07-26 05:45:00 UTC - Ampliação do limite de inatividade do Codex App Server
+
+- Solicitação recebida: aumentar o tempo que encerrou a CodexRequest 335 com `CODEX_TURN_STALLED`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o limite de 180 segundos era curto para operações externas ou comandos legítimos que podem permanecer alguns minutos sem emitir eventos, fazendo o monitor confundir uma operação longa com um turno definitivamente paralisado.
+- Alternativas avaliadas: remover o monitor, o que permitiria jobs presos até o timeout total de duas horas; aumentar apenas para cinco minutos, ainda suscetível a operações longas; ou ampliar para quinze minutos, preservando a proteção contra jobs realmente travados. Escolhida a terceira alternativa.
+- Ajuste aplicado: o padrão interno e `apps/sandbox-orchestrator/.env.example` passaram de `180000` para `900000` ms, e a documentação operacional foi atualizada. Configurações explícitas continuam prevalecendo sobre o padrão.
