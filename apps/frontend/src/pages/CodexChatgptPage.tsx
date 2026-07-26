@@ -709,6 +709,20 @@ const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
   );
 };
 
+const CommentReadStatusBadge = ({ read }: { read: boolean }) => (
+  <span
+    title={read ? 'Comentário lido' : 'Comentário pendente de leitura'}
+    className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${
+      read
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
+        : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+    }`}
+  >
+    <span aria-hidden="true">{read ? '✓' : '!'}</span>
+    <span>{read ? 'Lido' : 'Pendente'}</span>
+  </span>
+);
+
 interface AssistantMessageBodyProps {
   content: string;
   marketing: boolean;
@@ -759,22 +773,28 @@ const AssistantMessageBody = ({ content, marketing, commentRead = false, onComme
       <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">Título</h4>
       <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">{structured.titulo}</p>
     </section> : null}
-    {structured.comentario ? <section className={`rounded-lg border p-4 shadow-sm transition ${commentRead ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'}`}>
+    {structured.comentario ? <section className={`rounded-lg border p-4 shadow-sm transition ${commentRead ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/10'}`}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Comentário</h4>
           {structured.impactoAumentoVendas ? <SalesImpactIcon level={structured.impactoAumentoVendas} /> : null}
           {commentGeneratedCode ? <CodeGeneratedBadge /> : null}
+          {onCommentReadChange ? <CommentReadStatusBadge read={commentRead} /> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {onCommentReadChange ? <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium normal-case tracking-normal text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+          {onCommentReadChange ? <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold normal-case tracking-normal transition ${
+            commentRead
+              ? 'border-emerald-200 bg-white/80 text-emerald-700 hover:border-emerald-300 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200'
+              : 'border-amber-300 bg-white/90 text-amber-800 hover:border-amber-400 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200'
+          }`}>
             <input
               type="checkbox"
+              aria-label="Lido"
               checked={commentRead}
               onChange={(event) => onCommentReadChange(event.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
-            Lido
+            <span>{commentRead ? 'Lido' : 'Marcar lido'}</span>
           </label> : null}
           <button
             type="button"
