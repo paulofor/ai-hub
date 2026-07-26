@@ -752,7 +752,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
     assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
-    assert.ok(input?.[0]?.text?.includes('O ffprobe está disponível para o modelo pelo comando ffprobe'));
+    assert.ok(input?.[0]?.text?.includes('O ffmpeg e o ffprobe estão disponíveis para o modelo pelos comandos ffmpeg e ffprobe'));
+    assert.ok(input?.[0]?.text?.includes('use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails'));
     assert.ok(input?.[0]?.text?.includes('metadados, codecs, resolução, duração, streams'));
     assert.ok(input?.[0]?.text?.includes('sandbox-media-player <arquivo-video-ou-audio> [saida.html]'));
     assert.ok(input?.[0]?.text?.includes('avaliar naturalidade da pronúncia, sincronização labial'));
@@ -2873,14 +2874,15 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
-    assert.match(promptText, /O ffprobe está disponível para o modelo pelo comando ffprobe/i);
-    assert.match(promptText, /use-o para inspecionar metadados, codecs, resolução, duração, streams/i);
+    assert.match(promptText, /O ffmpeg e o ffprobe estão disponíveis para o modelo pelos comandos ffmpeg e ffprobe/i);
+    assert.match(promptText, /use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails/i);
+    assert.match(promptText, /use ffprobe para inspecionar metadados, codecs, resolução, duração, streams/i);
     assert.match(promptText, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/i);
     assert.match(promptText, /avaliar naturalidade da pronúncia, sincronização labial/i);
     assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
-    assert.match(promptText, /ferramentas de mídia disponíveis: .*ffprobe|ferramentas de mídia disponíveis: nenhuma detectada/i);
+    assert.match(promptText, /ferramentas de mídia disponíveis: .*ffmpeg.*ffprobe|ferramentas de mídia disponíveis: nenhuma detectada/i);
     assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
     assert.match(promptText, /Playwright, @playwright\/test e Chromium headless em \/usr\/bin\/chromium/i);
     assert.match(promptText, /use Playwright com esse navegador para validar localmente/i);
@@ -3884,7 +3886,8 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
   assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
   assert.ok(input?.[0]?.text?.includes('Use Playwright para validações visuais, screenshots e testes de UI'));
-  assert.ok(input?.[0]?.text?.includes('O ffprobe está disponível para o modelo pelo comando ffprobe'));
+  assert.ok(input?.[0]?.text?.includes('O ffmpeg e o ffprobe estão disponíveis para o modelo pelos comandos ffmpeg e ffprobe'));
+  assert.ok(input?.[0]?.text?.includes('use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails'));
   assert.ok(input?.[0]?.text?.includes('sandbox-media-player <arquivo-video-ou-audio> [saida.html]'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
 });
