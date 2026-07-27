@@ -507,29 +507,29 @@ public class CodexController {
         if (request == null) {
             return "- Solicitação de código registrada pelo AI Hub.";
         }
-        String prompt = extractStructuredPrSummary(request.getResponseText()).orElseGet(() -> normalizePrTopic(request.getPrompt()));
-        if (!StringUtils.hasText(prompt)) {
-            prompt = "Solicitação de código registrada pelo AI Hub.";
+        String requestTitle = extractStructuredRequestTitle(request.getResponseText())
+            .orElseGet(() -> normalizePrTopic(request.getProblemTitle()));
+        if (!StringUtils.hasText(requestTitle)) {
+            requestTitle = normalizePrTopic(request.getPrompt());
+        }
+        if (!StringUtils.hasText(requestTitle)) {
+            requestTitle = "Solicitação de código registrada pelo AI Hub.";
         }
         Long id = request.getId();
-        return id != null ? "- #" + id + " - " + prompt : "- " + prompt;
+        return id != null ? "- #" + id + " - " + requestTitle : "- " + requestTitle;
     }
 
-    private Optional<String> extractStructuredPrSummary(String responseText) {
+    private Optional<String> extractStructuredRequestTitle(String responseText) {
         JsonNode structured = parseStructuredResponseObject(responseText).orElse(null);
         if (structured == null) {
             return Optional.empty();
         }
-        JsonNode changedNode = firstPresent(structured, "alterouCodigoRepositorio", "alterou_codigo_repositorio", "codigoAlterado", "codeChanged", "changedRepositoryCode");
-        if (!isTruthy(changedNode)) {
+        JsonNode titleNode = firstPresent(structured, "titulo", "título", "title");
+        if (titleNode == null || !titleNode.isTextual()) {
             return Optional.empty();
         }
-        JsonNode summaryNode = firstPresent(structured, "resumoCodigoPr", "resumo_codigo_pr", "resumoPr", "prSummary", "codePrSummary");
-        if (summaryNode == null || !summaryNode.isTextual()) {
-            return Optional.empty();
-        }
-        String summary = normalizePrTopic(summaryNode.asText());
-        return StringUtils.hasText(summary) ? Optional.of(summary) : Optional.empty();
+        String title = normalizePrTopic(titleNode.asText());
+        return StringUtils.hasText(title) ? Optional.of(title) : Optional.empty();
     }
 
     private Optional<JsonNode> parseStructuredResponseObject(String responseText) {
@@ -578,23 +578,6 @@ public class CodexController {
             }
         }
         return null;
-    }
-
-    private boolean isTruthy(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return false;
-        }
-        if (node.isBoolean()) {
-            return node.asBoolean();
-        }
-        if (node.isTextual()) {
-            String normalized = node.asText().trim().toLowerCase(Locale.ROOT);
-            return normalized.equals("true") || normalized.equals("sim") || normalized.equals("yes") || normalized.equals("1");
-        }
-        if (node.isNumber()) {
-            return node.asInt() == 1;
-        }
-        return false;
     }
 
     private String normalizePrTopic(String value) {

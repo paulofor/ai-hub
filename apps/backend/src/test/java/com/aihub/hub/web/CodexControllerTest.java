@@ -132,7 +132,7 @@ class CodexControllerTest {
     }
 
     @Test
-    void createPrUsesStructuredCodeSummaryAsExplanation() {
+    void createPrUsesStructuredRequestTitleAsExplanation() {
         CodexRequestService codexRequestService = mock(CodexRequestService.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);
         ObjectMapper objectMapper = new ObjectMapper();
@@ -172,8 +172,9 @@ class CodexControllerTest {
             eq(response.getUnifiedDiff()),
             explanationCaptor.capture()
         );
-        assertThat(explanationCaptor.getValue()).isEqualTo("- #731 - Adiciona campos estruturados para controlar alterações de código no modo MKT.");
+        assertThat(explanationCaptor.getValue()).isEqualTo("- #731 - Contrato PR");
         assertThat(explanationCaptor.getValue()).doesNotContain("prompt longo original");
+        assertThat(explanationCaptor.getValue()).doesNotContain("Adiciona campos estruturados");
     }
 
     @Test
@@ -346,8 +347,9 @@ class CodexControllerTest {
             eq("AI Hub: lote Codex #740"),
             explanationCaptor.capture()
         );
-        assertThat(explanationCaptor.getValue()).isEqualTo("- #740 - Cria documento de teste do lote MKT.\n- #741 - Ajusta teste E2E do aviso de PR pendente.");
+        assertThat(explanationCaptor.getValue()).isEqualTo("- #740 - Cria doc\n- #741 - Ajusta teste");
         assertThat(explanationCaptor.getValue()).doesNotContain("Draft PR criado");
+        assertThat(explanationCaptor.getValue()).doesNotContain("documento de teste do lote MKT");
         verify(codexRequestService).markPullRequestCreatedForBatch(firstRequest, "https://github.com/paulofor/marketing-hub/pull/740");
     }
 
