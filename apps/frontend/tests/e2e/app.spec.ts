@@ -366,6 +366,59 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
 });
 
+test('dismisses a read marketing request from the dialog and restores it', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({
+    json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
+  }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
+    json: { day: { startsAt: '2026-07-27T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } }
+  }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      {
+        id: 'user-dismissable-request',
+        role: 'user',
+        content: 'Analise a campanha de remarketing já revisada.',
+        createdAt: '2026-07-27T12:00:00Z'
+      },
+      {
+        id: 'assistant-dismissable-request',
+        role: 'assistant',
+        requestId: 991,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Remarketing revisado', comentario: 'Comentário lido que pode sair da tela.', impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-27T12:01:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retirar solicitação da tela' })).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Lido' }).check();
+  await page.getByRole('button', { name: 'Retirar solicitação da tela' }).click();
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toHaveCount(0);
+  await expect(page.getByText('1 solicitação(ões) lida(s) retirada(s) da tela')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mostrar novamente' }).click();
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+});
+
 test('marks a marketing request detail comment as read', async ({ page }) => {
   const responseText = JSON.stringify({
     titulo: 'Analise pronta',

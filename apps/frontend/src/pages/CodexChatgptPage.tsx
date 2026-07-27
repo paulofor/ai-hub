@@ -94,6 +94,7 @@ const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
 const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
 const READ_COMMENTS_STORAGE_PREFIX = 'ai-hub:codex-chat-read-comments:';
+const HIDDEN_REQUESTS_STORAGE_PREFIX = 'ai-hub:codex-chat-hidden-requests:';
 const SANDBOX_ONLY_ENVIRONMENT = 'sandbox';
 
 const copyTextToClipboard = async (text: string) => {
@@ -119,11 +120,21 @@ const copyTextToClipboard = async (text: string) => {
 };
 
 const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORAGE_PREFIX}${profile}`;
+const hiddenRequestsStorageKey = (profile: CodexProfile) => `${HIDDEN_REQUESTS_STORAGE_PREFIX}${profile}`;
 
 const loadReadCommentIds = (profile: CodexProfile): Set<string> => {
   try {
     const stored = JSON.parse(window.localStorage.getItem(readCommentsStorageKey(profile)) ?? '[]');
     return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const loadHiddenRequestIds = (profile: CodexProfile): Set<number> => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(hiddenRequestsStorageKey(profile)) ?? '[]');
+    return new Set(Array.isArray(stored) ? stored.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : []);
   } catch {
     return new Set();
   }
@@ -728,11 +739,12 @@ interface AssistantMessageBodyProps {
   structuredResponse: boolean;
   commentRead?: boolean;
   onCommentReadChange?: (read: boolean) => void;
+  onDismissRequest?: () => void;
   isOrientationRequested: (orientation: string) => boolean;
   onRequestOrientation: (orientation: string) => void;
 }
 
-const AssistantMessageBody = ({ content, structuredResponse, commentRead = false, onCommentReadChange, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
+const AssistantMessageBody = ({ content, structuredResponse, commentRead = false, onCommentReadChange, onDismissRequest, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
   const structured = structuredResponse ? parseMarketingStructuredResponse(content) : null;
   const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
   const copiedTimeoutRef = useRef<number | null>(null);
@@ -796,6 +808,15 @@ const AssistantMessageBody = ({ content, structuredResponse, commentRead = false
             />
             <span>{commentRead ? 'Lido' : 'Marcar lido'}</span>
           </label> : null}
+          {commentRead && onDismissRequest ? <button
+            type="button"
+            onClick={onDismissRequest}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/80 text-slate-600 transition hover:border-rose-400 hover:bg-white hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-rose-500 dark:hover:text-rose-300"
+            title="Retirar solicitação da tela"
+            aria-label="Retirar solicitação da tela"
+          >
+            ×
+          </button> : null}
           <button
             type="button"
             onClick={() => handleCopyStructuredText('comentario', structured.comentario)}
@@ -1346,6 +1367,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [deletingSavedConversation, setDeletingSavedConversation] = useState(false);
   const [requestedOrientations, setRequestedOrientations] = useState<Set<string>>(() => new Set());
   const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
+  const [hiddenRequestIds, setHiddenRequestIds] = useState<Set<number>>(() => loadHiddenRequestIds(config.profile));
   const conversationPollInFlight = useRef(false);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1379,6 +1401,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [config.profile, readCommentIds]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(hiddenRequestsStorageKey(config.profile), JSON.stringify([...hiddenRequestIds]));
+    } catch {
+      // A ocultação continua disponível na sessão atual caso o armazenamento local esteja indisponível.
+    }
+  }, [config.profile, hiddenRequestIds]);
+
   const handleCommentReadChange = useCallback((messageId: string, read: boolean) => {
     setReadCommentIds((current) => {
       const next = new Set(current);
@@ -1389,6 +1419,18 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       }
       return next;
     });
+  }, []);
+
+  const handleDismissConversationRequest = useCallback((requestId: number) => {
+    setHiddenRequestIds((current) => {
+      const next = new Set(current);
+      next.add(requestId);
+      return next;
+    });
+  }, []);
+
+  const handleRestoreHiddenRequests = useCallback(() => {
+    setHiddenRequestIds(new Set());
   }, []);
 
   const registerTelemetry = useCallback((type: TelemetryEvent['type'], message: string) => {
@@ -2333,8 +2375,36 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     : undefined;
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
-  const visibleConversation = conversation.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
-  const hiddenConversationMessages = Math.max(0, conversation.length - visibleConversation.length);
+  const hiddenConversationMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    conversation.forEach((message, index) => {
+      if (message.role !== 'assistant' || !message.requestId || !hiddenRequestIds.has(message.requestId)) {
+        return;
+      }
+      ids.add(message.id);
+      const previousMessage = conversation[index - 1];
+      if (previousMessage?.role === 'user') {
+        ids.add(previousMessage.id);
+      }
+    });
+    return ids;
+  }, [conversation, hiddenRequestIds]);
+  const visibleConversationPool = useMemo(
+    () => conversation.filter((message) => !hiddenConversationMessageIds.has(message.id)),
+    [conversation, hiddenConversationMessageIds]
+  );
+  const dismissedConversationMessageCount = conversation.length - visibleConversationPool.length;
+  const dismissedRequestCount = useMemo(() => {
+    const requestIds = new Set<number>();
+    conversation.forEach((message) => {
+      if (message.role === 'assistant' && message.requestId && hiddenRequestIds.has(message.requestId)) {
+        requestIds.add(message.requestId);
+      }
+    });
+    return requestIds.size;
+  }, [conversation, hiddenRequestIds]);
+  const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
+  const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
   const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchPrRelevantCompleted > 0 && !activeBatchPrUrl);
@@ -2478,8 +2548,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
           <p className="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">
-            Exibimos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} mensagens para evitar peso no navegador; ao salvar, a conversa completa da sessão é preservada{hiddenConversationMessages > 0 ? ` (${hiddenConversationMessages} mensagem(ns) antiga(s) ocultas).` : '.'}
+            Exibimos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} mensagens para evitar peso no navegador; ao salvar, a conversa completa da sessão é preservada{hiddenConversationMessages > 0 ? ` (${hiddenConversationMessages} mensagem(ns) antiga(s) fora do recorte).` : '.'}
           </p>
+          {dismissedRequestCount > 0 ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-white/80 px-3 py-2 text-xs text-slate-600 dark:border-emerald-900 dark:bg-slate-900/70 dark:text-slate-300">
+            <span>
+              {dismissedRequestCount.toLocaleString('pt-BR')} solicitação(ões) lida(s) retirada(s) da tela
+              {dismissedConversationMessageCount > 0 ? ` (${dismissedConversationMessageCount.toLocaleString('pt-BR')} mensagem(ns)).` : '.'}
+            </span>
+            <button
+              type="button"
+              onClick={handleRestoreHiddenRequests}
+              className="font-semibold text-emerald-700 hover:text-emerald-800 hover:underline dark:text-emerald-300 dark:hover:text-emerald-200"
+            >
+              Mostrar novamente
+            </button>
+          </div> : null}
           {visibleConversation.map((message, messageIndex) => {
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
@@ -2519,6 +2602,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 structuredResponse={message.role === 'assistant'}
                 commentRead={readCommentIds.has(message.id)}
                 onCommentReadChange={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
+                onDismissRequest={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' && message.requestId && readCommentIds.has(message.id) ? () => handleDismissConversationRequest(message.requestId!) : undefined}
                 isOrientationRequested={isOrientationRequested}
                 onRequestOrientation={handleRequestOrientation}
               />}
