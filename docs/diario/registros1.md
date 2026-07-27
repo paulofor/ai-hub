@@ -2699,3 +2699,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing request detail comment as read"`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read|marks a marketing request detail comment as read"`; `git diff --check`.
 - Validacao visual realizada com Playwright e APIs mockadas em `/codex/requests/884`; screenshot salvo em `/tmp/aihub-detalhe-comentario-lido.png`.
 - Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nao foi criado Pull Request.
+
+## 2026-07-27 - Descrições de Pull Request somente com solicitação e título
+
+- Solicitação recebida: exibir nas descrições dos Pull Requests somente o número da solicitação e o respectivo título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend montava cada tópico da descrição do PR priorizando `resumoCodigoPr`, um resumo técnico das alterações, e usava o prompt como fallback; embora a resposta estruturada já contivesse o campo `titulo`, esse campo não era lido pelo gerador da descrição.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: os tópicos do PR agora usam exclusivamente o ID e o título da solicitação, priorizando o `titulo` da resposta estruturada, depois o título do problema associado e, para solicitações legadas sem esses dados, o prompt normalizado como título de compatibilidade.
+- Testes atualizados em `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java`: os cenários de PR individual e em lote agora garantem que a descrição contém número e título, sem incluir o resumo técnico das mudanças.
+- Validações executadas: `mvn -f apps/backend/pom.xml -Dtest=CodexControllerTest test` (11 testes aprovados) e `git diff --check`.
