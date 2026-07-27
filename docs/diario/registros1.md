@@ -2724,3 +2724,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Complemento da implementação de retirada de solicitações lidas da tela: adicionado teste e2e em `apps/frontend/tests/e2e/app.spec.ts` cobrindo marcar comentário MKT como lido, exibir o botão de retirada, ocultar pergunta e resposta, manter a ocultação após reload e restaurar com `Mostrar novamente`.
 - Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "dismisses a read marketing request"`; `git diff --check`.
 - Observação de ambiente: `npm ci` reportou 17 vulnerabilidades já existentes no grafo do frontend; nenhuma dependência foi alterada.
+
+## 2026-07-27 14:28:00 UTC - Verificacao de complementos no prompt
+
+- Solicitacao recebida: verificar se os itens opcionais de complemento de prompt realmente entram no prompt enviado quando o usuario os seleciona.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: se houvesse falha, a causa provavel seria desalinhamento entre o estado visual dos checkboxes e a montagem do `requestPrompt`; a investigacao mostrou que `buildConversationPromptFromHistory` coleta `selectedPromptHints`, inclui as `phrase` marcadas no bloco `Itens opcionais selecionados pelo usuario para complementar o prompt` e `handleRun` envia esse texto em `prompt` para `/codex/requests`.
+- Evidencias no fluxo: o backend persiste `request.getPrompt().trim()` em `CodexRequest` e em `PromptRecord`; o despacho para sandbox usa `request.getPrompt()` como `taskDescription`; o sandbox-orchestrator inclui `job.taskDescription` no conteudo enviado ao modelo.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca `Arquitetura` e `Licoes Aprendidas`, deixa `Documento Estrada` desmarcado, envia uma mensagem no MKT e intercepta o POST `/api/codex/requests` para provar que as frases marcadas entram no payload e a desmarcada nao entra.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada. Nao foi criado Pull Request.
