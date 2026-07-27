@@ -158,6 +158,12 @@
 - Mantidas apenas as portas do `caddy` (`80/443`) como ponto de entrada externo, alinhando o desenho de rede com a causa raiz do incidente de bind em host compartilhado.
 - Ajustado workflow de deploy para não exportar mais `MCP_SERVER_HTTP_PORT`, já que não há publicação externa de porta do MCP no host.
 
+## 2026-07-27 11:15:53 UTC-3
+- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: no diálogo Codex ChatGPT MKT já havia estado local para marcar comentário como lido, mas não existia uma ação posterior para retirar a solicitação já consumida da tela; por isso respostas lidas continuavam ocupando a mesma área visual e gerando confusão.
+- Implementado em `apps/frontend/src/pages/CodexChatgptPage.tsx` o estado local persistido de solicitações retiradas da tela por perfil (`localStorage`), usando o padrão já existente para comentários lidos.
+- Adicionado botão de retirar da tela no card de comentário somente quando o comentário estiver marcado como lido, ocultando a resposta do modelo e a mensagem do usuário vinculada à mesma solicitação.
+- Adicionada barra discreta para informar quantas solicitações lidas foram retiradas e permitir mostrar tudo novamente sem apagar histórico nem alterar dados no backend.
+
 ## 2026-07-22 00:59:48 UTC-3
 - Solicitação recebida: baixar/analisar o repositório no ambiente e tentar executar o Codex ChatGPT Sandbox.
 - Repositório já estava disponível no workspace local em `/root/ai-hub/src/ai-hub-a5307751-7e74-4050-bf99-ab8036fbee4c-3K0HnN/repo`.
@@ -2707,3 +2713,23 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: os tópicos do PR agora usam exclusivamente o ID e o título da solicitação, priorizando o `titulo` da resposta estruturada, depois o título do problema associado e, para solicitações legadas sem esses dados, o prompt normalizado como título de compatibilidade.
 - Testes atualizados em `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java`: os cenários de PR individual e em lote agora garantem que a descrição contém número e título, sem incluir o resumo técnico das mudanças.
 - Validações executadas: `mvn -f apps/backend/pom.xml -Dtest=CodexControllerTest test` (11 testes aprovados) e `git diff --check`.
+
+## 2026-07-27 11:17:36 UTC-3
+- Correção de registro: a entrada `2026-07-27 11:15:53 UTC-3` sobre retirar solicitações lidas da tela foi inserida antes do final do arquivo por contexto de patch, embora a política do diário exija append-only ao final.
+- Mantida a entrada anterior sem remoção, conforme política append-only; este registro final confirma a mesma alteração funcional realizada em `apps/frontend/src/pages/CodexChatgptPage.tsx`.
+- Causa raiz registrada: comentários lidos no diálogo MKT continuavam ocupando espaço porque o estado `Lido` só alterava destaque visual e não havia ação para ocultar a solicitação já consumida.
+- Solução registrada: botão `Retirar solicitação da tela` aparece apenas para comentário lido, oculta localmente a mensagem do usuário e a resposta vinculada à solicitação, persiste por perfil no `localStorage` e permite restauração por `Mostrar novamente`.
+
+## 2026-07-27 11:21:36 UTC-3
+- Complemento da implementação de retirada de solicitações lidas da tela: adicionado teste e2e em `apps/frontend/tests/e2e/app.spec.ts` cobrindo marcar comentário MKT como lido, exibir o botão de retirada, ocultar pergunta e resposta, manter a ocultação após reload e restaurar com `Mostrar novamente`.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "dismisses a read marketing request"`; `git diff --check`.
+- Observação de ambiente: `npm ci` reportou 17 vulnerabilidades já existentes no grafo do frontend; nenhuma dependência foi alterada.
+
+## 2026-07-27 14:28:00 UTC - Verificacao de complementos no prompt
+
+- Solicitacao recebida: verificar se os itens opcionais de complemento de prompt realmente entram no prompt enviado quando o usuario os seleciona.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: se houvesse falha, a causa provavel seria desalinhamento entre o estado visual dos checkboxes e a montagem do `requestPrompt`; a investigacao mostrou que `buildConversationPromptFromHistory` coleta `selectedPromptHints`, inclui as `phrase` marcadas no bloco `Itens opcionais selecionados pelo usuario para complementar o prompt` e `handleRun` envia esse texto em `prompt` para `/codex/requests`.
+- Evidencias no fluxo: o backend persiste `request.getPrompt().trim()` em `CodexRequest` e em `PromptRecord`; o despacho para sandbox usa `request.getPrompt()` como `taskDescription`; o sandbox-orchestrator inclui `job.taskDescription` no conteudo enviado ao modelo.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca `Arquitetura` e `Licoes Aprendidas`, deixa `Documento Estrada` desmarcado, envia uma mensagem no MKT e intercepta o POST `/api/codex/requests` para provar que as frases marcadas entram no payload e a desmarcada nao entra.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada. Nao foi criado Pull Request.

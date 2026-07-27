@@ -277,6 +277,77 @@ test('sandbox dialog does not render the request PR button', async ({ page }) =>
   await expect(page.getByRole('button', { name: /Pedir PR/ })).toHaveCount(0);
 });
 
+test('sends selected prompt hint phrases in the ChatGPT request prompt', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({
+    json: [{ id: 1, name: 'paulofor/marketing-hub@main' }]
+  }));
+  await page.route('**/api/account/models', (route) => route.fulfill({
+    json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
+  }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
+    json: { day: { startsAt: '2026-07-27T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } }
+  }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({
+    json: [
+      { id: 1, label: 'Arquitetura', phrase: 'Manter o padrao de arquitetura definido.', environmentId: null },
+      { id: 2, label: 'Documento Estrada', phrase: 'Leia e use como base o documento estrada.', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' },
+      { id: 3, label: 'Lições Aprendidas', phrase: 'Use as licoes aprendidas dos experimentos finalizados.', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' }
+    ]
+  }));
+
+  let createdRequestPrompt = '';
+  await page.route('**/api/codex/requests', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON() as { prompt?: string };
+      createdRequestPrompt = payload.prompt ?? '';
+      await route.fulfill({
+        json: {
+          id: 777,
+          environment: 'paulofor/marketing-hub@main',
+          model: 'gpt-5',
+          version: 'aihub-6',
+          profile: 'CHATGPT_CODEX_MKT',
+          prompt: createdRequestPrompt,
+          status: 'PENDING',
+          createdAt: '2026-07-27T14:00:00Z'
+        }
+      });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.route('**/api/codex/requests/777', (route) => route.fulfill({
+    json: {
+      id: 777,
+      environment: 'paulofor/marketing-hub@main',
+      model: 'gpt-5',
+      version: 'aihub-6',
+      profile: 'CHATGPT_CODEX_MKT',
+      prompt: createdRequestPrompt,
+      status: 'PENDING',
+      createdAt: '2026-07-27T14:00:00Z'
+    }
+  }));
+
+  await page.goto('/codex-chatgpt-mkt');
+  await page.getByRole('checkbox', { name: /Arquitetura/ }).check();
+  await page.getByRole('checkbox', { name: /Lições Aprendidas/ }).check();
+  await page.getByRole('textbox').fill('Verifique se os complementos entram no prompt.');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => createdRequestPrompt).toContain('Itens opcionais selecionados pelo usuário para complementar o prompt:');
+  expect(createdRequestPrompt).toContain('Manter o padrao de arquitetura definido.');
+  expect(createdRequestPrompt).toContain('Use as licoes aprendidas dos experimentos finalizados.');
+  expect(createdRequestPrompt).not.toContain('Leia e use como base o documento estrada.');
+  expect(createdRequestPrompt).toContain('Última mensagem do usuário:\nVerifique se os complementos entram no prompt.');
+});
+
 test('formats markdown file references with a readable filename chip', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
@@ -364,6 +435,59 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await page.reload();
   await expect(page.getByRole('checkbox', { name: 'Lido' })).toBeChecked();
   await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
+});
+
+test('dismisses a read marketing request from the dialog and restores it', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({
+    json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
+  }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
+    json: { day: { startsAt: '2026-07-27T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } }
+  }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      {
+        id: 'user-dismissable-request',
+        role: 'user',
+        content: 'Analise a campanha de remarketing já revisada.',
+        createdAt: '2026-07-27T12:00:00Z'
+      },
+      {
+        id: 'assistant-dismissable-request',
+        role: 'assistant',
+        requestId: 991,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Remarketing revisado', comentario: 'Comentário lido que pode sair da tela.', impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-27T12:01:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retirar solicitação da tela' })).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Lido' }).check();
+  await page.getByRole('button', { name: 'Retirar solicitação da tela' }).click();
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toHaveCount(0);
+  await expect(page.getByText('1 solicitação(ões) lida(s) retirada(s) da tela')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mostrar novamente' }).click();
+  await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
+  await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
 });
 
 test('marks a marketing request detail comment as read', async ({ page }) => {
