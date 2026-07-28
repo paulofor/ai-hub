@@ -2435,7 +2435,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className="min-w-[220px] rounded-lg border border-slate-200 bg-white/80 px-4 py-3 text-right shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+        <div className="fixed right-4 top-4 z-40 w-[min(220px,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white/95 px-4 py-3 text-right shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
           <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-200">
             {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}

@@ -2785,3 +2785,14 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo MKT valida a presenca dos rotulos `Solicitações` e `Interações` no quadro operacional.
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
 - Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada.
+
+## 2026-07-28 03:32:00 UTC - Quadro operacional flutuante no MKT
+
+- Solicitacao recebida: deixar o quadro de metricas `Dia operacional` flutuando na tela ao fazer scroll, sempre no canto superior direito.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o card de metricas era renderizado como elemento normal dentro do cabecalho da pagina (`position: static`), entao participava do fluxo do documento e desaparecia junto com o conteudo ao rolar a tela.
+- Alternativas avaliadas: (1) usar `position: sticky` no proprio cabecalho, simples mas limitado pela altura do ancestral; (2) duplicar o card em uma camada global, mais flexivel mas com risco de divergencia de estado; (3) tornar o card existente `fixed` no viewport com largura estavel e camada elevada. Escolhida a alternativa 3 por resolver o comportamento pedido com menor escopo e sem duplicar dados.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card `Dia operacional` agora usa posicionamento fixo no canto superior direito, fundo mais opaco, sombra e `backdrop-blur` para manter legibilidade durante o scroll.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo MKT valida que o card tem `position: fixed` e mantem a mesma posicao visual apos rolar a pagina.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada.
+- Nao foi criado Pull Request.
