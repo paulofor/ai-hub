@@ -105,11 +105,6 @@ const normalizePromptHintType = (type?: string | null): 'prompt' | 'text' =>
 const promptHintTypeLabel = (type?: string | null) =>
   normalizePromptHintType(type) === 'text' ? 'Tela' : 'Prompt';
 
-const promptHintTypeDescription = (type?: string | null) =>
-  normalizePromptHintType(type) === 'text'
-    ? 'Ao marcar, copia o texto para a caixa de solicitação para edição.'
-    : 'Ao marcar, envia o texto como contexto do prompt sem alterar a solicitação.';
-
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const appendPromptText = (current: string, phrase: string) => {
@@ -2797,18 +2792,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                           disabled={promptComposerDisabled}
                           className="mt-0.5 h-4 w-4"
                         />
-                        <span className="min-w-0">
-                          <span className="flex flex-wrap items-center gap-2">
-                            <span>{hint.label}</span>
-                            <span
-                              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300"
-                              title={promptHintTypeDescription(hint.type)}
-                            >
-                              {promptHintTypeLabel(hint.type)}
-                            </span>
-                          </span>
-                          <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
-                            {hint.phrase}
+                        <span className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span>{hint.label}</span>
+                          <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                            {promptHintTypeLabel(hint.type)}
                           </span>
                         </span>
                       </label>
@@ -2831,18 +2818,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                           disabled={promptComposerDisabled}
                           className="mt-0.5 h-4 w-4"
                         />
-                        <span className="min-w-0">
-                          <span className="flex flex-wrap items-center gap-2">
-                            <span>{hint.label}</span>
-                            <span
-                              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300"
-                              title={promptHintTypeDescription(hint.type)}
-                            >
-                              {promptHintTypeLabel(hint.type)}
-                            </span>
-                          </span>
-                          <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
-                            {hint.phrase}
+                        <span className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span>{hint.label}</span>
+                          <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                            {promptHintTypeLabel(hint.type)}
                           </span>
                         </span>
                       </label>
