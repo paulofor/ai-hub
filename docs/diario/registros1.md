@@ -2733,3 +2733,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca `Arquitetura` e `Licoes Aprendidas`, deixa `Documento Estrada` desmarcado, envia uma mensagem no MKT e intercepta o POST `/api/codex/requests` para provar que as frases marcadas entram no payload e a desmarcada nao entra.
 - Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`.
 - Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada. Nao foi criado Pull Request.
+
+## 2026-07-28 00:22:00 UTC - Diagnostico de aparente travamento do AI Hub
+
+- Solicitacao recebida: verificar se o AI Hub havia travado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o AI Hub como um todo continuava disponivel, mas a abertura da solicitacao 506 acionava repetidamente a sincronizacao do job `3fc20145-ecf5-4968-b4c7-cd212efb44d1`; a resposta JSON desse job continha uma string de 20.054.016 caracteres, acima do limite de 20.000.000 do Jackson no backend, e por isso a atualizacao do detalhe falhava e podia aparentar travamento para o usuario.
+- Evidencias operacionais: o healthcheck `GET https://iahub.xyz/mcp` respondeu HTTP 200 com `{"status":"UP"}`; todos os seis containers estavam `Up` havia quatro horas; backend, frontend e sandbox-orchestrator nao tinham reinicios observados; havia 3,8 GiB de memoria disponivel, carga de `0.48, 0.30, 0.23` e disco em 88% de uso.
+- O log do backend registrou `StreamConstraintsException: String value length (20054016) exceeds the maximum allowed (20000000)` ao executar `SandboxOrchestratorClient.getJob`, seguido por novas tentativas de atualizar a CodexRequest 506.
+- Conclusao: nao foi confirmada indisponibilidade geral nem esgotamento de CPU/memoria; o problema ficou isolado ao payload excepcionalmente grande do job associado a solicitacao 506. Nenhuma correcao funcional ou reinicio foi realizado nesta verificacao.
+
+## 2026-07-28 00:30:00 UTC - Correcao de payloads excessivos do sandbox-orchestrator
+
+- Solicitacao recebida: definir e aplicar o que poderia ser feito para impedir a recorrencia do aparente travamento observado na solicitacao 506.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: polling e callback serializavam o objeto interno completo do job sem um contrato de transporte limitado. No job investigado, isso incluiu um patch de 32.213.578 caracteres, interacoes e logs de aproximadamente 3 MB cada e o anexo original de aproximadamente 3 MB, formando uma resposta de 46.735.337 caracteres; o patch isoladamente excedeu o limite de string de 20.000.000 do Jackson no backend.
+- Correcao aplicada: polling e callback agora compartilham um construtor de payload que remove anexos, logs e logs de download; patches acima de 5.000.000 de caracteres sao preservados no job, mas omitidos do transporte e sinalizados com `patchTruncated=true` e `patchSize`.
+- O limite pode ser configurado por `SANDBOX_JOB_PATCH_RESPONSE_MAX_CHARS`. A solucao nao aumenta o limite do Jackson, evitando apenas transferir e persistir dados operacionais excessivos.
+- Teste automatizado adicionado para validar a omissao do patch grande e dos campos internos sem modificar o job armazenado. O build e o novo teste isolado passaram; a suite completa terminou com 72/73 porque o teste preexistente `aplica limite ampliado para ferramentas de inspeção` sofreu interferencia concorrente em variaveis globais de ambiente, sem relacao com o construtor de payload.

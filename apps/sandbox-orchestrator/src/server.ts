@@ -8,6 +8,7 @@ import path from 'node:path';
 import { CodexAppServerClient } from './codexAppServerClient.js';
 import { cancelCodexLogin, logoutCodexAccount, readCodexAccount, startCodexLogin } from './codexAppServerAuth.js';
 import { SandboxJobProcessor } from './jobProcessor.js';
+import { buildJobPayload } from './jobPayload.js';
 import { JobProcessor, SandboxDatabaseConfig, SandboxImageAttachment, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
@@ -117,25 +118,7 @@ function normalizeDatabaseConfig(raw: unknown): SandboxDatabaseConfig | undefine
 }
 
 function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
-  const sanitized: SandboxJob = {
-    ...job,
-    accessToken: undefined,
-    githubToken: undefined,
-    callbackSecret: undefined,
-    interactionCount: Math.max(
-      ...[
-        job.interactionCount,
-        Number.isFinite(job.interactionSequence) ? job.interactionSequence : undefined,
-        Array.isArray(job.interactions) ? job.interactions.length : undefined,
-      ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value)),
-      0,
-    ),
-  };
-  if (job.database) {
-    const { password: _password, ...database } = job.database;
-    sanitized.database = database;
-  }
-  return sanitized;
+  return buildJobPayload(job);
 }
 
 export function createApp(options: AppOptions = {}) {
