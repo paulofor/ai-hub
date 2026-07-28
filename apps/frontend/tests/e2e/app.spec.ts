@@ -341,11 +341,14 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.getByRole('textbox').fill('Verifique se os complementos entram no prompt.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => createdRequestPrompt).toContain('Itens opcionais selecionados pelo usuário para complementar o prompt:');
+  await expect.poll(() => createdRequestPrompt).toContain('Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:');
   expect(createdRequestPrompt).toContain('Manter o padrao de arquitetura definido.');
   expect(createdRequestPrompt).toContain('Use as licoes aprendidas dos experimentos finalizados.');
   expect(createdRequestPrompt).not.toContain('Leia e use como base o documento estrada.');
   expect(createdRequestPrompt).toContain('Última mensagem do usuário:\nVerifique se os complementos entram no prompt.');
+  expect(createdRequestPrompt.indexOf('Contexto prioritário selecionado pelo usuário')).toBeLessThan(
+    createdRequestPrompt.indexOf('Última mensagem do usuário:')
+  );
 });
 
 test('formats markdown file references with a readable filename chip', async ({ page }) => {
