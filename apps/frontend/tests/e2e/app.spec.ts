@@ -512,6 +512,79 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
 });
 
+test('scrolls from the marketing prompt editor to the first unread model response', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-28T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 1000 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/products', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-read-comments:CHATGPT_CODEX_MKT', JSON.stringify(['assistant-read']));
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      {
+        id: 'user-read',
+        role: 'user',
+        content: 'Analise a primeira campanha.',
+        createdAt: '2026-07-28T11:00:00Z'
+      },
+      {
+        id: 'assistant-read',
+        role: 'assistant',
+        requestId: 1001,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Primeira leitura', comentario: 'Comentário já lido que deve ser pulado.', impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-28T11:01:00Z'
+      },
+      {
+        id: 'user-unread',
+        role: 'user',
+        content: 'Analise a segunda campanha.',
+        createdAt: '2026-07-28T11:02:00Z'
+      },
+      {
+        id: 'assistant-unread',
+        role: 'assistant',
+        requestId: 1002,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Resposta pendente', comentario: 'Comentário pendente alvo para leitura.', impactoAumentoVendas: 'alto', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-28T11:03:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+  await page.locator('textarea[placeholder^="Digite sua solicitação"]').scrollIntoViewIfNeeded();
+
+  const unreadButton = page.getByRole('button', { name: 'Ir para primeira resposta não lida' });
+  await expect(unreadButton).toBeEnabled();
+  await unreadButton.click();
+
+  const unreadArticle = page.getByText('Comentário pendente alvo para leitura.').locator('xpath=ancestor::article[1]');
+  await expect(unreadArticle).toBeFocused();
+  await expect(page.getByText('Comentário já lido que deve ser pulado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
+});
+
 test('marks a marketing request detail comment as read', async ({ page }) => {
   const responseText = JSON.stringify({
     titulo: 'Analise pronta',

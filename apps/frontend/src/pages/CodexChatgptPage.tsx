@@ -1375,6 +1375,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const conversationPollInFlight = useRef(false);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useModelResponseTabMarker(conversation, config.title);
 
@@ -2409,6 +2410,28 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [conversation, hiddenRequestIds]);
   const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
   const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
+  const firstUnreadModelResponseId = useMemo(() => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT') {
+      return null;
+    }
+    const firstUnreadMessage = visibleConversation.find((message) =>
+      message.role === 'assistant'
+      && !readCommentIds.has(message.id)
+      && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+    );
+    return firstUnreadMessage?.id ?? null;
+  }, [config.profile, readCommentIds, visibleConversation]);
+  const handleScrollToFirstUnreadModelResponse = useCallback(() => {
+    if (!firstUnreadModelResponseId) {
+      return;
+    }
+    const element = conversationMessageRefs.current.get(firstUnreadModelResponseId);
+    if (!element) {
+      return;
+    }
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.focus({ preventScroll: true });
+  }, [firstUnreadModelResponseId]);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
   const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchPrRelevantCompleted > 0 && !activeBatchPrUrl);
@@ -2584,7 +2607,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {visibleConversation.map((message, messageIndex) => {
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
-            return <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${
+            return <article
+              key={message.id}
+              ref={(element) => {
+                if (element) {
+                  conversationMessageRefs.current.set(message.id, element);
+                } else {
+                  conversationMessageRefs.current.delete(message.id);
+                }
+              }}
+              tabIndex={message.id === firstUnreadModelResponseId ? -1 : undefined}
+              className={`rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
               message.role === 'user'
                 ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100'
                 : message.role === 'system'
@@ -2645,6 +2678,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
           {products.map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
         </select> : null}
+        {config.profile === 'CHATGPT_CODEX_MKT' && conversation.length > 0 ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleScrollToFirstUnreadModelResponse}
+              disabled={!firstUnreadModelResponseId}
+              className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:border-amber-400 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50 dark:disabled:border-slate-800 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+              title={firstUnreadModelResponseId ? 'Ir para a primeira resposta do modelo ainda não lida' : 'Não há resposta do modelo pendente de leitura'}
+              aria-label="Ir para primeira resposta não lida"
+            >
+              <span aria-hidden="true">↑</span>
+              <span>Primeira resposta não lida</span>
+            </button>
+          </div>
+        ) : null}
         <textarea ref={promptTextareaRef} value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
