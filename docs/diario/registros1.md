@@ -2775,3 +2775,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario de envio com itens marcados agora valida o novo rotulo e confirma que o contexto prioritario vem antes da ultima mensagem do usuario.
 - Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`.
 - Observacao de ambiente: o primeiro `npm ci` falhou por `node_modules` parcial/inconsistente (`ENOTEMPTY` em `@types/node`); removido apenas o artefato local `apps/frontend/node_modules` e repetida a instalacao limpa. O `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend.
+
+## 2026-07-28 03:18:00 UTC - Metricas do dia no quadro operacional do MKT
+
+- Solicitacao recebida: adicionar no quadro `Dia operacional` do Codex ChatGPT MKT as metricas de solicitacoes e interacoes do dia.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o endpoint `/codex/requests/metrics` ja retornava `requestCount` e `interactionCount`, mas o card operacional em `CodexChatgptPage.tsx` renderizava apenas data do dia operacional e tempo de processamento; a lacuna estava na apresentacao, nao no contrato de dados.
+- Alternativas avaliadas: (1) criar novos cards separados, daria mais destaque mas ocuparia mais tela; (2) adicionar as metricas no card existente, menor esforco e exatamente aderente ao pedido do usuario; (3) alterar o backend para criar um payload especifico do MKT, mais complexo e desnecessario porque os dados ja existem. Escolhida a alternativa 2.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card `Dia operacional` agora exibe solicitacoes e interacoes do dia ao lado do tempo acumulado.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo MKT valida a presenca dos rotulos `Solicitações` e `Interações` no quadro operacional.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada.
