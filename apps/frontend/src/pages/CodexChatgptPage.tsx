@@ -193,6 +193,10 @@ const formatDocumentAccessCount = (count?: number) => {
   return `${count.toLocaleString('pt-BR')} ${count === 1 ? 'documento' : 'documentos'}`;
 };
 
+const formatMetricNumber = (value?: number) => {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('pt-BR') : '—';
+};
+
 const formatOperationalDayDate = (value?: string) => {
   if (!value) {
     return '—';
@@ -2439,6 +2443,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <p className="mt-1 text-lg font-semibold text-emerald-700 dark:text-emerald-300">
             {formatDuration(dailyMetrics?.day?.durationMs)}
           </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/80">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Solicitações</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {formatMetricNumber(dailyMetrics?.day?.requestCount)}
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/80">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Interações</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {formatMetricNumber(dailyMetrics?.day?.interactionCount)}
+              </p>
+            </div>
+          </div>
           <p className="mt-1 text-[11px] text-slate-500">Corte às 03:00 · São Paulo</p>
         </div>
       </div>

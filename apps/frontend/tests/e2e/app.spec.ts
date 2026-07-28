@@ -406,7 +406,7 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
-    json: { day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } }
+    json: { day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 } }
   }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -424,6 +424,12 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   });
 
   await page.goto('/codex-chatgpt-mkt');
+
+  const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[1]');
+  await expect(operationalDayCard.getByText('Solicitações')).toBeVisible();
+  await expect(operationalDayCard.getByText('Interações')).toBeVisible();
+  await expect(operationalDayCard.getByText('3', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByText('12', { exact: true })).toBeVisible();
 
   const commentCard = page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]');
   const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
