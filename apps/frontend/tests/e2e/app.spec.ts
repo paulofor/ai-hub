@@ -341,6 +341,9 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.getByRole('checkbox', { name: /Lições Aprendidas/ }).check();
   await expect(page.getByText('Prompt', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Tela', { exact: true })).toBeVisible();
+  await expect(page.getByText('Manter o padrao de arquitetura definido.')).toHaveCount(0);
+  await expect(page.getByText('Use as licoes aprendidas dos experimentos finalizados.')).toHaveCount(0);
+  await expect(page.getByText('Leia e use como base o documento estrada.')).toHaveCount(0);
   await page.getByRole('checkbox', { name: /Texto editável/ }).check();
   const promptTextarea = page.getByPlaceholder(/Digite sua solicitação de análise de marketing/);
   await expect(promptTextarea).toHaveValue('Texto inicial para editar antes de enviar.');

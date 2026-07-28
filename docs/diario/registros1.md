@@ -2405,6 +2405,16 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Observacao de ambiente: antes do `npm ci`, build/lint falharam por dependencias de dev ausentes e toolchain global incompatível; apos instalar pelo lockfile do frontend, as validacoes passaram. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
 - Nao foi criado Pull Request.
 
+## 2026-07-28 19:45:12 UTC - Lista de itens opcionais MKT mais limpa
+
+- Solicitacao recebida: na tela de escolha de item do Codex ChatGPT MKT, deixar somente o titulo e o tipo porque o excesso de informacao estava poluindo a tela.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a lista de selecao dos itens opcionais renderizava tambem a frase completa de cada item, alem do titulo e do badge de tipo; como alguns itens carregam textos longos de contexto, a area de escolha virou uma pre-visualizacao de conteudo em vez de um controle rapido de selecao.
+- Alternativas avaliadas: (1) truncar a frase em uma linha, reduziria altura mas manteria ruido e risco de informacao irrelevante; (2) esconder a frase em tooltip, preservaria consulta sob demanda mas ainda deixaria comportamento secundario na lista; (3) renderizar apenas titulo e tipo, mantendo a frase somente na logica de envio/copia. Escolhida a alternativa 3 por aderir diretamente ao pedido e reduzir a poluicao visual sem alterar o funcionamento dos itens.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: a selecao de itens opcionais do MKT agora exibe apenas `label` e o badge `Prompt`/`Tela`, removendo a frase longa da lista.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo de envio MKT valida que os badges de tipo continuam visiveis e que as frases dos itens nao aparecem na lista de escolha, preservando o uso correto no prompt final.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhum Pull Request foi criado.
+
 ## 2026-07-23 UTC-3 - Origem fixa do repositorio de codigo
 
 - Solicitacao recebida: considerar que o usuario sempre sera `paulofor`, o repositorio sempre sera `ai-hub` e a branch sempre sera `main` na configuracao usada para calcular as ultimas alteracoes dos modulos.
