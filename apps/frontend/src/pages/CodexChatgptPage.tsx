@@ -93,6 +93,7 @@ const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
+const MAX_ACTIVE_CONVERSATION_REQUESTS = 20;
 const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
 const READ_COMMENTS_STORAGE_PREFIX = 'ai-hub:codex-chat-read-comments:';
 const HIDDEN_REQUESTS_STORAGE_PREFIX = 'ai-hub:codex-chat-hidden-requests:';
@@ -1943,41 +1944,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     );
     return firstUnreadMessage?.id ?? null;
   }, [config.profile, readCommentIds, visibleConversation]);
-  const dialogOnlyHasPendingOrUnreadRequests = useMemo(() => {
-    if (config.profile !== 'CHATGPT_CODEX_MKT' || visibleConversation.length === 0) {
-      return false;
-    }
-
-    const requestMessages = visibleConversation.filter((message) => message.role === 'user' || message.role === 'assistant');
-    if (requestMessages.length === 0) {
-      return false;
-    }
-
-    return requestMessages.every((message, index) => {
-      if (message.role === 'user') {
-        const nextMessage = requestMessages[index + 1];
-        if (nextMessage?.role !== 'assistant') {
-          return false;
-        }
-        if (nextMessage.status && !isTerminalStatus(nextMessage.status)) {
-          return true;
-        }
-        return Boolean(parseMarketingStructuredResponse(nextMessage.content)?.comentario)
-          && !readCommentIds.has(nextMessage.id);
-      }
-
-      if (message.role === 'assistant' && message.status && !isTerminalStatus(message.status)) {
-        return true;
-      }
-
-      return message.role === 'assistant'
-        && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
-        && !readCommentIds.has(message.id);
-    });
-  }, [config.profile, readCommentIds, visibleConversation]);
-  const promptComposerDisabled = dialogOnlyHasPendingOrUnreadRequests;
+  const activeConversationRequestCount = useMemo(() => new Set(conversation
+    .filter((message) => message.role === 'assistant'
+      && message.requestId
+      && message.status
+      && !isTerminalStatus(message.status))
+    .map((message) => message.requestId as number)).size, [conversation]);
+  const promptComposerDisabled = config.profile === 'CHATGPT_CODEX_MKT'
+    && activeConversationRequestCount >= MAX_ACTIVE_CONVERSATION_REQUESTS;
   const promptComposerDisabledReason = promptComposerDisabled
-    ? 'Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação.'
+    ? `Aguarde: as ${MAX_ACTIVE_CONVERSATION_REQUESTS} posições estão ocupadas por solicitações pendentes ou em processamento.`
     : '';
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {

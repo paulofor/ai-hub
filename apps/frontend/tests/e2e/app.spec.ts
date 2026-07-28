@@ -597,7 +597,7 @@ test('scrolls from the marketing prompt editor to the first unread model respons
   await expect(page.getByText('Comentário já lido que deve ser pulado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
 });
 
-test('disables the marketing prompt composer when every dialog request is pending or unread', async ({ page }) => {
+test('disables the marketing prompt composer only when all 20 request positions are active', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
@@ -610,7 +610,7 @@ test('disables the marketing prompt composer when every dialog request is pendin
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
-    await route.fulfill({ json: { day: { startsAt: '2026-07-28T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 1000 } } });
+    await route.fulfill({ json: { day: { startsAt: '2026-07-28T00:00:00Z', requestCount: 20, interactionCount: 20, durationMs: 1000 } } });
   });
   await page.route('**/api/codex/conversations?**', async (route) => {
     await route.fulfill({ json: [] });
@@ -624,62 +624,38 @@ test('disables the marketing prompt composer when every dialog request is pendin
   await page.route('**/api/codex/requests?**', async (route) => {
     await route.fulfill({ json: { content: [] } });
   });
-  await page.route('**/api/codex/requests/2001', async (route) => {
-    await route.fulfill({
-      json: {
-        id: 2001,
-        environment: 'paulofor/marketing-hub@main',
-        model: 'gpt-5',
-        version: 'aihub-6',
-        profile: 'CHATGPT_CODEX_MKT',
-        prompt: 'Analise a campanha ainda em execução.',
-        status: 'RUNNING',
-        createdAt: '2026-07-28T13:00:00Z'
-      }
-    });
-  });
   await page.addInitScript(() => {
-    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
-      {
-        id: 'user-running',
-        role: 'user',
-        content: 'Analise a campanha ainda em execução.',
-        createdAt: '2026-07-28T13:00:00Z'
-      },
-      {
-        id: 'assistant-running',
-        role: 'assistant',
-        requestId: 2001,
-        status: 'RUNNING',
-        content: 'Aguardando resposta do modelo... (Em execução)',
-        createdAt: '2026-07-28T13:01:00Z'
-      },
-      {
-        id: 'user-unread-blocking',
-        role: 'user',
-        content: 'Analise a campanha concluída.',
-        createdAt: '2026-07-28T13:02:00Z'
-      },
-      {
-        id: 'assistant-unread-blocking',
-        role: 'assistant',
-        requestId: 2002,
-        status: 'COMPLETED',
-        content: JSON.stringify({ titulo: 'Campanha concluída', comentario: 'Comentário ainda não lido para destravar o campo.', impactoAumentoVendas: 'alto', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
-        createdAt: '2026-07-28T13:03:00Z'
-      }
-    ]));
+    if (window.sessionStorage.getItem('capacity-fixture-loaded')) return;
+    window.sessionStorage.setItem('capacity-fixture-loaded', 'true');
+    const conversation = Array.from({ length: 20 }, (_, index) => [{
+      id: `user-active-${index}`,
+      role: 'user',
+      content: `Solicitação ativa ${index + 1}`,
+      createdAt: '2026-07-28T13:00:00Z'
+    }, {
+      id: `assistant-active-${index}`,
+      role: 'assistant',
+      requestId: 2001 + index,
+      status: index % 2 === 0 ? 'PENDING' : 'RUNNING',
+      content: 'Aguardando resposta do modelo...',
+      createdAt: '2026-07-28T13:01:00Z'
+    }]).flat();
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify(conversation));
   });
 
   await page.goto('/codex-chatgpt-mkt');
 
-  const promptEditor = page.locator('textarea[placeholder="Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação."]');
-  await expect(page.getByText('Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação.')).toBeVisible();
-  await expect(promptEditor).toBeDisabled();
+  const capacityMessage = 'Aguarde: as 20 posições estão ocupadas por solicitações pendentes ou em processamento.';
+  await expect(page.getByText(capacityMessage)).toBeVisible();
+  await expect(page.locator(`textarea[placeholder="${capacityMessage}"]`)).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Enviar mensagem' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Ir para primeira resposta não lida' })).toBeEnabled();
 
-  await page.getByRole('checkbox', { name: 'Lido' }).check();
+  await page.evaluate(() => {
+    const stored = JSON.parse(window.localStorage.getItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT') || '[]');
+    stored[stored.length - 1].status = 'COMPLETED';
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify(stored));
+    window.location.reload();
+  });
   await expect(page.locator('textarea[placeholder^="Digite sua solicitação"]')).toBeEnabled();
 });
 
