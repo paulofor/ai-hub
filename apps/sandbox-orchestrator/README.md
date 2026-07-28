@@ -1,5 +1,7 @@
 # Sandbox Orchestrator
 
+As respostas de polling e callback omitem dados volumosos exclusivos da execução (anexos e logs). Patches acima de `SANDBOX_JOB_PATCH_RESPONSE_MAX_CHARS` (5 milhões de caracteres por padrão) permanecem no job em memória, mas são omitidos do payload com `patchTruncated=true` e o tamanho original em `patchSize`, evitando que respostas grandes bloqueiem a sincronização do backend.
+
 Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox temporário (clone do repositório) e orquestrar o loop de tool-calling com o modelo `gpt-5-codex` via Responses API.
 
 ## Scripts disponíveis

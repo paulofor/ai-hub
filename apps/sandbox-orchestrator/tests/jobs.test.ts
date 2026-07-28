@@ -7,6 +7,7 @@ import path from 'node:path';
 import request from 'supertest';
 
 import { createApp } from '../src/server.js';
+import { buildJobPayload } from '../src/jobPayload.js';
 import { openAIClientConfigForTests, SandboxJobProcessor } from '../src/jobProcessor.js';
 import { JobProcessor, SandboxJob } from '../src/types.js';
 
@@ -318,6 +319,36 @@ test('não expõe o callbackSecret nas respostas', async () => {
 
   const stored = registry.get(payload.jobId);
   assert.equal(stored?.callbackSecret, 'super-secret');
+});
+
+test('limita payload de polling e callback sem alterar o job armazenado', () => {
+  const job = {
+      jobId: 'job-large-patch',
+      branch: 'main',
+      taskDescription: 'large patch test',
+      status: 'COMPLETED',
+      patch: 'x'.repeat(21),
+      imageAttachments: [{ dataUrl: 'data:image/png;base64,large-request-only-data' }],
+      logs: ['large runtime log'],
+      downloadLogs: [],
+      sandboxPath: '/tmp/private-workspace',
+      interactions: [],
+      interactionSequence: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeoutCount: 0,
+  } satisfies SandboxJob;
+
+  const payload = buildJobPayload(job, 20);
+
+  assert.equal(payload.patch, undefined);
+  assert.equal(payload.patchTruncated, true);
+  assert.equal(payload.patchSize, 21);
+  assert.equal(payload.imageAttachments, undefined);
+  assert.equal(payload.logs, undefined);
+  assert.equal(payload.downloadLogs, undefined);
+  assert.equal(payload.sandboxPath, '/tmp/private-workspace');
+  assert.equal(job.patch, 'x'.repeat(21), 'o registro interno deve preservar o patch completo');
 });
 
 

@@ -85,6 +85,8 @@ export interface SandboxJob {
   interactionCount?: number;
   changedFiles?: string[];
   patch?: string;
+  patchTruncated?: boolean;
+  patchSize?: number;
   pullRequestUrl?: string;
   error?: string;
   sandboxPath?: string;
