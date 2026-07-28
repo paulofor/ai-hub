@@ -65,6 +65,7 @@ interface PromptHintOption {
   id: number;
   label: string;
   phrase: string;
+  type?: 'prompt' | 'text' | string | null;
   environmentId?: number | null;
   environmentName?: string | null;
 }
@@ -96,6 +97,38 @@ const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
 const READ_COMMENTS_STORAGE_PREFIX = 'ai-hub:codex-chat-read-comments:';
 const HIDDEN_REQUESTS_STORAGE_PREFIX = 'ai-hub:codex-chat-hidden-requests:';
 const SANDBOX_ONLY_ENVIRONMENT = 'sandbox';
+
+const normalizePromptHintType = (type?: string | null): 'prompt' | 'text' =>
+  type?.toLowerCase() === 'text' ? 'text' : 'prompt';
+
+const promptHintTypeLabel = (type?: string | null) =>
+  normalizePromptHintType(type) === 'text' ? 'Tela' : 'Prompt';
+
+const promptHintTypeDescription = (type?: string | null) =>
+  normalizePromptHintType(type) === 'text'
+    ? 'Ao marcar, copia o texto para a caixa de solicitação para edição.'
+    : 'Ao marcar, envia o texto como contexto do prompt sem alterar a solicitação.';
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const appendPromptText = (current: string, phrase: string) => {
+  const trimmedPhrase = phrase.trim();
+  if (!trimmedPhrase) {
+    return current;
+  }
+  const trimmedCurrent = current.trimEnd();
+  return trimmedCurrent ? `${trimmedCurrent}\n\n${trimmedPhrase}` : trimmedPhrase;
+};
+
+const removePromptText = (current: string, phrase: string) => {
+  const trimmedPhrase = phrase.trim();
+  if (!trimmedPhrase) {
+    return current;
+  }
+  return current
+    .replace(new RegExp(`\\n{0,2}${escapeRegExp(trimmedPhrase)}\\s*$`), '')
+    .trimEnd();
+};
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -1208,7 +1241,7 @@ interface CodexChatgptVariantConfig {
 }
 
 const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
-const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas; quando a solicitação envolver frontend, layout, UI ou experiência visual, use Playwright para validar localmente e gerar screenshots sempre que possível.';
+const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas. A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium, usando dispositivos de @playwright/test como devices["iPhone 15 Pro"] ou devices["Pixel 7"]; sempre que precisar testar uma URL como usuário de celular, use esse recurso para abrir a página com viewport, user agent, touch e deviceScaleFactor de celular, gerar screenshots e validar interações. Para vídeos, áudio e animações em mobile, combine essa emulação com sandbox-media-player, ffmpeg e ffprobe para testar reprodução, duração, frames, sincronia, controles nativos e comportamento visual no layout mobile.';
 const CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION = 'A sandbox dos modelos possui ffmpeg e ffprobe disponíveis pelos comandos ffmpeg e ffprobe; quando a solicitação envolver vídeos, use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails e sintetizar mídias de teste, e use ffprobe para inspecionar metadados, codecs, resolução, duração, streams e integridade básica. O comando sandbox-media-player <arquivo-video-ou-audio> [saida.html] gera um player HTML local com controles nativos de vídeo/áudio; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.';
 
 const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
@@ -1375,6 +1408,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const conversationPollInFlight = useRef(false);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useModelResponseTabMarker(conversation, config.title);
 
@@ -1452,8 +1486,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
   }, []);
 
-  const handlePromptHintToggle = useCallback((hintId: number, checked: boolean) => {
+  const handlePromptHintToggle = useCallback((hint: PromptHintOption, checked: boolean) => {
+    if (normalizePromptHintType(hint.type) === 'text') {
+      setPrompt((current) => checked ? appendPromptText(current, hint.phrase) : removePromptText(current, hint.phrase));
+      window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+    }
     setSelectedPromptHintIds((current) => {
+      const hintId = hint.id;
       if (checked) {
         return current.includes(hintId) ? current : [...current, hintId];
       }
@@ -1839,6 +1878,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? `Antes de começar leia o documento em http://191.252.181.168:8000/api/products/public/${selectedProduct.slug}/marketing-definition.md e use como fonte de verdade sobre o PDE.`
       : '';
     const selectedPromptHintPhrases = selectedPromptHints
+      .filter((hint) => normalizePromptHintType(hint.type) === 'prompt')
       .map((hint) => hint.phrase.trim())
       .filter((value) => value.length > 0);
     return [
@@ -1861,6 +1901,84 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     : request.status === 'CANCELLED'
       ? `Solicitação #${request.id} cancelada. Nenhuma nova resposta será gerada para esta mensagem.`
       : 'Resposta ainda não disponível.'), []);
+
+  const hiddenConversationMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    conversation.forEach((message, index) => {
+      if (message.role !== 'assistant' || !message.requestId || !hiddenRequestIds.has(message.requestId)) {
+        return;
+      }
+      ids.add(message.id);
+      const previousMessage = conversation[index - 1];
+      if (previousMessage?.role === 'user') {
+        ids.add(previousMessage.id);
+      }
+    });
+    return ids;
+  }, [conversation, hiddenRequestIds]);
+  const visibleConversationPool = useMemo(
+    () => conversation.filter((message) => !hiddenConversationMessageIds.has(message.id)),
+    [conversation, hiddenConversationMessageIds]
+  );
+  const dismissedConversationMessageCount = conversation.length - visibleConversationPool.length;
+  const dismissedRequestCount = useMemo(() => {
+    const requestIds = new Set<number>();
+    conversation.forEach((message) => {
+      if (message.role === 'assistant' && message.requestId && hiddenRequestIds.has(message.requestId)) {
+        requestIds.add(message.requestId);
+      }
+    });
+    return requestIds.size;
+  }, [conversation, hiddenRequestIds]);
+  const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
+  const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
+  const firstUnreadModelResponseId = useMemo(() => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT') {
+      return null;
+    }
+    const firstUnreadMessage = visibleConversation.find((message) =>
+      message.role === 'assistant'
+      && !readCommentIds.has(message.id)
+      && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+    );
+    return firstUnreadMessage?.id ?? null;
+  }, [config.profile, readCommentIds, visibleConversation]);
+  const dialogOnlyHasPendingOrUnreadRequests = useMemo(() => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT' || visibleConversation.length === 0) {
+      return false;
+    }
+
+    const requestMessages = visibleConversation.filter((message) => message.role === 'user' || message.role === 'assistant');
+    if (requestMessages.length === 0) {
+      return false;
+    }
+
+    return requestMessages.every((message, index) => {
+      if (message.role === 'user') {
+        const nextMessage = requestMessages[index + 1];
+        if (nextMessage?.role !== 'assistant') {
+          return false;
+        }
+        if (nextMessage.status && !isTerminalStatus(nextMessage.status)) {
+          return true;
+        }
+        return Boolean(parseMarketingStructuredResponse(nextMessage.content)?.comentario)
+          && !readCommentIds.has(nextMessage.id);
+      }
+
+      if (message.role === 'assistant' && message.status && !isTerminalStatus(message.status)) {
+        return true;
+      }
+
+      return message.role === 'assistant'
+        && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+        && !readCommentIds.has(message.id);
+    });
+  }, [config.profile, readCommentIds, visibleConversation]);
+  const promptComposerDisabled = dialogOnlyHasPendingOrUnreadRequests;
+  const promptComposerDisabledReason = promptComposerDisabled
+    ? 'Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação.'
+    : '';
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     setConversation((current) => current.map((message) => {
@@ -1973,6 +2091,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (promptComposerDisabled) {
+      setError(promptComposerDisabledReason);
+      return;
+    }
     if (!isExecutable) {
       setError('Conta ChatGPT não executável pelo Codex App Server. Reconecte para executar.');
       return;
@@ -2013,7 +2135,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry, selectedEnvironment]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment]);
 
 
   useEffect(() => {
@@ -2379,36 +2501,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     : undefined;
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
-  const hiddenConversationMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    conversation.forEach((message, index) => {
-      if (message.role !== 'assistant' || !message.requestId || !hiddenRequestIds.has(message.requestId)) {
-        return;
-      }
-      ids.add(message.id);
-      const previousMessage = conversation[index - 1];
-      if (previousMessage?.role === 'user') {
-        ids.add(previousMessage.id);
-      }
-    });
-    return ids;
-  }, [conversation, hiddenRequestIds]);
-  const visibleConversationPool = useMemo(
-    () => conversation.filter((message) => !hiddenConversationMessageIds.has(message.id)),
-    [conversation, hiddenConversationMessageIds]
-  );
-  const dismissedConversationMessageCount = conversation.length - visibleConversationPool.length;
-  const dismissedRequestCount = useMemo(() => {
-    const requestIds = new Set<number>();
-    conversation.forEach((message) => {
-      if (message.role === 'assistant' && message.requestId && hiddenRequestIds.has(message.requestId)) {
-        requestIds.add(message.requestId);
-      }
-    });
-    return requestIds.size;
-  }, [conversation, hiddenRequestIds]);
-  const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
-  const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
+  const handleScrollToFirstUnreadModelResponse = useCallback(() => {
+    if (!firstUnreadModelResponseId) {
+      return;
+    }
+    const element = conversationMessageRefs.current.get(firstUnreadModelResponseId);
+    if (!element) {
+      return;
+    }
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.focus({ preventScroll: true });
+  }, [firstUnreadModelResponseId]);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
   const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchPrRelevantCompleted > 0 && !activeBatchPrUrl);
@@ -2435,29 +2538,29 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className="fixed right-4 top-4 z-40 w-[min(220px,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white/95 px-4 py-3 text-right shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
-          <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+        <div className="fixed right-4 top-4 z-40 w-[min(196px,calc(100vw-2rem))] rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
+          <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
             {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
           </p>
-          <p className="mt-1 text-lg font-semibold text-emerald-700 dark:text-emerald-300">
+          <p className="text-base font-semibold leading-5 text-emerald-700 dark:text-emerald-300">
             {formatDuration(dailyMetrics?.day?.durationMs)}
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-center">
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/80">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Solicitações</p>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          <div className="mt-2 grid grid-cols-2 gap-1.5 text-center">
+            <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Solicitações</p>
+              <p className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-100">
                 {formatMetricNumber(dailyMetrics?.day?.requestCount)}
               </p>
             </div>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/80">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Interações</p>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Interações</p>
+              <p className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-100">
                 {formatMetricNumber(dailyMetrics?.day?.interactionCount)}
               </p>
             </div>
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">Corte às 03:00 · São Paulo</p>
+          <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
         </div>
       </div>
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-4">
@@ -2584,7 +2687,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {visibleConversation.map((message, messageIndex) => {
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
-            return <article key={message.id} className={`rounded-lg px-3 py-2 text-sm ${
+            return <article
+              key={message.id}
+              ref={(element) => {
+                if (element) {
+                  conversationMessageRefs.current.set(message.id, element);
+                } else {
+                  conversationMessageRefs.current.delete(message.id);
+                }
+              }}
+              tabIndex={message.id === firstUnreadModelResponseId ? -1 : undefined}
+              className={`rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
               message.role === 'user'
                 ? 'ml-auto max-w-3xl bg-emerald-100 text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100'
                 : message.role === 'system'
@@ -2645,10 +2758,38 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
           {products.map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
         </select> : null}
-        <textarea ref={promptTextareaRef} value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
+        {config.profile === 'CHATGPT_CODEX_MKT' && conversation.length > 0 ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleScrollToFirstUnreadModelResponse}
+              disabled={!firstUnreadModelResponseId}
+              className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:border-amber-400 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50 dark:disabled:border-slate-800 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+              title={firstUnreadModelResponseId ? 'Ir para a primeira resposta do modelo ainda não lida' : 'Não há resposta do modelo pendente de leitura'}
+              aria-label="Ir para primeira resposta não lida"
+            >
+              <span aria-hidden="true">↑</span>
+              <span>Primeira resposta não lida</span>
+            </button>
+          </div>
+        ) : null}
+        {promptComposerDisabled ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          {promptComposerDisabledReason}
+        </p> : null}
+        <textarea
+          ref={promptTextareaRef}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onPaste={handlePromptPaste}
+          rows={5}
+          placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
+          className="w-full rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+          required
+          disabled={promptComposerDisabled}
+        />
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
+            <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para usar na solicitação</p>
             <Link
               to="/prompt-hints"
               className="text-xs font-semibold text-emerald-600 hover:text-emerald-500"
@@ -2676,11 +2817,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                         <input
                           type="checkbox"
                           checked={selectedPromptHintIds.includes(hint.id)}
-                          onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                          onChange={(event) => handlePromptHintToggle(hint, event.target.checked)}
+                          disabled={promptComposerDisabled}
                           className="mt-0.5 h-4 w-4"
                         />
-                        <span>
-                          {hint.label}
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span>{hint.label}</span>
+                            <span
+                              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                              title={promptHintTypeDescription(hint.type)}
+                            >
+                              {promptHintTypeLabel(hint.type)}
+                            </span>
+                          </span>
                           <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
                             {hint.phrase}
                           </span>
@@ -2701,11 +2851,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                         <input
                           type="checkbox"
                           checked={selectedPromptHintIds.includes(hint.id)}
-                          onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                          onChange={(event) => handlePromptHintToggle(hint, event.target.checked)}
+                          disabled={promptComposerDisabled}
                           className="mt-0.5 h-4 w-4"
                         />
-                        <span>
-                          {hint.label}
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span>{hint.label}</span>
+                            <span
+                              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                              title={promptHintTypeDescription(hint.type)}
+                            >
+                              {promptHintTypeLabel(hint.type)}
+                            </span>
+                          </span>
                           <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
                             {hint.phrase}
                           </span>
@@ -2721,7 +2880,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
             Anexar arquivos
-            <input type="file" multiple onChange={handleFileInputChange} className="sr-only" />
+            <input type="file" multiple onChange={handleFileInputChange} className="sr-only" disabled={promptComposerDisabled} />
           </label>
           <p className="mt-2 text-xs text-slate-500">Cole arquivos com Ctrl+V no campo da tarefa ou selecione qualquer tipo de arquivo. Até {MAX_FILE_ATTACHMENTS} arquivos de 5 MB.</p>
           {fileAttachments.length > 0 ? <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -2740,7 +2899,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </ul> : null}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="submit" disabled={actionLoading || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
+          <button type="submit" disabled={actionLoading || promptComposerDisabled || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
           {sandboxOnly ? <button type="button" onClick={handleStartNewSandboxDialog} disabled={!canStartNewSandboxDialog} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Novo diálogo</button> : null}
           {!sandboxOnly ? (
             <button

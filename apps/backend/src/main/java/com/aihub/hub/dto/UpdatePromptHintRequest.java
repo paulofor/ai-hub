@@ -11,6 +11,7 @@ public record UpdatePromptHintRequest(
     @NotBlank(message = "Informe a frase que será adicionada ao prompt")
     @Size(max = 2000, message = "A frase pode ter no máximo 2000 caracteres")
     String phrase,
+    String type,
     @Positive(message = "Informe um ambiente válido")
     Long environmentId
 ) {

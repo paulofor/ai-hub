@@ -296,7 +296,8 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
     json: [
       { id: 1, label: 'Arquitetura', phrase: 'Manter o padrao de arquitetura definido.', environmentId: null },
       { id: 2, label: 'Documento Estrada', phrase: 'Leia e use como base o documento estrada.', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' },
-      { id: 3, label: 'Lições Aprendidas', phrase: 'Use as licoes aprendidas dos experimentos finalizados.', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' }
+      { id: 3, label: 'Lições Aprendidas', phrase: 'Use as licoes aprendidas dos experimentos finalizados.', type: 'prompt', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' },
+      { id: 4, label: 'Texto editável', phrase: 'Texto inicial para editar antes de enviar.', type: 'text', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' }
     ]
   }));
 
@@ -338,14 +339,24 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.goto('/codex-chatgpt-mkt');
   await page.getByRole('checkbox', { name: /Arquitetura/ }).check();
   await page.getByRole('checkbox', { name: /Lições Aprendidas/ }).check();
-  await page.getByRole('textbox').fill('Verifique se os complementos entram no prompt.');
+  await expect(page.getByText('Prompt', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Tela', { exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: /Texto editável/ }).check();
+  const promptTextarea = page.getByPlaceholder(/Digite sua solicitação de análise de marketing/);
+  await expect(promptTextarea).toHaveValue('Texto inicial para editar antes de enviar.');
+  await promptTextarea.fill('Texto inicial para editar antes de enviar.\n\nVerifique se os complementos entram no prompt.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
   await expect.poll(() => createdRequestPrompt).toContain('Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:');
+  const priorityContext = createdRequestPrompt.slice(
+    createdRequestPrompt.indexOf('Contexto prioritário selecionado pelo usuário'),
+    createdRequestPrompt.indexOf('Última mensagem do usuário:')
+  );
   expect(createdRequestPrompt).toContain('Manter o padrao de arquitetura definido.');
   expect(createdRequestPrompt).toContain('Use as licoes aprendidas dos experimentos finalizados.');
+  expect(priorityContext).not.toContain('Texto inicial para editar antes de enviar.');
   expect(createdRequestPrompt).not.toContain('Leia e use como base o documento estrada.');
-  expect(createdRequestPrompt).toContain('Última mensagem do usuário:\nVerifique se os complementos entram no prompt.');
+  expect(createdRequestPrompt).toContain('Última mensagem do usuário:\nTexto inicial para editar antes de enviar.\n\nVerifique se os complementos entram no prompt.');
   expect(createdRequestPrompt.indexOf('Contexto prioritário selecionado pelo usuário')).toBeLessThan(
     createdRequestPrompt.indexOf('Última mensagem do usuário:')
   );
@@ -434,8 +445,9 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
-    return { right: box.right, top: box.top };
+    return { height: box.height, right: box.right, top: box.top };
   });
+  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(150);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
@@ -510,6 +522,165 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.getByRole('button', { name: 'Mostrar novamente' }).click();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+});
+
+test('scrolls from the marketing prompt editor to the first unread model response', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-28T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 1000 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/products', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-read-comments:CHATGPT_CODEX_MKT', JSON.stringify(['assistant-read']));
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      {
+        id: 'user-read',
+        role: 'user',
+        content: 'Analise a primeira campanha.',
+        createdAt: '2026-07-28T11:00:00Z'
+      },
+      {
+        id: 'assistant-read',
+        role: 'assistant',
+        requestId: 1001,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Primeira leitura', comentario: 'Comentário já lido que deve ser pulado.', impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-28T11:01:00Z'
+      },
+      {
+        id: 'user-unread',
+        role: 'user',
+        content: 'Analise a segunda campanha.',
+        createdAt: '2026-07-28T11:02:00Z'
+      },
+      {
+        id: 'assistant-unread',
+        role: 'assistant',
+        requestId: 1002,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Resposta pendente', comentario: 'Comentário pendente alvo para leitura.', impactoAumentoVendas: 'alto', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-28T11:03:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+  await page.locator('textarea[placeholder^="Digite sua solicitação"]').scrollIntoViewIfNeeded();
+
+  const unreadButton = page.getByRole('button', { name: 'Ir para primeira resposta não lida' });
+  await expect(unreadButton).toBeEnabled();
+  await unreadButton.click();
+
+  const unreadArticle = page.getByText('Comentário pendente alvo para leitura.').locator('xpath=ancestor::article[1]');
+  await expect(unreadArticle).toBeFocused();
+  await expect(page.getByText('Comentário já lido que deve ser pulado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
+});
+
+test('disables the marketing prompt composer when every dialog request is pending or unread', async ({ page }) => {
+  await page.route('**/api/account/read', async (route) => {
+    await route.fulfill({
+      json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+    });
+  });
+  await page.route('**/api/environments', async (route) => {
+    await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
+  });
+  await page.route('**/api/account/models', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  });
+  await page.route('**/api/codex/requests/metrics?**', async (route) => {
+    await route.fulfill({ json: { day: { startsAt: '2026-07-28T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 1000 } } });
+  });
+  await page.route('**/api/codex/conversations?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/prompt-hints?**', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/products', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+  await page.route('**/api/codex/requests?**', async (route) => {
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.route('**/api/codex/requests/2001', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 2001,
+        environment: 'paulofor/marketing-hub@main',
+        model: 'gpt-5',
+        version: 'aihub-6',
+        profile: 'CHATGPT_CODEX_MKT',
+        prompt: 'Analise a campanha ainda em execução.',
+        status: 'RUNNING',
+        createdAt: '2026-07-28T13:00:00Z'
+      }
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      {
+        id: 'user-running',
+        role: 'user',
+        content: 'Analise a campanha ainda em execução.',
+        createdAt: '2026-07-28T13:00:00Z'
+      },
+      {
+        id: 'assistant-running',
+        role: 'assistant',
+        requestId: 2001,
+        status: 'RUNNING',
+        content: 'Aguardando resposta do modelo... (Em execução)',
+        createdAt: '2026-07-28T13:01:00Z'
+      },
+      {
+        id: 'user-unread-blocking',
+        role: 'user',
+        content: 'Analise a campanha concluída.',
+        createdAt: '2026-07-28T13:02:00Z'
+      },
+      {
+        id: 'assistant-unread-blocking',
+        role: 'assistant',
+        requestId: 2002,
+        status: 'COMPLETED',
+        content: JSON.stringify({ titulo: 'Campanha concluída', comentario: 'Comentário ainda não lido para destravar o campo.', impactoAumentoVendas: 'alto', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
+        createdAt: '2026-07-28T13:03:00Z'
+      }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  const promptEditor = page.locator('textarea[placeholder="Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação."]');
+  await expect(page.getByText('Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação.')).toBeVisible();
+  await expect(promptEditor).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Enviar mensagem' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Ir para primeira resposta não lida' })).toBeEnabled();
+
+  await page.getByRole('checkbox', { name: 'Lido' }).check();
+  await expect(page.locator('textarea[placeholder^="Digite sua solicitação"]')).toBeEnabled();
 });
 
 test('marks a marketing request detail comment as read', async ({ page }) => {

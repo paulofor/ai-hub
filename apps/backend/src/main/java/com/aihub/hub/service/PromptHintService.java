@@ -2,6 +2,7 @@ package com.aihub.hub.service;
 
 import com.aihub.hub.domain.EnvironmentRecord;
 import com.aihub.hub.domain.PromptHintRecord;
+import com.aihub.hub.domain.PromptHintType;
 import com.aihub.hub.dto.CreatePromptHintRequest;
 import com.aihub.hub.dto.PromptHintView;
 import com.aihub.hub.dto.UpdatePromptHintRequest;
@@ -72,6 +73,7 @@ public class PromptHintService {
         PromptHintRecord record = new PromptHintRecord();
         record.setLabel(request.label().trim());
         record.setPhrase(request.phrase().trim());
+        record.setType(resolveType(request.type()));
         record.setEnvironment(resolveEnvironment(request.environmentId()));
         PromptHintRecord saved = promptHintRepository.save(record);
         return toView(saved);
@@ -83,6 +85,7 @@ public class PromptHintService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item opcional não encontrado"));
         record.setLabel(request.label().trim());
         record.setPhrase(request.phrase().trim());
+        record.setType(resolveType(request.type()));
         record.setEnvironment(resolveEnvironment(request.environmentId()));
         PromptHintRecord saved = promptHintRepository.save(record);
         return toView(saved);
@@ -104,6 +107,14 @@ public class PromptHintService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente não encontrado"));
     }
 
+    private PromptHintType resolveType(String type) {
+        try {
+            return PromptHintType.fromValue(type);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
     private PromptHintView toView(PromptHintRecord record) {
         EnvironmentRecord environment = record.getEnvironment();
         Long environmentId = environment != null ? environment.getId() : null;
@@ -112,6 +123,7 @@ public class PromptHintService {
             record.getId(),
             record.getLabel(),
             record.getPhrase(),
+            record.getType().getValue(),
             environmentId,
             environmentName,
             record.getCreatedAt(),

@@ -6,6 +6,7 @@ interface PromptHintRecord {
   id: number;
   label: string;
   phrase: string;
+  type?: 'prompt' | 'text' | string | null;
   environmentId?: number | null;
   environmentName?: string | null;
   createdAt: string;
@@ -16,6 +17,12 @@ interface EnvironmentOption {
   id: number;
   name: string;
 }
+
+const normalizePromptHintType = (type?: string | null): 'prompt' | 'text' =>
+  type?.toLowerCase() === 'text' ? 'text' : 'prompt';
+
+const promptHintTypeLabel = (type?: string | null) =>
+  normalizePromptHintType(type) === 'text' ? 'Tela' : 'Prompt';
 
 const sortPromptHints = (items: PromptHintRecord[]) => {
   return [...items].sort((a, b) => {
@@ -47,6 +54,7 @@ export default function PromptHintsPage() {
   const [error, setError] = useState<string | null>(null);
   const [formLabel, setFormLabel] = useState('');
   const [formPhrase, setFormPhrase] = useState('');
+  const [formType, setFormType] = useState<'prompt' | 'text'>('prompt');
   const [formEnvironmentId, setFormEnvironmentId] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -75,6 +83,7 @@ export default function PromptHintsPage() {
   const resetForm = () => {
     setFormLabel('');
     setFormPhrase('');
+    setFormType('prompt');
     setFormEnvironmentId('');
     setEditingHint(null);
   };
@@ -86,7 +95,7 @@ export default function PromptHintsPage() {
     const environmentId = formEnvironmentId ? Number(formEnvironmentId) : undefined;
 
     if (!trimmedLabel || !trimmedPhrase) {
-      setFormError('Informe o nome do item e a frase que será adicionada ao prompt.');
+      setFormError('Informe o nome do item e o texto que será usado na solicitação.');
       return;
     }
 
@@ -97,6 +106,7 @@ export default function PromptHintsPage() {
     const payload = {
       label: trimmedLabel,
       phrase: trimmedPhrase,
+      type: formType,
       environmentId
     };
 
@@ -124,6 +134,7 @@ export default function PromptHintsPage() {
     setEditingHint(hint);
     setFormLabel(hint.label);
     setFormPhrase(hint.phrase);
+    setFormType(normalizePromptHintType(hint.type));
     setFormEnvironmentId(hint.environmentId ? String(hint.environmentId) : '');
     setFormError(null);
     setFormSuccess(null);
@@ -178,7 +189,7 @@ export default function PromptHintsPage() {
 
           <div className="flex flex-col gap-2">
             <label htmlFor="prompt-hint-phrase" className="text-sm font-medium text-slate-700 dark:text-slate-200">
-              Frase adicionada ao prompt
+              Texto do item
             </label>
             <textarea
               id="prompt-hint-phrase"
@@ -187,6 +198,21 @@ export default function PromptHintsPage() {
               className="h-24 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed dark:border-slate-700 dark:bg-slate-900"
               placeholder="Ex.: use a tool de banco de dados para pesquisar as informações necessárias"
             />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="prompt-hint-type" className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Tipo de uso
+            </label>
+            <select
+              id="prompt-hint-type"
+              value={formType}
+              onChange={(event) => setFormType(event.target.value === 'text' ? 'text' : 'prompt')}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="prompt">Prompt - entra como contexto no envio</option>
+              <option value="text">Tela - copia para a caixa da solicitação</option>
+            </select>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -238,6 +264,7 @@ export default function PromptHintsPage() {
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Nome</th>
+                <th className="px-4 py-3 text-left font-semibold">Tipo</th>
                 <th className="px-4 py-3 text-left font-semibold">Escopo</th>
                 <th className="px-4 py-3 text-left font-semibold">Frase</th>
                 <th className="px-4 py-3 text-left font-semibold">Atualizado em</th>
@@ -247,21 +274,21 @@ export default function PromptHintsPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-3 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-3 text-center text-slate-500">
                     Carregando itens cadastrados...
                   </td>
                 </tr>
               )}
               {error && !loading && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-3 text-center text-red-500">
+                  <td colSpan={6} className="px-4 py-3 text-center text-red-500">
                     {error}
                   </td>
                 </tr>
               )}
               {!loading && !error && promptHints.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-3 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-3 text-center text-slate-500">
                     Nenhum item cadastrado até o momento.
                   </td>
                 </tr>
@@ -269,6 +296,11 @@ export default function PromptHintsPage() {
               {!loading && !error && promptHints.map((hint) => (
                 <tr key={hint.id}>
                   <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{hint.label}</td>
+                  <td className="px-4 py-3 text-slate-500 dark:text-slate-300">
+                    <span className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                      {promptHintTypeLabel(hint.type)}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-300">
                     {hint.environmentName ?? 'Todos os ambientes'}
                   </td>
