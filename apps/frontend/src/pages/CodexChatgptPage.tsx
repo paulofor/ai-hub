@@ -1863,6 +1863,84 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? `Solicitação #${request.id} cancelada. Nenhuma nova resposta será gerada para esta mensagem.`
       : 'Resposta ainda não disponível.'), []);
 
+  const hiddenConversationMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    conversation.forEach((message, index) => {
+      if (message.role !== 'assistant' || !message.requestId || !hiddenRequestIds.has(message.requestId)) {
+        return;
+      }
+      ids.add(message.id);
+      const previousMessage = conversation[index - 1];
+      if (previousMessage?.role === 'user') {
+        ids.add(previousMessage.id);
+      }
+    });
+    return ids;
+  }, [conversation, hiddenRequestIds]);
+  const visibleConversationPool = useMemo(
+    () => conversation.filter((message) => !hiddenConversationMessageIds.has(message.id)),
+    [conversation, hiddenConversationMessageIds]
+  );
+  const dismissedConversationMessageCount = conversation.length - visibleConversationPool.length;
+  const dismissedRequestCount = useMemo(() => {
+    const requestIds = new Set<number>();
+    conversation.forEach((message) => {
+      if (message.role === 'assistant' && message.requestId && hiddenRequestIds.has(message.requestId)) {
+        requestIds.add(message.requestId);
+      }
+    });
+    return requestIds.size;
+  }, [conversation, hiddenRequestIds]);
+  const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
+  const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
+  const firstUnreadModelResponseId = useMemo(() => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT') {
+      return null;
+    }
+    const firstUnreadMessage = visibleConversation.find((message) =>
+      message.role === 'assistant'
+      && !readCommentIds.has(message.id)
+      && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+    );
+    return firstUnreadMessage?.id ?? null;
+  }, [config.profile, readCommentIds, visibleConversation]);
+  const dialogOnlyHasPendingOrUnreadRequests = useMemo(() => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT' || visibleConversation.length === 0) {
+      return false;
+    }
+
+    const requestMessages = visibleConversation.filter((message) => message.role === 'user' || message.role === 'assistant');
+    if (requestMessages.length === 0) {
+      return false;
+    }
+
+    return requestMessages.every((message, index) => {
+      if (message.role === 'user') {
+        const nextMessage = requestMessages[index + 1];
+        if (nextMessage?.role !== 'assistant') {
+          return false;
+        }
+        if (nextMessage.status && !isTerminalStatus(nextMessage.status)) {
+          return true;
+        }
+        return Boolean(parseMarketingStructuredResponse(nextMessage.content)?.comentario)
+          && !readCommentIds.has(nextMessage.id);
+      }
+
+      if (message.role === 'assistant' && message.status && !isTerminalStatus(message.status)) {
+        return true;
+      }
+
+      return message.role === 'assistant'
+        && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+        && !readCommentIds.has(message.id);
+    });
+  }, [config.profile, readCommentIds, visibleConversation]);
+  const promptComposerDisabled = dialogOnlyHasPendingOrUnreadRequests;
+  const promptComposerDisabledReason = promptComposerDisabled
+    ? 'Leia ou aguarde as respostas atuais antes de enviar uma nova solicitação.'
+    : '';
+
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     setConversation((current) => current.map((message) => {
       if (message.role !== 'assistant' || message.requestId !== request.id) return message;
@@ -1974,6 +2052,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const handleRun = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (promptComposerDisabled) {
+      setError(promptComposerDisabledReason);
+      return;
+    }
     if (!isExecutable) {
       setError('Conta ChatGPT não executável pelo Codex App Server. Reconecte para executar.');
       return;
@@ -2014,7 +2096,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, registerTelemetry, selectedEnvironment]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment]);
 
 
   useEffect(() => {
@@ -2380,47 +2462,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     : undefined;
   const hasCompletedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status === 'COMPLETED');
   const hasQueuedConversationRequest = conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
-  const hiddenConversationMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    conversation.forEach((message, index) => {
-      if (message.role !== 'assistant' || !message.requestId || !hiddenRequestIds.has(message.requestId)) {
-        return;
-      }
-      ids.add(message.id);
-      const previousMessage = conversation[index - 1];
-      if (previousMessage?.role === 'user') {
-        ids.add(previousMessage.id);
-      }
-    });
-    return ids;
-  }, [conversation, hiddenRequestIds]);
-  const visibleConversationPool = useMemo(
-    () => conversation.filter((message) => !hiddenConversationMessageIds.has(message.id)),
-    [conversation, hiddenConversationMessageIds]
-  );
-  const dismissedConversationMessageCount = conversation.length - visibleConversationPool.length;
-  const dismissedRequestCount = useMemo(() => {
-    const requestIds = new Set<number>();
-    conversation.forEach((message) => {
-      if (message.role === 'assistant' && message.requestId && hiddenRequestIds.has(message.requestId)) {
-        requestIds.add(message.requestId);
-      }
-    });
-    return requestIds.size;
-  }, [conversation, hiddenRequestIds]);
-  const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
-  const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
-  const firstUnreadModelResponseId = useMemo(() => {
-    if (config.profile !== 'CHATGPT_CODEX_MKT') {
-      return null;
-    }
-    const firstUnreadMessage = visibleConversation.find((message) =>
-      message.role === 'assistant'
-      && !readCommentIds.has(message.id)
-      && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
-    );
-    return firstUnreadMessage?.id ?? null;
-  }, [config.profile, readCommentIds, visibleConversation]);
   const handleScrollToFirstUnreadModelResponse = useCallback(() => {
     if (!firstUnreadModelResponseId) {
       return;
@@ -2693,7 +2734,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </button>
           </div>
         ) : null}
-        <textarea ref={promptTextareaRef} value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={handlePromptPaste} rows={5} placeholder={config.placeholder} className="w-full rounded-md border px-3 py-2 text-sm" required />
+        {promptComposerDisabled ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          {promptComposerDisabledReason}
+        </p> : null}
+        <textarea
+          ref={promptTextareaRef}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onPaste={handlePromptPaste}
+          rows={5}
+          placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
+          className="w-full rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+          required
+          disabled={promptComposerDisabled}
+        />
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
@@ -2769,7 +2823,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm dark:border-slate-700">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
             Anexar arquivos
-            <input type="file" multiple onChange={handleFileInputChange} className="sr-only" />
+            <input type="file" multiple onChange={handleFileInputChange} className="sr-only" disabled={promptComposerDisabled} />
           </label>
           <p className="mt-2 text-xs text-slate-500">Cole arquivos com Ctrl+V no campo da tarefa ou selecione qualquer tipo de arquivo. Até {MAX_FILE_ATTACHMENTS} arquivos de 5 MB.</p>
           {fileAttachments.length > 0 ? <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -2788,7 +2842,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </ul> : null}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="submit" disabled={actionLoading || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
+          <button type="submit" disabled={actionLoading || promptComposerDisabled || !isExecutable || !selectedEnvironment || !model} className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Enviar mensagem</button>
           {sandboxOnly ? <button type="button" onClick={handleStartNewSandboxDialog} disabled={!canStartNewSandboxDialog} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Novo diálogo</button> : null}
           {!sandboxOnly ? (
             <button
