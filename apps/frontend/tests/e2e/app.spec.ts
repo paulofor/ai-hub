@@ -430,6 +430,19 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(operationalDayCard.getByText('Interações')).toBeVisible();
   await expect(operationalDayCard.getByText('3', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard).toHaveCSS('position', 'fixed');
+
+  const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { right: box.right, top: box.top };
+  });
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { right: box.right, top: box.top };
+  });
+  expect(Math.abs(cardBoxAfterScroll.top - cardBoxBeforeScroll.top)).toBeLessThan(1);
+  expect(Math.abs(cardBoxAfterScroll.right - cardBoxBeforeScroll.right)).toBeLessThan(1);
 
   const commentCard = page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]');
   const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
