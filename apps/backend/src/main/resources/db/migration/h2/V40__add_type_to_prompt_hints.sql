@@ -1,0 +1,2 @@
+ALTER TABLE prompt_hints
+    ADD COLUMN item_type VARCHAR(20) NOT NULL DEFAULT 'PROMPT';

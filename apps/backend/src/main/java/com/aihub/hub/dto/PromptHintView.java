@@ -6,6 +6,7 @@ public record PromptHintView(
     Long id,
     String label,
     String phrase,
+    String type,
     Long environmentId,
     String environmentName,
     Instant createdAt,

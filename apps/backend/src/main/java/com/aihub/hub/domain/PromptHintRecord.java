@@ -2,6 +2,8 @@ package com.aihub.hub.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -30,6 +32,10 @@ public class PromptHintRecord {
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String phrase;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_type", nullable = false, length = 20)
+    private PromptHintType type = PromptHintType.PROMPT;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "environment_id")
@@ -80,6 +86,14 @@ public class PromptHintRecord {
 
     public void setPhrase(String phrase) {
         this.phrase = phrase;
+    }
+
+    public PromptHintType getType() {
+        return type == null ? PromptHintType.PROMPT : type;
+    }
+
+    public void setType(PromptHintType type) {
+        this.type = type == null ? PromptHintType.PROMPT : type;
     }
 
     public EnvironmentRecord getEnvironment() {

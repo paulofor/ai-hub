@@ -65,6 +65,7 @@ interface PromptHintOption {
   id: number;
   label: string;
   phrase: string;
+  type?: 'prompt' | 'text' | string | null;
   environmentId?: number | null;
   environmentName?: string | null;
 }
@@ -96,6 +97,38 @@ const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
 const READ_COMMENTS_STORAGE_PREFIX = 'ai-hub:codex-chat-read-comments:';
 const HIDDEN_REQUESTS_STORAGE_PREFIX = 'ai-hub:codex-chat-hidden-requests:';
 const SANDBOX_ONLY_ENVIRONMENT = 'sandbox';
+
+const normalizePromptHintType = (type?: string | null): 'prompt' | 'text' =>
+  type?.toLowerCase() === 'text' ? 'text' : 'prompt';
+
+const promptHintTypeLabel = (type?: string | null) =>
+  normalizePromptHintType(type) === 'text' ? 'Tela' : 'Prompt';
+
+const promptHintTypeDescription = (type?: string | null) =>
+  normalizePromptHintType(type) === 'text'
+    ? 'Ao marcar, copia o texto para a caixa de solicitação para edição.'
+    : 'Ao marcar, envia o texto como contexto do prompt sem alterar a solicitação.';
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const appendPromptText = (current: string, phrase: string) => {
+  const trimmedPhrase = phrase.trim();
+  if (!trimmedPhrase) {
+    return current;
+  }
+  const trimmedCurrent = current.trimEnd();
+  return trimmedCurrent ? `${trimmedCurrent}\n\n${trimmedPhrase}` : trimmedPhrase;
+};
+
+const removePromptText = (current: string, phrase: string) => {
+  const trimmedPhrase = phrase.trim();
+  if (!trimmedPhrase) {
+    return current;
+  }
+  return current
+    .replace(new RegExp(`\\n{0,2}${escapeRegExp(trimmedPhrase)}\\s*$`), '')
+    .trimEnd();
+};
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
@@ -1453,8 +1486,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
   }, []);
 
-  const handlePromptHintToggle = useCallback((hintId: number, checked: boolean) => {
+  const handlePromptHintToggle = useCallback((hint: PromptHintOption, checked: boolean) => {
+    if (normalizePromptHintType(hint.type) === 'text') {
+      setPrompt((current) => checked ? appendPromptText(current, hint.phrase) : removePromptText(current, hint.phrase));
+      window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+    }
     setSelectedPromptHintIds((current) => {
+      const hintId = hint.id;
       if (checked) {
         return current.includes(hintId) ? current : [...current, hintId];
       }
@@ -1840,6 +1878,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? `Antes de começar leia o documento em http://191.252.181.168:8000/api/products/public/${selectedProduct.slug}/marketing-definition.md e use como fonte de verdade sobre o PDE.`
       : '';
     const selectedPromptHintPhrases = selectedPromptHints
+      .filter((hint) => normalizePromptHintType(hint.type) === 'prompt')
       .map((hint) => hint.phrase.trim())
       .filter((value) => value.length > 0);
     return [
@@ -2750,7 +2789,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         />
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
+            <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para usar na solicitação</p>
             <Link
               to="/prompt-hints"
               className="text-xs font-semibold text-emerald-600 hover:text-emerald-500"
@@ -2778,11 +2817,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                         <input
                           type="checkbox"
                           checked={selectedPromptHintIds.includes(hint.id)}
-                          onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                          onChange={(event) => handlePromptHintToggle(hint, event.target.checked)}
+                          disabled={promptComposerDisabled}
                           className="mt-0.5 h-4 w-4"
                         />
-                        <span>
-                          {hint.label}
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span>{hint.label}</span>
+                            <span
+                              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                              title={promptHintTypeDescription(hint.type)}
+                            >
+                              {promptHintTypeLabel(hint.type)}
+                            </span>
+                          </span>
                           <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
                             {hint.phrase}
                           </span>
@@ -2803,11 +2851,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                         <input
                           type="checkbox"
                           checked={selectedPromptHintIds.includes(hint.id)}
-                          onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
+                          onChange={(event) => handlePromptHintToggle(hint, event.target.checked)}
+                          disabled={promptComposerDisabled}
                           className="mt-0.5 h-4 w-4"
                         />
-                        <span>
-                          {hint.label}
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span>{hint.label}</span>
+                            <span
+                              className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                              title={promptHintTypeDescription(hint.type)}
+                            >
+                              {promptHintTypeLabel(hint.type)}
+                            </span>
+                          </span>
                           <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
                             {hint.phrase}
                           </span>

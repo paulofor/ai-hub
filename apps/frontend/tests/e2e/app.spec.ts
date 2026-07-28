@@ -296,7 +296,8 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
     json: [
       { id: 1, label: 'Arquitetura', phrase: 'Manter o padrao de arquitetura definido.', environmentId: null },
       { id: 2, label: 'Documento Estrada', phrase: 'Leia e use como base o documento estrada.', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' },
-      { id: 3, label: 'Lições Aprendidas', phrase: 'Use as licoes aprendidas dos experimentos finalizados.', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' }
+      { id: 3, label: 'Lições Aprendidas', phrase: 'Use as licoes aprendidas dos experimentos finalizados.', type: 'prompt', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' },
+      { id: 4, label: 'Texto editável', phrase: 'Texto inicial para editar antes de enviar.', type: 'text', environmentId: 1, environmentName: 'paulofor/marketing-hub@main' }
     ]
   }));
 
@@ -338,14 +339,24 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.goto('/codex-chatgpt-mkt');
   await page.getByRole('checkbox', { name: /Arquitetura/ }).check();
   await page.getByRole('checkbox', { name: /Lições Aprendidas/ }).check();
-  await page.getByRole('textbox').fill('Verifique se os complementos entram no prompt.');
+  await expect(page.getByText('Prompt', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Tela', { exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: /Texto editável/ }).check();
+  const promptTextarea = page.getByPlaceholder(/Digite sua solicitação de análise de marketing/);
+  await expect(promptTextarea).toHaveValue('Texto inicial para editar antes de enviar.');
+  await promptTextarea.fill('Texto inicial para editar antes de enviar.\n\nVerifique se os complementos entram no prompt.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
   await expect.poll(() => createdRequestPrompt).toContain('Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:');
+  const priorityContext = createdRequestPrompt.slice(
+    createdRequestPrompt.indexOf('Contexto prioritário selecionado pelo usuário'),
+    createdRequestPrompt.indexOf('Última mensagem do usuário:')
+  );
   expect(createdRequestPrompt).toContain('Manter o padrao de arquitetura definido.');
   expect(createdRequestPrompt).toContain('Use as licoes aprendidas dos experimentos finalizados.');
+  expect(priorityContext).not.toContain('Texto inicial para editar antes de enviar.');
   expect(createdRequestPrompt).not.toContain('Leia e use como base o documento estrada.');
-  expect(createdRequestPrompt).toContain('Última mensagem do usuário:\nVerifique se os complementos entram no prompt.');
+  expect(createdRequestPrompt).toContain('Última mensagem do usuário:\nTexto inicial para editar antes de enviar.\n\nVerifique se os complementos entram no prompt.');
   expect(createdRequestPrompt.indexOf('Contexto prioritário selecionado pelo usuário')).toBeLessThan(
     createdRequestPrompt.indexOf('Última mensagem do usuário:')
   );
