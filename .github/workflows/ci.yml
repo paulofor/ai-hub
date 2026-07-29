@@ -190,18 +190,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure SSH
         env:
-          VPS_SSH_CHAVE: ${{ secrets.VPS_SSH_CHAVE }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          set -euo pipefail
           install -m 700 -d ~/.ssh
-          DEPLOY_SSH_KEY="${VPS_SSH_CHAVE:-${VPS_SSH_KEY:-${SSH_PRIVATE_KEY:-}}}"
-          if [ -z "${DEPLOY_SSH_KEY}" ]; then
-            echo "Configure one of these repository secrets for deploy SSH: VPS_SSH_CHAVE, VPS_SSH_KEY or SSH_PRIVATE_KEY." >&2
-            exit 1
-          fi
-          printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60" >> "$GITHUB_ENV"
       - name: Prepare remote directory
