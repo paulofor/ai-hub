@@ -89,6 +89,7 @@ interface SavedConversation {
 }
 
 const POLL_INTERVAL_MS = 5000;
+const INTERACTION_STALE_ALERT_MS = 5 * 60 * 1000;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -1378,6 +1379,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [loadingPromptHints, setLoadingPromptHints] = useState(false);
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [dailyMetrics, setDailyMetrics] = useState<CodexDashboardMetrics | null>(null);
+  const [interactionIsStale, setInteractionIsStale] = useState(false);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
@@ -1405,12 +1407,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const interactionActivityRef = useRef<{ startsAt: string; count: number } | null>(null);
+  const interactionStaleTimeoutRef = useRef<number | null>(null);
 
   useModelResponseTabMarker(conversation, config.title);
 
   useEffect(() => () => {
     if (copiedMessageTimeoutRef.current) {
       window.clearTimeout(copiedMessageTimeoutRef.current);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (interactionStaleTimeoutRef.current) {
+      window.clearTimeout(interactionStaleTimeoutRef.current);
     }
   }, []);
 
@@ -1548,6 +1558,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {
       params: { profile: config.profile }
     });
+    const observedDay = response.data?.day;
+    if (observedDay && Number.isFinite(observedDay.interactionCount)) {
+      const previous = interactionActivityRef.current;
+      if (!previous || previous.startsAt !== observedDay.startsAt || previous.count !== observedDay.interactionCount) {
+        interactionActivityRef.current = { startsAt: observedDay.startsAt, count: observedDay.interactionCount };
+        setInteractionIsStale(false);
+        if (interactionStaleTimeoutRef.current) {
+          window.clearTimeout(interactionStaleTimeoutRef.current);
+        }
+        if (config.profile === 'CHATGPT_CODEX_MKT') {
+          interactionStaleTimeoutRef.current = window.setTimeout(() => {
+            setInteractionIsStale(true);
+          }, INTERACTION_STALE_ALERT_MS);
+        }
+      }
+    }
     setDailyMetrics(response.data);
     return response.data;
   }, [config.profile]);
@@ -2504,12 +2530,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     && !hasQueuedOrRunningBatchRequest
     && (hasCompletedConversationRequest || activeBatchCompleted > 0 || activeBatchPrUrl)
   );
-
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className="fixed right-4 top-4 z-40 w-[min(196px,calc(100vw-2rem))] rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+        <div className={`fixed right-4 top-4 z-40 w-[min(196px,calc(100vw-2rem))] rounded-md border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${interactionIsStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
           <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
             {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
@@ -2524,11 +2549,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 {formatMetricNumber(dailyMetrics?.day?.requestCount)}
               </p>
             </div>
-            <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800/80">
-              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Interações</p>
+            <div className={`rounded border px-1.5 py-1 ${interactionIsStale ? 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-500 dark:bg-amber-950/50' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80'}`}>
+              <p className={`text-[9px] font-semibold uppercase tracking-wide ${interactionIsStale ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+                Interações
+                {interactionIsStale ? <span className="ml-1 inline-flex h-3 w-3 animate-pulse items-center justify-center rounded-full bg-amber-500 text-[9px] text-white" aria-hidden="true">!</span> : null}
+              </p>
               <p className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-100">
                 {formatMetricNumber(dailyMetrics?.day?.interactionCount)}
               </p>
+              {interactionIsStale ? <span role="status" className="sr-only">Alerta: interações sem alteração há 5 minutos.</span> : null}
             </div>
           </div>
           <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>

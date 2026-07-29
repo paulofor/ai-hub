@@ -474,6 +474,40 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
 });
 
+test('alerts when the marketing interaction count stays unchanged for five minutes', async ({ page }, testInfo) => {
+  let interactionCount = 12;
+  await page.clock.install({ time: new Date('2026-07-29T12:00:00Z') });
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({
+    json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
+  }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
+    json: { day: { startsAt: '2026-07-29T06:00:00Z', requestCount: 3, interactionCount, durationMs: 0 } }
+  }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  const interactionAlert = page.locator('[role="status"]', { hasText: 'Alerta: interações sem alteração há 5 minutos.' });
+  await expect(page.getByText('Interações').locator('xpath=ancestor::div[1]').getByText('12', { exact: true })).toBeVisible();
+  await expect(interactionAlert).toHaveCount(0);
+
+  await page.clock.runFor(301_000);
+  await expect(interactionAlert).toBeAttached();
+  await expect(page.getByText('Interações').locator('xpath=ancestor::div[1]')).toHaveClass(/border-amber-500/);
+  await page.screenshot({ path: testInfo.outputPath('interaction-stale-alert.png'), fullPage: true });
+
+  interactionCount = 13;
+  await page.clock.runFor(5_000);
+  await expect(interactionAlert).toHaveCount(0);
+});
+
 test('dismisses a read marketing request from the dialog and restores it', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
