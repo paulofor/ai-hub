@@ -38,7 +38,7 @@ export function buildCodexAppServerEnv(
 ): NodeJS.ProcessEnv {
   const configuredRustLog = overrideEnv.CODEX_APP_SERVER_RUST_LOG
     ?? baseEnv.CODEX_APP_SERVER_RUST_LOG
-    ?? 'codex_core=info,codex_tui=info,codex_app_server=info,codex_api=info,codex_client=info,warn';
+    ?? 'codex_core=warn,codex_tui=warn,codex_app_server=info,codex_api=warn,codex_client=warn,warn';
   const allowTrace = (overrideEnv.CODEX_APP_SERVER_ALLOW_TRACE_LOGS ?? baseEnv.CODEX_APP_SERVER_ALLOW_TRACE_LOGS ?? 'false')
     .toLowerCase() === 'true';
   const rustLog = allowTrace ? configuredRustLog : downgradeTraceFilters(configuredRustLog);

@@ -17,6 +17,7 @@ import PrivacyPage from './pages/PrivacyPage';
 import SourceRepositoryConfigPage from './pages/SourceRepositoryConfigPage';
 import ProductsPage from './pages/ProductsPage';
 import PersonaReviewPage from './pages/PersonaReviewPage';
+import SystemHealthPage from './pages/SystemHealthPage';
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
         <Route path="/codex/models" element={<CodexModelsPage />} />
         <Route path="/source-repository-config" element={<SourceRepositoryConfigPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
+        <Route path="/admin/system-health" element={<SystemHealthPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

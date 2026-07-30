@@ -195,6 +195,46 @@ export function createApp(options: AppOptions = {}) {
     res.json({ status: codexAppServer.status === 'degraded' ? 'degraded' : 'ok', python: healthcheckPythonInfo(), codexAppServer });
   });
 
+  app.get('/maintenance/status', (_req: Request, res: Response) => {
+    const jobs = [...jobRegistry.values()];
+    res.json({
+      codexAppServer: codexAppServerClient?.health() ?? { status: 'disabled', ready: false, restartAttempts: 0 },
+      activeJobs: jobs.filter((job) => job.status === 'RUNNING').map(sanitizeJobForResponse),
+      pendingJobs: jobs.filter((job) => job.status === 'PENDING').map(sanitizeJobForResponse),
+    });
+  });
+
+  app.post('/maintenance/codex-app-server/restart', async (_req: Request, res: Response) => {
+    if (!codexAppServerClient) {
+      return res.status(503).json({ error: 'Codex App Server desabilitado' });
+    }
+    await codexAppServerClient.stop();
+    await codexAppServerClient.start();
+    return res.json({ action: 'restart-codex-app-server', status: 'completed', codexAppServer: codexAppServerClient.health() });
+  });
+
+  app.post('/maintenance/jobs/:id/force-cancel', async (req: Request, res: Response) => {
+    const job = jobRegistry.get(req.params.id);
+    if (!job) {
+      return res.status(404).json({ error: 'job not found' });
+    }
+    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') {
+      return res.json({ action: 'force-cancel', status: 'already-terminal', job: sanitizeJobForResponse(job) });
+    }
+    job.cancelRequested = true;
+    job.status = 'CANCELLED';
+    job.finishedAt = new Date().toISOString();
+    job.updatedAt = job.finishedAt;
+    if (codexAppServerClient) {
+      await codexAppServerClient.stop();
+      await codexAppServerClient.start();
+    }
+    if (job.sandboxPath) {
+      await fs.rm(job.sandboxPath, { recursive: true, force: true });
+    }
+    return res.json({ action: 'force-cancel', status: 'completed', job: sanitizeJobForResponse(job) });
+  });
+
   app.get('/codex-app-server/account/read', async (_req: Request, res: Response) => {
     if (!codexAppServerClient) {
       return res.status(503).json({
