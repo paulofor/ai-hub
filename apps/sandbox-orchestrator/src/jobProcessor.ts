@@ -820,7 +820,7 @@ export class SandboxJobProcessor implements JobProcessor {
       job.status = 'COMPLETED';
       job.finishedAt = new Date().toISOString();
     } catch (error) {
-      if (error instanceof JobCancelledError) {
+      if (error instanceof JobCancelledError || job.cancelRequested) {
         job.status = 'CANCELLED';
         job.error = undefined;
         this.log(job, 'job cancelado pelo usuário');

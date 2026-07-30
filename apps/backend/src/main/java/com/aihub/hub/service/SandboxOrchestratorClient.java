@@ -86,6 +86,20 @@ public class SandboxOrchestratorClient {
         }
     }
 
+    public Map<String, Object> maintenanceStatus() {
+        return restClient.get().uri("/maintenance/status").retrieve().body(Map.class);
+    }
+
+    public Map<String, Object> restartCodexAppServer() {
+        return restClient.post().uri("/maintenance/codex-app-server/restart")
+            .contentType(MediaType.APPLICATION_JSON).body(Map.of()).retrieve().body(Map.class);
+    }
+
+    public Map<String, Object> forceCancelJob(String jobId) {
+        return restClient.post().uri("/maintenance/jobs/{id}/force-cancel", jobId)
+            .contentType(MediaType.APPLICATION_JSON).body(Map.of()).retrieve().body(Map.class);
+    }
+
     public List<Map<String, Object>> listCodexModels() {
         try {
             List<Map<String, Object>> response = restClient.get()
