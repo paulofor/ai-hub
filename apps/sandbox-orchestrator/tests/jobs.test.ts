@@ -2909,6 +2909,10 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
     assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
+    assert.match(promptText, /existe um runner efêmero dedicado no GitHub Actions/i);
+    assert.match(promptText, /ausência de Docker daemon local na sandbox não significa que essa validação esteja indisponível/i);
+    assert.match(promptText, /gh workflow run liquibase-mysql57\.yml --ref <branch>/i);
+    assert.match(promptText, /não apresente a ativação de Docker local como melhoria necessária/i);
     assert.match(promptText, /Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
