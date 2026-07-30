@@ -18,7 +18,8 @@ const links = [
   { to: '/codex-chatgpt-sandbox', label: 'Codex ChatGPT Sandbox' },
   { to: '/codex/models', label: 'Modelos Codex' },
   { to: '/source-repository-config', label: 'Config. Repositório' },
-  { to: '/audit', label: 'Audit Log' }
+  { to: '/audit', label: 'Audit Log' },
+  { to: '/admin/system-health', label: 'Saúde do sistema' }
 ];
 
 export default function ShellLayout({ children }: { children: ReactNode }) {

@@ -41,6 +41,20 @@ public class AppConfig {
             .build();
     }
 
+    @Bean
+    public RestClient mcpRestClient(
+        @Value("${hub.mcp.api-url:http://mcp-server:8084/mcp}") String apiUrl,
+        @Value("${hub.mcp.api-token:}") String apiToken
+    ) {
+        RestClient.Builder builder = RestClient.builder()
+            .requestFactory(jdkRequestFactory(Duration.ofSeconds(5), Duration.ofSeconds(45)))
+            .baseUrl(apiUrl);
+        if (apiToken != null && !apiToken.isBlank()) {
+            builder.defaultHeader("Authorization", "Bearer " + apiToken.trim());
+        }
+        return builder.build();
+    }
+
     private JdkClientHttpRequestFactory jdkRequestFactory(Duration connectTimeout, Duration readTimeout) {
         HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(connectTimeout)

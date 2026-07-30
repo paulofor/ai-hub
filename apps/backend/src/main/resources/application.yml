@@ -73,6 +73,11 @@ hub:
     callback:
       url: ${HUB_SANDBOX_CALLBACK_URL:http://backend:8081/api/codex/requests/callbacks/sandbox}
       secret: ${HUB_SANDBOX_CALLBACK_SECRET:}
+  mcp:
+    api-url: ${HUB_MCP_API_URL:http://mcp-server:8084/mcp}
+    api-token: ${MCP_SERVER_API_TOKEN:}
+  maintenance:
+    admin-token: ${HUB_MAINTENANCE_ADMIN_TOKEN:}
 
 server:
   port: 8081
