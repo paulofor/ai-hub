@@ -2948,3 +2948,21 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 
 ## 2026-07-30 00:23:28 UTC-3
 - Correção de registro append-only: a entrada `2026-07-30 00:22:49 UTC-3` sobre o ajuste do GitHub Actions foi inserida antes de registros mais recentes já existentes no arquivo; esta nova entrada preserva a anterior sem apagar linhas e registra que a correção final também deve considerar esta anotação no fim do diário.
+
+## 2026-07-30 - Correcao da resolucao do changelog no container Liquibase
+
+- Erro observado no GitHub Actions: o passo `Apply changelog on MySQL 5.7` falhou com `ChangeLogParseException`, informando que `/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml` nao existia, mesmo apos o passo anterior confirmar a existencia do arquivo no checkout.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o arquivo existia no runner, mas o comando passava ao Liquibase um caminho absoluto dentro do bind mount do container. A imagem/CLI do Liquibase 4.27.0 nao resolveu esse caminho como esperado no contexto do container, tornando a execucao fragil apesar do checkout estar correto.
+- Alternativas avaliadas: (1) remover a validacao de existencia, incorreto porque perderia diagnostico rapido; (2) relaxar as restricoes do container, arriscado e sem relacao direta com o parse do changelog; (3) montar o checkout como antes, mas usar `--search-path` apontando para `src/main/resources` e `--changelog-file` relativo (`db/changelog/changelog-master.yaml`). Escolhida a alternativa 3 por atacar a resolucao de arquivos do Liquibase, preservar os controles de seguranca e manter os includes relativos funcionando.
+- Ajuste aplicado em `.github/workflows/liquibase-mysql57.yml`: adicionadas as variaveis `LIQUIBASE_SEARCH_PATH` e `LIQUIBASE_CHANGELOG_FILE`; os passos `update` e `status` agora usam o search path montado e o changelog relativo em vez de caminho absoluto.
+- Validacoes executadas: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/liquibase-mysql57.yml`; `git diff --check`.
+- Limitacao do ambiente: o Docker CLI esta instalado, mas nao ha daemon/socket Docker em `/var/run/docker.sock`; portanto a reproducao completa Liquibase/MySQL precisa ser confirmada pela proxima execucao do GitHub Actions.
+
+## 2026-07-30 03:31 UTC - Teste do Codex App Server no modo ChatGPT
+
+- Solicitacao recebida: testar novamente o erro reportado no modo Codex ChatGPT MKT apos mensagem anterior indicar `CODEX_APP_SERVER_UNAVAILABLE`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a evidencia atual aponta para indisponibilidade/transiencia operacional do Codex App Server ou estado de autenticacao anterior, porque a validacao atual mostra o App Server pronto e a conta ChatGPT conectada; a suite local tambem cobre `thread/start`, `turn/start`, `account/read` e sandbox em kebab-case sem reproduzir o erro.
+- Alternativas avaliadas: (1) testar apenas a suite local, rapido mas insuficiente para o ambiente real; (2) consultar apenas logs de producao, util para diagnostico mas sem validar regressao de contrato; (3) combinar suite local, healthcheck MCP, logs de containers e chamadas operacionais internas. Escolhida a alternativa 3 por cobrir codigo, contrato e estado real do servico.
+- Validacoes executadas: `npm ci` em `apps/sandbox-orchestrator`; primeira tentativa de `npm test` falhou por dependencias dev ausentes; segunda execucao de `npm test` passou com 73 testes aprovados; healthcheck MCP retornou `{"status":"UP"}`; `docker ps` via MCP listou backend, frontend, caddy, sandbox-orchestrator, mcp-server e sandbox-mail; health interno do sandbox-orchestrator retornou `codexAppServer.ready=true`; `codex-app-server/account/read` retornou `connected=true`, `status=connected`, `executable=true`.
+- Logs consultados: backend registrou as solicitacoes 735 e 736 despachadas para `CHATGPT_CODEX` via Codex App Server sem token OAuth no payload; nao apareceu nova ocorrencia filtrada de `CODEX_APP_SERVER_UNAVAILABLE`, `unknown variant` ou valores camelCase de sandbox nos trechos consultados.
+- Nenhuma correcao de codigo foi aplicada nesta rodada; apenas instalacao local de dependencias para teste e registro documental deste diagnostico.

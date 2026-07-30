@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 10
     env:
       CHANGELOG_FILE: apps/backend/src/main/resources/db/changelog/changelog-master.yaml
+      LIQUIBASE_SEARCH_PATH: /workspace/apps/backend/src/main/resources
+      LIQUIBASE_CHANGELOG_FILE: db/changelog/changelog-master.yaml
       MYSQL_CONNECTOR_VERSION: 8.3.0
 
     services:
@@ -83,7 +85,8 @@ jobs:
             --mount type=bind,source="$RUNNER_TEMP/liquibase-drivers",target=/drivers,readonly \
             liquibase/liquibase:4.27.0 \
             --classpath=/drivers/mysql-connector-j.jar \
-            --changelog-file="/workspace/${CHANGELOG_FILE}" \
+            --search-path="${LIQUIBASE_SEARCH_PATH}" \
+            --changelog-file="${LIQUIBASE_CHANGELOG_FILE}" \
             --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
             --username=root \
             --password=liquibase-local-only \
@@ -101,7 +104,8 @@ jobs:
             --mount type=bind,source="$RUNNER_TEMP/liquibase-drivers",target=/drivers,readonly \
             liquibase/liquibase:4.27.0 \
             --classpath=/drivers/mysql-connector-j.jar \
-            --changelog-file="/workspace/${CHANGELOG_FILE}" \
+            --search-path="${LIQUIBASE_SEARCH_PATH}" \
+            --changelog-file="${LIQUIBASE_CHANGELOG_FILE}" \
             --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
             --username=root \
             --password=liquibase-local-only \
