@@ -84,9 +84,12 @@ A validação:
 
 1. inicia `mysql:5.7` como service container com credenciais exclusivas da execução;
 2. aguarda o healthcheck do banco;
-3. aplica o changelog com `liquibase/liquibase:4.27.0`;
-4. executa `status --verbose` para confirmar que não restaram changesets pendentes;
-5. encerra o job, fazendo o GitHub descartar a VM e todos os containers.
+3. baixa de forma explícita o MySQL Connector/J 8.3.0, pois a imagem base do
+   Liquibase não inclui esse driver JDBC;
+4. monta o driver somente para leitura e aplica o changelog com
+   `liquibase/liquibase:4.27.0`;
+5. executa `status --verbose` para confirmar que não restaram changesets pendentes;
+6. encerra o job, fazendo o GitHub descartar a VM e todos os containers.
 
 O checkout não persiste credenciais, o workflow possui somente permissão de leitura,
 e o container Liquibase recebe o repositório como volume somente leitura, sem

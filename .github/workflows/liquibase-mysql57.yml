@@ -20,6 +20,8 @@ jobs:
     name: Validate changelog
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      MYSQL_CONNECTOR_VERSION: 8.3.0
 
     services:
       mysql:
@@ -41,6 +43,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Java for the JDBC driver
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: apps/backend/pom.xml
+
+      - name: Provision the MySQL JDBC driver
+        run: |
+          mkdir -p "$RUNNER_TEMP/liquibase-drivers"
+          mvn -B -f apps/backend dependency:copy \
+            -Dartifact="com.mysql:mysql-connector-j:${MYSQL_CONNECTOR_VERSION}" \
+            -DoutputDirectory="$RUNNER_TEMP/liquibase-drivers" \
+            -Dmdep.stripVersion=true
+          test -s "$RUNNER_TEMP/liquibase-drivers/mysql-connector-j.jar"
+          jar tf "$RUNNER_TEMP/liquibase-drivers/mysql-connector-j.jar" \
+            | grep -qx 'com/mysql/jdbc/Driver.class'
+
       - name: Apply changelog on MySQL 5.7
         run: |
           docker run --rm \
@@ -50,7 +71,9 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges \
             --mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace,readonly \
+            --mount type=bind,source="$RUNNER_TEMP/liquibase-drivers",target=/drivers,readonly \
             liquibase/liquibase:4.27.0 \
+            --classpath=/drivers/mysql-connector-j.jar \
             --changelog-file=/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml \
             --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
             --username=root \
@@ -66,7 +89,9 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges \
             --mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace,readonly \
+            --mount type=bind,source="$RUNNER_TEMP/liquibase-drivers",target=/drivers,readonly \
             liquibase/liquibase:4.27.0 \
+            --classpath=/drivers/mysql-connector-j.jar \
             --changelog-file=/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml \
             --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
             --username=root \
