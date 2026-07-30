@@ -1347,6 +1347,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'O GitHub CLI e o actionlint estão disponíveis para o modelo pelos comandos gh e actionlint; use gh para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em .github/workflows.';
   }
 
+  private buildSshClientInstruction(): string {
+    return 'O cliente OpenSSH está disponível pelo comando ssh para diagnósticos e acessos autorizados quando credenciais forem fornecidas pelo ambiente ou pelo usuário; nunca use SSH para publicar diretamente alterações de código ou contornar o fluxo de Pull Request.';
+  }
+
   private buildMediaToolsInstruction(): string {
     return 'O ffmpeg e o ffprobe estão disponíveis para o modelo pelos comandos ffmpeg e ffprobe; use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails e sintetizar mídias de teste, e use ffprobe para inspecionar metadados, codecs, resolução, duração, streams e integridade básica de arquivos de vídeo quando a tarefa envolver vídeos. O comando sandbox-media-player <arquivo-video-ou-audio> [saida.html] gera um player HTML local com controles nativos de vídeo/áudio; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.';
   }
@@ -1372,18 +1376,19 @@ export class SandboxJobProcessor implements JobProcessor {
     const awsCliInstruction = this.buildAwsCliInstruction();
     const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
+    const sshClientInstruction = this.buildSshClientInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const browserTestingInstruction = this.buildBrowserTestingInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodexSandbox(job)
-        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${mediaToolsInstruction} ${emailTestingInstruction} ${browserTestingInstruction}
+        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${emailTestingInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodex(job)
-        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
+        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
@@ -1650,6 +1655,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const dockerCliInstruction = this.buildDockerCliInstruction();
     const githubCiInstruction = this.buildGithubCiInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
+    const sshClientInstruction = this.buildSshClientInstruction();
     const repositoryModuleTestInstruction = 'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.';
     const noPrButEditInstruction = 'Não criar Pull Request sem pedido explícito não significa evitar alterações: quando o usuário solicitar ajuste, correção ou implementação e você identificar a solução, altere os arquivos necessários, valide e deixe as mudanças prontas na branch/worktree; apenas não abra nem publique o PR até o usuário pedir.';
     const productionPublicationInstruction = 'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.';
@@ -1697,7 +1703,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${githubCiInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.

@@ -14,3 +14,7 @@
 **Integração Codex App Server / sandbox mode:**
 - Ao montar payloads para o Codex App Server, especialmente `thread/start`, use os valores de sandbox em kebab-case aceitos pelo App Server: `read-only`, `workspace-write` ou `danger-full-access`.
 - Nunca envie `workspaceWrite`, `readOnly` ou `dangerFullAccess` para o campo `sandbox` do App Server; esses valores camelCase são legados e causam erro `Invalid request: unknown variant`.
+
+**Acesso a VPS por SSH:**
+- Quando precisar acessar uma VPS por SSH e ainda não existir chave cadastrada para a sandbox, gere uma nova chave `ed25519` dentro da sandbox e entregue apenas a chave pública ao usuário para cadastro no host autorizado.
+- Nunca solicite ou exponha chave privada, senha SSH ou credenciais reais; use a chave privada gerada somente localmente na sandbox e apenas para acessos explicitamente autorizados.
