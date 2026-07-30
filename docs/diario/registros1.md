@@ -2912,3 +2912,30 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: (1) pedir senha SSH ao usuario, simples mas inseguro e inadequado para automacao; (2) reutilizar uma chave privada existente, rapido mas com risco de exposicao e baixa rastreabilidade; (3) gerar uma chave nova `ed25519` na sandbox e entregar somente a chave publica ao usuario para cadastrar no host autorizado. Escolhida a alternativa 3 por reduzir exposicao de segredo, manter a chave privada local e permitir autorizacao explicita pelo usuario.
 - Ajuste aplicado em `AGENTS.md`: adicionada instrucao operacional para gerar chave `ed25519` na sandbox quando necessario e compartilhar apenas a chave publica para cadastro em VPS autorizada, sem solicitar ou expor credenciais reais.
 - Nao foi criado Pull Request.
+
+## 2026-07-30 - Esclarecimento sobre o risco de disponibilizar Docker daemon
+
+- Solicitacao recebida: esclarecer se seria perigoso disponibilizar um Docker daemon ativo para validar migrations Liquibase localmente contra MySQL 5.7, reproduzindo o GitHub Actions.
+- Pergunta explicita de causa raiz: "por que isso seria perigoso?". Resposta: o risco nao vem do MySQL 5.7 nem do Liquibase; vem de dar a codigo executado na sandbox acesso a uma API capaz de criar containers, montar caminhos do host e controlar recursos do daemon. Se o daemon for o do host (por exemplo, via `/var/run/docker.sock`), esse acesso equivale, na pratica, a alto privilegio sobre o host.
+- Conclusao: a frase e segura apenas se "Docker daemon ativo" significar um daemon remoto ou efemero, dedicado e fortemente isolado, sem socket do host, mounts sensiveis, modo privilegiado, rede de producao ou credenciais amplas. Expor o daemon compartilhado do host a uma sandbox de uso geral e perigoso e nao e recomendado.
+- Alternativas recomendadas: executar o teste MySQL 5.7 no GitHub Actions; usar um runner efemero dedicado; ou oferecer um servico restrito que execute somente a validacao Liquibase predefinida, com imagem fixada, limites de recursos, rede isolada e descarte posterior.
+- Nenhum codigo de aplicacao foi alterado; foi registrada apenas a orientacao de seguranca solicitada.
+
+## 2026-07-30 - Runner efemero dedicado para Liquibase com MySQL 5.7
+
+- Solicitacao recebida: disponibilizar um runner efemero e dedicado para validar os changelogs Liquibase contra MySQL 5.7.
+- Pergunta explicita de causa raiz: "por que a validacao local exata nao estava disponivel?". Resposta: a sandbox nao possui Docker daemon, e expor o socket Docker compartilhado do host eliminaria a fronteira de isolamento. Ao mesmo tempo, a CI generica executava apenas os testes Maven do backend e nao iniciava MySQL 5.7 nem aplicava o changelog Liquibase de referencia.
+- Solucao aplicada: criado `.github/workflows/liquibase-mysql57.yml`, executado em uma VM GitHub-hosted exclusiva do job e descartada ao final. O job inicia `mysql:5.7`, aguarda seu healthcheck, aplica o changelog usando `liquibase/liquibase:4.27.0` e consulta o status final.
+- Controles de seguranca: permissao GitHub limitada a `contents: read`, checkout sem persistencia de credenciais, timeout de 10 minutos, concorrencia com cancelamento de execucao obsoleta, credenciais locais sem segredos de producao e container Liquibase sem capabilities, com `no-new-privileges`, filesystem somente leitura e checkout montado somente para leitura.
+- Acionamento: automatico em pull requests que alterem changelogs, o guia ou o workflow, e manual via `workflow_dispatch`. O guia `docs/database/liquibase-mysql57.md` foi atualizado com o uso e o ciclo de descarte.
+- Validacoes executadas: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/liquibase-mysql57.yml` e `git diff --check`.
+- Limitacao do ambiente: o comando `docker` nao esta instalado na sandbox atual, portanto os containers MySQL/Liquibase nao puderam ser executados localmente; a integracao completa sera exercitada pelo runner versionado. Uma tentativa de parse com Python tambem nao foi utilizavel porque o modulo opcional `yaml` nao esta instalado; a sintaxe foi validada com o `actionlint` especifico para GitHub Actions.
+
+## 2026-07-30 - Correcao do driver MySQL no runner Liquibase
+
+- Erro observado no GitHub Actions: `Cannot find database driver: com.mysql.jdbc.Driver` ao executar o passo `Apply changelog on MySQL 5.7`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a imagem `liquibase/liquibase:4.27.0` instala o Liquibase, mas nao inclui o MySQL Connector/J. O workflow anterior fornecia URL, usuario e senha, porem nao provisionava nem adicionava o JAR JDBC ao classpath; portanto o Liquibase reconhecia a URL MySQL, mas nao conseguia carregar o driver solicitado.
+- Correcao aplicada na causa: o workflow agora usa a versao 8.3.0 do MySQL Connector/J gerenciada pelo backend, baixa o artefato com Maven para o diretorio temporario do runner, verifica que o JAR existe e contem a classe legada `com/mysql/jdbc/Driver.class` solicitada pelo Liquibase, monta o diretorio no container como somente leitura e passa o arquivo explicitamente em `--classpath` nas duas execucoes Liquibase.
+- Controles preservados: o driver fica somente na VM efemera, nao e commitado no repositorio, nao exige liberar escrita no container Liquibase e preserva `--read-only`, `--cap-drop ALL` e `no-new-privileges`.
+- Validacoes executadas: resolucao local da versao gerenciada com `mvn -q -f apps/backend help:evaluate -Dexpression=mysql.version -DforceStdout`; download do artefato com `mvn dependency:copy`; verificacao de `com/mysql/jdbc/Driver.class` e `com/mysql/cj/jdbc/Driver.class` dentro do JAR; `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/liquibase-mysql57.yml`; e `git diff --check`.
+- Limitacao do ambiente: o Docker CLI/daemon continua indisponivel nesta sandbox, portanto a conexao completa Liquibase/MySQL sera confirmada pela nova execucao do GitHub Actions.
