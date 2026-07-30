@@ -219,6 +219,13 @@
 ## 2026-05-14 01:41:55 UTC-3
 - Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
 
+## 2026-07-30 15:51:28 UTC-3
+- Solicitação recebida em modo MKT: verificar a situação atual do experimento 76.
+- Evidências consultadas: API pública do AI Hub para `CodexRequest` 76, lista recente de solicitações Codex, detalhe da solicitação 807 (`Experimento 76 coerente com v6`), status do PR `paulofor/marketing-hub#4616`, runs de GitHub Actions em `main`, healthcheck público de `https://v6.clubemusa.com.br/healthz` e logs recentes do MCP Server.
+- Conclusão operacional: o experimento 76 do Marketing Hub foi tratado nas solicitações 789-807; a solicitação 807 confirmou que o experimento está `RUNNING`, direciona tráfego para a PDE MUSA v6 (`https://v6.clubemusa.com.br`), a v6 está `ACTIVE`, e o vídeo HLS publicado vem do contrato/slot PDE, sem custo/asset direto do experimento.
+- Conclusão de deploy: o PR `paulofor/marketing-hub#4616` está mergeado em `main` em 2026-07-30 18:27:17 UTC, com workflows posteriores em `main` concluídos com sucesso, incluindo `Build & Deploy containers`, `CI - PDE Platform Metodo MUSA`, `CI + CD – marketinghub backend`, `Frontend CI` e `MCP Server - Build and Deploy`.
+- Ponto de atenção comercial: a v6 pública responde `UP`, mas a verificação atual foi feita por APIs/logs disponíveis; a leitura visual das abas de produção do painel administrativo não foi refeita nesta solicitação.
+
 ## 2026-07-30 00:22:49 UTC-3
 - Solicitação recebida: verificar e ajustar problema no GitHub Actions.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução falha mais recente estava no workflow `Liquibase MySQL 5.7`, etapa `Apply changelog on MySQL 5.7`; o container Liquibase falhou porque o arquivo `/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml` não existia no checkout daquele PR, enquanto o workflow assumia esse caminho diretamente dentro do container.
