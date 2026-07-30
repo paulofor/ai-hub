@@ -68,3 +68,26 @@ Veja os exemplos em:
 - `apps/backend/src/main/resources/db/changelog/changeset-001-create-users.yaml`
 
 Esses arquivos servem como base para o modelo e para o time de desenvolvimento.
+
+## Runner efêmero dedicado
+
+O workflow `.github/workflows/liquibase-mysql57.yml` executa a validação em um runner
+GitHub-hosted dedicado ao job. A máquina virtual, o daemon Docker e o banco MySQL 5.7
+são descartados ao final da execução; nenhum socket Docker do host do AI Hub é exposto
+à sandbox.
+
+O workflow é iniciado automaticamente em pull requests que alteram os changelogs,
+este guia ou o próprio workflow. Também pode ser iniciado manualmente pela ação
+**Liquibase MySQL 5.7** na aba **Actions** do GitHub.
+
+A validação:
+
+1. inicia `mysql:5.7` como service container com credenciais exclusivas da execução;
+2. aguarda o healthcheck do banco;
+3. aplica o changelog com `liquibase/liquibase:4.27.0`;
+4. executa `status --verbose` para confirmar que não restaram changesets pendentes;
+5. encerra o job, fazendo o GitHub descartar a VM e todos os containers.
+
+O checkout não persiste credenciais, o workflow possui somente permissão de leitura,
+e o container Liquibase recebe o repositório como volume somente leitura, sem
+capabilities Linux adicionais e com `no-new-privileges`.

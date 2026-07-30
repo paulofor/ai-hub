@@ -1,0 +1,74 @@
+name: Liquibase MySQL 5.7
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/liquibase-mysql57.yml"
+      - "apps/backend/src/main/resources/db/changelog/**"
+      - "docs/database/liquibase-mysql57.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: liquibase-mysql57-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_DATABASE: ai_hub
+          MYSQL_ROOT_PASSWORD: liquibase-local-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Apply changelog on MySQL 5.7
+        run: |
+          docker run --rm \
+            --network host \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace,readonly \
+            liquibase/liquibase:4.27.0 \
+            --changelog-file=/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml \
+            --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
+            --username=root \
+            --password=liquibase-local-only \
+            update
+
+      - name: Verify changelog is fully applied
+        run: |
+          docker run --rm \
+            --network host \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --mount type=bind,source="$GITHUB_WORKSPACE",target=/workspace,readonly \
+            liquibase/liquibase:4.27.0 \
+            --changelog-file=/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml \
+            --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
+            --username=root \
+            --password=liquibase-local-only \
+            status --verbose
