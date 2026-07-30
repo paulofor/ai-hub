@@ -2877,3 +2877,20 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: usa o relogio controlado do Playwright para validar que o alerta nao aparece antes da janela, surge apos 5 minutos sem mudanca e desaparece quando a contagem aumenta. O cenario tambem gera screenshot do estado visual alertado no diretorio de artefatos do teste.
 - Validacoes executadas: `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "alerts when the marketing interaction count"`; `git diff --check`.
 - Observacao de ambiente: foi necessario executar `npx playwright install chromium` e `npx playwright install-deps chromium` porque o navegador e bibliotecas nativas nao estavam presentes inicialmente.
+
+## 2026-07-29 - Avaliacao de risco do Docker daemon na sandbox
+
+- Solicitacao recebida: avaliar se existe risco em disponibilizar o Docker daemon diretamente na sandbox.
+- Pergunta explicita de causa raiz: "por que esse risco existe?". Resposta: a API do Docker controla a criacao de containers, mounts, namespaces, redes e processos; quando a sandbox acessa o daemon do host, seu isolamento deixa de ser uma fronteira efetiva, pois um comando pode montar o filesystem do host, acessar segredos, iniciar containers privilegiados ou afetar outros workloads.
+- Conclusao: montar `/var/run/docker.sock` ou expor um daemon privilegiado do host para uma sandbox que executa comandos gerados pelo modelo equivale, na pratica, a conceder alto privilegio sobre o host. O impacto inclui escape da sandbox, leitura e alteracao do host, vazamento de credenciais, movimento lateral, indisponibilidade e persistencia.
+- Recomendacao para o AI Hub: nao oferecer Docker bruto a sandboxes de uso geral. Manter operacoes reais no host por uma camada intermediaria autenticada, auditavel e allowlistada, como o MCP Server, com comandos e parametros validados, limites de tempo/recursos e autorizacao explicita para operacoes destrutivas. Quando builds de containers forem indispensaveis, preferir um builder remoto/efemero e isolado, sem socket do host, sem modo privilegiado, sem credenciais amplas e sem compartilhar a rede de producao.
+- Nenhum codigo de aplicacao foi alterado; foi registrada apenas a avaliacao arquitetural e de seguranca solicitada.
+
+## 2026-07-30 - Disponibilizacao do nslookup na sandbox
+
+- Solicitacao recebida: instalar o comando `nslookup` na imagem da sandbox.
+- Pergunta explicita de causa raiz: "por que o nslookup nao estava disponivel?". Resposta: a imagem de producao usa `node:20-bookworm-slim`, que nao inclui ferramentas de diagnostico DNS, e a lista explicita de pacotes do Dockerfile nao instalava o pacote Debian `dnsutils`, responsavel por fornecer `nslookup`.
+- Correcao aplicada em `apps/sandbox-orchestrator/Dockerfile`: adicionado `dnsutils` aos pacotes de runtime e `command -v nslookup` como verificacao durante o build, fazendo a construcao falhar cedo se o executavel nao for instalado.
+- Protecao contra regressao: o teste do Dockerfile agora exige tanto o pacote `dnsutils` quanto a verificacao do executavel; a arquitetura da sandbox foi atualizada para documentar a ferramenta e esclarecer que seu uso nao depende do Docker daemon do host.
+- Validacoes executadas: `npm test` em `apps/sandbox-orchestrator` e `git diff --check`. Uma tentativa anterior de filtrar o teste com `npm test -- --test-name-pattern=...` falhou porque o script repassou o argumento depois dos caminhos de teste e o Node o interpretou como arquivo; a suite completa foi executada com sucesso em seguida.
+- Limitacao do ambiente: nao foi possivel construir a imagem localmente porque o comando `docker` nao esta instalado neste ambiente; a instalacao efetiva de `nslookup` sera exercitada pelo build versionado da pipeline.

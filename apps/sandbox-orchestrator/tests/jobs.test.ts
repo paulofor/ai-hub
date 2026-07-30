@@ -90,6 +90,8 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
   assert.match(dockerfile, /\bffmpeg\b/);
+  assert.match(dockerfile, /\bdnsutils\b/);
+  assert.match(dockerfile, /command -v nslookup/);
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
