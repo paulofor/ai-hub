@@ -2904,3 +2904,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validacao local executada na sandbox atual: `apt-get update && apt-get install -y --no-install-recommends openssh-client`; `ssh -V` retornou `OpenSSH_9.2p1 Debian-2+deb12u10`.
 - Validacoes executadas: `npm ci --include=dev`; `npm test` em `apps/sandbox-orchestrator` com 73 testes aprovados; `git diff --check`.
 - Limitacao do ambiente: o Docker CLI esta instalado, mas nao ha daemon/socket Docker disponivel em `/var/run/docker.sock`; por isso o build local da imagem nao foi executado. A instalacao permanente sera exercitada pelo build versionado da pipeline/deploy.
+
+## 2026-07-30 00:00:00 UTC - Orientacao para acesso SSH a VPS
+
+- Solicitacao recebida: orientar o modelo que, quando precisar acessar uma VPS por SSH, deve criar uma chave `ed25519` e passar a chave publica ao usuario para cadastro no host caso ainda nao esteja cadastrada.
+- Pergunta explicita de causa raiz: "por que essa orientacao e necessaria?". Resposta: a presenca do `openssh-client` na sandbox garante apenas o comando `ssh`; ela nao resolve a autenticacao no host remoto e pode levar a pedidos inseguros de senha, reutilizacao de chaves privadas ou tentativa de acesso sem chave cadastrada.
+- Alternativas avaliadas: (1) pedir senha SSH ao usuario, simples mas inseguro e inadequado para automacao; (2) reutilizar uma chave privada existente, rapido mas com risco de exposicao e baixa rastreabilidade; (3) gerar uma chave nova `ed25519` na sandbox e entregar somente a chave publica ao usuario para cadastrar no host autorizado. Escolhida a alternativa 3 por reduzir exposicao de segredo, manter a chave privada local e permitir autorizacao explicita pelo usuario.
+- Ajuste aplicado em `AGENTS.md`: adicionada instrucao operacional para gerar chave `ed25519` na sandbox quando necessario e compartilhar apenas a chave publica para cadastro em VPS autorizada, sem solicitar ou expor credenciais reais.
+- Nao foi criado Pull Request.
