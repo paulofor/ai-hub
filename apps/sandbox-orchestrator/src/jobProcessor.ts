@@ -1343,6 +1343,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'O Docker CLI e o plugin Docker Compose v2 estão disponíveis para o modelo pelos comandos docker e docker compose; use docker compose preferencialmente a docker-compose, e valide a engine com docker version/docker compose version antes de depender de containers.';
   }
 
+  private buildLiquibaseMysql57RunnerInstruction(): string {
+    return 'Para validações Liquibase no MySQL 5.7, existe um runner efêmero dedicado no GitHub Actions, definido em .github/workflows/liquibase-mysql57.yml e documentado em docs/database/liquibase-mysql57.md. A ausência de Docker daemon local na sandbox não significa que essa validação esteja indisponível: não apresente a ativação de Docker local como melhoria necessária nem como único meio de executar o teste. Quando a tarefa alterar changelogs, use o workflow Liquibase MySQL 5.7 do PR; com alterações já publicadas em uma branch, você também pode acioná-lo e acompanhar o resultado com gh workflow run liquibase-mysql57.yml --ref <branch>, gh run list --workflow liquibase-mysql57.yml e gh run watch <run-id> --exit-status. Se as alterações ainda não estiverem publicadas, valide o que for possível localmente e explique que o runner executará o teste completo no PR, em vez de afirmar que faltou infraestrutura de validação.';
+  }
+
   private buildGithubCiInstruction(): string {
     return 'O GitHub CLI e o actionlint estão disponíveis para o modelo pelos comandos gh e actionlint; use gh para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em .github/workflows.';
   }
@@ -1376,19 +1380,20 @@ export class SandboxJobProcessor implements JobProcessor {
     const awsCliInstruction = this.buildAwsCliInstruction();
     const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
+    const liquibaseMysql57RunnerInstruction = this.buildLiquibaseMysql57RunnerInstruction();
     const sshClientInstruction = this.buildSshClientInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const browserTestingInstruction = this.buildBrowserTestingInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodexSandbox(job)
-        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${emailTestingInstruction} ${browserTestingInstruction}
+        ? `Modo Codex ChatGPT Sandbox ativo: execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git, sem clonar repositório, sem gerar diff e sem criar Pull Request. Use o diretório temporário atual apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos. ${codexChatgptOperationalInstruction} ${bestAnswerInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${emailTestingInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodex(job)
-        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
+        ? `Modo Codex ChatGPT ativo: ${bestAnswerInstruction} ${localDevelopmentInstruction} ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
@@ -1653,6 +1658,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const awsCliInstruction = this.buildAwsCliInstruction();
     const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
     const dockerCliInstruction = this.buildDockerCliInstruction();
+    const liquibaseMysql57RunnerInstruction = this.buildLiquibaseMysql57RunnerInstruction();
     const githubCiInstruction = this.buildGithubCiInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const sshClientInstruction = this.buildSshClientInstruction();
@@ -1703,7 +1709,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.

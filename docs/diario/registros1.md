@@ -2948,3 +2948,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 
 ## 2026-07-30 00:23:28 UTC-3
 - Correção de registro append-only: a entrada `2026-07-30 00:22:49 UTC-3` sobre o ajuste do GitHub Actions foi inserida antes de registros mais recentes já existentes no arquivo; esta nova entrada preserva a anterior sem apagar linhas e registra que a correção final também deve considerar esta anotação no fim do diário.
+
+## 2026-07-30 02:34:27 UTC-3 - Modelo passa a reconhecer o runner Liquibase MySQL 5.7
+
+- Solicitação recebida: corrigir o entendimento do modelo após a solicitação 755 afirmar que precisaria de um daemon Docker ativo na sandbox, embora o runner efêmero dedicado já estivesse disponível.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o workflow e o guia existiam no repositório, mas o prompt operacional só ensinava regras de autoria de migrations e anunciava genericamente Docker CLI/Compose; ele não declarava que a ausência do daemon local era suprida pelo runner GitHub-hosted nem ensinava como acioná-lo e acompanhar sua execução. Assim, o modelo interpretou a falha local como ausência de infraestrutura de validação.
+- Correção aplicada na causa: criada uma instrução operacional explícita, compartilhada pelos fluxos Codex App Server e pelo loop legado, que identifica `.github/workflows/liquibase-mysql57.yml` como runner disponível, diferencia daemon local de runner remoto, orienta o uso de `gh workflow run`, `gh run list` e `gh run watch`, e proíbe apresentar Docker local como melhoria necessária para essa validação.
+- Proteção contra regressão: o teste do prompt inicial agora verifica a presença do runner, a distinção sobre o daemon local, o comando de acionamento e a regra que impede recomendar Docker local como requisito.
+- Documentação atualizada no README do sandbox-orchestrator para registrar o contrato comunicado ao modelo.
