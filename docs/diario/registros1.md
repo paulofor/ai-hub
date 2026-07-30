@@ -218,6 +218,12 @@
 
 ## 2026-05-14 01:41:55 UTC-3
 - Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
+
+## 2026-07-30 00:22:49 UTC-3
+- Solicitação recebida: verificar e ajustar problema no GitHub Actions.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução falha mais recente estava no workflow `Liquibase MySQL 5.7`, etapa `Apply changelog on MySQL 5.7`; o container Liquibase falhou porque o arquivo `/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml` não existia no checkout daquele PR, enquanto o workflow assumia esse caminho diretamente dentro do container.
+- Alternativas avaliadas: apenas rerodar a Action, pular silenciosamente a validação quando o changelog faltar, ou tornar a pré-condição explícita no workflow e centralizar o caminho do changelog; escolhida a terceira por preservar a validação e tornar a falha diagnóstica antes de acionar o container.
+- Ajustado `.github/workflows/liquibase-mysql57.yml` para declarar `CHANGELOG_FILE`, validar a existência do changelog logo após o checkout e reutilizar o mesmo caminho nos comandos `update` e `status` do Liquibase.
 - 2026-05-14 04:49:56 UTC — Correção de causa raiz para nova ocorrência de `denied: permission_denied: write_package` no push do backend: o workflow priorizava `secrets.GHCR_TOKEN` quando presente, permitindo que um PAT desatualizado/sem `write:packages` sobrescrevesse o token nativo do GitHub Actions e quebrasse a publicação no GHCR.
 - Ajustado `.github/workflows/ci.yml` para o job `docker` autenticar no GHCR com `github.repository_owner` + `github.token` (credencial efêmera do run com `packages:write` do próprio workflow), removendo dependência de segredo legado para o push de imagens.
 - Mantido fallback por segredo apenas no `deploy` (login no VPS) e no cleanup via API, agora com fallback para `github.token` em vez de `secrets.GITHUB_TOKEN`, padronizando a fonte do token do runtime.
@@ -2939,3 +2945,6 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Controles preservados: o driver fica somente na VM efemera, nao e commitado no repositorio, nao exige liberar escrita no container Liquibase e preserva `--read-only`, `--cap-drop ALL` e `no-new-privileges`.
 - Validacoes executadas: resolucao local da versao gerenciada com `mvn -q -f apps/backend help:evaluate -Dexpression=mysql.version -DforceStdout`; download do artefato com `mvn dependency:copy`; verificacao de `com/mysql/jdbc/Driver.class` e `com/mysql/cj/jdbc/Driver.class` dentro do JAR; `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/liquibase-mysql57.yml`; e `git diff --check`.
 - Limitacao do ambiente: o Docker CLI/daemon continua indisponivel nesta sandbox, portanto a conexao completa Liquibase/MySQL sera confirmada pela nova execucao do GitHub Actions.
+
+## 2026-07-30 00:23:28 UTC-3
+- Correção de registro append-only: a entrada `2026-07-30 00:22:49 UTC-3` sobre o ajuste do GitHub Actions foi inserida antes de registros mais recentes já existentes no arquivo; esta nova entrada preserva a anterior sem apagar linhas e registra que a correção final também deve considerar esta anotação no fim do diário.

@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      CHANGELOG_FILE: apps/backend/src/main/resources/db/changelog/changelog-master.yaml
       MYSQL_CONNECTOR_VERSION: 8.3.0
 
     services:
@@ -42,6 +43,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Verify changelog exists in checkout
+        run: |
+          if [ ! -s "${CHANGELOG_FILE}" ]; then
+            echo "Required Liquibase changelog was not found in this checkout: ${CHANGELOG_FILE}" >&2
+            find apps/backend/src/main/resources/db -maxdepth 4 -type f -print 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Set up Java for the JDBC driver
         uses: actions/setup-java@v4
@@ -74,7 +83,7 @@ jobs:
             --mount type=bind,source="$RUNNER_TEMP/liquibase-drivers",target=/drivers,readonly \
             liquibase/liquibase:4.27.0 \
             --classpath=/drivers/mysql-connector-j.jar \
-            --changelog-file=/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml \
+            --changelog-file="/workspace/${CHANGELOG_FILE}" \
             --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
             --username=root \
             --password=liquibase-local-only \
@@ -92,7 +101,7 @@ jobs:
             --mount type=bind,source="$RUNNER_TEMP/liquibase-drivers",target=/drivers,readonly \
             liquibase/liquibase:4.27.0 \
             --classpath=/drivers/mysql-connector-j.jar \
-            --changelog-file=/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml \
+            --changelog-file="/workspace/${CHANGELOG_FILE}" \
             --url=jdbc:mysql://127.0.0.1:3306/ai_hub?useSSL=false\&allowPublicKeyRetrieval=true \
             --username=root \
             --password=liquibase-local-only \
