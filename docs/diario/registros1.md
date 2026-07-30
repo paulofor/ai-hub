@@ -2968,3 +2968,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Sandbox: adicionados endpoints internos de status, reinício do App Server e cancelamento forçado. O processador agora preserva o estado `CANCELLED` quando a interrupção forçada rejeita uma chamada pendente e sempre percorre sua finalização/limpeza.
 - Frontend: criada a rota “Saúde do sistema” com cartões de disco, tabela de serviços/recursos, consumo de logs, estado/restarts do App Server, jobs ativos, fila e ações com progresso e confirmação.
 - Configuração necessária: definir `HUB_MAINTENANCE_ADMIN_TOKEN` com segredo longo; o backend reutiliza `MCP_SERVER_API_TOKEN` ao chamar o MCP internamente.
+
+## 2026-07-30 - Orientação e detecção da configuração do token administrativo
+
+- Problema observado: a página solicitava um “token administrativo” sem explicar onde ele era criado ou armazenado, levando o usuário a procurar um token que ainda poderia nem existir na implantação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a implementação introduziu `HUB_MAINTENANCE_ADMIN_TOKEN` apenas no exemplo do backend, mas não no `.env.example` raiz usado pelo Docker Compose, e a interface não distinguia “segredo ainda não configurado” de “usuário ainda não digitou o segredo”.
+- Correção na causa: a variável foi documentada no `.env.example` raiz com comando seguro de geração; o backend agora expõe somente o estado booleano de configuração, sem revelar o segredo; e o frontend explica que o valor vem do `.env` da implantação, orienta solicitar ao administrador da VPS e mostra instruções de bootstrap quando ainda não estiver configurado.
+- Proteção preservada: o token real nunca é devolvido pela API, gravado no navegador ou exibido na página; a consulta de diagnóstico e todas as ações continuam exigindo o segredo correto.

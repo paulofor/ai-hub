@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
 
 type CommandResult = { exitCode?: number; stdout?: string; stderr?: string };
@@ -10,6 +10,7 @@ type Health = {
   queuedRequests?: Array<{ id: number; profile: string; createdAt: string }>;
   maintenanceBusy?: boolean;
 };
+type AdminConfiguration = { configured: boolean; environmentVariable: string };
 
 const splitSections = (value = '') => {
   const sections: Record<string, string[]> = {};
@@ -35,8 +36,15 @@ export default function SystemHealthPage() {
   const [action, setAction] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [configuration, setConfiguration] = useState<AdminConfiguration | null>(null);
   const sections = useMemo(() => splitSections(health?.host?.stdout), [health]);
   const headers = useMemo(() => ({ 'X-Admin-Token': token }), [token]);
+
+  useEffect(() => {
+    client.get('/admin/system-health/configuration')
+      .then((response) => setConfiguration(response.data))
+      .catch(() => setConfiguration(null));
+  }, []);
 
   const load = useCallback(async () => {
     if (!token.trim()) { setError('Informe o token administrativo.'); return; }
@@ -67,7 +75,13 @@ export default function SystemHealthPage() {
 
   return <div className="space-y-6">
     <header><p className="text-sm font-semibold uppercase tracking-widest text-emerald-700">Administração</p><h2 className="text-3xl font-bold text-slate-900 dark:text-white">Saúde do sistema</h2><p className="mt-2 text-slate-600 dark:text-slate-300">Diagnóstico e recuperação com comandos fixos, confirmação e auditoria. Nenhum comando Linux livre é aceito.</p></header>
-    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30"><label className="text-sm font-semibold">Token administrativo</label><div className="mt-2 flex gap-2"><input type="password" value={token} onChange={(e) => setToken(e.target.value)} className="min-w-0 flex-1 rounded-lg border px-3 py-2 dark:bg-slate-900" autoComplete="off"/><button onClick={load} disabled={loading} className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{loading ? 'Atualizando…' : 'Carregar diagnóstico'}</button></div><p className="mt-2 text-xs text-slate-500">O token permanece somente na memória desta aba.</p></section>
+    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+      <div className="flex flex-wrap items-center justify-between gap-2"><label className="text-sm font-semibold">Token administrativo</label>{configuration && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${configuration.configured ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{configuration.configured ? 'Configurado no servidor' : 'Ainda não configurado'}</span>}</div>
+      <p className="mt-2 text-sm text-slate-700 dark:text-slate-300"><strong>Onde obter:</strong> este token não é criado nem exibido pelo AI Hub. É o valor de <code className="rounded bg-white/70 px-1 py-0.5">HUB_MAINTENANCE_ADMIN_TOKEN</code> definido no arquivo <code className="rounded bg-white/70 px-1 py-0.5">.env</code> da implantação. Solicite-o ao administrador da VPS.</p>
+      {configuration?.configured === false && <div className="mt-3 rounded-lg border border-rose-200 bg-white/70 p-3 text-sm text-rose-900"><p className="font-semibold">O servidor ainda não tem esse token.</p><p className="mt-1">Na VPS, gere um segredo com <code>openssl rand -hex 32</code>, grave como <code>HUB_MAINTENANCE_ADMIN_TOKEN=&lt;segredo&gt;</code> no <code>.env</code> do Compose e recrie o container do backend. O segredo nunca será mostrado nesta página.</p></div>}
+      <div className="mt-3 flex gap-2"><input type="password" aria-label="Token administrativo" placeholder="Cole o valor configurado na VPS" value={token} onChange={(e) => setToken(e.target.value)} disabled={configuration?.configured === false} className="min-w-0 flex-1 rounded-lg border px-3 py-2 disabled:bg-slate-100 dark:bg-slate-900" autoComplete="off"/><button onClick={load} disabled={loading || configuration?.configured === false} className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{loading ? 'Atualizando…' : 'Carregar diagnóstico'}</button></div>
+      <p className="mt-2 text-xs text-slate-500">Por segurança, o backend informa apenas se o segredo foi configurado. O valor digitado permanece somente na memória desta aba.</p>
+    </section>
     {error && <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-rose-800">{error}</div>}
     {message && <pre className="whitespace-pre-wrap rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{message}</pre>}
     {health && <>

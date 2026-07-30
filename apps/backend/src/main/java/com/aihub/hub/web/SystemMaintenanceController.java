@@ -22,6 +22,14 @@ public class SystemMaintenanceController {
         this.adminToken = adminToken == null ? "" : adminToken.trim();
     }
 
+    @GetMapping("/configuration")
+    public Map<String, Object> configuration() {
+        return Map.of(
+            "configured", !adminToken.isBlank(),
+            "environmentVariable", "HUB_MAINTENANCE_ADMIN_TOKEN"
+        );
+    }
+
     @GetMapping
     public Map<String, Object> status(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
         authorize(token);
