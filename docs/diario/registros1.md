@@ -2984,11 +2984,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Decisão de segurança: o token não foi armazenado no banco de dados, porque é um segredo administrativo global usado para autorizar o próprio endpoint de manutenção. Persisti-lo no backend para uso automático reduziria o valor do controle de acesso; o backend continua apenas validando o segredo recebido e nunca o devolve pela API.
 - Proteção contra regressão: criado teste e2e no frontend cobrindo o token salvo, o checkbox marcado automaticamente e a remoção do valor salvo.
 
-## 2026-07-31 00:38:44 UTC - Correção ao atualizar item de prompt longo
+## 2026-07-31 - Cópia individual dos blocos de código no diálogo
 
-- Solicitação recebida: verificar e ajustar erro `Request failed with status code 400` ao atualizar o item de prompt “Cockpit PDE”.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o item “Cockpit PDE” já tinha 1886 caracteres em produção, e a edição mostrada acrescentava novas linhas; o backend validava `phrase` com limite artificial de 2000 caracteres nos DTOs de criação/atualização, embora a coluna do banco seja `LONGTEXT`. Ao ultrapassar esse limite, a API retornava 400 antes de salvar. Além disso, o handler de validação devolvia apenas `errors`, enquanto o frontend lia `error`, fazendo a tela mostrar a mensagem genérica do Axios.
-- Correção aplicada na causa: aumentado o limite de `phrase` dos itens de prompt para 10000 caracteres em criação e atualização; a tela agora aplica o mesmo limite com `maxLength`, contador visível e validação antes do envio; e respostas de validação do backend passam a incluir um campo `error` legível.
-- Proteção contra regressão: criado teste de validação cobrindo atualização com 5000 caracteres e rejeição acima de 10000 caracteres para criação/atualização.
-- Validações executadas: `mvn test -Dtest=PromptHintRequestValidationTest,PromptHintServiceTest`; `npm ci`; `npm run build`.
-- Observação: `npm ci` reportou vulnerabilidades já existentes nas dependências do frontend; não foram tratadas nesta correção por não fazerem parte da causa do erro de atualização.
+- Solicitação recebida: adicionar um ícone nos quadros pretos das respostas para copiar seu conteúdo para a área de transferência.
+- Pergunta explícita de causa raiz: “por que esse recurso não estava disponível?”. Resposta: o renderizador Markdown transformava blocos cercados por crases diretamente em elementos `pre` e `code`, sem um componente interativo associado. A cópia existente operava apenas sobre o card ou a mensagem completa e, por isso, não permitia copiar somente o conteúdo do quadro preto.
+- Correção aplicada na causa: os renderizadores dos diálogos Codex geral e Marketing passaram a usar um bloco de código copiável, com botão posicionado no canto superior direito, suporte ao Clipboard API e fallback quando a API não existe ou tem sua permissão negada, indicação visual temporária de sucesso e rótulos acessíveis “Copiar código”/“Código copiado”.
+- Proteção contra regressão: o cenário e2e do diálogo de Marketing agora renderiza um bloco cercado por crases, confirma a presença do botão e verifica o feedback depois do clique.

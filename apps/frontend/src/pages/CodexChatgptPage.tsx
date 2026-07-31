@@ -129,8 +129,12 @@ const removePromptText = (current: string, phrase: string) => {
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Navegadores podem expor a API e ainda negar a permissao; use o fallback abaixo.
+    }
   }
 
   const textarea = document.createElement('textarea');
@@ -697,11 +701,36 @@ const MarkdownMessage = ({ content }: { content: string }) => {
     {blocks.map((block, blockIndex) => {
       const codeMatch = block.match(/^```([^\n`]*)\n?([\s\S]*?)```$/);
       if (codeMatch) {
-        return <pre key={`code-${blockIndex}`} className="overflow-x-auto rounded-md border border-slate-200 bg-slate-950 p-3 text-xs text-slate-50 dark:border-slate-700"><code>{codeMatch[2].trimEnd()}</code></pre>;
+        return <CopyableCodeBlock key={`code-${blockIndex}`} code={codeMatch[2].trimEnd()} />;
       }
       return renderMarkdownTextBlock(block, blockIndex);
     })}
   </div>;
+};
+
+const CopyableCodeBlock = ({ code }: { code: string }) => {
+  const [copied, setCopied] = useState(false);
+  const copiedTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copiedTimeoutRef.current) window.clearTimeout(copiedTimeoutRef.current);
+  }, []);
+
+  const handleCopy = async () => {
+    await copyTextToClipboard(code);
+    setCopied(true);
+    if (copiedTimeoutRef.current) window.clearTimeout(copiedTimeoutRef.current);
+    copiedTimeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="group relative">
+      <pre className="overflow-x-auto rounded-md border border-slate-200 bg-slate-950 p-3 pr-11 text-xs text-slate-50 dark:border-slate-700"><code>{code}</code></pre>
+      <button type="button" onClick={handleCopy} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-600 bg-slate-900 text-slate-200 shadow-sm transition hover:border-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400" aria-label={copied ? 'Código copiado' : 'Copiar código'} title={copied ? 'Código copiado' : 'Copiar código'}>
+        {copied ? <span aria-hidden="true" className="text-sm font-semibold">✓</span> : <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>}
+      </button>
+    </div>
+  );
 };
 
 const CopyIcon = ({ copied }: { copied: boolean }) => (

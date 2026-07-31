@@ -795,7 +795,7 @@ test('shows a code generation icon on marketing comment cards with repository ch
         role: 'assistant',
         content: JSON.stringify({
           titulo: 'Aviso no comentário',
-          comentario: 'Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card de comentário agora mostra alerta visual quando há mudança no repositório.\n\nValidações executadas: `npm --prefix apps/frontend run build` passou.',
+          comentario: 'Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card de comentário agora mostra alerta visual quando há mudança no repositório.\n\n```bash\nnpm --prefix apps/frontend run build\n```',
           impactoAumentoVendas: 'baixo',
           alterouCodigoRepositorio: true,
           resumoCodigoPr: 'Mostra alerta visual quando a resposta MKT declara alteração no repositório.',
@@ -841,4 +841,8 @@ test('shows a code generation icon on marketing comment cards with repository ch
   await expect(page.getByLabel('Impacto em vendas: alto')).toBeVisible();
   await expect(page.getByLabel('Impacto em vendas: médio')).toBeVisible();
   await expect(page.getByText('Gerou código')).toHaveCount(1);
+  const copyCodeButton = codeCommentCard.getByRole('button', { name: 'Copiar código' });
+  await expect(copyCodeButton).toBeVisible();
+  await copyCodeButton.click();
+  await expect(codeCommentCard.getByRole('button', { name: 'Código copiado' })).toBeVisible();
 });
