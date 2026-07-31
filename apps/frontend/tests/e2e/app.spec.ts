@@ -8,6 +8,29 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
 });
 
+test('remembers and forgets the system health admin token locally', async ({ page }) => {
+  await page.route('**/api/admin/system-health/configuration', async (route) => {
+    await route.fulfill({
+      json: { configured: true, environmentVariable: 'HUB_MAINTENANCE_ADMIN_TOKEN' }
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:system-health-admin-token', 'saved-token');
+  });
+
+  await page.goto('/admin/system-health');
+
+  const tokenInput = page.getByLabel('Token administrativo');
+  await expect(tokenInput).toHaveValue('saved-token');
+  await expect(page.getByRole('checkbox', { name: 'Lembrar neste navegador' })).toBeChecked();
+
+  await page.getByRole('button', { name: 'Esquecer token salvo' }).click();
+
+  await expect(tokenInput).toHaveValue('');
+  await expect(page.getByRole('checkbox', { name: 'Lembrar neste navegador' })).not.toBeChecked();
+  await expect(page.evaluate(() => window.localStorage.getItem('ai-hub:system-health-admin-token'))).resolves.toBeNull();
+});
+
 test('warns on the request PR button when a batch has accumulated code', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({

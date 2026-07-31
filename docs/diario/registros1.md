@@ -2975,3 +2975,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a implementação introduziu `HUB_MAINTENANCE_ADMIN_TOKEN` apenas no exemplo do backend, mas não no `.env.example` raiz usado pelo Docker Compose, e a interface não distinguia “segredo ainda não configurado” de “usuário ainda não digitou o segredo”.
 - Correção na causa: a variável foi documentada no `.env.example` raiz com comando seguro de geração; o backend agora expõe somente o estado booleano de configuração, sem revelar o segredo; e o frontend explica que o valor vem do `.env` da implantação, orienta solicitar ao administrador da VPS e mostra instruções de bootstrap quando ainda não estiver configurado.
 - Proteção preservada: o token real nunca é devolvido pela API, gravado no navegador ou exibido na página; a consulta de diagnóstico e todas as ações continuam exigindo o segredo correto.
+
+## 2026-07-30 23:58:36 UTC - Persistência local opcional do token administrativo
+
+- Solicitação recebida: evitar que o usuário precise digitar novamente o token administrativo toda vez que entra na tela de Saúde do sistema, sugerindo guardar no banco de dados.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela usava apenas estado React em memória (`useState`) para o token; ao recarregar ou reabrir a rota, o componente era remontado e o campo voltava vazio. Isso refletia uma decisão anterior de segurança, mas gerava atrito operacional.
+- Correção aplicada na causa sem enfraquecer o backend: adicionada a opção explícita “Lembrar neste navegador”, que grava o token apenas no `localStorage` do navegador quando marcada, restaura o campo ao voltar para a página e oferece botão “Esquecer token salvo”.
+- Decisão de segurança: o token não foi armazenado no banco de dados, porque é um segredo administrativo global usado para autorizar o próprio endpoint de manutenção. Persisti-lo no backend para uso automático reduziria o valor do controle de acesso; o backend continua apenas validando o segredo recebido e nunca o devolve pela API.
+- Proteção contra regressão: criado teste e2e no frontend cobrindo o token salvo, o checkbox marcado automaticamente e a remoção do valor salvo.
