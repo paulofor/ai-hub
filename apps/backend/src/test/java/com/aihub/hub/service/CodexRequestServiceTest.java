@@ -434,6 +434,26 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void findThrottlesRepeatedSandboxRefreshesForTheSameRunningRequest() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "continue conversation");
+        request.setExternalId("job-detail-running");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(1)));
+        ReflectionTestUtils.setField(request, "id", 729L);
+
+        when(codexRequestRepository.findById(729L)).thenReturn(Optional.of(request));
+        when(codexInteractionRepository.countByCodexRequestId(729L)).thenReturn(2);
+        when(sandboxOrchestratorClient.getJob("job-detail-running")).thenReturn(null);
+
+        CodexRequestService service = buildService(false);
+
+        service.find(729L);
+        service.find(729L);
+
+        verify(sandboxOrchestratorClient, times(1)).getJob("job-detail-running");
+    }
+
+    @Test
     void deletesPendingRequestBeforeDispatch() {
         CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "next task");
         request.setStatus(CodexRequestStatus.PENDING);

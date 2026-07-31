@@ -3072,3 +3072,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - O assunto é armazenado junto às mensagens no `localStorage`, aproveitando a persistência existente do diálogo, e volta à combo após recarregar a tela.
 - O schema estruturado do modo MKT passou a incluir `assunto`. O parser também aceita `subject` e `topic` como compatibilidade defensiva.
 - Teste E2E cobre a combo vazia, a escolha do assunto pelo modelo, a seleção automática e o reuso no prompt seguinte.
+
+## 2026-07-31 - Proteção contra tempestade de sincronização no detalhe Codex
+
+- Solicitação recebida: investigar se o AI Hub havia travado, explicar a causa e corrigir o problema.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o serviço estava disponível e com recursos folgados, mas os logs mostraram várias consultas concorrentes ao mesmo detalhe em execução. Cada `GET` do detalhe disparava sincronicamente outra consulta ao sandbox; com múltiplas abas ou clientes fazendo polling, a proteção existente evitava apenas chamadas exatamente simultâneas, mas permitia uma nova chamada logo após a anterior. Isso ocupava repetidamente as threads HTTP do backend e fazia a interface parecer travada.
+- Correção aplicada na causa: o backend passou a impor, por solicitação, um intervalo mínimo de cinco segundos entre tentativas de sincronização iniciadas pela abertura/polling do detalhe. A trava de concorrência já existente foi preservada, callbacks do sandbox continuam imediatos e solicitações terminais removem o estado transitório de limitação.
+- Proteção contra regressão: adicionado teste unitário que abre duas vezes seguidas o mesmo detalhe em execução e confirma apenas uma consulta ao sandbox.
+- Diagnóstico do host: todos os containers estavam ativos; `/mcp` respondeu `UP`; disco estava em 36%, memória disponível em 4,0 GiB e load average em 0,32/0,32/0,39. Não foi necessário reiniciar serviços nem executar ação destrutiva.
