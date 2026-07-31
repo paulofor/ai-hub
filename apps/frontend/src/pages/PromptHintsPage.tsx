@@ -24,6 +24,8 @@ const normalizePromptHintType = (type?: string | null): 'prompt' | 'text' =>
 const promptHintTypeLabel = (type?: string | null) =>
   normalizePromptHintType(type) === 'text' ? 'Tela' : 'Prompt';
 
+const MAX_PROMPT_HINT_PHRASE_LENGTH = 10000;
+
 const sortPromptHints = (items: PromptHintRecord[]) => {
   return [...items].sort((a, b) => {
     const aIsGlobal = !a.environmentId;
@@ -96,6 +98,10 @@ export default function PromptHintsPage() {
 
     if (!trimmedLabel || !trimmedPhrase) {
       setFormError('Informe o nome do item e o texto que será usado na solicitação.');
+      return;
+    }
+    if (trimmedPhrase.length > MAX_PROMPT_HINT_PHRASE_LENGTH) {
+      setFormError(`O texto do item pode ter no máximo ${MAX_PROMPT_HINT_PHRASE_LENGTH.toLocaleString('pt-BR')} caracteres.`);
       return;
     }
 
@@ -195,9 +201,13 @@ export default function PromptHintsPage() {
               id="prompt-hint-phrase"
               value={formPhrase}
               onChange={(event) => setFormPhrase(event.target.value)}
+              maxLength={MAX_PROMPT_HINT_PHRASE_LENGTH}
               className="h-24 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed dark:border-slate-700 dark:bg-slate-900"
               placeholder="Ex.: use a tool de banco de dados para pesquisar as informações necessárias"
             />
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {formPhrase.trim().length.toLocaleString('pt-BR')} / {MAX_PROMPT_HINT_PHRASE_LENGTH.toLocaleString('pt-BR')} caracteres
+            </span>
           </div>
 
           <div className="flex flex-col gap-2">
