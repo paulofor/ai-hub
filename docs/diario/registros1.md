@@ -3080,3 +3080,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: o backend passou a impor, por solicitação, um intervalo mínimo de cinco segundos entre tentativas de sincronização iniciadas pela abertura/polling do detalhe. A trava de concorrência já existente foi preservada, callbacks do sandbox continuam imediatos e solicitações terminais removem o estado transitório de limitação.
 - Proteção contra regressão: adicionado teste unitário que abre duas vezes seguidas o mesmo detalhe em execução e confirma apenas uma consulta ao sandbox.
 - Diagnóstico do host: todos os containers estavam ativos; `/mcp` respondeu `UP`; disco estava em 36%, memória disponível em 4,0 GiB e load average em 0,32/0,32/0,39. Não foi necessário reiniciar serviços nem executar ação destrutiva.
+
+## 2026-07-31 - Assunto visível nas solicitações e respostas do diálogo
+
+- Solicitação recebida: tornar os temas visíveis nas solicitações e nas respostas para reduzir a confusão durante a leitura da conversa.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o assunto já era armazenado nas duas mensagens e usado para filtrar o histórico, porém sua apresentação ficava restrita à combo do compositor; os cartões da conversa exibiam somente autor, horário e conteúdo, ocultando justamente a informação que distinguia os contextos.
+- Correção aplicada na causa: cada cartão de mensagem que possui assunto agora mostra uma etiqueta `Assunto: <nome>` antes do conteúdo, tanto na solicitação do usuário quanto na resposta do modelo. Nomes longos são truncados visualmente sem alterar o valor completo, que continua disponível no título da etiqueta.
+- Proteção contra regressão: o cenário Playwright de criação e reutilização de assunto agora também confirma a presença das duas etiquetas, uma na solicitação e outra na resposta.
+- Validação: o build do frontend e o cenário E2E específico passaram. A alteração visual foi inspecionada em screenshot local e confirmou as etiquetas `Assunto: MUSA v7` nos dois cartões.

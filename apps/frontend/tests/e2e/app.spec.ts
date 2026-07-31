@@ -39,6 +39,8 @@ test('lets the model name a new subject and reuses it from the combo', async ({ 
 
   await expect.poll(() => submittedPrompts[0]).toContain('Nenhum assunto foi selecionado. Escolha um assunto curto');
   await expect(subjectCombo).toHaveValue('MUSA v7');
+  await expect(page.getByText('Assunto:').filter({ visible: true })).toHaveCount(2);
+  await expect(page.getByTitle('MUSA v7')).toHaveCount(2);
   await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Agora compare a copy com a v6.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect.poll(() => submittedPrompts[1]).toContain('Assunto selecionado pelo usuário: "MUSA v7"');
