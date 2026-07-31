@@ -219,6 +219,14 @@
 ## 2026-05-14 01:41:55 UTC-3
 - Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
 
+## 2026-07-31 09:12:54 UTC-3
+- Solicitação recebida: reduzir o ciclo manual no `Codex ChatGPT Managed`, em que o usuário precisava pedir PR, aprovar/deployar no GitHub e depois voltar ao AI Hub para criar outra solicitação com o mesmo contexto.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI já agrupava alterações em um lote (`workBatchKey`) e criava PR, mas tratava o PR como encerramento do fluxo visível; depois da aprovação/deploy não havia continuação operacional pronta no mesmo diálogo, forçando o usuário a reconstruir contexto em uma nova mensagem.
+- Ajustada `apps/frontend/src/pages/CodexChatgptPage.tsx` para gerar um prompt pós-PR com o link do PR, ambiente/repositório e instruções para verificar estado do PR/deploy, validar a funcionalidade e continuar a resolução sem perder contexto.
+- Após criar ou reencontrar um PR do lote, a tela agora preenche automaticamente o campo de mensagem com a continuação pós-PR e exibe um painel com botão `Continuar resolução` para restaurar esse prompt no mesmo diálogo.
+- Atualizados textos do modo padrão e MKT para deixar claro que o diálogo continua após o PR e que a validação pós-deploy deve acontecer no mesmo fluxo.
+- Validação: `npm --prefix apps/frontend ci` concluído; `npm --prefix apps/frontend run build` passou com sucesso.
+
 ## 2026-07-30 00:22:49 UTC-3
 - Solicitação recebida: verificar e ajustar problema no GitHub Actions.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução falha mais recente estava no workflow `Liquibase MySQL 5.7`, etapa `Apply changelog on MySQL 5.7`; o container Liquibase falhou porque o arquivo `/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml` não existia no checkout daquele PR, enquanto o workflow assumia esse caminho diretamente dentro do container.
@@ -3029,3 +3037,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que o lixo acumulou?”. O deploy executava `docker compose pull` e criava uma tag por SHA em toda publicação, mas terminava após os healthchecks sem remover imagens e caches antigos. Com vários deploys, isso manteve 364 imagens e 40,78 GB no host; limpar workspaces do modelo não corrigiria essa fonte recorrente.
 - Correção aplicada na causa: o job de deploy agora, somente depois de todos os healthchecks de produção passarem, remove containers parados, imagens não utilizadas e build cache com mais de 24 horas. Imagens usadas por containers em execução são preservadas pelo Docker, e a janela de 24 horas mantém versões recentes para rollback manual.
 - Proteções: volumes não são removidos; a limpeza não roda se publicação ou verificação falhar; deploys continuam serializados; e o workflow imprime `docker system df` antes e depois e `df -h /` ao final para tornar o efeito auditável.
+
+## 2026-07-31 09:13:23 UTC-3
+- Correção de registro: a entrada `2026-07-31 09:12:54 UTC-3` foi adicionada antes do final real do arquivo por contexto de patch antigo. Conforme política append-only, ela não foi removida; esta entrada corrige a posição do registro no final do documento.
+- Solicitação registrada: reduzir o ciclo manual no `Codex ChatGPT Managed`, em que o usuário precisava pedir PR, aprovar/deployar no GitHub e depois voltar ao AI Hub para criar outra solicitação com o mesmo contexto.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI já agrupava alterações em um lote (`workBatchKey`) e criava PR, mas tratava o PR como encerramento do fluxo visível; depois da aprovação/deploy não havia continuação operacional pronta no mesmo diálogo, forçando o usuário a reconstruir contexto em uma nova mensagem.
+- Ajustada `apps/frontend/src/pages/CodexChatgptPage.tsx` para gerar um prompt pós-PR com o link do PR, ambiente/repositório e instruções para verificar estado do PR/deploy, validar a funcionalidade e continuar a resolução sem perder contexto.
+- Após criar ou reencontrar um PR do lote, a tela agora preenche automaticamente o campo de mensagem com a continuação pós-PR e exibe um painel com botão `Continuar resolução` para restaurar esse prompt no mesmo diálogo.
+- Atualizados textos do modo padrão e MKT para deixar claro que o diálogo continua após o PR e que a validação pós-deploy deve acontecer no mesmo fluxo.
+- Validação: `npm --prefix apps/frontend ci` concluído; `npm --prefix apps/frontend run build` passou com sucesso.
