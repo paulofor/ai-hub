@@ -3046,3 +3046,29 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Após criar ou reencontrar um PR do lote, a tela agora preenche automaticamente o campo de mensagem com a continuação pós-PR e exibe um painel com botão `Continuar resolução` para restaurar esse prompt no mesmo diálogo.
 - Atualizados textos do modo padrão e MKT para deixar claro que o diálogo continua após o PR e que a validação pós-deploy deve acontecer no mesmo fluxo.
 - Validação: `npm --prefix apps/frontend ci` concluído; `npm --prefix apps/frontend run build` passou com sucesso.
+
+## 2026-07-31 - Compositor guiado para solicitações com foco único
+
+- Solicitação recebida: melhorar a interface do fluxo de solicitações para reduzir a perda de desempenho do modelo quando vários assuntos são tratados simultaneamente.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o compositor oferecia apenas um campo de texto livre e enviava todo o conteúdo como uma única frente, sem separar objetivo, escopo, ação esperada ou prioridade; assim, objetivos concorrentes podiam compartilhar o mesmo contexto e aumentar a chance de o modelo misturar decisões e entregas.
+- Correção aplicada na causa: o diálogo Codex ChatGPT passou a abrir, por padrão, um formato guiado com objetivo e escopo obrigatórios, seletores de ação e prioridade e um campo opcional de detalhes. A mensagem enviada ao modelo é organizada nesses blocos e inclui uma regra explícita para manter apenas uma frente principal e registrar assuntos adicionais como pendências de uma próxima solicitação.
+- Flexibilidade preservada: o usuário pode desativar “Usar formato guiado” para mensagens livres que não representem uma tarefa estruturada.
+- Proteção contra regressão: adicionado cenário Playwright que preenche o formulário, envia a solicitação e valida no payload a estrutura e a regra de foco. A interface também foi validada visualmente por screenshot local.
+
+## 2026-07-31 - Simplificação do auxílio de foco nas solicitações
+
+- Feedback recebido: o formulário com objetivo, escopo, ação e prioridade tornou o envio de uma solicitação complicado demais.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a primeira solução transferiu para o usuário a responsabilidade de estruturar cada mensagem em quatro controles, embora a necessidade real fosse orientar o modelo a não misturar frentes; a complexidade visual era consequência de tratar a organização do prompt como tarefa manual.
+- Correção aplicada na causa: removidos os quatro campos e suas validações. A interface voltou a ter um único campo de mensagem e somente uma opção compacta, marcada por padrão, chamada “Evitar misturar assuntos”.
+- Quando a opção está ativa, a organização acontece de forma transparente no prompt enviado ao modelo, enquanto a conversa continua exibindo exatamente a mensagem escrita pelo usuário. A opção pode ser desmarcada quando múltiplos assuntos forem intencionais.
+- Teste E2E atualizado para confirmar a ausência dos campos extras, o auxílio de foco ativo por padrão e a regra adicionada apenas ao payload destinado ao modelo.
+
+## 2026-07-31 - Organização simples da conversa por assunto
+
+- Sugestão recebida: substituir o auxílio genérico de foco por uma combo inicialmente vazia, permitir que o modelo nomeie o assunto da primeira solicitação e reutilizar esse assunto nas mensagens seguintes.
+- Pergunta explícita de causa raiz: “por que os assuntos podiam se misturar?”. Resposta: todas as mensagens eram enviadas com o mesmo histórico, sem uma identidade de assunto que permitisse ao usuário indicar qual contexto deveria continuar. O checkbox anterior apenas instruía foco, mas não criava um mecanismo reutilizável de contexto.
+- Correção aplicada na causa: criada a combo “Assunto”, inicialmente em “Novo assunto — o modelo escolhe o nome”. Sem seleção, o prompt pede um nome curto no campo JSON `assunto`; ao receber a resposta, a interface adiciona e seleciona o nome automaticamente.
+- Nas mensagens seguintes, o assunto selecionado é enviado explicitamente ao modelo e somente as mensagens marcadas com esse assunto compõem o histórico, evitando cruzamento entre frentes. Selecionar “Novo assunto” inicia um contexto sem histórico anterior.
+- O assunto é armazenado junto às mensagens no `localStorage`, aproveitando a persistência existente do diálogo, e volta à combo após recarregar a tela.
+- O schema estruturado do modo MKT passou a incluir `assunto`. O parser também aceita `subject` e `topic` como compatibilidade defensiva.
+- Teste E2E cobre a combo vazia, a escolha do assunto pelo modelo, a seleção automática e o reuso no prompt seguinte.
