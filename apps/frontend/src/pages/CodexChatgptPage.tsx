@@ -1060,6 +1060,16 @@ const buildPrRequestMarkerContent = (url?: string, title?: string) => {
   return `Pedido de PR registrado no lote. ${label}`;
 };
 
+const buildPostPrContinuationPrompt = (prUrl?: string, environment?: string) => [
+  'Continue esta solicitação até ela ficar completamente resolvida.',
+  prUrl?.trim() ? `O PR do lote já foi criado em ${prUrl.trim()}.` : 'O PR do lote já foi solicitado.',
+  'Considere que o usuário aprovou ou está acompanhando o PR pelo GitHub e quer evitar recomeçar contexto em uma nova solicitação.',
+  'Verifique o estado atual do repositório, do PR/deploy e da funcionalidade afetada usando as ferramentas disponíveis.',
+  'Se o PR ainda não tiver sido aprovado, mergeado ou deployado, explique objetivamente o bloqueio e qual validação deve ser feita depois da publicação.',
+  'Se a alteração já estiver publicada, valide como usuário final quando possível, identifique o que ainda falta para resolver o pedido original e implemente os ajustes restantes no mesmo fluxo.',
+  environment?.trim() ? `Ambiente/repositório selecionado: ${environment.trim()}.` : ''
+].filter(Boolean).join('\n');
+
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
   784,
@@ -1274,9 +1284,9 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX',
   title: 'Codex ChatGPT Managed',
   formTitle: 'Conversa interativa (Fase 2)',
-  description: 'Envie uma solicitação, aguarde a resposta do modelo, continue conversando e peça o PR somente quando estiver satisfeito.',
+  description: 'Envie uma solicitação, continue refinando no mesmo diálogo e use o fluxo pós-PR para validar deploy sem reconstruir contexto.',
   historyTitle: 'Últimas execuções ChatGPT',
-  placeholder: 'Digite sua mensagem para o modelo... Cole prints com Ctrl+V. Quando estiver pronto, use Pedir PR.',
+  placeholder: 'Digite sua mensagem para o modelo... Cole prints com Ctrl+V. O diálogo continua mesmo depois do PR.',
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
   promptExtraLines: [
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
@@ -1291,7 +1301,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX_MKT',
   title: 'Codex ChatGPT MKT',
   formTitle: 'Análise de relatórios de marketing',
-  description: 'Envie uma solicitação, aguarde a análise dos relatórios Markdown do repositório, continue conversando e peça o PR somente quando estiver satisfeito.',
+  description: 'Envie uma solicitação, refine a análise no mesmo diálogo e use o fluxo pós-PR para validar deploy sem reconstruir contexto.',
   historyTitle: 'Últimas execuções ChatGPT MKT',
   placeholder: 'Digite sua solicitação de análise de marketing... Ex.: avalie campanhas, estratégias, canais, resultados e gere orientações de melhoria.',
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed no modo MKT.',
@@ -2220,6 +2230,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           content: buildPrRequestMarkerContent(existingPrUrl, 'Abrir PR do lote'),
           createdAt: new Date().toISOString()
         }]);
+        setPrompt(buildPostPrContinuationPrompt(existingPrUrl, selectedEnvironment));
         setError(null);
         return;
       }
@@ -2259,6 +2270,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         content: buildPrRequestMarkerContent(nextPrResult.url, nextPrResult.title),
         createdAt: new Date().toISOString()
       }]);
+      setPrompt(buildPostPrContinuationPrompt(nextPrResult.url, selectedEnvironment));
       await loadRequests();
       setError(null);
     } catch (err) {
@@ -2363,6 +2375,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
     window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
   }, []);
+
+  const handlePreparePostPrContinuation = useCallback((prUrl?: string) => {
+    setPrompt(buildPostPrContinuationPrompt(prUrl, selectedEnvironment));
+    setError(null);
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, [selectedEnvironment]);
 
   const handleStartNewSandboxDialog = useCallback(() => {
     if (!sandboxOnly) return;
@@ -2933,7 +2951,24 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
         </div>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}
-        {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
+        {prResult ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p>
+              PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="font-medium underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}
+            </p>
+            <button
+              type="button"
+              onClick={() => handlePreparePostPrContinuation(prResult.url)}
+              disabled={promptComposerDisabled}
+              className="rounded-md border border-emerald-600 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50 dark:bg-slate-900 dark:text-emerald-200 dark:hover:bg-emerald-950/50"
+            >
+              Continuar resolução
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
+            Depois da aprovação/deploy, use esta continuação no mesmo diálogo para o modelo validar o resultado e seguir sem perder contexto.
+          </p>
+        </div> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
       </form>
 
