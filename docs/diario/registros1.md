@@ -2983,3 +2983,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa sem enfraquecer o backend: adicionada a opção explícita “Lembrar neste navegador”, que grava o token apenas no `localStorage` do navegador quando marcada, restaura o campo ao voltar para a página e oferece botão “Esquecer token salvo”.
 - Decisão de segurança: o token não foi armazenado no banco de dados, porque é um segredo administrativo global usado para autorizar o próprio endpoint de manutenção. Persisti-lo no backend para uso automático reduziria o valor do controle de acesso; o backend continua apenas validando o segredo recebido e nunca o devolve pela API.
 - Proteção contra regressão: criado teste e2e no frontend cobrindo o token salvo, o checkbox marcado automaticamente e a remoção do valor salvo.
+
+## 2026-07-31 00:38:44 UTC - Correção ao atualizar item de prompt longo
+
+- Solicitação recebida: verificar e ajustar erro `Request failed with status code 400` ao atualizar o item de prompt “Cockpit PDE”.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o item “Cockpit PDE” já tinha 1886 caracteres em produção, e a edição mostrada acrescentava novas linhas; o backend validava `phrase` com limite artificial de 2000 caracteres nos DTOs de criação/atualização, embora a coluna do banco seja `LONGTEXT`. Ao ultrapassar esse limite, a API retornava 400 antes de salvar. Além disso, o handler de validação devolvia apenas `errors`, enquanto o frontend lia `error`, fazendo a tela mostrar a mensagem genérica do Axios.
+- Correção aplicada na causa: aumentado o limite de `phrase` dos itens de prompt para 10000 caracteres em criação e atualização; a tela agora aplica o mesmo limite com `maxLength`, contador visível e validação antes do envio; e respostas de validação do backend passam a incluir um campo `error` legível.
+- Proteção contra regressão: criado teste de validação cobrindo atualização com 5000 caracteres e rejeição acima de 10000 caracteres para criação/atualização.
+- Validações executadas: `mvn test -Dtest=PromptHintRequestValidationTest,PromptHintServiceTest`; `npm ci`; `npm run build`.
+- Observação: `npm ci` reportou vulnerabilidades já existentes nas dependências do frontend; não foram tratadas nesta correção por não fazerem parte da causa do erro de atualização.

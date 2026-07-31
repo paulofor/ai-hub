@@ -9,7 +9,7 @@ public record CreatePromptHintRequest(
     @Size(max = 150, message = "O nome pode ter no máximo 150 caracteres")
     String label,
     @NotBlank(message = "Informe a frase que será adicionada ao prompt")
-    @Size(max = 2000, message = "A frase pode ter no máximo 2000 caracteres")
+    @Size(max = 10000, message = "A frase pode ter no máximo 10000 caracteres")
     String phrase,
     String type,
     @Positive(message = "Informe um ambiente válido")
