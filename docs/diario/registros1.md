@@ -2983,3 +2983,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa sem enfraquecer o backend: adicionada a opção explícita “Lembrar neste navegador”, que grava o token apenas no `localStorage` do navegador quando marcada, restaura o campo ao voltar para a página e oferece botão “Esquecer token salvo”.
 - Decisão de segurança: o token não foi armazenado no banco de dados, porque é um segredo administrativo global usado para autorizar o próprio endpoint de manutenção. Persisti-lo no backend para uso automático reduziria o valor do controle de acesso; o backend continua apenas validando o segredo recebido e nunca o devolve pela API.
 - Proteção contra regressão: criado teste e2e no frontend cobrindo o token salvo, o checkbox marcado automaticamente e a remoção do valor salvo.
+
+## 2026-07-31 - Cópia individual dos blocos de código no diálogo
+
+- Solicitação recebida: adicionar um ícone nos quadros pretos das respostas para copiar seu conteúdo para a área de transferência.
+- Pergunta explícita de causa raiz: “por que esse recurso não estava disponível?”. Resposta: o renderizador Markdown transformava blocos cercados por crases diretamente em elementos `pre` e `code`, sem um componente interativo associado. A cópia existente operava apenas sobre o card ou a mensagem completa e, por isso, não permitia copiar somente o conteúdo do quadro preto.
+- Correção aplicada na causa: os renderizadores dos diálogos Codex geral e Marketing passaram a usar um bloco de código copiável, com botão posicionado no canto superior direito, suporte ao Clipboard API e fallback quando a API não existe ou tem sua permissão negada, indicação visual temporária de sucesso e rótulos acessíveis “Copiar código”/“Código copiado”.
+- Proteção contra regressão: o cenário e2e do diálogo de Marketing agora renderiza um bloco cercado por crases, confirma a presença do botão e verifica o feedback depois do clique.
