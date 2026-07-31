@@ -8,6 +8,42 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
 });
 
+test('lets the model name a new subject and reuses it from the combo', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-07-31T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  const submittedPrompts: string[] = [];
+  await page.route('**/api/codex/requests**', async (route) => {
+    if (route.request().method() === 'POST') {
+      submittedPrompts.push((route.request().postDataJSON() as { prompt: string }).prompt);
+      await route.fulfill({ json: {
+        id: 901 + submittedPrompts.length,
+        profile: 'CHATGPT_CODEX',
+        status: 'COMPLETED',
+        createdAt: '2026-07-31T12:00:00Z',
+        responseText: JSON.stringify({ assunto: 'MUSA v7', titulo: 'Validação da v7', comentario: 'Análise concluída.' })
+      } });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+
+  await page.goto('/codex-chatgpt');
+  const subjectCombo = page.getByLabel('Assunto');
+  await expect(subjectCombo).toHaveValue('');
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Validar se a v7 vende mais que a v6 sem elevar o custo.');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => submittedPrompts[0]).toContain('Nenhum assunto foi selecionado. Escolha um assunto curto');
+  await expect(subjectCombo).toHaveValue('MUSA v7');
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Agora compare a copy com a v6.');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  await expect.poll(() => submittedPrompts[1]).toContain('Assunto selecionado pelo usuário: "MUSA v7"');
+});
+
 test('remembers and forgets the system health admin token locally', async ({ page }) => {
   await page.route('**/api/admin/system-health/configuration', async (route) => {
     await route.fulfill({
