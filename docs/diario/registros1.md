@@ -219,6 +219,13 @@
 ## 2026-05-14 01:41:55 UTC-3
 - Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
 
+## 2026-07-31 21:23:52 UTC-3
+- Solicitação recebida: corrigir falha do GitHub Actions exibida na tela de Actions após o merge do PR #609.
+- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: o DTO `CodexRequestSummary` ganhou o campo `cloneDurationMs`, mas dois fixtures em `CodexRequestServiceTest` continuaram instanciando o record com a assinatura antiga; por isso o job `backend` falhou na compilação de testes e o job `docker` falhou pelo mesmo motivo, já que `mvn -DskipTests package` ainda executa `testCompile`.
+- Ajustados os dois fixtures de `CodexRequestServiceTest` para preencher `cloneDurationMs` no ponto correto do construtor.
+- Validação local: `mvn -f apps/backend -B test` passou com 101 testes, 0 falhas; `mvn -f apps/backend -B -DskipTests package` também passou.
+- Limitação real de ambiente: o Docker CLI está disponível, mas não há daemon em `/var/run/docker.sock`; por isso o build Docker completo não pôde ser executado localmente, embora a etapa Maven que falhou dentro do Docker tenha sido validada.
+
 ## 2026-07-31 09:12:54 UTC-3
 - Solicitação recebida: reduzir o ciclo manual no `Codex ChatGPT Managed`, em que o usuário precisava pedir PR, aprovar/deployar no GitHub e depois voltar ao AI Hub para criar outra solicitação com o mesmo contexto.
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI já agrupava alterações em um lote (`workBatchKey`) e criava PR, mas tratava o PR como encerramento do fluxo visível; depois da aprovação/deploy não havia continuação operacional pronta no mesmo diálogo, forçando o usuário a reconstruir contexto em uma nova mensagem.
@@ -3112,3 +3119,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: foi incluído um botão acessível com ícone de lixeira dentro da lateral superior da caixa, desabilitado quando não existe texto ou quando o compositor está bloqueado.
 - Ao limpar, o campo volta a ficar vazio, recupera o foco e desmarca apenas os itens opcionais do tipo `text` que alimentam diretamente a caixa; itens do tipo `prompt`, usados como contexto independente, permanecem selecionados.
 - O cenário E2E de itens opcionais agora valida a limpeza, o foco restaurado e a consistência do checkbox de texto.
+
+## 2026-07-31 21:25:07 UTC-3
+- Correção de registro: a entrada `2026-07-31 21:23:52 UTC-3` foi inserida antes do final real do arquivo por contexto de patch antigo. Conforme política append-only, ela não foi removida; esta entrada replica o registro no final do documento.
+- Solicitação recebida: corrigir falha do GitHub Actions exibida na tela de Actions após o merge do PR #609.
+- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: o DTO `CodexRequestSummary` ganhou o campo `cloneDurationMs`, mas dois fixtures em `CodexRequestServiceTest` continuaram instanciando o record com a assinatura antiga; por isso o job `backend` falhou na compilação de testes e o job `docker` falhou pelo mesmo motivo, já que `mvn -DskipTests package` ainda executa `testCompile`.
+- Ajustados os dois fixtures de `CodexRequestServiceTest` para preencher `cloneDurationMs` no ponto correto do construtor.
+- Validação local: `mvn -f apps/backend -B test` passou com 101 testes, 0 falhas; `mvn -f apps/backend -B -DskipTests package` também passou.
+- Limitação real de ambiente: o Docker CLI está disponível, mas não há daemon em `/var/run/docker.sock`; por isso o build Docker completo não pôde ser executado localmente, embora a etapa Maven que falhou dentro do Docker tenha sido validada.
