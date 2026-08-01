@@ -1,7 +1,7 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import MarkdownFileReference, { isFileReferenceHref } from './MarkdownFileReference';
 
-type SalesImpactLevel = 'baixo' | 'medio' | 'alto';
+type SalesImpactLevel = 'muito_baixo' | 'baixo' | 'medio' | 'alto' | 'muito_alto';
 
 interface StructuredResponse {
   titulo: string;
@@ -313,8 +313,9 @@ const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: st
 
 const normalizeSalesImpactLevel = (value: string): SalesImpactLevel | undefined => {
   const normalized = value.trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (normalized === 'baixo' || normalized === 'medio' || normalized === 'alto') {
-    return normalized;
+  const canonical = normalized.replace(/[\s-]+/g, '_');
+  if (canonical === 'muito_baixo' || canonical === 'baixo' || canonical === 'medio' || canonical === 'alto' || canonical === 'muito_alto') {
+    return canonical;
   }
   return undefined;
 };
@@ -467,14 +468,18 @@ const CodeGeneratedBadge = () => (
 
 const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
   const styles: Record<SalesImpactLevel, string> = {
-    baixo: 'border-red-300 bg-red-500 dark:border-red-700',
+    muito_baixo: 'border-red-400 bg-red-600 dark:border-red-800',
+    baixo: 'border-orange-300 bg-orange-500 dark:border-orange-700',
     medio: 'border-yellow-300 bg-yellow-400 dark:border-yellow-700',
-    alto: 'border-emerald-300 bg-emerald-500 dark:border-emerald-700'
+    alto: 'border-lime-300 bg-lime-500 dark:border-lime-700',
+    muito_alto: 'border-emerald-300 bg-emerald-600 dark:border-emerald-800'
   };
   const labels: Record<SalesImpactLevel, string> = {
+    muito_baixo: 'Impacto em vendas: muito baixo',
     baixo: 'Impacto em vendas: baixo',
     medio: 'Impacto em vendas: médio',
-    alto: 'Impacto em vendas: alto'
+    alto: 'Impacto em vendas: alto',
+    muito_alto: 'Impacto em vendas: muito alto'
   };
   return (
     <span
