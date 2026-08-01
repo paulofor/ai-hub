@@ -102,6 +102,7 @@ export interface SandboxJob {
   startedAt?: string;
   finishedAt?: string;
   durationMs?: number;
+  cloneDurationMs?: number;
   timeoutCount: number;
   httpGetCount?: number;
   httpGetSuccessCount?: number;

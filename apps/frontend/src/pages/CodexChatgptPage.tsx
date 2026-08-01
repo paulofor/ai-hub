@@ -523,7 +523,7 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
   return nodes;
 };
 
-type SalesImpactLevel = 'baixo' | 'medio' | 'alto';
+type SalesImpactLevel = 'muito_baixo' | 'baixo' | 'medio' | 'alto' | 'muito_alto';
 
 interface MarketingStructuredResponse {
   assunto: string;
@@ -612,8 +612,9 @@ const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: st
 
 const normalizeSalesImpactLevel = (value: string): SalesImpactLevel | undefined => {
   const normalized = value.trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (normalized === 'baixo' || normalized === 'medio' || normalized === 'alto') {
-    return normalized;
+  const canonical = normalized.replace(/[\s-]+/g, '_');
+  if (canonical === 'muito_baixo' || canonical === 'baixo' || canonical === 'medio' || canonical === 'alto' || canonical === 'muito_alto') {
+    return canonical;
   }
   return undefined;
 };
@@ -766,14 +767,18 @@ const CodeGeneratedBadge = () => (
 
 const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
   const styles: Record<SalesImpactLevel, string> = {
-    baixo: 'border-red-300 bg-red-500 dark:border-red-700',
+    muito_baixo: 'border-red-400 bg-red-600 dark:border-red-800',
+    baixo: 'border-orange-300 bg-orange-500 dark:border-orange-700',
     medio: 'border-yellow-300 bg-yellow-400 dark:border-yellow-700',
-    alto: 'border-emerald-300 bg-emerald-500 dark:border-emerald-700'
+    alto: 'border-lime-300 bg-lime-500 dark:border-lime-700',
+    muito_alto: 'border-emerald-300 bg-emerald-600 dark:border-emerald-800'
   };
   const labels: Record<SalesImpactLevel, string> = {
+    muito_baixo: 'Impacto em vendas: muito baixo',
     baixo: 'Impacto em vendas: baixo',
     medio: 'Impacto em vendas: médio',
-    alto: 'Impacto em vendas: alto'
+    alto: 'Impacto em vendas: alto',
+    muito_alto: 'Impacto em vendas: muito alto'
   };
   return (
     <span
@@ -1324,7 +1329,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"assunto":"<assunto curto e reutilizável>","titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos níveis: "baixo", "medio" ou "alto". Use "alto" quando a entrega mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação, campanhas ou alavancas claras de conversão/receita; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando for ajuste técnico, organização ou investigação com impacto comercial distante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
+    'Na resposta final, responda somente com JSON válido no formato {"assunto":"<assunto curto e reutilizável>","titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos cinco níveis: "muito_baixo", "baixo", "medio", "alto" ou "muito_alto". Use "muito_alto" quando a entrega atuar diretamente em uma alavanca central de receita ou conversão com alto potencial mensurável; use "alto" quando mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação ou campanhas; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando o efeito comercial for pequeno e distante; use "muito_baixo" quando for ajuste técnico, organização ou investigação sem conexão comercial relevante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 
@@ -1553,6 +1558,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       return current.filter((id) => id !== hintId);
     });
   }, []);
+
+  const handleResetPrompt = useCallback(() => {
+    setPrompt('');
+    const textHintIds = new Set(
+      promptHints
+        .filter((hint) => normalizePromptHintType(hint.type) === 'text')
+        .map((hint) => hint.id)
+    );
+    setSelectedPromptHintIds((current) => current.filter((id) => !textHintIds.has(id)));
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, [promptHints]);
 
   const loadAccount = useCallback(async () => {
     if (!accountApiAvailable) {
@@ -2872,17 +2888,34 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             {conversationSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
           </select>
         </label>
-        <textarea
-          ref={promptTextareaRef}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onPaste={handlePromptPaste}
-          rows={5}
-          placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
-          className="w-full rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
-          required
-          disabled={promptComposerDisabled}
-        />
+        <div className="relative">
+          <textarea
+            ref={promptTextareaRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onPaste={handlePromptPaste}
+            rows={5}
+            placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
+            className="w-full rounded-md border px-3 py-2 pr-12 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+            required
+            disabled={promptComposerDisabled}
+          />
+          <button
+            type="button"
+            onClick={handleResetPrompt}
+            disabled={promptComposerDisabled || prompt.length === 0}
+            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
+            aria-label="Limpar texto da solicitação"
+            title="Limpar texto da solicitação"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" />
+              <path d="M8 6V4h8v2" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v5M14 11v5" />
+            </svg>
+          </button>
+        </div>
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para usar na solicitação</p>
@@ -3042,6 +3075,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
               {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.documentAccessCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                 {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
+                {item.cloneDurationMs !== undefined ? <span>Clone do repositório: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.cloneDurationMs)}</strong></span> : null}
                 {item.interactionCount !== undefined ? <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span> : null}
                 {item.documentAccessCount !== undefined ? <span>Documentos lidos: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDocumentAccessCount(item.documentAccessCount)}</strong></span> : null}
                 {item.status === 'COMPLETED' || item.totalTokens !== undefined ? <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span> : null}

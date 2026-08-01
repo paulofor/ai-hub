@@ -408,6 +408,11 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.getByRole('checkbox', { name: /Texto editável/ }).check();
   const promptTextarea = page.getByPlaceholder(/Digite sua solicitação de análise de marketing/);
   await expect(promptTextarea).toHaveValue('Texto inicial para editar antes de enviar.');
+  await page.getByRole('button', { name: 'Limpar texto da solicitação' }).click();
+  await expect(promptTextarea).toHaveValue('');
+  await expect(page.getByRole('checkbox', { name: /Texto editável/ })).not.toBeChecked();
+  await expect(promptTextarea).toBeFocused();
+  await page.getByRole('checkbox', { name: /Texto editável/ }).check();
   await promptTextarea.fill('Texto inicial para editar antes de enviar.\n\nVerifique se os complementos entram no prompt.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
@@ -866,6 +871,32 @@ test('shows a code generation icon on marketing comment cards with repository ch
           sugestaoMelhoriaAmbiente: ''
         }),
         createdAt: '2026-07-24T12:02:00Z'
+      },
+      {
+        id: 'assistant-marketing-very-low',
+        role: 'assistant',
+        content: JSON.stringify({
+          titulo: 'Organização interna',
+          comentario: 'Organize os arquivos internos sem alterar uma alavanca comercial.',
+          impactoAumentoVendas: 'muito_baixo',
+          alterouCodigoRepositorio: false,
+          resumoCodigoPr: '',
+          sugestaoMelhoriaAmbiente: ''
+        }),
+        createdAt: '2026-07-24T12:03:00Z'
+      },
+      {
+        id: 'assistant-marketing-very-high',
+        role: 'assistant',
+        content: JSON.stringify({
+          titulo: 'Oferta central otimizada',
+          comentario: 'Otimize a oferta central com impacto direto e mensurável na conversão.',
+          impactoAumentoVendas: 'muito-alto',
+          alterouCodigoRepositorio: false,
+          resumoCodigoPr: '',
+          sugestaoMelhoriaAmbiente: ''
+        }),
+        createdAt: '2026-07-24T12:04:00Z'
       }
     ]));
   });
@@ -878,6 +909,8 @@ test('shows a code generation icon on marketing comment cards with repository ch
   await expect(page.getByText('Recomendo testar uma promessa')).toBeVisible();
   await expect(page.getByLabel('Impacto em vendas: alto')).toBeVisible();
   await expect(page.getByLabel('Impacto em vendas: médio')).toBeVisible();
+  await expect(page.getByLabel('Impacto em vendas: muito baixo')).toBeVisible();
+  await expect(page.getByLabel('Impacto em vendas: muito alto')).toBeVisible();
   await expect(page.getByText('Gerou código')).toHaveCount(1);
   const copyCodeButton = codeCommentCard.getByRole('button', { name: 'Copiar código' });
   await expect(copyCodeButton).toBeVisible();

@@ -1592,6 +1592,12 @@ public class CodexRequestService {
             updated = true;
         }
 
+        Long cloneDurationMs = response.cloneDurationMs();
+        if (!Objects.equals(request.getCloneDurationMs(), cloneDurationMs)) {
+            request.setCloneDurationMs(cloneDurationMs);
+            updated = true;
+        }
+
         Integer timeoutCount = response.timeoutCount();
         if (timeoutCount != null && !Objects.equals(request.getTimeoutCount(), timeoutCount)) {
             request.setTimeoutCount(timeoutCount);

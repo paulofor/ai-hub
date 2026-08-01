@@ -3088,3 +3088,27 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: cada cartão de mensagem que possui assunto agora mostra uma etiqueta `Assunto: <nome>` antes do conteúdo, tanto na solicitação do usuário quanto na resposta do modelo. Nomes longos são truncados visualmente sem alterar o valor completo, que continua disponível no título da etiqueta.
 - Proteção contra regressão: o cenário Playwright de criação e reutilização de assunto agora também confirma a presença das duas etiquetas, uma na solicitação e outra na resposta.
 - Validação: o build do frontend e o cenário E2E específico passaram. A alteração visual foi inspecionada em screenshot local e confirmou as etiquetas `Assunto: MUSA v7` nos dois cartões.
+
+## 31/07/2026 — Tempo de clone nas solicitações
+
+- Pergunta de causa raiz: **por que o tempo do clone não aparecia na lista?** O orquestrador registrava o clone apenas como eventos de download, sem consolidar sua duração no job; consequentemente o backend não tinha um campo persistente nem o frontend um dado para apresentar.
+- O orquestrador agora mede o intervalo do `git clone` e publica `cloneDurationMs` no estado/callback do job.
+- O backend passa a desserializar, persistir e expor a duração do clone, com migrações Flyway para MySQL, PostgreSQL e H2.
+- A lista de últimas execuções agora exibe “Clone do repositório” com a duração formatada quando a solicitação usa repositório.
+- Validações realizadas: builds TypeScript do orquestrador e do frontend, testes do backend e verificação de whitespace do diff.
+
+## 01/08/2026 — Escala de impacto em vendas com cinco níveis
+
+- Solicitação recebida: ampliar de três para cinco os níveis visuais de impacto em vendas.
+- Pergunta explícita de causa raiz: **por que existiam apenas três níveis?** O contrato de resposta MKT, os dois parsers do frontend e os indicadores visuais aceitavam somente `baixo`, `medio` e `alto`; portanto não bastava adicionar duas cores na tela, pois o modelo continuaria incapaz de produzi-las e os parsers descartariam os novos valores.
+- Correção aplicada na origem: o contrato enviado ao modelo passou a exigir `muito_baixo`, `baixo`, `medio`, `alto` ou `muito_alto`, com critérios de classificação para reduzir ambiguidades.
+- Os parsers e indicadores agora representam uma escala gradual vermelho, laranja, amarelo, verde-claro e verde, mantendo compatibilidade com os três valores anteriores e aceitando espaço ou hífen nos novos extremos.
+- O teste E2E da resposta estruturada passou a cobrir os cinco indicadores, e o teste do orquestrador valida o novo contrato de cinco níveis.
+
+## 01/08/2026 — Botão para limpar o texto da solicitação
+
+- Solicitação recebida: adicionar junto à caixa da solicitação uma ação para resetar e deixar o texto vazio.
+- Pergunta explícita de causa raiz: **por que não havia uma forma direta de limpar a solicitação?** O compositor oferecia ações para enviar, anexar e preencher textos por itens opcionais, mas a limpeza dependia de seleção manual do conteúdo; além disso, limpar somente o estado do texto deixaria itens do tipo `text` visualmente marcados mesmo sem sua frase no campo.
+- Correção aplicada na causa: foi incluído um botão acessível com ícone de lixeira dentro da lateral superior da caixa, desabilitado quando não existe texto ou quando o compositor está bloqueado.
+- Ao limpar, o campo volta a ficar vazio, recupera o foco e desmarca apenas os itens opcionais do tipo `text` que alimentam diretamente a caixa; itens do tipo `prompt`, usados como contexto independente, permanecem selecionados.
+- O cenário E2E de itens opcionais agora valida a limpeza, o foco restaurado e a consistência do checkbox de texto.
