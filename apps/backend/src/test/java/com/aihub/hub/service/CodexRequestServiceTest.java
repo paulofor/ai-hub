@@ -358,8 +358,8 @@ class CodexRequestServiceTest {
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
-            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, 2L, null, null
+            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
+            request.getInteractionCount(), null, null, 2L, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -394,8 +394,8 @@ class CodexRequestServiceTest {
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
-            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, 1L, request.getResponseText(), null
+            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
+            request.getInteractionCount(), null, null, 1L, request.getResponseText(), null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
