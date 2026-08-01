@@ -3007,3 +3007,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado: `apps/frontend/src/pages/CodexChatgptPage.tsx` agora inclui `environment` em mensagens do dialogo, atualiza esse campo no polling/edicao/criacao da solicitacao e renderiza `Ambiente: ...` no cabecalho da bolha vinculada a uma execucao.
 - Validacao executada: `npm ci` em `apps/frontend` para restaurar a toolchain local e `npm run build` com sucesso.
 - Nao foi criado Pull Request.
+## 2026-08-01 02:49:49 UTC-3
+
+- Pergunta recebida: avaliar um caminho para o próprio sistema criar o PR e continuar o trabalho quando a solicitação depende de publicação, sem nova intervenção do usuário.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. O fluxo não para por limitação do modelo ou do GitHub; ele para porque a execução MKT desabilita a criação automática de PR, a interface é quem chama `create-pr` e a continuação posterior apenas é preparada no navegador para envio manual.
+- Alternativas avaliadas: automatizar o frontend; manter o modelo aguardando e operando o GitHub na mesma execução; ou criar uma máquina de estados persistente no backend acionada por webhooks e reconciliação. A terceira foi recomendada por ser independente do navegador, idempotente, auditável e compatível com proteções do GitHub.
+- Documento criado em `docs/automacao-pr-e-retomada.md`, descrevendo fases, limites de autonomia, proteções contra duplicidade/ciclos e uma implantação incremental em três etapas.
+- Escopo desta alteração: documentação e decisão arquitetural; nenhuma automação de merge foi habilitada e nenhuma política de aprovação do repositório foi contornada.
