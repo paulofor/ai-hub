@@ -35,6 +35,7 @@ public record CodexRequestSummary(
     Instant startedAt,
     Instant finishedAt,
     Long durationMs,
+    Long cloneDurationMs,
     Instant createdAt,
     Integer interactionCount,
     Long problemId,
@@ -49,7 +50,7 @@ public record CodexRequestSummary(
             id, environment, model, version, profile, prompt, status, rating, externalId, pullRequestUrl,
             workBranch, workBatchKey, promptTokens, cachedPromptTokens, completionTokens, totalTokens,
             promptCost, cachedPromptCost, completionCost, cost, timeoutCount, httpGetCount, httpGetSuccessCount,
-            dbQueryCount, startedAt, finishedAt, durationMs, createdAt, interactionCount, problemId, problemTitle,
+            dbQueryCount, startedAt, finishedAt, durationMs, cloneDurationMs, createdAt, interactionCount, problemId, problemTitle,
             documentAccessCount, responseText, requestTitle
         );
     }

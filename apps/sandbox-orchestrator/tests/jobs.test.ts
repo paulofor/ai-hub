@@ -801,7 +801,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('"titulo"'));
     assert.ok(input?.[0]?.text?.includes('"impactoAumentoVendas"'));
     assert.ok(input?.[0]?.text?.includes('indicar se esta solicitação contribui para aumentar vendas'));
-    assert.ok(input?.[0]?.text?.includes('"baixo", "medio" ou "alto"'));
+    assert.ok(input?.[0]?.text?.includes('"muito_baixo", "baixo", "medio", "alto" ou "muito_alto"'));
     assert.ok(input?.[0]?.text?.includes('"alterouCodigoRepositorio"'));
     assert.ok(input?.[0]?.text?.includes('é obrigatório'));
     assert.ok(input?.[0]?.text?.includes('true somente quando você tiver criado, removido ou alterado arquivos'));

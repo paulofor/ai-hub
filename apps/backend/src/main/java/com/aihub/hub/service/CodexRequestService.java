@@ -76,6 +76,7 @@ public class CodexRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
+    private static final Duration DETAIL_REFRESH_MIN_INTERVAL = Duration.ofSeconds(5);
     private static final Set<Long> SANDBOX_REFRESHES_IN_PROGRESS = ConcurrentHashMap.newKeySet();
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
     private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
@@ -109,6 +110,7 @@ public class CodexRequestService {
     private final int smartEconomyEconomyTokenCeiling;
     private final boolean codexAppServerEnabled;
     private final ObjectMapper objectMapper;
+    private final Map<Long, Instant> detailRefreshAttempts = new ConcurrentHashMap<>();
 
     public CodexRequestService(CodexRequestRepository codexRequestRepository,
                                PromptRepository promptRepository,
@@ -765,7 +767,27 @@ public class CodexRequestService {
 
         RefreshDecision decision = evaluateRefresh(request, Instant.now().minus(Duration.ofHours(1)));
         if (!decision.shouldRefresh()) {
+            if (request.getId() != null) {
+                detailRefreshAttempts.remove(request.getId());
+            }
             return request;
+        }
+
+        Instant now = Instant.now();
+        Long requestId = request.getId();
+        Instant previousAttempt = requestId == null ? null : detailRefreshAttempts.putIfAbsent(requestId, now);
+        if (requestId != null && previousAttempt != null) {
+            if (previousAttempt.plus(DETAIL_REFRESH_MIN_INTERVAL).isAfter(now)) {
+                log.debug(
+                    "Atualização do CodexRequest {} ignorada: detalhe consultado novamente dentro de {} segundos",
+                    request.getId(),
+                    DETAIL_REFRESH_MIN_INTERVAL.toSeconds()
+                );
+                return request;
+            }
+            if (!detailRefreshAttempts.replace(requestId, previousAttempt, now)) {
+                return request;
+            }
         }
 
         log.info(
@@ -1567,6 +1589,12 @@ public class CodexRequestService {
         }
         if (!Objects.equals(request.getDurationMs(), durationMs)) {
             request.setDurationMs(durationMs);
+            updated = true;
+        }
+
+        Long cloneDurationMs = response.cloneDurationMs();
+        if (!Objects.equals(request.getCloneDurationMs(), cloneDurationMs)) {
+            request.setCloneDurationMs(cloneDurationMs);
             updated = true;
         }
 

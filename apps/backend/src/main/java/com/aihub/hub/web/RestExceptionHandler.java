@@ -27,7 +27,11 @@ public class RestExceptionHandler {
     public ResponseEntity<?> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
         ex.getBindingResult().getFieldErrors().forEach(err -> errors.put(err.getField(), err.getDefaultMessage()));
-        return ResponseEntity.badRequest().body(Map.of("errors", errors));
+        String message = ex.getBindingResult().getFieldErrors().stream()
+            .findFirst()
+            .map(err -> err.getDefaultMessage() != null ? err.getDefaultMessage() : "Dados inválidos")
+            .orElse("Dados inválidos");
+        return ResponseEntity.badRequest().body(Map.of("error", message, "errors", errors));
     }
 
     @ExceptionHandler(ResponseStatusException.class)

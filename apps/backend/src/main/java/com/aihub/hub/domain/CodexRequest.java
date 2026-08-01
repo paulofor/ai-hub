@@ -144,6 +144,9 @@ public class CodexRequest {
     @Column(name = "duration_ms")
     private Long durationMs;
 
+    @Column(name = "clone_duration_ms")
+    private Long cloneDurationMs;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -446,6 +449,14 @@ public class CodexRequest {
 
     public void setDurationMs(Long durationMs) {
         this.durationMs = durationMs;
+    }
+
+    public Long getCloneDurationMs() {
+        return cloneDurationMs;
+    }
+
+    public void setCloneDurationMs(Long cloneDurationMs) {
+        this.cloneDurationMs = cloneDurationMs;
     }
 
     public Instant getCreatedAt() {

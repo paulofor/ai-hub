@@ -11,6 +11,24 @@ type Health = {
   maintenanceBusy?: boolean;
 };
 type AdminConfiguration = { configured: boolean; environmentVariable: string };
+const ADMIN_TOKEN_STORAGE_KEY = 'ai-hub:system-health-admin-token';
+
+const readSavedAdminToken = () => {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? '';
+};
+
+const saveAdminToken = (value: string) => {
+  if (typeof window === 'undefined') return;
+  const trimmed = value.trim();
+  if (trimmed) window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed);
+  else window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+};
+
+const forgetAdminToken = () => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+};
 
 const splitSections = (value = '') => {
   const sections: Record<string, string[]> = {};
@@ -30,7 +48,8 @@ const formatBytes = (value: number) => {
 };
 
 export default function SystemHealthPage() {
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState(() => readSavedAdminToken());
+  const [rememberToken, setRememberToken] = useState(() => Boolean(readSavedAdminToken()));
   const [health, setHealth] = useState<Health | null>(null);
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState('');
@@ -45,6 +64,11 @@ export default function SystemHealthPage() {
       .then((response) => setConfiguration(response.data))
       .catch(() => setConfiguration(null));
   }, []);
+
+  useEffect(() => {
+    if (rememberToken) saveAdminToken(token);
+    else forgetAdminToken();
+  }, [rememberToken, token]);
 
   const load = useCallback(async () => {
     if (!token.trim()) { setError('Informe o token administrativo.'); return; }
@@ -79,8 +103,9 @@ export default function SystemHealthPage() {
       <div className="flex flex-wrap items-center justify-between gap-2"><label className="text-sm font-semibold">Token administrativo</label>{configuration && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${configuration.configured ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{configuration.configured ? 'Configurado no servidor' : 'Ainda não configurado'}</span>}</div>
       <p className="mt-2 text-sm text-slate-700 dark:text-slate-300"><strong>Onde obter:</strong> este token não é criado nem exibido pelo AI Hub. É o valor de <code className="rounded bg-white/70 px-1 py-0.5">HUB_MAINTENANCE_ADMIN_TOKEN</code> definido no arquivo <code className="rounded bg-white/70 px-1 py-0.5">.env</code> da implantação. Solicite-o ao administrador da VPS.</p>
       {configuration?.configured === false && <div className="mt-3 rounded-lg border border-rose-200 bg-white/70 p-3 text-sm text-rose-900"><p className="font-semibold">O servidor ainda não tem esse token.</p><p className="mt-1">Na VPS, gere um segredo com <code>openssl rand -hex 32</code>, grave como <code>HUB_MAINTENANCE_ADMIN_TOKEN=&lt;segredo&gt;</code> no <code>.env</code> do Compose e recrie o container do backend. O segredo nunca será mostrado nesta página.</p></div>}
-      <div className="mt-3 flex gap-2"><input type="password" aria-label="Token administrativo" placeholder="Cole o valor configurado na VPS" value={token} onChange={(e) => setToken(e.target.value)} disabled={configuration?.configured === false} className="min-w-0 flex-1 rounded-lg border px-3 py-2 disabled:bg-slate-100 dark:bg-slate-900" autoComplete="off"/><button onClick={load} disabled={loading || configuration?.configured === false} className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{loading ? 'Atualizando…' : 'Carregar diagnóstico'}</button></div>
-      <p className="mt-2 text-xs text-slate-500">Por segurança, o backend informa apenas se o segredo foi configurado. O valor digitado permanece somente na memória desta aba.</p>
+      <div className="mt-3 flex gap-2"><input type="password" aria-label="Token administrativo" placeholder="Cole o valor configurado na VPS" value={token} onChange={(e) => setToken(e.target.value)} disabled={configuration?.configured === false} className="min-w-0 flex-1 rounded-lg border px-3 py-2 disabled:bg-slate-100 dark:bg-slate-900" autoComplete={rememberToken ? 'current-password' : 'off'}/><button onClick={load} disabled={loading || configuration?.configured === false} className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{loading ? 'Atualizando…' : 'Carregar diagnóstico'}</button></div>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-700 dark:text-slate-300"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={rememberToken} onChange={(event) => setRememberToken(event.target.checked)} disabled={configuration?.configured === false} className="h-4 w-4 rounded border-slate-300 text-emerald-600"/><span>Lembrar neste navegador</span></label>{rememberToken && <button type="button" onClick={() => { setRememberToken(false); setToken(''); setHealth(null); forgetAdminToken(); }} className="rounded border px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-white dark:text-slate-300">Esquecer token salvo</button>}</div>
+      <p className="mt-2 text-xs text-slate-500">Por segurança, o backend informa apenas se o segredo foi configurado. A opção de lembrar salva o token somente neste navegador, não no banco de dados.</p>
     </section>
     {error && <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-rose-800">{error}</div>}
     {message && <pre className="whitespace-pre-wrap rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{message}</pre>}

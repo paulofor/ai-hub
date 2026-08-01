@@ -129,8 +129,12 @@ const removePromptText = (current: string, phrase: string) => {
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Navegadores podem expor a API e ainda negar a permissao; use o fallback abaixo.
+    }
   }
 
   const textarea = document.createElement('textarea');
@@ -519,9 +523,10 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
   return nodes;
 };
 
-type SalesImpactLevel = 'baixo' | 'medio' | 'alto';
+type SalesImpactLevel = 'muito_baixo' | 'baixo' | 'medio' | 'alto' | 'muito_alto';
 
 interface MarketingStructuredResponse {
+  assunto: string;
   titulo: string;
   comentario: string;
   impactoAumentoVendas?: SalesImpactLevel;
@@ -607,8 +612,9 @@ const readStructuredResponseBoolean = (record: Record<string, unknown>, keys: st
 
 const normalizeSalesImpactLevel = (value: string): SalesImpactLevel | undefined => {
   const normalized = value.trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (normalized === 'baixo' || normalized === 'medio' || normalized === 'alto') {
-    return normalized;
+  const canonical = normalized.replace(/[\s-]+/g, '_');
+  if (canonical === 'muito_baixo' || canonical === 'baixo' || canonical === 'medio' || canonical === 'alto' || canonical === 'muito_alto') {
+    return canonical;
   }
   return undefined;
 };
@@ -636,6 +642,7 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
   }
 
   const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
+  const assunto = readStructuredResponseString(record, ['assunto', 'subject', 'topic']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
   const impactoAumentoVendas = readStructuredSalesImpactLevel(record);
   const alterouCodigoRepositorio = readStructuredResponseBoolean(record, [
@@ -668,10 +675,10 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
     'sugestãoAmbiente',
     'environmentImprovementSuggestion'
   ]).trim();
-  if (!titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
+  if (!assunto && !titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { titulo, comentario, impactoAumentoVendas, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+  return { assunto, titulo, comentario, impactoAumentoVendas, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
 };
 
 const marketingResponseIndicatesCodeChange = (content?: string): boolean =>
@@ -697,11 +704,36 @@ const MarkdownMessage = ({ content }: { content: string }) => {
     {blocks.map((block, blockIndex) => {
       const codeMatch = block.match(/^```([^\n`]*)\n?([\s\S]*?)```$/);
       if (codeMatch) {
-        return <pre key={`code-${blockIndex}`} className="overflow-x-auto rounded-md border border-slate-200 bg-slate-950 p-3 text-xs text-slate-50 dark:border-slate-700"><code>{codeMatch[2].trimEnd()}</code></pre>;
+        return <CopyableCodeBlock key={`code-${blockIndex}`} code={codeMatch[2].trimEnd()} />;
       }
       return renderMarkdownTextBlock(block, blockIndex);
     })}
   </div>;
+};
+
+const CopyableCodeBlock = ({ code }: { code: string }) => {
+  const [copied, setCopied] = useState(false);
+  const copiedTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copiedTimeoutRef.current) window.clearTimeout(copiedTimeoutRef.current);
+  }, []);
+
+  const handleCopy = async () => {
+    await copyTextToClipboard(code);
+    setCopied(true);
+    if (copiedTimeoutRef.current) window.clearTimeout(copiedTimeoutRef.current);
+    copiedTimeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="group relative">
+      <pre className="overflow-x-auto rounded-md border border-slate-200 bg-slate-950 p-3 pr-11 text-xs text-slate-50 dark:border-slate-700"><code>{code}</code></pre>
+      <button type="button" onClick={handleCopy} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-600 bg-slate-900 text-slate-200 shadow-sm transition hover:border-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400" aria-label={copied ? 'Código copiado' : 'Copiar código'} title={copied ? 'Código copiado' : 'Copiar código'}>
+        {copied ? <span aria-hidden="true" className="text-sm font-semibold">✓</span> : <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>}
+      </button>
+    </div>
+  );
 };
 
 const CopyIcon = ({ copied }: { copied: boolean }) => (
@@ -735,14 +767,18 @@ const CodeGeneratedBadge = () => (
 
 const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
   const styles: Record<SalesImpactLevel, string> = {
-    baixo: 'border-red-300 bg-red-500 dark:border-red-700',
+    muito_baixo: 'border-red-400 bg-red-600 dark:border-red-800',
+    baixo: 'border-orange-300 bg-orange-500 dark:border-orange-700',
     medio: 'border-yellow-300 bg-yellow-400 dark:border-yellow-700',
-    alto: 'border-emerald-300 bg-emerald-500 dark:border-emerald-700'
+    alto: 'border-lime-300 bg-lime-500 dark:border-lime-700',
+    muito_alto: 'border-emerald-300 bg-emerald-600 dark:border-emerald-800'
   };
   const labels: Record<SalesImpactLevel, string> = {
+    muito_baixo: 'Impacto em vendas: muito baixo',
     baixo: 'Impacto em vendas: baixo',
     medio: 'Impacto em vendas: médio',
-    alto: 'Impacto em vendas: alto'
+    alto: 'Impacto em vendas: alto',
+    muito_alto: 'Impacto em vendas: muito alto'
   };
   return (
     <span
@@ -984,6 +1020,7 @@ interface ChatMessage {
   environment?: string;
   status?: CodexRequest['status'];
   createdAt: string;
+  subject?: string;
 }
 
 const chatConversationStorageKey = (profile: CodexProfile) => `${CHAT_CONVERSATION_STORAGE_PREFIX}${profile}`;
@@ -1032,6 +1069,16 @@ const buildPrRequestMarkerContent = (url?: string, title?: string) => {
   }
   return `Pedido de PR registrado no lote. ${label}`;
 };
+
+const buildPostPrContinuationPrompt = (prUrl?: string, environment?: string) => [
+  'Continue esta solicitação até ela ficar completamente resolvida.',
+  prUrl?.trim() ? `O PR do lote já foi criado em ${prUrl.trim()}.` : 'O PR do lote já foi solicitado.',
+  'Considere que o usuário aprovou ou está acompanhando o PR pelo GitHub e quer evitar recomeçar contexto em uma nova solicitação.',
+  'Verifique o estado atual do repositório, do PR/deploy e da funcionalidade afetada usando as ferramentas disponíveis.',
+  'Se o PR ainda não tiver sido aprovado, mergeado ou deployado, explique objetivamente o bloqueio e qual validação deve ser feita depois da publicação.',
+  'Se a alteração já estiver publicada, valide como usuário final quando possível, identifique o que ainda falta para resolver o pedido original e implemente os ajustes restantes no mesmo fluxo.',
+  environment?.trim() ? `Ambiente/repositório selecionado: ${environment.trim()}.` : ''
+].filter(Boolean).join('\n');
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
@@ -1239,6 +1286,10 @@ interface CodexChatgptVariantConfig {
   promptExtraLines: string[];
 }
 
+const buildSubjectInstruction = (subject: string) => subject
+  ? `Assunto selecionado pelo usuário: "${subject}". Mantenha a resposta e a execução neste assunto e devolva exatamente esse valor no campo JSON "assunto".`
+  : 'Nenhum assunto foi selecionado. Escolha um assunto curto e reutilizável para esta solicitação e devolva-o no campo JSON "assunto" da resposta final.';
+
 const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
 const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas. A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium, usando dispositivos de @playwright/test como devices["iPhone 15 Pro"] ou devices["Pixel 7"]; sempre que precisar testar uma URL como usuário de celular, use esse recurso para abrir a página com viewport, user agent, touch e deviceScaleFactor de celular, gerar screenshots e validar interações. Para vídeos, áudio e animações em mobile, combine essa emulação com sandbox-media-player, ffmpeg e ffprobe para testar reprodução, duração, frames, sincronia, controles nativos e comportamento visual no layout mobile.';
 const CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION = 'A sandbox dos modelos possui ffmpeg e ffprobe disponíveis pelos comandos ffmpeg e ffprobe; quando a solicitação envolver vídeos, use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails e sintetizar mídias de teste, e use ffprobe para inspecionar metadados, codecs, resolução, duração, streams e integridade básica. O comando sandbox-media-player <arquivo-video-ou-audio> [saida.html] gera um player HTML local com controles nativos de vídeo/áudio; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.';
@@ -1247,9 +1298,9 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX',
   title: 'Codex ChatGPT Managed',
   formTitle: 'Conversa interativa (Fase 2)',
-  description: 'Envie uma solicitação, aguarde a resposta do modelo, continue conversando e peça o PR somente quando estiver satisfeito.',
+  description: 'Envie uma solicitação, continue refinando no mesmo diálogo e use o fluxo pós-PR para validar deploy sem reconstruir contexto.',
   historyTitle: 'Últimas execuções ChatGPT',
-  placeholder: 'Digite sua mensagem para o modelo... Cole prints com Ctrl+V. Quando estiver pronto, use Pedir PR.',
+  placeholder: 'Digite sua mensagem para o modelo... Cole prints com Ctrl+V. O diálogo continua mesmo depois do PR.',
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
   promptExtraLines: [
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
@@ -1264,7 +1315,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   profile: 'CHATGPT_CODEX_MKT',
   title: 'Codex ChatGPT MKT',
   formTitle: 'Análise de relatórios de marketing',
-  description: 'Envie uma solicitação, aguarde a análise dos relatórios Markdown do repositório, continue conversando e peça o PR somente quando estiver satisfeito.',
+  description: 'Envie uma solicitação, refine a análise no mesmo diálogo e use o fluxo pós-PR para validar deploy sem reconstruir contexto.',
   historyTitle: 'Últimas execuções ChatGPT MKT',
   placeholder: 'Digite sua solicitação de análise de marketing... Ex.: avalie campanhas, estratégias, canais, resultados e gere orientações de melhoria.',
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed no modo MKT.',
@@ -1279,7 +1330,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos níveis: "baixo", "medio" ou "alto". Use "alto" quando a entrega mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação, campanhas ou alavancas claras de conversão/receita; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando for ajuste técnico, organização ou investigação com impacto comercial distante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
+    'Na resposta final, responda somente com JSON válido no formato {"assunto":"<assunto curto e reutilizável>","titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos cinco níveis: "muito_baixo", "baixo", "medio", "alto" ou "muito_alto". Use "muito_alto" quando a entrega atuar diretamente em uma alavanca central de receita ou conversão com alto potencial mensurável; use "alto" quando mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação ou campanhas; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando o efeito comercial for pequeno e distante; use "muito_baixo" quando for ajuste técnico, organização ou investigação sem conexão comercial relevante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 
@@ -1365,6 +1416,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [environment, setEnvironment] = useState('');
   const [model, setModel] = useState('');
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
@@ -1507,6 +1559,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       return current.filter((id) => id !== hintId);
     });
   }, []);
+
+  const handleResetPrompt = useCallback(() => {
+    setPrompt('');
+    const textHintIds = new Set(
+      promptHints
+        .filter((hint) => normalizePromptHintType(hint.type) === 'text')
+        .map((hint) => hint.id)
+    );
+    setSelectedPromptHintIds((current) => current.filter((id) => !textHintIds.has(id)));
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, [promptHints]);
 
   const loadAccount = useCallback(async () => {
     if (!accountApiAvailable) {
@@ -1888,6 +1951,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const promptHistoryMessages = [
       ...savedContextMessages.map((item) => ({ role: item.role, content: item.content })),
       ...historyMessages
+        .filter((item) => selectedSubject ? item.subject === selectedSubject : false)
         .filter((item) => item.role === 'user' || item.role === 'assistant')
         .map((item) => ({ role: item.role, content: item.content }))
     ];
@@ -1908,6 +1972,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     return [
       productSourceInstruction,
       config.promptModeLine,
+      buildSubjectInstruction(selectedSubject),
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
       ...config.promptExtraLines,
@@ -1916,7 +1981,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       selectedPromptHintPhrases.length > 0 ? `Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:\n${selectedPromptHintPhrases.join('\n')}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages]);
+  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages, selectedSubject]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -1984,19 +2049,29 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     : '';
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
-    setConversation((current) => current.map((message) => {
+    const responseContent = isTerminalStatus(request.status) ? extractAssistantContent(request) : '';
+    const resolvedSubject = parseMarketingStructuredResponse(responseContent)?.assunto.trim() || undefined;
+    setConversation((current) => current.map((message, index) => {
+      const nextMessage = current[index + 1];
+      if (resolvedSubject && message.role === 'user' && nextMessage?.requestId === request.id) {
+        return { ...message, subject: resolvedSubject };
+      }
       if (message.role !== 'assistant' || message.requestId !== request.id) return message;
       const becameTerminal = !message.status || !isTerminalStatus(message.status);
       return {
         ...message,
         environment: request.environment,
         status: request.status,
-        content: isTerminalStatus(request.status) ? extractAssistantContent(request) : `Aguardando resposta do modelo... (${formatStatus(request.status)})`,
+        content: isTerminalStatus(request.status) ? responseContent : `Aguardando resposta do modelo... (${formatStatus(request.status)})`,
+        subject: resolvedSubject ?? message.subject,
         createdAt: isTerminalStatus(request.status) && becameTerminal
           ? resolveAssistantMessageTimestamp(request)
           : resolveAssistantMessageTimestamp(request, message.createdAt)
       };
     }));
+    if (resolvedSubject) {
+      setSelectedSubject(resolvedSubject);
+    }
   }, [extractAssistantContent]);
 
   const handleSelectSavedConversation = useCallback(async (value: string) => {
@@ -2103,10 +2178,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setError('Conta ChatGPT não executável pelo Codex App Server. Reconecte para executar.');
       return;
     }
+    const userPrompt = prompt.trim();
+    if (!userPrompt) {
+      setError('Digite a solicitação antes de enviar.');
+      return;
+    }
     setActionLoading(true);
     try {
-      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: prompt, createdAt: new Date().toISOString() };
-      const requestPrompt = buildConversationPrompt(prompt);
+      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: userPrompt, createdAt: new Date().toISOString(), subject: selectedSubject || undefined };
+      const requestPrompt = buildConversationPrompt(userPrompt);
       setConversation((current) => [...current, userMessage]);
       const response = await client.post('/codex/requests', {
         prompt: requestPrompt,
@@ -2117,15 +2197,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       });
       const created = parseCodexRequest(response.data);
       if (created) {
+        const createdContent = isTerminalStatus(created.status) ? extractAssistantContent(created) : `Aguardando resposta do modelo... (${formatStatus(created.status)})`;
+        const createdSubject = parseMarketingStructuredResponse(createdContent)?.assunto.trim() || selectedSubject || undefined;
         setPrResult(null);
+        if (createdSubject) {
+          setSelectedSubject(createdSubject);
+          setConversation((current) => current.map((message) => message.id === userMessage.id ? { ...message, subject: createdSubject } : message));
+        }
         setConversation((current) => [...current, {
           id: `${Date.now()}-assistant`,
           role: 'assistant',
-          content: isTerminalStatus(created.status) ? extractAssistantContent(created) : `Aguardando resposta do modelo... (${formatStatus(created.status)})`,
+          content: createdContent,
           requestId: created.id,
           environment: created.environment,
           status: created.status,
-          createdAt: resolveAssistantMessageTimestamp(created)
+          createdAt: resolveAssistantMessageTimestamp(created),
+          subject: createdSubject
         }]);
       }
       setPrompt('');
@@ -2140,7 +2227,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment, selectedSubject]);
 
 
   useEffect(() => {
@@ -2199,6 +2286,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           content: buildPrRequestMarkerContent(existingPrUrl, 'Abrir PR do lote'),
           createdAt: new Date().toISOString()
         }]);
+        setPrompt(buildPostPrContinuationPrompt(existingPrUrl, selectedEnvironment));
         setError(null);
         return;
       }
@@ -2238,6 +2326,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         content: buildPrRequestMarkerContent(nextPrResult.url, nextPrResult.title),
         createdAt: new Date().toISOString()
       }]);
+      setPrompt(buildPostPrContinuationPrompt(nextPrResult.url, selectedEnvironment));
       await loadRequests();
       setError(null);
     } catch (err) {
@@ -2343,6 +2432,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
     window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
   }, []);
+
+  const handlePreparePostPrContinuation = useCallback((prUrl?: string) => {
+    setPrompt(buildPostPrContinuationPrompt(prUrl, selectedEnvironment));
+    setError(null);
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, [selectedEnvironment]);
 
   const handleStartNewSandboxDialog = useCallback(() => {
     if (!sandboxOnly) return;
@@ -2519,6 +2614,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     element.focus({ preventScroll: true });
   }, [firstUnreadModelResponseId]);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
+  const conversationSubjects = useMemo(() => Array.from(new Set(conversation
+    .map((message) => message.subject?.trim())
+    .filter((subject): subject is string => Boolean(subject)))), [conversation]);
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
   const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchPrRelevantCompleted > 0 && !activeBatchPrUrl);
   const accumulatedCodeWarning = hasAccumulatedCodeAwaitingPr
@@ -2735,6 +2833,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
+              {message.subject ? (
+                <p className="mb-2 inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200">
+                  <span className="shrink-0">Assunto:</span>
+                  <span className="truncate normal-case" title={message.subject}>{message.subject}</span>
+                </p>
+              ) : null}
               {isEditingUserMessage ? <div className="space-y-2">
                 <textarea value={editingDraft} onChange={(event) => setEditingDraft(event.target.value)} rows={4} className="w-full rounded-md border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100" />
                 <div className="flex flex-wrap justify-end gap-2 text-xs">
@@ -2789,17 +2893,41 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         {promptComposerDisabled ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           {promptComposerDisabledReason}
         </p> : null}
-        <textarea
-          ref={promptTextareaRef}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onPaste={handlePromptPaste}
-          rows={5}
-          placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
-          className="w-full rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
-          required
-          disabled={promptComposerDisabled}
-        />
+        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+          Assunto
+          <select value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)} disabled={promptComposerDisabled} className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm font-normal dark:bg-slate-950">
+            <option value="">Novo assunto — o modelo escolhe o nome</option>
+            {conversationSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+          </select>
+        </label>
+        <div className="relative">
+          <textarea
+            ref={promptTextareaRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onPaste={handlePromptPaste}
+            rows={5}
+            placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
+            className="w-full rounded-md border px-3 py-2 pr-12 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
+            required
+            disabled={promptComposerDisabled}
+          />
+          <button
+            type="button"
+            onClick={handleResetPrompt}
+            disabled={promptComposerDisabled || prompt.length === 0}
+            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-700 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
+            aria-label="Limpar texto da solicitação"
+            title="Limpar texto da solicitação"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" />
+              <path d="M8 6V4h8v2" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v5M14 11v5" />
+            </svg>
+          </button>
+        </div>
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para usar na solicitação</p>
@@ -2917,7 +3045,24 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
         </div>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}
-        {prResult ? <p className="text-sm text-emerald-700">PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}</p> : null}
+        {prResult ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p>
+              PR solicitado: {prResult.url ? <a href={prResult.url} target="_blank" rel="noreferrer" className="font-medium underline">{prResult.title || prResult.url}</a> : prResult.title || 'criado com sucesso'}
+            </p>
+            <button
+              type="button"
+              onClick={() => handlePreparePostPrContinuation(prResult.url)}
+              disabled={promptComposerDisabled}
+              className="rounded-md border border-emerald-600 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50 dark:bg-slate-900 dark:text-emerald-200 dark:hover:bg-emerald-950/50"
+            >
+              Continuar resolução
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
+            Depois da aprovação/deploy, use esta continuação no mesmo diálogo para o modelo validar o resultado e seguir sem perder contexto.
+          </p>
+        </div> : null}
         {!isExecutable ? <p className="text-sm text-amber-700 dark:text-amber-300">Bloqueado: {account?.blockReason || 'Codex App Server sem conta executável.'}</p> : null}
       </form>
 
@@ -2942,6 +3087,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
               {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.documentAccessCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                 {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
+                {item.cloneDurationMs !== undefined ? <span>Clone do repositório: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.cloneDurationMs)}</strong></span> : null}
                 {item.interactionCount !== undefined ? <span>Interações: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatInteractionCount(item.interactionCount)}</strong></span> : null}
                 {item.documentAccessCount !== undefined ? <span>Documentos lidos: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDocumentAccessCount(item.documentAccessCount)}</strong></span> : null}
                 {item.status === 'COMPLETED' || item.totalTokens !== undefined ? <span>Tokens: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatTokens(item.totalTokens)}</strong></span> : null}

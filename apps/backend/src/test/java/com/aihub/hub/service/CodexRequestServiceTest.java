@@ -358,8 +358,8 @@ class CodexRequestServiceTest {
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
-            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, 2L, null, null
+            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
+            request.getInteractionCount(), null, null, 2L, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -394,8 +394,8 @@ class CodexRequestServiceTest {
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
-            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCreatedAt(), request.getInteractionCount(),
-            null, null, 1L, request.getResponseText(), null
+            request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
+            request.getInteractionCount(), null, null, 1L, request.getResponseText(), null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -431,6 +431,26 @@ class CodexRequestServiceTest {
         assertThat(found.getInteractionCount()).isEqualTo(2);
         verify(sandboxOrchestratorClient).getJob("job-detail-missing");
         verify(codexRequestRepository).save(request);
+    }
+
+    @Test
+    void findThrottlesRepeatedSandboxRefreshesForTheSameRunningRequest() {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "continue conversation");
+        request.setExternalId("job-detail-running");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(1)));
+        ReflectionTestUtils.setField(request, "id", 729L);
+
+        when(codexRequestRepository.findById(729L)).thenReturn(Optional.of(request));
+        when(codexInteractionRepository.countByCodexRequestId(729L)).thenReturn(2);
+        when(sandboxOrchestratorClient.getJob("job-detail-running")).thenReturn(null);
+
+        CodexRequestService service = buildService(false);
+
+        service.find(729L);
+        service.find(729L);
+
+        verify(sandboxOrchestratorClient, times(1)).getJob("job-detail-running");
     }
 
     @Test

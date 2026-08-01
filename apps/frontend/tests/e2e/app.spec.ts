@@ -8,6 +8,67 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
 });
 
+test('lets the model name a new subject and reuses it from the combo', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-07-31T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  const submittedPrompts: string[] = [];
+  await page.route('**/api/codex/requests**', async (route) => {
+    if (route.request().method() === 'POST') {
+      submittedPrompts.push((route.request().postDataJSON() as { prompt: string }).prompt);
+      await route.fulfill({ json: {
+        id: 901 + submittedPrompts.length,
+        profile: 'CHATGPT_CODEX',
+        status: 'COMPLETED',
+        createdAt: '2026-07-31T12:00:00Z',
+        responseText: JSON.stringify({ assunto: 'MUSA v7', titulo: 'Validação da v7', comentario: 'Análise concluída.' })
+      } });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+
+  await page.goto('/codex-chatgpt');
+  const subjectCombo = page.getByLabel('Assunto');
+  await expect(subjectCombo).toHaveValue('');
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Validar se a v7 vende mais que a v6 sem elevar o custo.');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => submittedPrompts[0]).toContain('Nenhum assunto foi selecionado. Escolha um assunto curto');
+  await expect(subjectCombo).toHaveValue('MUSA v7');
+  await expect(page.getByText('Assunto:').filter({ visible: true })).toHaveCount(2);
+  await expect(page.getByTitle('MUSA v7')).toHaveCount(2);
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Agora compare a copy com a v6.');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+  await expect.poll(() => submittedPrompts[1]).toContain('Assunto selecionado pelo usuário: "MUSA v7"');
+});
+
+test('remembers and forgets the system health admin token locally', async ({ page }) => {
+  await page.route('**/api/admin/system-health/configuration', async (route) => {
+    await route.fulfill({
+      json: { configured: true, environmentVariable: 'HUB_MAINTENANCE_ADMIN_TOKEN' }
+    });
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:system-health-admin-token', 'saved-token');
+  });
+
+  await page.goto('/admin/system-health');
+
+  const tokenInput = page.getByLabel('Token administrativo');
+  await expect(tokenInput).toHaveValue('saved-token');
+  await expect(page.getByRole('checkbox', { name: 'Lembrar neste navegador' })).toBeChecked();
+
+  await page.getByRole('button', { name: 'Esquecer token salvo' }).click();
+
+  await expect(tokenInput).toHaveValue('');
+  await expect(page.getByRole('checkbox', { name: 'Lembrar neste navegador' })).not.toBeChecked();
+  await expect(page.evaluate(() => window.localStorage.getItem('ai-hub:system-health-admin-token'))).resolves.toBeNull();
+});
+
 test('warns on the request PR button when a batch has accumulated code', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
@@ -347,6 +408,11 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.getByRole('checkbox', { name: /Texto editável/ }).check();
   const promptTextarea = page.getByPlaceholder(/Digite sua solicitação de análise de marketing/);
   await expect(promptTextarea).toHaveValue('Texto inicial para editar antes de enviar.');
+  await page.getByRole('button', { name: 'Limpar texto da solicitação' }).click();
+  await expect(promptTextarea).toHaveValue('');
+  await expect(page.getByRole('checkbox', { name: /Texto editável/ })).not.toBeChecked();
+  await expect(promptTextarea).toBeFocused();
+  await page.getByRole('checkbox', { name: /Texto editável/ }).check();
   await promptTextarea.fill('Texto inicial para editar antes de enviar.\n\nVerifique se os complementos entram no prompt.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
@@ -772,7 +838,7 @@ test('shows a code generation icon on marketing comment cards with repository ch
         role: 'assistant',
         content: JSON.stringify({
           titulo: 'Aviso no comentário',
-          comentario: 'Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card de comentário agora mostra alerta visual quando há mudança no repositório.\n\nValidações executadas: `npm --prefix apps/frontend run build` passou.',
+          comentario: 'Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card de comentário agora mostra alerta visual quando há mudança no repositório.\n\n```bash\nnpm --prefix apps/frontend run build\n```',
           impactoAumentoVendas: 'baixo',
           alterouCodigoRepositorio: true,
           resumoCodigoPr: 'Mostra alerta visual quando a resposta MKT declara alteração no repositório.',
@@ -805,6 +871,32 @@ test('shows a code generation icon on marketing comment cards with repository ch
           sugestaoMelhoriaAmbiente: ''
         }),
         createdAt: '2026-07-24T12:02:00Z'
+      },
+      {
+        id: 'assistant-marketing-very-low',
+        role: 'assistant',
+        content: JSON.stringify({
+          titulo: 'Organização interna',
+          comentario: 'Organize os arquivos internos sem alterar uma alavanca comercial.',
+          impactoAumentoVendas: 'muito_baixo',
+          alterouCodigoRepositorio: false,
+          resumoCodigoPr: '',
+          sugestaoMelhoriaAmbiente: ''
+        }),
+        createdAt: '2026-07-24T12:03:00Z'
+      },
+      {
+        id: 'assistant-marketing-very-high',
+        role: 'assistant',
+        content: JSON.stringify({
+          titulo: 'Oferta central otimizada',
+          comentario: 'Otimize a oferta central com impacto direto e mensurável na conversão.',
+          impactoAumentoVendas: 'muito-alto',
+          alterouCodigoRepositorio: false,
+          resumoCodigoPr: '',
+          sugestaoMelhoriaAmbiente: ''
+        }),
+        createdAt: '2026-07-24T12:04:00Z'
       }
     ]));
   });
@@ -817,5 +909,11 @@ test('shows a code generation icon on marketing comment cards with repository ch
   await expect(page.getByText('Recomendo testar uma promessa')).toBeVisible();
   await expect(page.getByLabel('Impacto em vendas: alto')).toBeVisible();
   await expect(page.getByLabel('Impacto em vendas: médio')).toBeVisible();
+  await expect(page.getByLabel('Impacto em vendas: muito baixo')).toBeVisible();
+  await expect(page.getByLabel('Impacto em vendas: muito alto')).toBeVisible();
   await expect(page.getByText('Gerou código')).toHaveCount(1);
+  const copyCodeButton = codeCommentCard.getByRole('button', { name: 'Copiar código' });
+  await expect(copyCodeButton).toBeVisible();
+  await copyCodeButton.click();
+  await expect(codeCommentCard.getByRole('button', { name: 'Código copiado' })).toBeVisible();
 });

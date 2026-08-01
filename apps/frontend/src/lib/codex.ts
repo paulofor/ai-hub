@@ -35,6 +35,7 @@ export interface CodexRequest {
   startedAt?: string;
   finishedAt?: string;
   durationMs?: number;
+  cloneDurationMs?: number;
   timeoutCount?: number;
   httpGetCount?: number;
   httpGetSuccessCount?: number;
@@ -209,6 +210,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const startedAt = typeof item.startedAt === 'string' ? item.startedAt : undefined;
   const finishedAt = typeof item.finishedAt === 'string' ? item.finishedAt : undefined;
   const durationMs = parseNumber(item.durationMs);
+  const cloneDurationMs = parseNumber(item.cloneDurationMs);
   const timeoutCount = parseNumber(item.timeoutCount);
   const httpGetCount = parseNumber(item.httpGetCount ?? (item as Record<string, unknown>).http_get_count);
   const httpGetSuccessCount = parseNumber(item.httpGetSuccessCount ?? (item as Record<string, unknown>).http_get_success_count);
@@ -332,6 +334,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     startedAt,
     finishedAt,
     durationMs,
+    cloneDurationMs,
     timeoutCount,
     httpGetCount,
     httpGetSuccessCount,
