@@ -981,6 +981,7 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   requestId?: number;
+  environment?: string;
   status?: CodexRequest['status'];
   createdAt: string;
 }
@@ -995,10 +996,11 @@ const parsePersistedChatMessage = (value: unknown): ChatMessage | null => {
   const id = typeof item.id === 'string' ? item.id : '';
   const createdAt = typeof item.createdAt === 'string' ? item.createdAt : '';
   const requestId = typeof item.requestId === 'number' && Number.isFinite(item.requestId) ? item.requestId : undefined;
+  const environment = typeof item.environment === 'string' && item.environment.trim() ? item.environment.trim() : undefined;
   const status = typeof item.status === 'string' && ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(item.status)
     ? item.status as CodexRequest['status']
     : undefined;
-  return role && content.trim() && id && createdAt ? { id, role, content, requestId, status, createdAt } : null;
+  return role && content.trim() && id && createdAt ? { id, role, content, requestId, environment, status, createdAt } : null;
 };
 
 const loadPersistedChatConversation = (profile: CodexProfile): ChatMessage[] => {
@@ -1971,6 +1973,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       && message.status
       && !isTerminalStatus(message.status))
     .map((message) => message.requestId as number)).size, [conversation]);
+  const requestEnvironmentById = useMemo(
+    () => new Map(requests.map((item) => [item.id, item.environment])),
+    [requests]
+  );
   const promptComposerDisabled = config.profile === 'CHATGPT_CODEX_MKT'
     && activeConversationRequestCount >= MAX_ACTIVE_CONVERSATION_REQUESTS;
   const promptComposerDisabledReason = promptComposerDisabled
@@ -1983,6 +1989,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const becameTerminal = !message.status || !isTerminalStatus(message.status);
       return {
         ...message,
+        environment: request.environment,
         status: request.status,
         content: isTerminalStatus(request.status) ? extractAssistantContent(request) : `Aguardando resposta do modelo... (${formatStatus(request.status)})`,
         createdAt: isTerminalStatus(request.status) && becameTerminal
@@ -2116,6 +2123,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           role: 'assistant',
           content: isTerminalStatus(created.status) ? extractAssistantContent(created) : `Aguardando resposta do modelo... (${formatStatus(created.status)})`,
           requestId: created.id,
+          environment: created.environment,
           status: created.status,
           createdAt: resolveAssistantMessageTimestamp(created)
         }]);
@@ -2289,6 +2297,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         if (updated && message.role === 'assistant' && message.requestId === requestId) {
           return {
             ...message,
+            environment: updated.environment,
             status: updated.status,
             content: isTerminalStatus(updated.status) ? extractAssistantContent(updated) : `Aguardando resposta do modelo... (${formatStatus(updated.status)})`,
             createdAt: resolveAssistantMessageTimestamp(updated, message.createdAt)
@@ -2687,6 +2696,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {visibleConversation.map((message, messageIndex) => {
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
+            const messageEnvironment = message.environment ?? (message.requestId ? requestEnvironmentById.get(message.requestId) : undefined);
             return <article
               key={message.id}
               ref={(element) => {
@@ -2705,7 +2715,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   : 'mr-auto max-w-3xl bg-white text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100'
             }`}>
               <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <span>{message.role === 'user' ? 'Usuário' : message.role === 'system' ? 'Sistema' : 'Modelo'} · {formatDateTime(message.createdAt)}</span>
+                <span className="min-w-0">
+                  {message.role === 'user' ? 'Usuário' : message.role === 'system' ? 'Sistema' : 'Modelo'} · {formatDateTime(message.createdAt)}
+                  {message.requestId ? ` · Ambiente: ${formatRequestEnvironment(messageEnvironment)}` : ''}
+                </span>
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
