@@ -219,20 +219,12 @@
 ## 2026-05-14 01:41:55 UTC-3
 - Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
 
-## 2026-07-31 21:23:52 UTC-3
-- Solicitação recebida: corrigir falha do GitHub Actions exibida na tela de Actions após o merge do PR #609.
-- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: o DTO `CodexRequestSummary` ganhou o campo `cloneDurationMs`, mas dois fixtures em `CodexRequestServiceTest` continuaram instanciando o record com a assinatura antiga; por isso o job `backend` falhou na compilação de testes e o job `docker` falhou pelo mesmo motivo, já que `mvn -DskipTests package` ainda executa `testCompile`.
-- Ajustados os dois fixtures de `CodexRequestServiceTest` para preencher `cloneDurationMs` no ponto correto do construtor.
-- Validação local: `mvn -f apps/backend -B test` passou com 101 testes, 0 falhas; `mvn -f apps/backend -B -DskipTests package` também passou.
-- Limitação real de ambiente: o Docker CLI está disponível, mas não há daemon em `/var/run/docker.sock`; por isso o build Docker completo não pôde ser executado localmente, embora a etapa Maven que falhou dentro do Docker tenha sido validada.
-
-## 2026-07-31 09:12:54 UTC-3
-- Solicitação recebida: reduzir o ciclo manual no `Codex ChatGPT Managed`, em que o usuário precisava pedir PR, aprovar/deployar no GitHub e depois voltar ao AI Hub para criar outra solicitação com o mesmo contexto.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI já agrupava alterações em um lote (`workBatchKey`) e criava PR, mas tratava o PR como encerramento do fluxo visível; depois da aprovação/deploy não havia continuação operacional pronta no mesmo diálogo, forçando o usuário a reconstruir contexto em uma nova mensagem.
-- Ajustada `apps/frontend/src/pages/CodexChatgptPage.tsx` para gerar um prompt pós-PR com o link do PR, ambiente/repositório e instruções para verificar estado do PR/deploy, validar a funcionalidade e continuar a resolução sem perder contexto.
-- Após criar ou reencontrar um PR do lote, a tela agora preenche automaticamente o campo de mensagem com a continuação pós-PR e exibe um painel com botão `Continuar resolução` para restaurar esse prompt no mesmo diálogo.
-- Atualizados textos do modo padrão e MKT para deixar claro que o diálogo continua após o PR e que a validação pós-deploy deve acontecer no mesmo fluxo.
-- Validação: `npm --prefix apps/frontend ci` concluído; `npm --prefix apps/frontend run build` passou com sucesso.
+## 2026-07-30 15:51:28 UTC-3
+- Solicitação recebida em modo MKT: verificar a situação atual do experimento 76.
+- Evidências consultadas: API pública do AI Hub para `CodexRequest` 76, lista recente de solicitações Codex, detalhe da solicitação 807 (`Experimento 76 coerente com v6`), status do PR `paulofor/marketing-hub#4616`, runs de GitHub Actions em `main`, healthcheck público de `https://v6.clubemusa.com.br/healthz` e logs recentes do MCP Server.
+- Conclusão operacional: o experimento 76 do Marketing Hub foi tratado nas solicitações 789-807; a solicitação 807 confirmou que o experimento está `RUNNING`, direciona tráfego para a PDE MUSA v6 (`https://v6.clubemusa.com.br`), a v6 está `ACTIVE`, e o vídeo HLS publicado vem do contrato/slot PDE, sem custo/asset direto do experimento.
+- Conclusão de deploy: o PR `paulofor/marketing-hub#4616` está mergeado em `main` em 2026-07-30 18:27:17 UTC, com workflows posteriores em `main` concluídos com sucesso, incluindo `Build & Deploy containers`, `CI - PDE Platform Metodo MUSA`, `CI + CD – marketinghub backend`, `Frontend CI` e `MCP Server - Build and Deploy`.
+- Ponto de atenção comercial: a v6 pública responde `UP`, mas a verificação atual foi feita por APIs/logs disponíveis; a leitura visual das abas de produção do painel administrativo não foi refeita nesta solicitação.
 
 ## 2026-07-30 00:22:49 UTC-3
 - Solicitação recebida: verificar e ajustar problema no GitHub Actions.
@@ -2991,139 +2983,27 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: a variável foi documentada no `.env.example` raiz com comando seguro de geração; o backend agora expõe somente o estado booleano de configuração, sem revelar o segredo; e o frontend explica que o valor vem do `.env` da implantação, orienta solicitar ao administrador da VPS e mostra instruções de bootstrap quando ainda não estiver configurado.
 - Proteção preservada: o token real nunca é devolvido pela API, gravado no navegador ou exibido na página; a consulta de diagnóstico e todas as ações continuam exigindo o segredo correto.
 
-## 2026-07-30 23:58:36 UTC - Persistência local opcional do token administrativo
+## 2026-07-31 00:32:36 UTC - Orientacao sobre indice para analytics PDE v6
 
-- Solicitação recebida: evitar que o usuário precise digitar novamente o token administrativo toda vez que entra na tela de Saúde do sistema, sugerindo guardar no banco de dados.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela usava apenas estado React em memória (`useState`) para o token; ao recarregar ou reabrir a rota, o componente era remontado e o campo voltava vazio. Isso refletia uma decisão anterior de segurança, mas gerava atrito operacional.
-- Correção aplicada na causa sem enfraquecer o backend: adicionada a opção explícita “Lembrar neste navegador”, que grava o token apenas no `localStorage` do navegador quando marcada, restaura o campo ao voltar para a página e oferece botão “Esquecer token salvo”.
-- Decisão de segurança: o token não foi armazenado no banco de dados, porque é um segredo administrativo global usado para autorizar o próprio endpoint de manutenção. Persisti-lo no backend para uso automático reduziria o valor do controle de acesso; o backend continua apenas validando o segredo recebido e nunca o devolve pela API.
-- Proteção contra regressão: criado teste e2e no frontend cobrindo o token salvo, o checkbox marcado automaticamente e a remoção do valor salvo.
+- Solicitacao recebida: esclarecer se e necessario criar indices para resolver a falha HTTP 500 `Out of sort memory` no MySQL ao consolidar o funil PDE da v6.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a consolidacao do analytics esta obrigando o MySQL a ordenar muitos eventos do funil sem um indice composto suficientemente alinhado aos filtros e a ordenacao da consulta; com isso o banco tenta fazer sort em memoria temporaria e estoura o limite de `sort_buffer`.
+- Alternativas avaliadas: (1) aumentar `sort_buffer_size`, rapido mas paliativo e arriscado para memoria global; (2) reduzir janela/volume da consulta, rapido mas piora leitura comercial e pode esconder eventos; (3) criar indice composto alinhado a produto/versao/evento/timestamp e validar com `EXPLAIN`, melhor correcao por atacar a causa do sort pesado. Recomendacao: seguir pela alternativa 3 e usar aumento de memoria apenas como mitigacao temporaria se houver urgencia operacional.
+- Impacto comercial: sem analytics confiavel, o experimento 76 fica contaminado e a decisao sobre a v6 pode ser falsa; corrigir o caminho de leitura do funil e pre-requisito para criar um novo teste limpo com aprendizado confiavel.
 
-## 2026-07-31 - Cópia individual dos blocos de código no diálogo
+## 2026-07-31 02:11:10 UTC-3
 
-- Solicitação recebida: adicionar um ícone nos quadros pretos das respostas para copiar seu conteúdo para a área de transferência.
-- Pergunta explícita de causa raiz: “por que esse recurso não estava disponível?”. Resposta: o renderizador Markdown transformava blocos cercados por crases diretamente em elementos `pre` e `code`, sem um componente interativo associado. A cópia existente operava apenas sobre o card ou a mensagem completa e, por isso, não permitia copiar somente o conteúdo do quadro preto.
-- Correção aplicada na causa: os renderizadores dos diálogos Codex geral e Marketing passaram a usar um bloco de código copiável, com botão posicionado no canto superior direito, suporte ao Clipboard API e fallback quando a API não existe ou tem sua permissão negada, indicação visual temporária de sucesso e rótulos acessíveis “Copiar código”/“Código copiado”.
-- Proteção contra regressão: o cenário e2e do diálogo de Marketing agora renderiza um bloco cercado por crases, confirma a presença do botão e verifica o feedback depois do clique.
+- Solicitacao recebida: validar novamente o cockpit do experimento 77 apos deploy da correcao de funil/cockpit PDE v6.
+- Pergunta explicita de causa raiz: "por que o cockpit 77 poderia continuar errado mesmo apos o deploy?". Resposta: o deploy do backend principal foi confirmado por `/actuator/info`, mas o cockpit ainda pode zerar se a integracao backend principal -> PDE depender da versao corrente agregada do summary, de atribuicao UTM/campanha divergente ou de bloqueios operacionais do proprio experimento antes de aplicar o fallback por slot `v6`.
+- Evidencias coletadas: `/actuator/info` do backend principal respondeu HTTP 200 com commit `622c3361600109cee4f44a42a2613c1516d12928`; container `ai-hub-6-backend-1` rodando imagem tagueada por SHA; `/api/experiments/77/cockpit` respondeu HTTP 200, mas manteve funil zerado e health `BLOCKED`; `/api/experiments/77/funnel` tambem retornou todos os estagios com zero.
+- Comparacao com PDE: `https://v6.clubemusa.com.br/api/pde/access/analytics/metodo-musa-7-dias/summary` respondeu HTTP 200 com `35` sessoes humanas totais, sendo `29` sessoes na experience `musa-pde-entry-v6-video-motivacional`, `29` entradas PDE, `12` videos parciais, `6` videos completos, `0` checkout iniciado e `0` compras.
+- Achado de causa provavel: o summary chamado pelo host `v6` ainda publica `currentExperienceVersion` como `musa-pde-entry-v5-video-explicativo`, embora traga a v6 dentro de `experienceVersions`; parametros comuns de consulta (`experienceVersion`, `version`, `slot`, `host`) nao mudaram o total consolidado. Isso indica que o backend principal precisa selecionar explicitamente a linha da v6 em `experienceVersions` para o experimento 77, em vez de confiar no campo consolidado `currentExperienceVersion`.
+- Decisao comercial: nao liberar trafego novo nem interpretar o experimento 77 como rejeicao de mercado. O PDE v6 mede consumo inicial real, mas o cockpit 77 ainda nao apresenta esses dados corretamente; alem disso, o experimento permanece `PLANNED`, sem criativos aprovados e sem publico publicavel.
 
-## 2026-07-31 05:34 UTC - Diagnóstico de indisponibilidade do AI Hub
+## 2026-08-01 02:15:00 UTC - Ambiente no dialogo das solicitacoes
 
-- Solicitação recebida: verificar se o AI Hub havia travado.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A observação externa permite localizar a falha, mas ainda não determinar a causa interna: o proxy público responde rapidamente à conexão TLS e, após aproximadamente 5,2 segundos, devolve `HTTP 503 Service Unavailable` com `upstream connect error or disconnect/reset before headers` e motivo `connection timeout`. Isso indica que o proxy está ativo, porém não consegue estabelecer conexão com o upstream da aplicação.
-- Escopo confirmado: o mesmo comportamento ocorreu na página inicial (`/`), no healthcheck do backend (`/api/actuator/health`) e no MCP (`/mcp`); portanto não é um travamento isolado da interface. Como o próprio MCP está atrás do upstream indisponível, a consulta remota a `docker ps` e aos logs também devolveu 503 e não foi possível diferenciar externamente entre host desligado, containers parados, proxy interno/rede interrompida ou exaustão de recursos.
-- Nenhuma tentativa de reinício ou correção às cegas foi realizada. Próximo diagnóstico necessário: acessar o host por um canal independente (SSH/console do provedor) e verificar estado do host, disco/memória, Docker e logs antes de decidir a correção.
-- Verificações executadas: `curl` em `https://iahub.xyz/mcp`, `https://iahub.xyz/`, `https://iahub.xyz/api/actuator/health` e tentativa de `POST /mcp/tools/linux-command` com `docker ps --format ...`; todos os caminhos retornaram HTTP 503 por timeout de conexão com o upstream.
-
-## 2026-07-31 05:40 UTC - Análise do gráfico da VPS durante a indisponibilidade
-
-- Evidência recebida: captura da aba `Gráficos` do provedor, especificamente `Estatísticas de largura de banda`, para o período de 01/07 a 31/07.
-- Pergunta explícita de causa raiz: “por que o AI Hub ficou indisponível?”. O gráfico fornecido não mede CPU, memória, disco, processos, estado da VPS ou disponibilidade dos containers; por isso, ele não permite atribuir a indisponibilidade a exaustão de recursos ou travamento do host. Ele mostra somente tráfego de rede e registra aproximadamente `7.77 GB` utilizados, concentrados no fim do período, principalmente em `Entrada`, com uma parcela menor de `Saída`.
-- Interpretação: o pico comprova atividade de rede anormalmente concentrada em 31/07, mas não revela qual processo ou serviço originou o tráfego e não comprova, isoladamente, ataque, download, atualização, pull de imagens ou tempestade de requisições. O indicador `0%` também aparece junto de limite `∞ GB`, portanto não representa uso de CPU ou saturação da VPS.
-- Nova sondagem externa às 05:39 UTC manteve `HTTP 503` em `/`, `/api/actuator/health` e `/mcp`, todos após cerca de 5,2 segundos e com timeout de conexão do proxy ao upstream.
-- Próxima evidência necessária para chegar à causa raiz: capturas das métricas de CPU, memória, disco e estado/uptime da VPS ou acesso independente por console/SSH. Se o painel oferecer `Tarefas e logs`, seus eventos do horário do pico também devem ser consultados antes de reiniciar o host.
-
-## 2026-07-31 05:44 UTC - Restabelecimento do AI Hub
-
-- Usuário informou que o serviço havia voltado; a recuperação foi confirmada externamente.
-- Pergunta explícita de causa raiz: “por que o serviço voltou?”. A evidência disponível mostra reinicialização recente da pilha, mas não permite afirmar o motivo original da queda: via MCP, `docker ps` reportou Caddy e sandbox-mail com uptime de aproximadamente 2 minutos e frontend, backend, sandbox-orchestrator e MCP com uptime de 28 a 30 segundos. Durante a inicialização, as sondagens evoluíram de `503` para `502` e então `200`, comportamento compatível com containers reiniciando e ficando prontos em momentos diferentes.
-- Estado final verificado: `/` retornou `HTTP 200` com o HTML do AI Hub, `/mcp` retornou `HTTP 200` e `{"status":"UP"}`, e o backend passou a responder novamente. O caminho `/api/actuator/health` usado nas sondagens anteriores não é um healthcheck publicado e, após a recuperação, retorna `404` JSON do próprio backend; ele serviu apenas como prova de alcançabilidade do upstream, não como validação semântica de saúde.
-- Logs do backend confirmaram nova inicialização às `05:43:31 UTC` e conclusão do startup às `05:43:58 UTC`, após conexão com o MySQL, validação das 39 migrations e inicialização do Tomcat na porta 8081.
-- Conclusão: o AI Hub voltou a operar após reinicialização da pilha. A causa raiz da indisponibilidade anterior continua não demonstrada; para determiná-la, ainda são necessários os eventos do provedor e logs do host imediatamente anteriores ao reinício.
-
-## 2026-07-31 05:52 UTC - Investigação de downloads grandes durante a indisponibilidade
-
-- Pergunta recebida: o modelo poderia ter baixado um arquivo grande demais?
-- Pergunta explícita de causa raiz: “por que houve o pico de tráfego e o disco ficou pressionado?”. A inspeção do host não encontrou arquivo individual recente maior que 100 MB nos volumes Docker. Dentro do sandbox, encontrou dois clones do repositório com packs Git de aproximadamente 368 MB cada, um criado às 05:17 UTC e outro às 05:50 UTC; portanto execuções do modelo efetivamente transferiram dados, mas a evidência observada soma cerca de 736 MB e não explica sozinha os 7,77 GB do gráfico.
-- Evidência mais forte: o host possui 364 imagens Docker ocupando 40,78 GB, além de 2,64 GB de build cache; a raiz de 59 GB está com 50 GB usados (90%). Há dezenas de versões históricas das imagens do projeto. A imagem do sandbox tem cerca de 4,6 GB por tag, e várias tags foram registradas juntas em 30/07; frontend e backend também possuem muitas tags antigas. Isso aponta para retenção excessiva de imagens de deploy como a principal pressão persistente de disco e torna pulls/deploys uma explicação mais plausível para grande parte do tráfego de entrada do que um único arquivo baixado pelo modelo.
-- Estado do sandbox: a camada gravável do container mede 2,28 GB; `/root/ai-hub` mede 1,8 GB, o cache Maven 209 MB e o cache npm 307 MB. Os maiores arquivos encontrados são os packs Git de aproximadamente 368 MB, além de binários pertencentes à imagem base.
-- Conclusão: é possível que o modelo tenha contribuído com downloads, especialmente por clonar o repositório, mas não foi encontrado um arquivo único compatível com o pico. A causa operacional comprovada que exige correção é a ausência ou insuficiência de retenção/limpeza das imagens de deploy, que deixou o host em 90% de uso. Nenhuma limpeza foi executada nesta investigação para evitar remoção destrutiva sem confirmação e sem definir antes uma política segura de retenção.
-
-## 2026-07-31 - Limpeza automática de artefatos Docker após deploy
-
-- Solicitação recebida: ajustar o workflow para impedir o acúmulo de lixo na VPS.
-- Pergunta explícita de causa raiz: “por que o lixo acumulou?”. O deploy executava `docker compose pull` e criava uma tag por SHA em toda publicação, mas terminava após os healthchecks sem remover imagens e caches antigos. Com vários deploys, isso manteve 364 imagens e 40,78 GB no host; limpar workspaces do modelo não corrigiria essa fonte recorrente.
-- Correção aplicada na causa: o job de deploy agora, somente depois de todos os healthchecks de produção passarem, remove containers parados, imagens não utilizadas e build cache com mais de 24 horas. Imagens usadas por containers em execução são preservadas pelo Docker, e a janela de 24 horas mantém versões recentes para rollback manual.
-- Proteções: volumes não são removidos; a limpeza não roda se publicação ou verificação falhar; deploys continuam serializados; e o workflow imprime `docker system df` antes e depois e `df -h /` ao final para tornar o efeito auditável.
-
-## 2026-07-31 09:13:23 UTC-3
-- Correção de registro: a entrada `2026-07-31 09:12:54 UTC-3` foi adicionada antes do final real do arquivo por contexto de patch antigo. Conforme política append-only, ela não foi removida; esta entrada corrige a posição do registro no final do documento.
-- Solicitação registrada: reduzir o ciclo manual no `Codex ChatGPT Managed`, em que o usuário precisava pedir PR, aprovar/deployar no GitHub e depois voltar ao AI Hub para criar outra solicitação com o mesmo contexto.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI já agrupava alterações em um lote (`workBatchKey`) e criava PR, mas tratava o PR como encerramento do fluxo visível; depois da aprovação/deploy não havia continuação operacional pronta no mesmo diálogo, forçando o usuário a reconstruir contexto em uma nova mensagem.
-- Ajustada `apps/frontend/src/pages/CodexChatgptPage.tsx` para gerar um prompt pós-PR com o link do PR, ambiente/repositório e instruções para verificar estado do PR/deploy, validar a funcionalidade e continuar a resolução sem perder contexto.
-- Após criar ou reencontrar um PR do lote, a tela agora preenche automaticamente o campo de mensagem com a continuação pós-PR e exibe um painel com botão `Continuar resolução` para restaurar esse prompt no mesmo diálogo.
-- Atualizados textos do modo padrão e MKT para deixar claro que o diálogo continua após o PR e que a validação pós-deploy deve acontecer no mesmo fluxo.
-- Validação: `npm --prefix apps/frontend ci` concluído; `npm --prefix apps/frontend run build` passou com sucesso.
-
-## 2026-07-31 - Compositor guiado para solicitações com foco único
-
-- Solicitação recebida: melhorar a interface do fluxo de solicitações para reduzir a perda de desempenho do modelo quando vários assuntos são tratados simultaneamente.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o compositor oferecia apenas um campo de texto livre e enviava todo o conteúdo como uma única frente, sem separar objetivo, escopo, ação esperada ou prioridade; assim, objetivos concorrentes podiam compartilhar o mesmo contexto e aumentar a chance de o modelo misturar decisões e entregas.
-- Correção aplicada na causa: o diálogo Codex ChatGPT passou a abrir, por padrão, um formato guiado com objetivo e escopo obrigatórios, seletores de ação e prioridade e um campo opcional de detalhes. A mensagem enviada ao modelo é organizada nesses blocos e inclui uma regra explícita para manter apenas uma frente principal e registrar assuntos adicionais como pendências de uma próxima solicitação.
-- Flexibilidade preservada: o usuário pode desativar “Usar formato guiado” para mensagens livres que não representem uma tarefa estruturada.
-- Proteção contra regressão: adicionado cenário Playwright que preenche o formulário, envia a solicitação e valida no payload a estrutura e a regra de foco. A interface também foi validada visualmente por screenshot local.
-
-## 2026-07-31 - Simplificação do auxílio de foco nas solicitações
-
-- Feedback recebido: o formulário com objetivo, escopo, ação e prioridade tornou o envio de uma solicitação complicado demais.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a primeira solução transferiu para o usuário a responsabilidade de estruturar cada mensagem em quatro controles, embora a necessidade real fosse orientar o modelo a não misturar frentes; a complexidade visual era consequência de tratar a organização do prompt como tarefa manual.
-- Correção aplicada na causa: removidos os quatro campos e suas validações. A interface voltou a ter um único campo de mensagem e somente uma opção compacta, marcada por padrão, chamada “Evitar misturar assuntos”.
-- Quando a opção está ativa, a organização acontece de forma transparente no prompt enviado ao modelo, enquanto a conversa continua exibindo exatamente a mensagem escrita pelo usuário. A opção pode ser desmarcada quando múltiplos assuntos forem intencionais.
-- Teste E2E atualizado para confirmar a ausência dos campos extras, o auxílio de foco ativo por padrão e a regra adicionada apenas ao payload destinado ao modelo.
-
-## 2026-07-31 - Organização simples da conversa por assunto
-
-- Sugestão recebida: substituir o auxílio genérico de foco por uma combo inicialmente vazia, permitir que o modelo nomeie o assunto da primeira solicitação e reutilizar esse assunto nas mensagens seguintes.
-- Pergunta explícita de causa raiz: “por que os assuntos podiam se misturar?”. Resposta: todas as mensagens eram enviadas com o mesmo histórico, sem uma identidade de assunto que permitisse ao usuário indicar qual contexto deveria continuar. O checkbox anterior apenas instruía foco, mas não criava um mecanismo reutilizável de contexto.
-- Correção aplicada na causa: criada a combo “Assunto”, inicialmente em “Novo assunto — o modelo escolhe o nome”. Sem seleção, o prompt pede um nome curto no campo JSON `assunto`; ao receber a resposta, a interface adiciona e seleciona o nome automaticamente.
-- Nas mensagens seguintes, o assunto selecionado é enviado explicitamente ao modelo e somente as mensagens marcadas com esse assunto compõem o histórico, evitando cruzamento entre frentes. Selecionar “Novo assunto” inicia um contexto sem histórico anterior.
-- O assunto é armazenado junto às mensagens no `localStorage`, aproveitando a persistência existente do diálogo, e volta à combo após recarregar a tela.
-- O schema estruturado do modo MKT passou a incluir `assunto`. O parser também aceita `subject` e `topic` como compatibilidade defensiva.
-- Teste E2E cobre a combo vazia, a escolha do assunto pelo modelo, a seleção automática e o reuso no prompt seguinte.
-
-## 2026-07-31 - Proteção contra tempestade de sincronização no detalhe Codex
-
-- Solicitação recebida: investigar se o AI Hub havia travado, explicar a causa e corrigir o problema.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o serviço estava disponível e com recursos folgados, mas os logs mostraram várias consultas concorrentes ao mesmo detalhe em execução. Cada `GET` do detalhe disparava sincronicamente outra consulta ao sandbox; com múltiplas abas ou clientes fazendo polling, a proteção existente evitava apenas chamadas exatamente simultâneas, mas permitia uma nova chamada logo após a anterior. Isso ocupava repetidamente as threads HTTP do backend e fazia a interface parecer travada.
-- Correção aplicada na causa: o backend passou a impor, por solicitação, um intervalo mínimo de cinco segundos entre tentativas de sincronização iniciadas pela abertura/polling do detalhe. A trava de concorrência já existente foi preservada, callbacks do sandbox continuam imediatos e solicitações terminais removem o estado transitório de limitação.
-- Proteção contra regressão: adicionado teste unitário que abre duas vezes seguidas o mesmo detalhe em execução e confirma apenas uma consulta ao sandbox.
-- Diagnóstico do host: todos os containers estavam ativos; `/mcp` respondeu `UP`; disco estava em 36%, memória disponível em 4,0 GiB e load average em 0,32/0,32/0,39. Não foi necessário reiniciar serviços nem executar ação destrutiva.
-
-## 2026-07-31 - Assunto visível nas solicitações e respostas do diálogo
-
-- Solicitação recebida: tornar os temas visíveis nas solicitações e nas respostas para reduzir a confusão durante a leitura da conversa.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o assunto já era armazenado nas duas mensagens e usado para filtrar o histórico, porém sua apresentação ficava restrita à combo do compositor; os cartões da conversa exibiam somente autor, horário e conteúdo, ocultando justamente a informação que distinguia os contextos.
-- Correção aplicada na causa: cada cartão de mensagem que possui assunto agora mostra uma etiqueta `Assunto: <nome>` antes do conteúdo, tanto na solicitação do usuário quanto na resposta do modelo. Nomes longos são truncados visualmente sem alterar o valor completo, que continua disponível no título da etiqueta.
-- Proteção contra regressão: o cenário Playwright de criação e reutilização de assunto agora também confirma a presença das duas etiquetas, uma na solicitação e outra na resposta.
-- Validação: o build do frontend e o cenário E2E específico passaram. A alteração visual foi inspecionada em screenshot local e confirmou as etiquetas `Assunto: MUSA v7` nos dois cartões.
-
-## 31/07/2026 — Tempo de clone nas solicitações
-
-- Pergunta de causa raiz: **por que o tempo do clone não aparecia na lista?** O orquestrador registrava o clone apenas como eventos de download, sem consolidar sua duração no job; consequentemente o backend não tinha um campo persistente nem o frontend um dado para apresentar.
-- O orquestrador agora mede o intervalo do `git clone` e publica `cloneDurationMs` no estado/callback do job.
-- O backend passa a desserializar, persistir e expor a duração do clone, com migrações Flyway para MySQL, PostgreSQL e H2.
-- A lista de últimas execuções agora exibe “Clone do repositório” com a duração formatada quando a solicitação usa repositório.
-- Validações realizadas: builds TypeScript do orquestrador e do frontend, testes do backend e verificação de whitespace do diff.
-
-## 01/08/2026 — Escala de impacto em vendas com cinco níveis
-
-- Solicitação recebida: ampliar de três para cinco os níveis visuais de impacto em vendas.
-- Pergunta explícita de causa raiz: **por que existiam apenas três níveis?** O contrato de resposta MKT, os dois parsers do frontend e os indicadores visuais aceitavam somente `baixo`, `medio` e `alto`; portanto não bastava adicionar duas cores na tela, pois o modelo continuaria incapaz de produzi-las e os parsers descartariam os novos valores.
-- Correção aplicada na origem: o contrato enviado ao modelo passou a exigir `muito_baixo`, `baixo`, `medio`, `alto` ou `muito_alto`, com critérios de classificação para reduzir ambiguidades.
-- Os parsers e indicadores agora representam uma escala gradual vermelho, laranja, amarelo, verde-claro e verde, mantendo compatibilidade com os três valores anteriores e aceitando espaço ou hífen nos novos extremos.
-- O teste E2E da resposta estruturada passou a cobrir os cinco indicadores, e o teste do orquestrador valida o novo contrato de cinco níveis.
-
-## 01/08/2026 — Botão para limpar o texto da solicitação
-
-- Solicitação recebida: adicionar junto à caixa da solicitação uma ação para resetar e deixar o texto vazio.
-- Pergunta explícita de causa raiz: **por que não havia uma forma direta de limpar a solicitação?** O compositor oferecia ações para enviar, anexar e preencher textos por itens opcionais, mas a limpeza dependia de seleção manual do conteúdo; além disso, limpar somente o estado do texto deixaria itens do tipo `text` visualmente marcados mesmo sem sua frase no campo.
-- Correção aplicada na causa: foi incluído um botão acessível com ícone de lixeira dentro da lateral superior da caixa, desabilitado quando não existe texto ou quando o compositor está bloqueado.
-- Ao limpar, o campo volta a ficar vazio, recupera o foco e desmarca apenas os itens opcionais do tipo `text` que alimentam diretamente a caixa; itens do tipo `prompt`, usados como contexto independente, permanecem selecionados.
-- O cenário E2E de itens opcionais agora valida a limpeza, o foco restaurado e a consistência do checkbox de texto.
-
-## 2026-07-31 21:25:07 UTC-3
-- Correção de registro: a entrada `2026-07-31 21:23:52 UTC-3` foi inserida antes do final real do arquivo por contexto de patch antigo. Conforme política append-only, ela não foi removida; esta entrada replica o registro no final do documento.
-- Solicitação recebida: corrigir falha do GitHub Actions exibida na tela de Actions após o merge do PR #609.
-- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: o DTO `CodexRequestSummary` ganhou o campo `cloneDurationMs`, mas dois fixtures em `CodexRequestServiceTest` continuaram instanciando o record com a assinatura antiga; por isso o job `backend` falhou na compilação de testes e o job `docker` falhou pelo mesmo motivo, já que `mvn -DskipTests package` ainda executa `testCompile`.
-- Ajustados os dois fixtures de `CodexRequestServiceTest` para preencher `cloneDurationMs` no ponto correto do construtor.
-- Validação local: `mvn -f apps/backend -B test` passou com 101 testes, 0 falhas; `mvn -f apps/backend -B -DskipTests package` também passou.
-- Limitação real de ambiente: o Docker CLI está disponível, mas não há daemon em `/var/run/docker.sock`; por isso o build Docker completo não pôde ser executado localmente, embora a etapa Maven que falhou dentro do Docker tenha sido validada.
+- Solicitacao recebida: na tela do dialogo das solicitacoes, mostrar em qual ambiente a solicitacao foi feita.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a pagina tecnica de detalhe e a lista de historico ja exibiam `environment`, mas o componente de dialogo do modo ChatGPT/MKT guardava nas mensagens apenas `requestId`, `status`, conteudo e data. Assim, a bolha da conversa perdia o contexto de ambiente apesar de o backend ja retornar esse dado em `CodexRequest`.
+- Alternativas avaliadas: (1) confiar apenas no historico lateral, baixo esforco mas nao atende a leitura dentro do dialogo; (2) buscar detalhes da solicitacao a cada render da conversa, completo mas adiciona chamadas e latencia desnecessarias; (3) persistir `environment` no modelo local `ChatMessage` quando a solicitacao e criada/atualizada e usar fallback pelo mapa das solicitacoes carregadas. Escolhida a alternativa 3 por corrigir a causa na fronteira UI/estado, preservar mensagens antigas e evitar novas chamadas.
+- Ajuste aplicado: `apps/frontend/src/pages/CodexChatgptPage.tsx` agora inclui `environment` em mensagens do dialogo, atualiza esse campo no polling/edicao/criacao da solicitacao e renderiza `Ambiente: ...` no cabecalho da bolha vinculada a uma execucao.
+- Validacao executada: `npm ci` em `apps/frontend` para restaurar a toolchain local e `npm run build` com sucesso.
+- Nao foi criado Pull Request.
