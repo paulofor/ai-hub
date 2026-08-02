@@ -83,6 +83,21 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         order by cr.createdAt asc
         """)
     List<Object[]> findMetricRowsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
+    @Query("""
+        select cr.responseText
+        from CodexRequest cr
+        where cr.createdAt >= :start
+          and cr.responseText is not null
+        """)
+    List<String> findResponseTextsSince(@Param("start") Instant start);
+    @Query("""
+        select cr.responseText
+        from CodexRequest cr
+        where cr.createdAt >= :start
+          and cr.profile = :profile
+          and cr.responseText is not null
+        """)
+    List<String> findResponseTextsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     List<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating);
     List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
     List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);

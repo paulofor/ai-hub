@@ -915,3 +915,26 @@ test('shows a code generation icon on marketing comment cards with repository ch
   await copyCodeButton.click();
   await expect(codeCommentCard.getByRole('button', { name: 'Código copiado' })).toBeVisible();
 });
+
+test('shows the operational-day sales impact scoreboard', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5' }] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: {
+    day: { startsAt: '2026-08-02T06:00:00Z', requestCount: 9, interactionCount: 4954, durationMs: 780000 },
+    salesImpactDay: { muitoBaixo: 1, baixo: 2, medio: 3, alto: 2, muitoAlto: 1, total: 9 }
+  } }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  await expect(page.getByText('Placar de vendas')).toBeVisible();
+  await expect(page.getByLabel('Placar diário por impacto em vendas')).toBeVisible();
+  await expect(page.getByText('9 avaliadas')).toBeVisible();
+  await expect(page.locator('[title="Muito baixo: 1"]')).toBeVisible();
+  await expect(page.locator('[title="Muito alto: 1"]')).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-placar-vendas-operacional.png', fullPage: true });
+});

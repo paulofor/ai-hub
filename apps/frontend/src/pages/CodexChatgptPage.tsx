@@ -40,8 +40,18 @@ interface CodexDashboardMetricWindow {
   durationMs: number;
 }
 
+interface CodexSalesImpactScore {
+  muitoBaixo: number;
+  baixo: number;
+  medio: number;
+  alto: number;
+  muitoAlto: number;
+  total: number;
+}
+
 interface CodexDashboardMetrics {
   day: CodexDashboardMetricWindow;
+  salesImpactDay?: CodexSalesImpactScore;
 }
 
 interface EnvironmentOption {
@@ -2613,7 +2623,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className={`fixed right-4 top-4 z-40 w-[min(196px,calc(100vw-2rem))] rounded-md border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${interactionIsStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
+        <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-md border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${interactionIsStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
           <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
             {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
@@ -2639,6 +2649,28 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {interactionIsStale ? <span role="status" className="sr-only">Alerta: interações sem alteração há 5 minutos.</span> : null}
             </div>
           </div>
+          {config.profile === 'CHATGPT_CODEX_MKT' ? (
+            <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Placar de vendas</p>
+                <p className="text-[9px] text-slate-500">{formatMetricNumber(dailyMetrics?.salesImpactDay?.total)} avaliadas</p>
+              </div>
+              <div className="mt-1 grid grid-cols-5 gap-1" aria-label="Placar diário por impacto em vendas">
+                {([
+                  ['muito_baixo', 'muitoBaixo', 'Muito baixo'],
+                  ['baixo', 'baixo', 'Baixo'],
+                  ['medio', 'medio', 'Médio'],
+                  ['alto', 'alto', 'Alto'],
+                  ['muito_alto', 'muitoAlto', 'Muito alto']
+                ] as const).map(([level, key, label]) => (
+                  <div key={level} className="flex flex-col items-center rounded border border-slate-200 bg-slate-50 px-1 py-1 dark:border-slate-700 dark:bg-slate-800/80" title={`${label}: ${formatMetricNumber(dailyMetrics?.salesImpactDay?.[key])}`}>
+                    <SalesImpactIcon level={level} />
+                    <span className="mt-0.5 text-[10px] font-semibold leading-3 text-slate-800 dark:text-slate-100">{formatMetricNumber(dailyMetrics?.salesImpactDay?.[key])}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
         </div>
       </div>
