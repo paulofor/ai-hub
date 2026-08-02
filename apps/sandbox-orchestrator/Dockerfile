@@ -9,6 +9,7 @@ RUN npm run build
 FROM node:20-bookworm-slim AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
+ARG CODEX_VERSION=0.146.0
 ARG PLAYWRIGHT_VERSION=1.54.2
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
@@ -194,7 +195,7 @@ function escapeHtml(value) {
 }
 EOF
 RUN chmod +x /usr/local/bin/sandbox-media-player
-RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g typescript @openai/codex@0.141.0 playwright@${PLAYWRIGHT_VERSION} @playwright/test@${PLAYWRIGHT_VERSION} \
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g typescript @openai/codex@${CODEX_VERSION} playwright@${PLAYWRIGHT_VERSION} @playwright/test@${PLAYWRIGHT_VERSION} \
   && codex --version \
   && playwright --version \
   && mkdir -p /var/lib/ai-hub/codex \
