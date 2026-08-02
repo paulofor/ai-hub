@@ -526,7 +526,6 @@ const renderMarkdownTextBlock = (block: string, blockIndex: number): ReactNode[]
 type SalesImpactLevel = 'muito_baixo' | 'baixo' | 'medio' | 'alto' | 'muito_alto';
 
 interface MarketingStructuredResponse {
-  assunto: string;
   titulo: string;
   comentario: string;
   impactoAumentoVendas?: SalesImpactLevel;
@@ -642,7 +641,6 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
   }
 
   const titulo = readStructuredResponseString(record, ['titulo', 'título', 'title']).trim();
-  const assunto = readStructuredResponseString(record, ['assunto', 'subject', 'topic']).trim();
   const comentario = readStructuredResponseString(record, ['comentario', 'comentário', 'comment', 'resposta']).trim();
   const impactoAumentoVendas = readStructuredSalesImpactLevel(record);
   const alterouCodigoRepositorio = readStructuredResponseBoolean(record, [
@@ -675,10 +673,10 @@ const parseMarketingStructuredResponse = (content: string): MarketingStructuredR
     'sugestãoAmbiente',
     'environmentImprovementSuggestion'
   ]).trim();
-  if (!assunto && !titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
+  if (!titulo && !comentario && alterouCodigoRepositorio === undefined && !resumoCodigoPr && !orientacaoProximaAcao && !sugestaoMelhoriaAmbiente) {
     return null;
   }
-  return { assunto, titulo, comentario, impactoAumentoVendas, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
+  return { titulo, comentario, impactoAumentoVendas, alterouCodigoRepositorio, resumoCodigoPr, orientacaoProximaAcao, sugestaoMelhoriaAmbiente };
 };
 
 const marketingResponseIndicatesCodeChange = (content?: string): boolean =>
@@ -1020,7 +1018,6 @@ interface ChatMessage {
   environment?: string;
   status?: CodexRequest['status'];
   createdAt: string;
-  subject?: string;
 }
 
 const chatConversationStorageKey = (profile: CodexProfile) => `${CHAT_CONVERSATION_STORAGE_PREFIX}${profile}`;
@@ -1286,10 +1283,6 @@ interface CodexChatgptVariantConfig {
   promptExtraLines: string[];
 }
 
-const buildSubjectInstruction = (subject: string) => subject
-  ? `Assunto selecionado pelo usuário: "${subject}". Mantenha a resposta e a execução neste assunto e devolva exatamente esse valor no campo JSON "assunto".`
-  : 'Nenhum assunto foi selecionado. Escolha um assunto curto e reutilizável para esta solicitação e devolva-o no campo JSON "assunto" da resposta final.';
-
 const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
 const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas. A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium, usando dispositivos de @playwright/test como devices["iPhone 15 Pro"] ou devices["Pixel 7"]; sempre que precisar testar uma URL como usuário de celular, use esse recurso para abrir a página com viewport, user agent, touch e deviceScaleFactor de celular, gerar screenshots e validar interações. Para vídeos, áudio e animações em mobile, combine essa emulação com sandbox-media-player, ffmpeg e ffprobe para testar reprodução, duração, frames, sincronia, controles nativos e comportamento visual no layout mobile.';
 const CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION = 'A sandbox dos modelos possui ffmpeg e ffprobe disponíveis pelos comandos ffmpeg e ffprobe; quando a solicitação envolver vídeos, use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails e sintetizar mídias de teste, e use ffprobe para inspecionar metadados, codecs, resolução, duração, streams e integridade básica. O comando sandbox-media-player <arquivo-video-ou-audio> [saida.html] gera um player HTML local com controles nativos de vídeo/áudio; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.';
@@ -1330,7 +1323,7 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
     'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
-    'Na resposta final, responda somente com JSON válido no formato {"assunto":"<assunto curto e reutilizável>","titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos cinco níveis: "muito_baixo", "baixo", "medio", "alto" ou "muito_alto". Use "muito_alto" quando a entrega atuar diretamente em uma alavanca central de receita ou conversão com alto potencial mensurável; use "alto" quando mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação ou campanhas; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando o efeito comercial for pequeno e distante; use "muito_baixo" quando for ajuste técnico, organização ou investigação sem conexão comercial relevante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
+    'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos cinco níveis: "muito_baixo", "baixo", "medio", "alto" ou "muito_alto". Use "muito_alto" quando a entrega atuar diretamente em uma alavanca central de receita ou conversão com alto potencial mensurável; use "alto" quando mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação ou campanhas; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando o efeito comercial for pequeno e distante; use "muito_baixo" quando for ajuste técnico, organização ou investigação sem conexão comercial relevante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
 
@@ -1416,7 +1409,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('');
   const [environment, setEnvironment] = useState('');
   const [model, setModel] = useState('');
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
@@ -1951,7 +1943,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const promptHistoryMessages = [
       ...savedContextMessages.map((item) => ({ role: item.role, content: item.content })),
       ...historyMessages
-        .filter((item) => selectedSubject ? item.subject === selectedSubject : false)
         .filter((item) => item.role === 'user' || item.role === 'assistant')
         .map((item) => ({ role: item.role, content: item.content }))
     ];
@@ -1972,7 +1963,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     return [
       productSourceInstruction,
       config.promptModeLine,
-      buildSubjectInstruction(selectedSubject),
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
       ...config.promptExtraLines,
@@ -1981,7 +1971,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       selectedPromptHintPhrases.length > 0 ? `Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:\n${selectedPromptHintPhrases.join('\n')}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages, selectedSubject]);
+  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -2050,12 +2040,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const updateAssistantFromRequest = useCallback((request: CodexRequest) => {
     const responseContent = isTerminalStatus(request.status) ? extractAssistantContent(request) : '';
-    const resolvedSubject = parseMarketingStructuredResponse(responseContent)?.assunto.trim() || undefined;
-    setConversation((current) => current.map((message, index) => {
-      const nextMessage = current[index + 1];
-      if (resolvedSubject && message.role === 'user' && nextMessage?.requestId === request.id) {
-        return { ...message, subject: resolvedSubject };
-      }
+    setConversation((current) => current.map((message) => {
       if (message.role !== 'assistant' || message.requestId !== request.id) return message;
       const becameTerminal = !message.status || !isTerminalStatus(message.status);
       return {
@@ -2063,15 +2048,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         environment: request.environment,
         status: request.status,
         content: isTerminalStatus(request.status) ? responseContent : `Aguardando resposta do modelo... (${formatStatus(request.status)})`,
-        subject: resolvedSubject ?? message.subject,
         createdAt: isTerminalStatus(request.status) && becameTerminal
           ? resolveAssistantMessageTimestamp(request)
           : resolveAssistantMessageTimestamp(request, message.createdAt)
       };
     }));
-    if (resolvedSubject) {
-      setSelectedSubject(resolvedSubject);
-    }
   }, [extractAssistantContent]);
 
   const handleSelectSavedConversation = useCallback(async (value: string) => {
@@ -2185,7 +2166,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
     setActionLoading(true);
     try {
-      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: userPrompt, createdAt: new Date().toISOString(), subject: selectedSubject || undefined };
+      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: userPrompt, createdAt: new Date().toISOString() };
       const requestPrompt = buildConversationPrompt(userPrompt);
       setConversation((current) => [...current, userMessage]);
       const response = await client.post('/codex/requests', {
@@ -2198,12 +2179,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const created = parseCodexRequest(response.data);
       if (created) {
         const createdContent = isTerminalStatus(created.status) ? extractAssistantContent(created) : `Aguardando resposta do modelo... (${formatStatus(created.status)})`;
-        const createdSubject = parseMarketingStructuredResponse(createdContent)?.assunto.trim() || selectedSubject || undefined;
         setPrResult(null);
-        if (createdSubject) {
-          setSelectedSubject(createdSubject);
-          setConversation((current) => current.map((message) => message.id === userMessage.id ? { ...message, subject: createdSubject } : message));
-        }
         setConversation((current) => [...current, {
           id: `${Date.now()}-assistant`,
           role: 'assistant',
@@ -2211,8 +2187,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           requestId: created.id,
           environment: created.environment,
           status: created.status,
-          createdAt: resolveAssistantMessageTimestamp(created),
-          subject: createdSubject
+          createdAt: resolveAssistantMessageTimestamp(created)
         }]);
       }
       setPrompt('');
@@ -2227,7 +2202,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment, selectedSubject]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment]);
 
 
   useEffect(() => {
@@ -2614,9 +2589,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     element.focus({ preventScroll: true });
   }, [firstUnreadModelResponseId]);
   const canStartNewSandboxDialog = sandboxOnly && (conversation.length > 0 || prompt.trim().length > 0 || fileAttachments.length > 0 || Boolean(selectedSavedConversationId));
-  const conversationSubjects = useMemo(() => Array.from(new Set(conversation
-    .map((message) => message.subject?.trim())
-    .filter((subject): subject is string => Boolean(subject)))), [conversation]);
   const hasQueuedOrRunningBatchRequest = activeBatchRequests.some((item) => item.status === 'PENDING' || item.status === 'RUNNING');
   const hasAccumulatedCodeAwaitingPr = Boolean(activeBatchKey && activeBatchPrRelevantCompleted > 0 && !activeBatchPrUrl);
   const accumulatedCodeWarning = hasAccumulatedCodeAwaitingPr
@@ -2833,12 +2805,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
-              {message.subject ? (
-                <p className="mb-2 inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200">
-                  <span className="shrink-0">Assunto:</span>
-                  <span className="truncate normal-case" title={message.subject}>{message.subject}</span>
-                </p>
-              ) : null}
               {isEditingUserMessage ? <div className="space-y-2">
                 <textarea value={editingDraft} onChange={(event) => setEditingDraft(event.target.value)} rows={4} className="w-full rounded-md border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100" />
                 <div className="flex flex-wrap justify-end gap-2 text-xs">
@@ -2893,13 +2859,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         {promptComposerDisabled ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           {promptComposerDisabledReason}
         </p> : null}
-        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
-          Assunto
-          <select value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)} disabled={promptComposerDisabled} className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm font-normal dark:bg-slate-950">
-            <option value="">Novo assunto — o modelo escolhe o nome</option>
-            {conversationSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
-          </select>
-        </label>
         <div className="relative">
           <textarea
             ref={promptTextareaRef}

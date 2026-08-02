@@ -3014,3 +3014,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: automatizar o frontend; manter o modelo aguardando e operando o GitHub na mesma execução; ou criar uma máquina de estados persistente no backend acionada por webhooks e reconciliação. A terceira foi recomendada por ser independente do navegador, idempotente, auditável e compatível com proteções do GitHub.
 - Documento criado em `docs/automacao-pr-e-retomada.md`, descrevendo fases, limites de autonomia, proteções contra duplicidade/ciclos e uma implantação incremental em três etapas.
 - Escopo desta alteração: documentação e decisão arquitetural; nenhuma automação de merge foi habilitada e nenhuma política de aprovação do repositório foi contornada.
+
+## 2026-08-02 - Remocao de assuntos dos dialogos com o modelo
+
+- Solicitacao recebida: retirar a opcao de assunto e qualquer referencia a assuntos dos dialogos, restaurando uma conversa continua e natural.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a funcionalidade de assuntos nao era apenas um controle visual; o assunto selecionado filtrava o historico enviado ao modelo. Como uma conversa nova comecava sem assunto e o modelo precisava classifica-la antes de o contexto ser reaproveitado, o dialogo ficava artificial, fragmentado e mais dificil para o usuario.
+- Correcao aplicada na causa: removidos o seletor e os marcadores de assunto, o estado e a persistencia de assunto nas mensagens, as instrucoes que obrigavam o modelo a criar/repetir o campo `assunto` e, principalmente, o filtro de historico. Agora todas as mensagens anteriores do dialogo compoem naturalmente o contexto da proxima solicitacao.
+- Compatibilidade: o parser de resposta estruturada continua tratando titulo, comentario, impacto em vendas e metadados de PR/ambiente, mas nao exige nem interpreta assunto; mensagens antigas persistidas sao carregadas sem propagar esse metadado legado.
+- Protecao contra regressao: o teste E2E do fluxo foi refeito para confirmar a ausencia do controle e das instrucoes de assunto e para verificar que a segunda mensagem recebe tanto a pergunta quanto a resposta anteriores no historico.
+- Validacoes executadas: `npm run build`, `npm run lint`, `npm run test:e2e -- --grep "conversation flowing naturally"` e `git diff --check`, todas com sucesso. A interface resultante tambem foi inspecionada em Chromium e registrada em `/tmp/ai-hub-dialogo-sem-assunto.png`.
