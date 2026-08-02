@@ -3032,3 +3032,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Interface: o quadro “Dia operacional” do perfil Marketing ganhou o “Placar de vendas”, com os cinco indicadores na mesma escala visual vermelho → verde, a quantidade em cada critério, total de solicitações avaliadas e tooltips com os nomes das notas.
 - Proteção contra regressão: adicionado teste unitário do agrupamento no backend e teste E2E do placar, incluindo captura visual em `/tmp/ai-hub-placar-vendas-operacional.png`.
 - Validações executadas: `mvn -q -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test`, `npm run build --prefix apps/frontend`, `npm run test:e2e --prefix apps/frontend -- --grep "operational-day sales impact scoreboard"` e `git diff --check`.
+
+## 2026-08-02 - Modelo GPT-5.6 nas solicitações
+
+- Solicitação recebida: permitir selecionar e usar o modelo `gpt-5.6` nas solicitações do diálogo Codex ChatGPT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a lista fallback da interface continha somente IDs derivados (`gpt-5.6-sol`, `gpt-5.6-terra` e `gpt-5.6-luna`), mas não continha o ID exato `gpt-5.6`; por isso esse modelo não podia ser selecionado quando o `model/list` da conta não o devolvia, apesar de o fluxo já encaminhar qualquer modelo selecionado ao backend.
+- Correção aplicada na causa: adicionado `gpt-5.6` à lista de modelos disponíveis na interface, preservando a descoberta dinâmica da conta e as opções existentes.
+- Proteção contra regressão: criado teste E2E que simula uma lista dinâmica vazia, confirma a presença da opção `GPT-5.6`, seleciona o modelo e verifica que o POST da solicitação recebe `model: gpt-5.6`.

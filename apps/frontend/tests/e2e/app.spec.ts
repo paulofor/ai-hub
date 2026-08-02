@@ -8,6 +8,40 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
 });
 
+test('offers GPT-5.6 and sends the selected model with the request', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-08-02T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  let submittedModel = '';
+  await page.route('**/api/codex/requests**', async (route) => {
+    if (route.request().method() === 'POST') {
+      submittedModel = (route.request().postDataJSON() as { model: string }).model;
+      await route.fulfill({ json: {
+        id: 956,
+        profile: 'CHATGPT_CODEX',
+        model: submittedModel,
+        status: 'COMPLETED',
+        createdAt: '2026-08-02T12:00:00Z',
+        responseText: JSON.stringify({ titulo: 'Modelo validado', comentario: 'Solicitação concluída.' })
+      } });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+
+  await page.goto('/codex-chatgpt');
+  const modelSelect = page.locator('select').filter({ has: page.locator('option[value="gpt-5.6"]') });
+  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6', exact: true })).toHaveCount(1);
+  await modelSelect.selectOption('gpt-5.6');
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo 5.6 nesta solicitação.');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => submittedModel).toBe('gpt-5.6');
+});
+
 test('keeps the conversation flowing naturally without subject controls', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
