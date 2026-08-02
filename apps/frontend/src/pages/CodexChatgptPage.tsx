@@ -958,6 +958,7 @@ const AssistantMessageBody = ({ content, structuredResponse, commentRead = false
 };
 
 const CHATGPT_CODEX_MODELS: ModelOption[] = [
+  { id: 'gpt-5.6', modelName: 'gpt-5.6', displayName: 'GPT-5.6' },
   { id: 'gpt-5.6-sol', modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' },
   { id: 'gpt-5.6-terra', modelName: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra' },
   { id: 'gpt-5.6-luna', modelName: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' },
