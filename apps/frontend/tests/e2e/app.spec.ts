@@ -8,7 +8,7 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
 });
 
-test('lets the model name a new subject and reuses it from the combo', async ({ page }) => {
+test('keeps the conversation flowing naturally without subject controls', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
   await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
@@ -24,7 +24,7 @@ test('lets the model name a new subject and reuses it from the combo', async ({ 
         profile: 'CHATGPT_CODEX',
         status: 'COMPLETED',
         createdAt: '2026-07-31T12:00:00Z',
-        responseText: JSON.stringify({ assunto: 'MUSA v7', titulo: 'Validação da v7', comentario: 'Análise concluída.' })
+        responseText: JSON.stringify({ titulo: 'Validação da v7', comentario: 'Análise concluída.' })
       } });
       return;
     }
@@ -32,18 +32,16 @@ test('lets the model name a new subject and reuses it from the combo', async ({ 
   });
 
   await page.goto('/codex-chatgpt');
-  const subjectCombo = page.getByLabel('Assunto');
-  await expect(subjectCombo).toHaveValue('');
+  await expect(page.getByLabel('Assunto')).toHaveCount(0);
   await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Validar se a v7 vende mais que a v6 sem elevar o custo.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => submittedPrompts[0]).toContain('Nenhum assunto foi selecionado. Escolha um assunto curto');
-  await expect(subjectCombo).toHaveValue('MUSA v7');
-  await expect(page.getByText('Assunto:').filter({ visible: true })).toHaveCount(2);
-  await expect(page.getByTitle('MUSA v7')).toHaveCount(2);
+  await expect.poll(() => submittedPrompts[0]).not.toContain('assunto');
   await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Agora compare a copy com a v6.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
-  await expect.poll(() => submittedPrompts[1]).toContain('Assunto selecionado pelo usuário: "MUSA v7"');
+  await expect.poll(() => submittedPrompts[1]).toContain('Validar se a v7 vende mais que a v6 sem elevar o custo.');
+  await expect.poll(() => submittedPrompts[1]).toContain('Análise concluída.');
+  await expect.poll(() => submittedPrompts[1]).not.toContain('assunto');
 });
 
 test('remembers and forgets the system health admin token locally', async ({ page }) => {
