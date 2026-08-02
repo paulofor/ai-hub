@@ -354,7 +354,8 @@ public class CodexRequestService {
             buildMetricWindow(dayStart, profile),
             buildMetricWindow(weekStart, profile),
             buildMetricWindow(monthStart, profile),
-            buildMetricSeries(seriesStart, today, operationalToday, zone, profile)
+            buildMetricSeries(seriesStart, today, operationalToday, zone, profile),
+            buildSalesImpactScore(dayStart, profile)
         );
     }
 
@@ -375,6 +376,59 @@ public class CodexRequestService {
             aggregateLong(values, 1),
             aggregateLong(values, 2)
         );
+    }
+
+    private CodexDashboardMetrics.CodexSalesImpactScore buildSalesImpactScore(Instant start, CodexIntegrationProfile profile) {
+        List<String> responses = profile == null
+            ? codexRequestRepository.findResponseTextsSince(start)
+            : codexRequestRepository.findResponseTextsSinceAndProfile(start, profile);
+        long[] counts = new long[5];
+        for (String response : responses) {
+            String level = extractSalesImpactLevel(response);
+            int index = switch (level) {
+                case "muito_baixo" -> 0;
+                case "baixo" -> 1;
+                case "medio" -> 2;
+                case "alto" -> 3;
+                case "muito_alto" -> 4;
+                default -> -1;
+            };
+            if (index >= 0) {
+                counts[index]++;
+            }
+        }
+        return new CodexDashboardMetrics.CodexSalesImpactScore(counts[0], counts[1], counts[2], counts[3], counts[4]);
+    }
+
+    private String extractSalesImpactLevel(String content) {
+        String candidate = extractJsonObjectCandidate(content);
+        if (!StringUtils.hasText(candidate)) {
+            return "";
+        }
+        try {
+            JsonNode node = objectMapper.readTree(candidate);
+            if (node != null && node.isTextual()) {
+                return extractSalesImpactLevel(node.asText());
+            }
+            if (node == null || !node.isObject()) {
+                return "";
+            }
+            for (String key : List.of("impactoAumentoVendas", "impacto_aumento_vendas", "contribuicaoAumentoVendas",
+                "contribuiçãoAumentoVendas", "contribuicao_vendas", "impactoVendas", "salesImpact")) {
+                JsonNode value = node.get(key);
+                if (value != null && value.isTextual()) {
+                    String normalized = java.text.Normalizer.normalize(value.asText().trim().toLowerCase(), java.text.Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}", "")
+                        .replaceAll("[\\s-]+", "_");
+                    if (Set.of("muito_baixo", "baixo", "medio", "alto", "muito_alto").contains(normalized)) {
+                        return normalized;
+                    }
+                }
+            }
+        } catch (JsonProcessingException ignored) {
+            return "";
+        }
+        return "";
     }
 
     private long aggregateLong(Object[] values, int index) {

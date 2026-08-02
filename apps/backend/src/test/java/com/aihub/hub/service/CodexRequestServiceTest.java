@@ -278,6 +278,30 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void dashboardMetricsCountsDailySalesImpactFromStructuredMarketingResponses() {
+        when(codexRequestRepository.summarizeMetricsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
+            .thenReturn(new Object[] {4L, 4L, 1_000L});
+        when(codexRequestRepository.findMetricRowsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
+            .thenReturn(List.of());
+        when(codexRequestRepository.findResponseTextsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
+            .thenReturn(List.of(
+                "{\"impactoAumentoVendas\":\"muito_baixo\"}",
+                "```json\n{\"impactoAumentoVendas\":\"alto\"}\n```",
+                "{\"impacto_vendas_inexistente\":\"alto\"}",
+                "{\"salesImpact\":\"MUITO ALTO\"}"
+            ));
+
+        var score = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT).salesImpactDay();
+
+        assertThat(score.muitoBaixo()).isEqualTo(1);
+        assertThat(score.baixo()).isZero();
+        assertThat(score.medio()).isZero();
+        assertThat(score.alto()).isEqualTo(1);
+        assertThat(score.muitoAlto()).isEqualTo(1);
+        assertThat(score.total()).isEqualTo(3);
+    }
+
+    @Test
     void dashboardMetricsUsesSaoPauloOperationalDayBoundaryAtThreeAm() {
         ZoneId zone = ZoneId.of("America/Sao_Paulo");
         Instant localMidnight = Instant.parse("2026-07-23T03:14:00Z");
