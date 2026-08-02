@@ -3039,3 +3039,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a lista fallback da interface continha somente IDs derivados (`gpt-5.6-sol`, `gpt-5.6-terra` e `gpt-5.6-luna`), mas não continha o ID exato `gpt-5.6`; por isso esse modelo não podia ser selecionado quando o `model/list` da conta não o devolvia, apesar de o fluxo já encaminhar qualquer modelo selecionado ao backend.
 - Correção aplicada na causa: adicionado `gpt-5.6` à lista de modelos disponíveis na interface, preservando a descoberta dinâmica da conta e as opções existentes.
 - Proteção contra regressão: criado teste E2E que simula uma lista dinâmica vazia, confirma a presença da opção `GPT-5.6`, seleciona o modelo e verifica que o POST da solicitação recebe `model: gpt-5.6`.
+
+## 2026-08-02 - Atualização do Codex para suportar GPT-5.6 Sol
+
+- Erro observado: a chamada ao modelo `gpt-5.6-sol` retornava HTTP 400 informando que o modelo exige uma versão mais nova do Codex.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a interface passou a oferecer a família GPT-5.6, mas a imagem do `sandbox-orchestrator` continuava fixada no `@openai/codex@0.141.0`; portanto o App Server que efetivamente executa a solicitação era mais antigo que o protocolo mínimo exigido pelo modelo.
+- Correção aplicada na causa: a imagem passou a instalar `@openai/codex@0.146.0`, versão `latest` publicada no npm durante a investigação, por meio do argumento explícito `CODEX_VERSION`. A versão continua reproduzível e agora pode ser atualizada em um único ponto.
+- Proteção contra regressão: o teste do Dockerfile valida tanto a versão mínima fixada quanto o uso do argumento na instalação global, evitando que a imagem volte silenciosamente ao cliente incompatível.
+- Documentação atualizada para explicar os dois estágios da imagem e a necessidade de manter o Codex alinhado aos modelos disponibilizados na interface.

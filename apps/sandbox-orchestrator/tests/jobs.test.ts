@@ -97,9 +97,11 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
+  assert.match(dockerfile, /CODEX_VERSION=0\.146\.0/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
+  assert.match(dockerfile, /@openai\/codex@\$\{CODEX_VERSION\}/);
   assert.match(dockerfile, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g .*playwright@\$\{PLAYWRIGHT_VERSION\} .*@playwright\/test@\$\{PLAYWRIGHT_VERSION\}/);
   assert.match(dockerfile, /playwright --version/);
   assert.match(dockerfile, /NODE_PATH=\/usr\/local\/lib\/node_modules/);

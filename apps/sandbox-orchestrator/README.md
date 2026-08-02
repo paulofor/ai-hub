@@ -185,7 +185,7 @@ O runner informa ainda que `ffmpeg` e `ffprobe` estão disponíveis para manipul
 
 ## Docker
 
-O Dockerfile publicado pela pipeline gera uma imagem enxuta baseada em `node:20-alpine`. Para executar localmente:
+O Dockerfile publicado pela pipeline compila o serviço em `node:20-alpine` e gera a imagem de execução em `node:20-bookworm-slim`. A versão do Codex CLI/App Server instalada na imagem é fixada pelo argumento `CODEX_VERSION`; mantenha esse valor atualizado quando novos modelos exigirem uma versão mínima do cliente. Para executar localmente:
 
 ```bash
 docker build -t sandbox-orchestrator apps/sandbox-orchestrator
