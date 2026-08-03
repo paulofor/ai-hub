@@ -9,6 +9,7 @@ public record GrowthMissionView(
     LocalDate endsAt, String status, Long visitors, Long ctaClicks, Long checkoutsStarted,
     Long salesApproved, Long briefingsCompleted, Long deliveriesCompleted, Long refunds,
     BigDecimal revenue, BigDecimal spend, BigDecimal cac, BigDecimal conversionRate,
-    String bottleneck, String recommendedAction, Instant updatedAt
+    String bottleneck, String recommendedAction, String metricsSource, Long receivedEvents,
+    Instant lastEventAt, Instant updatedAt
 ) {
 }
