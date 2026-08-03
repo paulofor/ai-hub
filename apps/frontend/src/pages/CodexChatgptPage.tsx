@@ -71,6 +71,21 @@ interface ProductOption {
   slug: string;
 }
 
+interface GrowthMission {
+  id?: number; product: string; objective: string; targetSales: number; budgetLimit: number;
+  endsAt: string; status: 'ACTIVE' | 'PAUSED' | 'COMPLETED'; visitors: number; ctaClicks: number;
+  checkoutsStarted: number; salesApproved: number; briefingsCompleted: number; deliveriesCompleted: number;
+  refunds: number; revenue: number; spend: number; cac?: number | null; conversionRate?: number | null;
+  bottleneck?: string; recommendedAction?: string; updatedAt?: string;
+}
+
+const EMPTY_GROWTH_MISSION: GrowthMission = {
+  product: 'Agenda Cheia', objective: 'Gerar as primeiras cinco vendas com entrega satisfatória',
+  targetSales: 5, budgetLimit: 400, endsAt: '', status: 'ACTIVE', visitors: 0, ctaClicks: 0,
+  checkoutsStarted: 0, salesApproved: 0, briefingsCompleted: 0, deliveriesCompleted: 0,
+  refunds: 0, revenue: 0, spend: 0
+};
+
 interface PromptHintOption {
   id: number;
   label: string;
@@ -1436,6 +1451,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [loadingPromptHints, setLoadingPromptHints] = useState(false);
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [dailyMetrics, setDailyMetrics] = useState<CodexDashboardMetrics | null>(null);
+  const [growthMission, setGrowthMission] = useState<GrowthMission | null>(null);
+  const [growthMissionDraft, setGrowthMissionDraft] = useState<GrowthMission>(EMPTY_GROWTH_MISSION);
+  const [growthMissionSaving, setGrowthMissionSaving] = useState(false);
   const [interactionIsStale, setInteractionIsStale] = useState(false);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
@@ -1675,6 +1693,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [config.profile]);
 
+  const loadGrowthMission = useCallback(async () => {
+    if (config.profile !== 'CHATGPT_CODEX_MKT') return null;
+    const response = await client.get<GrowthMission | null>('/growth/mission');
+    if (response.data) {
+      setGrowthMission(response.data);
+      setGrowthMissionDraft(response.data);
+    }
+    return response.data;
+  }, [config.profile]);
+
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
     try {
@@ -1701,7 +1729,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setModels(nextModels);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
-      await Promise.all([loadRequests(), loadSavedConversations(), loadProducts(), loadDailyMetrics()]);
+      await Promise.all([loadRequests(), loadSavedConversations(), loadProducts(), loadDailyMetrics(), loadGrowthMission()]);
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
     } catch (err) {
@@ -1710,7 +1738,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setLoading(false);
     }
-  }, [loadDailyMetrics, loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
+  }, [loadDailyMetrics, loadGrowthMission, loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -1971,8 +1999,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       .filter((hint) => normalizePromptHintType(hint.type) === 'prompt')
       .map((hint) => hint.phrase.trim())
       .filter((value) => value.length > 0);
+    const growthMissionInstruction = config.profile === 'CHATGPT_CODEX_MKT' && growthMission
+      ? `Modo Operador de Crescimento ativo. Fonte de verdade comercial atual:\n${JSON.stringify(growthMission)}\nEscolha a próxima ação pelo gargalo informado e pelos eventos reais. Não trate impacto estimado, solicitações ou PRs como vendas. Antes de agir, declare qual gargalo real será corrigido, evidência, métrica esperada e critério de continuar/ajustar/parar. Não exceda o orçamento nem altere preço, campanha paga, comunicação em massa ou publicação sem autorização explícita. Se entrega estiver atrasada em relação às vendas, priorize entrega antes de aquisição.`
+      : config.profile === 'CHATGPT_CODEX_MKT'
+        ? 'Não existe missão comercial ativa. Antes de executar trabalho de marketing, peça que o usuário configure a meta e o placar real no painel Operador de Crescimento.'
+        : '';
     return [
       productSourceInstruction,
+      growthMissionInstruction,
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
@@ -1982,7 +2016,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       selectedPromptHintPhrases.length > 0 ? `Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:\n${selectedPromptHintPhrases.join('\n')}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages]);
+  }, [config.profile, config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, growthMission, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -2577,6 +2611,27 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const activeBatchPrRelevantCompleted = config.profile === 'CHATGPT_CODEX_MKT'
     ? activeBatchCompletedCodeChanges
     : activeBatchCompleted;
+
+  const updateGrowthMissionField = (field: keyof GrowthMission, value: string) => {
+    const numericFields: (keyof GrowthMission)[] = ['targetSales', 'budgetLimit', 'visitors', 'ctaClicks', 'checkoutsStarted', 'salesApproved', 'briefingsCompleted', 'deliveriesCompleted', 'refunds', 'revenue', 'spend'];
+    setGrowthMissionDraft((current) => ({ ...current, [field]: numericFields.includes(field) ? Math.max(0, Number(value) || 0) : value }));
+  };
+
+  const handleSaveGrowthMission = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setGrowthMissionSaving(true);
+    try {
+      const response = await client.put<GrowthMission>('/growth/mission', { ...growthMissionDraft, endsAt: growthMissionDraft.endsAt || null });
+      setGrowthMission(response.data);
+      setGrowthMissionDraft(response.data);
+      setError(null);
+      registerTelemetry('execution_success', 'Missão e placar comercial atualizados.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setGrowthMissionSaving(false);
+    }
+  };
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
   const activeBatchDiscardableRequests = (activeBatchKey ? activeBatchRequests : [])
@@ -2653,10 +2708,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           {config.profile === 'CHATGPT_CODEX_MKT' ? (
             <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Placar de vendas</p>
+                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Impacto estimado</p>
                 <p className="text-[9px] text-slate-500">{formatMetricNumber(dailyMetrics?.salesImpactDay?.total)} avaliadas</p>
               </div>
-              <div className="mt-1 grid grid-cols-5 gap-1" aria-label="Placar diário por impacto em vendas">
+              <div className="mt-1 grid grid-cols-5 gap-1" aria-label="Classificação diária de impacto estimado em vendas">
                 {([
                   ['muito_baixo', 'muitoBaixo', 'Muito baixo'],
                   ['baixo', 'baixo', 'Baixo'],
@@ -2675,6 +2730,36 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
         </div>
       </div>
+      {config.profile === 'CHATGPT_CODEX_MKT' ? (
+        <form onSubmit={handleSaveGrowthMission} className="rounded-xl border border-emerald-300 bg-emerald-50/70 p-5 dark:border-emerald-900 dark:bg-emerald-950/20">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Operador de Crescimento</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-300">Meta, limite e eventos reais que governam todas as próximas decisões do perfil MKT.</p>
+            </div>
+            <button type="submit" disabled={growthMissionSaving} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{growthMissionSaving ? 'Salvando...' : 'Salvar missão e placar'}</button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-5">
+            <label className="text-xs font-medium md:col-span-1">Produto<input required value={growthMissionDraft.product} onChange={(e) => updateGrowthMissionField('product', e.target.value)} className="mt-1 w-full rounded border px-2 py-2 dark:bg-slate-900" /></label>
+            <label className="text-xs font-medium md:col-span-2">Objetivo<input required value={growthMissionDraft.objective} onChange={(e) => updateGrowthMissionField('objective', e.target.value)} className="mt-1 w-full rounded border px-2 py-2 dark:bg-slate-900" /></label>
+            <label className="text-xs font-medium">Meta de vendas<input type="number" min="1" required value={growthMissionDraft.targetSales} onChange={(e) => updateGrowthMissionField('targetSales', e.target.value)} className="mt-1 w-full rounded border px-2 py-2 dark:bg-slate-900" /></label>
+            <label className="text-xs font-medium">Limite de gasto (R$)<input type="number" min="0" step="0.01" required value={growthMissionDraft.budgetLimit} onChange={(e) => updateGrowthMissionField('budgetLimit', e.target.value)} className="mt-1 w-full rounded border px-2 py-2 dark:bg-slate-900" /></label>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-6">
+            {([['visitors','Visitantes'],['ctaClicks','Cliques CTA'],['checkoutsStarted','Checkouts'],['salesApproved','Vendas'],['briefingsCompleted','Briefings'],['deliveriesCompleted','Entregas'],['refunds','Reembolsos'],['revenue','Receita R$'],['spend','Gasto R$']] as const).map(([field, label]) => (
+              <label key={field} className="text-[11px] font-medium">{label}<input type="number" min="0" step={field === 'revenue' || field === 'spend' ? '0.01' : '1'} value={growthMissionDraft[field]} onChange={(e) => updateGrowthMissionField(field, e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 dark:bg-slate-900" /></label>
+            ))}
+            <label className="text-[11px] font-medium">Prazo<input type="date" value={growthMissionDraft.endsAt || ''} onChange={(e) => updateGrowthMissionField('endsAt', e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 dark:bg-slate-900" /></label>
+            <label className="text-[11px] font-medium">Status<select value={growthMissionDraft.status} onChange={(e) => updateGrowthMissionField('status', e.target.value)} className="mt-1 w-full rounded border px-2 py-1.5 dark:bg-slate-900"><option value="ACTIVE">Ativa</option><option value="PAUSED">Pausada</option><option value="COMPLETED">Concluída</option></select></label>
+          </div>
+          {growthMission ? <div className="mt-4 grid gap-2 rounded-lg border border-emerald-200 bg-white/70 p-3 text-sm dark:border-emerald-900 dark:bg-slate-900/60 md:grid-cols-4">
+            <p><span className="block text-[10px] uppercase text-slate-500">Gargalo atual</span><strong>{growthMission.bottleneck}</strong></p>
+            <p><span className="block text-[10px] uppercase text-slate-500">Conversão</span><strong>{growthMission.conversionRate ?? '—'}%</strong></p>
+            <p><span className="block text-[10px] uppercase text-slate-500">CAC</span><strong>{growthMission.cac == null ? '—' : `R$ ${growthMission.cac.toFixed(2)}`}</strong></p>
+            <p className="md:col-span-1"><span className="block text-[10px] uppercase text-slate-500">Próxima decisão</span>{growthMission.recommendedAction}</p>
+          </div> : <p className="mt-3 text-sm text-amber-700">Salve a primeira missão antes de enviar uma nova solicitação MKT.</p>}
+        </form>
+      ) : null}
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-4">
         <h3 className="text-lg font-semibold">Estado da conta (tempo real)</h3>
         {loading ? <p className="text-sm text-slate-500">Carregando status...</p> : null}

@@ -1,0 +1,22 @@
+CREATE TABLE growth_missions (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    product VARCHAR(150) NOT NULL,
+    objective VARCHAR(500) NOT NULL,
+    target_sales INT NOT NULL,
+    budget_limit DECIMAL(14,2) NOT NULL,
+    ends_at DATE NULL,
+    status VARCHAR(20) NOT NULL,
+    visitors BIGINT NOT NULL DEFAULT 0,
+    cta_clicks BIGINT NOT NULL DEFAULT 0,
+    checkouts_started BIGINT NOT NULL DEFAULT 0,
+    sales_approved BIGINT NOT NULL DEFAULT 0,
+    briefings_completed BIGINT NOT NULL DEFAULT 0,
+    deliveries_completed BIGINT NOT NULL DEFAULT 0,
+    refunds BIGINT NOT NULL DEFAULT 0,
+    revenue DECIMAL(14,2) NOT NULL DEFAULT 0,
+    spend DECIMAL(14,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_growth_missions_status_updated (status, updated_at)
+) ENGINE=InnoDB;
