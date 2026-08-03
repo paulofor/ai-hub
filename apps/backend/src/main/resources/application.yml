@@ -22,6 +22,8 @@ management:
         include: health,info,prometheus
 
 hub:
+  growth:
+    events-token: ${HUB_GROWTH_EVENTS_TOKEN:}
   dashboard:
     time-zone: ${HUB_DASHBOARD_TIME_ZONE:America/Sao_Paulo}
   github:

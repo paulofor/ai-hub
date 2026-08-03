@@ -4,6 +4,7 @@ import com.aihub.hub.domain.GrowthMissionRecord;
 import com.aihub.hub.dto.GrowthMissionView;
 import com.aihub.hub.dto.UpsertGrowthMissionRequest;
 import com.aihub.hub.repository.GrowthMissionRepository;
+import com.aihub.hub.repository.GrowthEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +23,8 @@ class GrowthMissionServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(GrowthMissionRepository.class);
-        service = new GrowthMissionService(repository);
+        GrowthEventRepository events = mock(GrowthEventRepository.class);
+        service = new GrowthMissionService(repository, events);
         when(repository.findFirstByStatusOrderByUpdatedAtDesc("ACTIVE")).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
