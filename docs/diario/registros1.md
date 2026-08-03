@@ -3070,3 +3070,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Compatibilidade de banco: adicionadas migrations V42 para H2, PostgreSQL e MySQL. A validação integral em MySQL 5.7 deverá ser executada pelo workflow `liquibase-mysql57.yml` quando a alteração passar pelo PR obrigatório.
 - Validações executadas: suíte backend completa com 105 testes aprovada; build e lint do frontend aprovados; inspeção visual desktop e mobile em Chromium/Playwright sem overflow horizontal. Os testes específicos cobrem priorização de oferta, bloqueio por entrega atrasada e fusível de orçamento.
 - Nenhum Pull Request foi criado e nenhuma alteração foi publicada; os arquivos permanecem prontos na worktree para revisão e PR solicitado pelo usuário.
+
+## 2026-08-03 — Orientação de uso do Operador de Crescimento
+
+- Solicitação recebida: explicar como usar a funcionalidade recém-implementada.
+- Estado esclarecido: o painel ainda não está disponível no ambiente publicado; a mudança permanece somente na worktree e depende do Pull Request executado pelo usuário e do deploy.
+- Fluxo recomendado após o deploy: abrir o perfil Codex ChatGPT MKT, cadastrar uma única missão comercial ativa, iniciar o placar com eventos reais acumulados, salvar e usar o gargalo e a próxima decisão calculados como orientação das solicitações seguintes.
+- Configuração inicial sugerida: produto `Agenda Cheia`, objetivo `Gerar as primeiras 5 vendas preservando entrega e satisfação`, meta de 5 vendas, limite total de R$ 400, prazo de 7 dias, status ativo e métricas reais atuais (zero somente quando forem realmente zero).
+- Disciplina operacional: atualizar o mesmo placar com dados cumulativos da mesma janela antes de cada decisão; não inserir estimativas como vendas, receita ou gasto; não reiniciar contadores diariamente; manter somente um produto prioritário; pausar aquisição quando orçamento estiver esgotado ou houver venda ainda não entregue.
+- Nenhuma nova alteração de código foi necessária e nenhum Pull Request foi criado.
