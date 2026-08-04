@@ -3121,3 +3121,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que o contexto enviado continuava crescendo?”. Resposta: `buildConversationPromptFromHistory` serializava todas as mensagens do diálogo local no bloco “Histórico da conversa”. O context manager do sandbox possui proteções automáticas por itens e tokens, mas elas atuam no histórico interno da execução e não ofereciam ao usuário um corte explícito do diálogo montado pelo frontend.
 - Correção na causa: o rodapé do compositor agora possui um controle separado “Contexto: manter últimas N mensagens”. A ação remove as mensagens mais antigas do diálogo local, desvincula uma conversa salva para impedir que seu conteúdo seja reinjetado e faz com que somente as N mais recentes componham os prompts seguintes, sem apagar o histórico de execuções nem mexer no lote/branch.
 - Proteção contra regressão: adicionado teste E2E que inicia com quatro mensagens, mantém duas, envia uma nova solicitação e comprova que o prompt contém apenas o par recente.
+
+## 2026-08-04 — Gráficos de relevância estimada em vendas no dashboard
+
+- Solicitação recebida: adicionar ao dashboard novos gráficos com os contadores de relevância em vendas.
+- Pergunta explícita de causa raiz: “por que esses contadores não estavam disponíveis no dashboard?”. Resposta: o backend calculava a distribuição de impacto comercial somente para a janela diária e a interface a apresentava exclusivamente no painel operacional do perfil MKT; o dashboard geral não consultava as métricas filtradas desse perfil nem possuía uma visualização por período.
+- Correção na causa: o contrato de métricas passou a calcular os cinco níveis de impacto estimado também para semana e mês. O dashboard consulta separadamente o perfil `CHATGPT_CODEX_MKT` e apresenta três gráficos de barras horizontais (hoje, semana e mês), com total, contagem e percentual por nível.
+- Transparência preservada: a seção identifica os dados como relevância declarada/estimada pelo modelo e informa que os contadores não representam vendas confirmadas.
+- Proteção contra regressão: o teste de serviço agora valida os totais diário, semanal e mensal e confirma as três consultas por janela.
