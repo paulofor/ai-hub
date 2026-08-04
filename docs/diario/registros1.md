@@ -3098,3 +3098,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Responsividade: o card do dia operacional voltou ao fluxo da página, sem cobrir o painel. O menu lateral agora é substituído em telas pequenas por cabeçalho e gaveta de navegação, e o conteúdo usa espaçamento responsivo.
 - Validação: build TypeScript/Vite e lint aprovados; `git diff --check` aprovado; inspeção no Chromium em desktop e emulação de iPhone 15 Pro aprovada, com largura do documento igual à viewport (393 px) e sem overflow horizontal.
 - Nenhum Pull Request foi criado e nenhuma alteração foi publicada.
+
+## 2026-08-04 — Auditoria do PR #4702 do Marketing Hub
+
+- Solicitação: acompanhar merge, deploy e validar a produção do vídeo MUSA por quatro cenas.
+- Causa-raiz da pendência: o PR #4702 foi mesclado, mas seus arquivos implementam a organização visual do Estúdio e o catálogo MCP; não incluem endpoints, jobs ou controles para gerar, aprovar e selecionar quatro clipes independentes.
+- Validação: frontend e workflow do Operador concluíram com sucesso; backend e publicação de containers ainda estavam em execução durante a auditoria. A tela publicada do projeto 1 foi aberta com Chromium e confirmou a sequência visual de nove etapas, porém mostrou apenas o asset anterior #1941 e nenhum controle de geração/regeneração por cena.
+- Decisão: não solicitar nova renderização nem gerar custo enquanto a operação por cenas não existir no sistema; será necessária implementação versionada no repositório `paulofor/marketing-hub` e novo PR antes da execução pela tela.
