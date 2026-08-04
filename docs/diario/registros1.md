@@ -3107,3 +3107,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Interface: os dois pontos que ofereciam o descarte total agora exibem um campo numérico “Manter últimas” e a ação “Remover mais antigas”, com mínimo de uma solicitação, confirmação informando quantas serão mantidas/removidas e bloqueio quando o lote não possui itens excedentes.
 - Proteção contra regressão: adicionado teste de serviço que comprova que apenas a solicitação antiga é desanexada, a mais recente continua no lote e a branch remota não é apagada.
 - Validações executadas: teste direcionado do backend com 40 casos, build e lint do frontend e inspeção de whitespace aprovados.
+
+## 2026-08-04 — Explicação do descarte desabilitado
+
+- Problema observado: a ação “Remover mais antigas” aparecia desabilitada embora a seção “Últimas execuções” exibisse diversas solicitações.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ação opera exclusivamente sobre solicitações ligadas ao lote aberto, enquanto o histórico também mostra execuções de lotes encerrados por PR. A interface aplicava corretamente essa regra, mas não explicava qual conjunto estava sendo contado, fazendo o histórico parecer contradizer o botão.
+- Correção na causa: os dois pontos da interface agora mostram o motivo específico do bloqueio e o repetem no tooltip do botão: ausência de lote aberto ou quantidade do lote atual menor ou igual ao valor escolhido em “Manter últimas”.
+- Proteção contra regressão: adicionado teste E2E com várias execuções de lotes encerrados, validando que o botão permanece seguro e que a diferença entre histórico e lote aberto fica visível ao usuário.
+
+## 2026-08-04 — Corte manual do contexto enviado ao modelo
+
+- Esclarecimento recebido: o controle desejado não era a retenção das solicitações do lote, mas a possibilidade de limitar manualmente as mensagens anteriores incluídas no prompt seguinte.
+- Pergunta explícita de causa raiz: “por que o contexto enviado continuava crescendo?”. Resposta: `buildConversationPromptFromHistory` serializava todas as mensagens do diálogo local no bloco “Histórico da conversa”. O context manager do sandbox possui proteções automáticas por itens e tokens, mas elas atuam no histórico interno da execução e não ofereciam ao usuário um corte explícito do diálogo montado pelo frontend.
+- Correção na causa: o rodapé do compositor agora possui um controle separado “Contexto: manter últimas N mensagens”. A ação remove as mensagens mais antigas do diálogo local, desvincula uma conversa salva para impedir que seu conteúdo seja reinjetado e faz com que somente as N mais recentes componham os prompts seguintes, sem apagar o histórico de execuções nem mexer no lote/branch.
+- Proteção contra regressão: adicionado teste E2E que inicia com quatro mensagens, mantém duas, envia uma nova solicitação e comprova que o prompt contém apenas o par recente.

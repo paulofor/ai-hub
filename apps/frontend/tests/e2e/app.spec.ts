@@ -153,6 +153,70 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await expect(requestPrButton.getByText('Código pendente')).toHaveClass(/bg-indigo-200/);
 });
 
+test('explains why old history does not enable trimming the open batch', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { requestCount: 6, interactionCount: 6, durationMs: 1000 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: {
+    content: Array.from({ length: 6 }, (_, index) => ({
+      id: 700 - index,
+      environment: 'produção',
+      profile: 'CHATGPT_CODEX',
+      prompt: `Execução encerrada ${index + 1}`,
+      status: 'COMPLETED',
+      createdAt: `2026-08-04T1${index}:00:00Z`,
+      workBatchKey: `aihub/lote-encerrado-${index}`,
+      pullRequestUrl: `https://github.com/example/repo/pull/${index + 1}`
+    }))
+  } }));
+
+  await page.goto('/codex-chatgpt');
+
+  const trimButton = page.getByRole('button', { name: 'Remover mais antigas' });
+  await expect(page.getByText('Não há solicitações em um lote aberto. As execuções exibidas no histórico podem pertencer a lotes já encerrados por um PR.').last()).toBeVisible();
+  await expect(trimButton).toBeDisabled();
+  await expect(trimButton).toHaveAttribute('title', /lotes já encerrados por um PR/);
+  await expect(page.getByRole('link', { name: 'Abrir detalhes' })).toHaveCount(6);
+});
+
+test('cuts old dialog messages out of subsequent model prompts', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: {} } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  let submittedPrompt = '';
+  await page.route('**/api/codex/requests**', async (route) => {
+    if (route.request().method() === 'POST') {
+      submittedPrompt = (route.request().postDataJSON() as { prompt: string }).prompt;
+      await route.fulfill({ json: { id: 900, profile: 'CHATGPT_CODEX', status: 'PENDING', createdAt: '2026-08-04T12:00:00Z' } });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.addInitScript(() => window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX', JSON.stringify([
+    { id: 'u1', role: 'user', content: 'mensagem muito antiga', createdAt: '2026-08-04T10:00:00Z' },
+    { id: 'a1', role: 'assistant', content: 'resposta muito antiga', createdAt: '2026-08-04T10:01:00Z' },
+    { id: 'u2', role: 'user', content: 'mensagem recente', createdAt: '2026-08-04T10:02:00Z' },
+    { id: 'a2', role: 'assistant', content: 'resposta recente', createdAt: '2026-08-04T10:03:00Z' }
+  ])));
+
+  await page.goto('/codex-chatgpt');
+  await page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto').fill('2');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Cortar contexto antigo' }).click();
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('próxima pergunta');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => submittedPrompt).not.toContain('mensagem muito antiga');
+  await expect.poll(() => submittedPrompt).toContain('mensagem recente');
+  await expect.poll(() => submittedPrompt).toContain('resposta recente');
+});
+
 test('renders structured model JSON as cards in the default ChatGPT dialog', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
