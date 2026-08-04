@@ -3129,3 +3129,9 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: o contrato de métricas passou a calcular os cinco níveis de impacto estimado também para semana e mês. O dashboard consulta separadamente o perfil `CHATGPT_CODEX_MKT` e apresenta três gráficos de barras horizontais (hoje, semana e mês), com total, contagem e percentual por nível.
 - Transparência preservada: a seção identifica os dados como relevância declarada/estimada pelo modelo e informa que os contadores não representam vendas confirmadas.
 - Proteção contra regressão: o teste de serviço agora valida os totais diário, semanal e mensal e confirma as três consultas por janela.
+## 2026-08-04 — Quadro do dia operacional flutuante
+
+- Solicitação recebida: manter o quadro do dia operacional sempre visível no canto superior direito durante a rolagem da página.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: no redesign responsivo, o quadro foi deliberadamente devolvido ao fluxo normal do cabeçalho para evitar sobreposição; por isso, apesar de preservar o layout, ele rolava junto com o restante da página e deixava de cumprir a função de acompanhamento contínuo.
+- Correção na causa: o quadro voltou a usar posicionamento fixo em relação à viewport, com ancoragem superior/direita, camada acima do conteúdo, largura limitada à tela e fundo translúcido com desfoque para manter a leitura durante o scroll.
+- Proteção contra regressão: o teste E2E confirma que o quadro usa `position: fixed` e mantém as mesmas coordenadas superior e direita depois de rolar até o final da página; o limite de altura foi atualizado para contemplar a seção de impacto estimado adicionada posteriormente ao quadro.

@@ -630,7 +630,7 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
     const box = element.getBoundingClientRect();
     return { height: box.height, right: box.right, top: box.top };
   });
-  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(150);
+  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(240);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
