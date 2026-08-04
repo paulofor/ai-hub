@@ -1465,6 +1465,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [prLoading, setPrLoading] = useState(false);
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
+  const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<number | null>(null);
@@ -2611,8 +2612,31 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [bulkDiscardLoading, config.profile, loadRequests, registerTelemetry, requestsToKeep, selectedEnvironment]);
 
+  const handleTrimConversationContext = useCallback(() => {
+    const keepLast = Math.min(Math.max(1, contextMessagesToKeep), conversation.length);
+    const discardCount = conversation.length - keepLast;
+    if (discardCount <= 0) return;
+
+    const confirmed = window.confirm(`Remover ${discardCount} mensagem(ns) mais antiga(s) do contexto deste diálogo e manter somente as ${keepLast} mais recentes? O histórico de execuções não será apagado.`);
+    if (!confirmed) return;
+
+    setConversation((current) => current.slice(-keepLast));
+    setSelectedSavedConversationId('');
+    setSelectedSavedConversationMessages([]);
+    setEditingRequestId(null);
+    setEditingDraft('');
+    registerTelemetry('execution_success', `${discardCount} mensagem(ns) antiga(s) removida(s) do contexto enviado ao modelo; ${keepLast} mantida(s).`);
+  }, [contextMessagesToKeep, conversation.length, registerTelemetry]);
+
   const activeBatchKey = findOpenBatchKey(requests, selectedEnvironment, config.profile);
   const activeBatchRequests = getOpenBatchRequests(requests, selectedEnvironment, config.profile, activeBatchKey);
+  const trimBatchDisabledReason = bulkDiscardLoading
+    ? 'A remoção das solicitações antigas está em andamento.'
+    : !activeBatchKey || activeBatchRequests.length === 0
+      ? 'Não há solicitações em um lote aberto. As execuções exibidas no histórico podem pertencer a lotes já encerrados por um PR.'
+      : activeBatchRequests.length <= requestsToKeep
+        ? `O lote atual tem ${activeBatchRequests.length} solicitação(ões). Para habilitar a remoção, escolha manter menos de ${activeBatchRequests.length}.`
+        : undefined;
   const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
   const activeBatchCompletedCodeChanges = activeBatchRequests
     .filter((item) => item.status === 'COMPLETED' && marketingResponseIndicatesCodeChange(item.responseText))
@@ -2867,7 +2891,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               Manter últimas
               <input type="number" min="1" step="1" value={requestsToKeep} onChange={(event) => setRequestsToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de solicitações mais recentes a manter" />
             </label>
-            <button type="button" onClick={handleTrimBatchRequests} disabled={bulkDiscardLoading || activeBatchRequests.length <= requestsToKeep} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">{bulkDiscardLoading ? 'Removendo antigas...' : 'Remover mais antigas'}</button>
+            <button type="button" onClick={handleTrimBatchRequests} disabled={Boolean(trimBatchDisabledReason)} title={trimBatchDisabledReason} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">{bulkDiscardLoading ? 'Removendo antigas...' : 'Remover mais antigas'}</button>
           </div>
         </div>
         {activeBatchKey ? <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
@@ -2878,6 +2902,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">{activeBatchPending} pendente(s)</span>
           </div>
         </div> : <p className="mt-3 text-slate-500">Nenhum lote aberto para o ambiente selecionado.</p>}
+        {trimBatchDisabledReason && !bulkDiscardLoading ? <p className="mt-2 text-xs text-slate-500">{trimBatchDisabledReason}</p> : null}
         {accumulatedCodeWarning ? (
           <p className="mt-3 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
             Código acumulado para merge: {accumulatedCodeWarning}
@@ -3193,14 +3218,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100">Código pendente</span> : null}
             </button>
           ) : null}
-          {!sandboxOnly ? <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              Manter últimas
-              <input type="number" min="1" step="1" value={requestsToKeep} onChange={(event) => setRequestsToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de solicitações mais recentes a manter" />
+              Contexto: manter últimas
+              <input type="number" min="1" step="1" value={contextMessagesToKeep} onChange={(event) => setContextMessagesToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de mensagens mais recentes a manter no contexto" />
+              mensagens
             </label>
-            <button type="button" onClick={handleTrimBatchRequests} disabled={bulkDiscardLoading || activeBatchRequests.length <= requestsToKeep} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Removendo antigas...' : 'Remover mais antigas'}</button>
-          </div> : null}
+            <button type="button" onClick={handleTrimConversationContext} disabled={conversation.length <= contextMessagesToKeep} title={conversation.length <= contextMessagesToKeep ? `O diálogo possui ${conversation.length} mensagem(ns); escolha um limite menor para cortar o contexto.` : 'Remove mensagens antigas apenas do contexto deste diálogo.'} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">Cortar contexto antigo</button>
+          </div>
         </div>
+        <p className="text-xs text-slate-500">Este corte controla o histórico incluído nos próximos prompts. Ele não apaga as execuções listadas abaixo nem altera o lote de trabalho.</p>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}
         {prResult ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-2">
