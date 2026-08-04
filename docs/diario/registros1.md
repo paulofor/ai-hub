@@ -3098,3 +3098,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Responsividade: o card do dia operacional voltou ao fluxo da página, sem cobrir o painel. O menu lateral agora é substituído em telas pequenas por cabeçalho e gaveta de navegação, e o conteúdo usa espaçamento responsivo.
 - Validação: build TypeScript/Vite e lint aprovados; `git diff --check` aprovado; inspeção no Chromium em desktop e emulação de iPhone 15 Pro aprovada, com largura do documento igual à viewport (393 px) e sem overflow horizontal.
 - Nenhum Pull Request foi criado e nenhuma alteração foi publicada.
+
+## 2026-08-04 — Retenção configurável das solicitações mais recentes
+
+- Solicitação recebida: substituir a ação destrutiva que zerava e descartava todo o lote por uma opção em que o usuário escolhe quantas solicitações recentes deseja manter.
+- Pergunta explícita de causa raiz: “por que esse problema aconteceu?”. Resposta: o contrato do descarte em lote só representava uma operação tudo-ou-nada; a API sempre percorria todas as solicitações e apagava a branch, enquanto a interface não enviava qualquer critério de retenção. Portanto, apenas trocar o texto do botão não protegeria as solicitações recentes.
+- Correção na causa: o endpoint passou a aceitar `keepLast`, validar valores negativos e operar somente sobre o prefixo mais antigo da lista cronológica. Quando há solicitações retidas, elas permanecem ligadas ao lote e a branch de trabalho é preservada.
+- Interface: os dois pontos que ofereciam o descarte total agora exibem um campo numérico “Manter últimas” e a ação “Remover mais antigas”, com mínimo de uma solicitação, confirmação informando quantas serão mantidas/removidas e bloqueio quando o lote não possui itens excedentes.
+- Proteção contra regressão: adicionado teste de serviço que comprova que apenas a solicitação antiga é desanexada, a mais recente continua no lote e a branch remota não é apagada.
+- Validações executadas: teste direcionado do backend com 40 casos, build e lint do frontend e inspeção de whitespace aprovados.
