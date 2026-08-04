@@ -3121,3 +3121,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que o contexto enviado continuava crescendo?”. Resposta: `buildConversationPromptFromHistory` serializava todas as mensagens do diálogo local no bloco “Histórico da conversa”. O context manager do sandbox possui proteções automáticas por itens e tokens, mas elas atuam no histórico interno da execução e não ofereciam ao usuário um corte explícito do diálogo montado pelo frontend.
 - Correção na causa: o rodapé do compositor agora possui um controle separado “Contexto: manter últimas N mensagens”. A ação remove as mensagens mais antigas do diálogo local, desvincula uma conversa salva para impedir que seu conteúdo seja reinjetado e faz com que somente as N mais recentes componham os prompts seguintes, sem apagar o histórico de execuções nem mexer no lote/branch.
 - Proteção contra regressão: adicionado teste E2E que inicia com quatro mensagens, mantém duas, envia uma nova solicitação e comprova que o prompt contém apenas o par recente.
+
+## 2026-08-04 — Quadro do dia operacional flutuante
+
+- Solicitação recebida: manter o quadro do dia operacional sempre visível no canto superior direito durante a rolagem da página.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: no redesign responsivo, o quadro foi deliberadamente devolvido ao fluxo normal do cabeçalho para evitar sobreposição; por isso, apesar de preservar o layout, ele rolava junto com o restante da página e deixava de cumprir a função de acompanhamento contínuo.
+- Correção na causa: o quadro voltou a usar posicionamento fixo em relação à viewport, com ancoragem superior/direita, camada acima do conteúdo, largura limitada à tela e fundo translúcido com desfoque para manter a leitura durante o scroll.
+- Proteção contra regressão: o teste E2E confirma que o quadro usa `position: fixed` e mantém as mesmas coordenadas superior e direita depois de rolar até o final da página; o limite de altura foi atualizado para contemplar a seção de impacto estimado adicionada posteriormente ao quadro.
