@@ -279,7 +279,7 @@ class CodexRequestServiceTest {
     }
 
     @Test
-    void dashboardMetricsCountsDailySalesImpactFromStructuredMarketingResponses() {
+    void dashboardMetricsCountsSalesImpactByDayWeekAndMonthFromStructuredMarketingResponses() {
         when(codexRequestRepository.summarizeMetricsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
             .thenReturn(new Object[] {4L, 4L, 1_000L});
         when(codexRequestRepository.findMetricRowsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
@@ -292,7 +292,8 @@ class CodexRequestServiceTest {
                 "{\"salesImpact\":\"MUITO ALTO\"}"
             ));
 
-        var score = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT).salesImpactDay();
+        var metrics = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
+        var score = metrics.salesImpactDay();
 
         assertThat(score.muitoBaixo()).isEqualTo(1);
         assertThat(score.baixo()).isZero();
@@ -300,6 +301,10 @@ class CodexRequestServiceTest {
         assertThat(score.alto()).isEqualTo(1);
         assertThat(score.muitoAlto()).isEqualTo(1);
         assertThat(score.total()).isEqualTo(3);
+        assertThat(metrics.salesImpactWeek().total()).isEqualTo(3);
+        assertThat(metrics.salesImpactMonth().total()).isEqualTo(3);
+        verify(codexRequestRepository, times(3))
+            .findResponseTextsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT));
     }
 
     @Test

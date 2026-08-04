@@ -368,7 +368,9 @@ public class CodexRequestService {
             buildMetricWindow(weekStart, profile),
             buildMetricWindow(monthStart, profile),
             buildMetricSeries(seriesStart, today, operationalToday, zone, profile),
-            buildSalesImpactScore(dayStart, profile)
+            buildSalesImpactScore(dayStart, profile),
+            buildSalesImpactScore(weekStart, profile),
+            buildSalesImpactScore(monthStart, profile)
         );
     }
 

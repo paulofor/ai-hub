@@ -9,7 +9,9 @@ public record CodexDashboardMetrics(
     CodexDashboardMetricWindow week,
     CodexDashboardMetricWindow month,
     CodexDashboardMetricSeries series,
-    CodexSalesImpactScore salesImpactDay
+    CodexSalesImpactScore salesImpactDay,
+    CodexSalesImpactScore salesImpactWeek,
+    CodexSalesImpactScore salesImpactMonth
 ) {
     public record CodexDashboardMetricWindow(
         Instant startsAt,

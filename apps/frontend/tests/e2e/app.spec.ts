@@ -1,11 +1,29 @@
 import { expect, test } from '@playwright/test';
 
 test('renders the dashboard shell', async ({ page }) => {
+  await page.route('**/api/source-modules/changes', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/metrics**', (route) => {
+    const emptyWindow = { startsAt: '2026-08-04T06:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 };
+    const emptySeries = { daily: [], weekly: [], monthly: [] };
+    if (route.request().url().includes('profile=CHATGPT_CODEX_MKT')) {
+      return route.fulfill({ json: {
+        day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries,
+        salesImpactDay: { muitoBaixo: 1, baixo: 2, medio: 3, alto: 4, muitoAlto: 5, total: 15 },
+        salesImpactWeek: { muitoBaixo: 2, baixo: 3, medio: 5, alto: 8, muitoAlto: 7, total: 25 },
+        salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 }
+      } });
+    }
+    return route.fulfill({ json: { day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries } });
+  });
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'AI Hub 6' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Relevância estimada em vendas' })).toBeVisible();
+  await expect(page.getByText('50', { exact: true })).toBeVisible();
+  await expect(page.getByText('Estes contadores representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-dashboard-relevancia-vendas.png', fullPage: true });
 });
 
 test('offers GPT-5.6 and sends the selected model with the request', async ({ page }) => {
