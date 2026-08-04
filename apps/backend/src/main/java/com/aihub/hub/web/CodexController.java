@@ -243,6 +243,10 @@ public class CodexController {
             workBatchKey = value;
         }
         String profileValue = payload.get("profile") instanceof String value ? value : null;
+        int keepLast = payload.get("keepLast") instanceof Number value ? value.intValue() : 0;
+        if (keepLast < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantidade de solicitações a manter não pode ser negativa");
+        }
         CodexIntegrationProfile profile;
         try {
             profile = StringUtils.hasText(profileValue)
@@ -251,7 +255,7 @@ public class CodexController {
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Perfil inválido para descartar lote");
         }
-        return codexRequestService.discardBatch(environment, profile, workBatchKey);
+        return codexRequestService.discardBatch(environment, profile, workBatchKey, keepLast);
     }
 
     @PatchMapping("/{id}")

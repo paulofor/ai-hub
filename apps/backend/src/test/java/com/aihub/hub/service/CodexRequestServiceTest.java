@@ -1158,6 +1158,37 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void discardBatchKeepsNewestRequestsAttachedAndPreservesWorkBranch() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest oldest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "antiga");
+        oldest.setStatus(CodexRequestStatus.COMPLETED);
+        oldest.setWorkBranch(workBranch);
+        oldest.setWorkBatchKey(workBranch);
+        CodexRequest newest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "recente");
+        newest.setStatus(CodexRequestStatus.COMPLETED);
+        newest.setWorkBranch(workBranch);
+        newest.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(oldest, newest));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> result = service.discardBatch(
+            "owner/repo@main",
+            CodexIntegrationProfile.CHATGPT_CODEX_MKT,
+            workBranch,
+            1
+        );
+
+        assertThat(result).containsEntry("retained", 1).containsEntry("detached", 1);
+        assertThat(oldest.getWorkBatchKey()).isNull();
+        assertThat(newest.getWorkBatchKey()).isEqualTo(workBranch);
+        verify(githubApiClient, never()).deleteBranch(anyString(), anyString(), anyString());
+        verify(codexRequestRepository).save(oldest);
+        verify(codexRequestRepository, never()).save(newest);
+    }
+
+    @Test
     void discardBatchContinuesWhenRemoteWorkBranchIsAlreadyGone() {
         CodexRequestService service = buildService(true);
         String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";

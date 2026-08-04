@@ -723,6 +723,11 @@ public class CodexRequestService {
 
     @Transactional
     public Map<String, Object> discardBatch(String environment, CodexIntegrationProfile profile, String workBatchKey) {
+        return discardBatch(environment, profile, workBatchKey, 0);
+    }
+
+    @Transactional
+    public Map<String, Object> discardBatch(String environment, CodexIntegrationProfile profile, String workBatchKey, int keepLast) {
         if (!StringUtils.hasText(environment)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente é obrigatório para descartar lote");
         }
@@ -732,13 +737,20 @@ public class CodexRequestService {
         if (!StringUtils.hasText(workBatchKey)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lote é obrigatório para descartar lote");
         }
+        if (keepLast < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantidade de solicitações a manter não pode ser negativa");
+        }
 
-        List<CodexRequest> batchRequests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey.trim()).stream()
+        List<CodexRequest> matchingRequests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey.trim()).stream()
             .filter(item -> environment.equals(item.getEnvironment()))
             .filter(item -> profile.equals(item.getProfile()))
             .toList();
+        int retained = Math.min(keepLast, matchingRequests.size());
+        List<CodexRequest> batchRequests = matchingRequests.subList(0, matchingRequests.size() - retained);
 
-        RemoteBranchDeletionResult branchDeletion = deleteRemoteWorkBranch(environment, workBatchKey.trim());
+        RemoteBranchDeletionResult branchDeletion = retained == 0
+            ? deleteRemoteWorkBranch(environment, workBatchKey.trim())
+            : new RemoteBranchDeletionResult(false, null);
 
         int deleted = 0;
         int cancelled = 0;
@@ -775,6 +787,7 @@ public class CodexRequestService {
         result.put("deleted", deleted);
         result.put("cancelled", cancelled);
         result.put("detached", detached);
+        result.put("retained", retained);
         result.put("branchDeleted", branchDeletion.deleted());
         if (StringUtils.hasText(branchDeletion.warning())) {
             result.put("branchDeletionWarning", branchDeletion.warning());
