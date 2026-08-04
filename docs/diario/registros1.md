@@ -3105,3 +3105,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Causa-raiz da pendência: o PR #4702 foi mesclado, mas seus arquivos implementam a organização visual do Estúdio e o catálogo MCP; não incluem endpoints, jobs ou controles para gerar, aprovar e selecionar quatro clipes independentes.
 - Validação: frontend e workflow do Operador concluíram com sucesso; backend e publicação de containers ainda estavam em execução durante a auditoria. A tela publicada do projeto 1 foi aberta com Chromium e confirmou a sequência visual de nove etapas, porém mostrou apenas o asset anterior #1941 e nenhum controle de geração/regeneração por cena.
 - Decisão: não solicitar nova renderização nem gerar custo enquanto a operação por cenas não existir no sistema; será necessária implementação versionada no repositório `paulofor/marketing-hub` e novo PR antes da execução pela tela.
+
+## 2026-08-04 — Cadastro de Agentes bloqueado pelo repositório selecionado
+
+- Solicitação: implementar o Cadastro de Agentes no Marketing Hub, começando pela migração do Operador de Crescimento e pelos contratos versionados.
+- Pergunta explícita de causa raiz: “por que a implementação não pode ser feita neste workspace?”. Resposta: o ambiente montado aponta para `paulofor/ai-hub`, na branch `ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt`; as entidades, APIs, worker, migrations e tela do Operador de Crescimento pertencem ao repositório `paulofor/marketing-hub`, que não existe neste workspace.
+- Alternativas avaliadas: criar um cadastro paralelo no AI Hub, registrar apenas documentação ou implementar no repositório canônico. Criar uma segunda fonte de verdade foi descartado; documentação isolada não satisfaz a solicitação; a implementação no Marketing Hub é a opção correta.
+- Decisão: não alterar código funcional nem criar PR no repositório incorreto. A continuação exige selecionar/montar `paulofor/marketing-hub`; então será possível auditar o estado já publicado, migrar o Operador sem interromper seus ciclos e validar backend, frontend, migrations, contratos e worker.
