@@ -58,11 +58,11 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura em `/run/secrets/pepper-token`; se o arquivo existir, o conteúdo é exportado como `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner.
 - Caso prefira outro caminho no host, defina `PEPPER_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `pepper_api_token`.
 
-### Armazenamento dos tokens Luma, Kling e HeyGen para a sandbox
+### Armazenamento dos tokens Luma, Kling, HeyGen e Radar Meta para a sandbox
 
-- Para chamadas às APIs Luma, Kling e HeyGen executadas pelo modelo, guarde as chaves fora do repositório em `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key` e `/root/infra/heygen-token/heygen_api_key`.
-- O `sandbox-orchestrator` monta esses diretórios como somente leitura em `/run/secrets/luma-token`, `/run/secrets/kling-token` e `/run/secrets/heygen-token`; se os arquivos existirem, exporta `LUMA_API_KEY`, `KLING_API_KEY` e `HEYGEN_API_KEY` antes de iniciar o runner e o Codex App Server.
-- Caso prefira outros caminhos no host, defina `LUMA_TOKEN_HOST_DIR`, `KLING_TOKEN_HOST_DIR` e `HEYGEN_TOKEN_HOST_DIR` no `.env` operacional apontando para as pastas que contêm os arquivos `luma_api_key`, `kling_api_key` e `heygen_api_key`.
+- Para chamadas às APIs Luma, Kling, HeyGen e Radar Meta executadas pelo modelo, guarde as chaves fora do repositório em `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key`, `/root/infra/heygen-token/heygen_api_key` e `/root/infra/radarmeta-token/radar_meta_token`.
+- O `sandbox-orchestrator` monta esses diretórios como somente leitura em `/run/secrets/luma-token`, `/run/secrets/kling-token`, `/run/secrets/heygen-token` e `/run/secrets/radarmeta-token`; se os arquivos existirem, exporta `LUMA_API_KEY`, `KLING_API_KEY`, `HEYGEN_API_KEY` e `RADAR_META_TOKEN` antes de iniciar o runner e o Codex App Server.
+- Caso prefira outros caminhos no host, defina `LUMA_TOKEN_HOST_DIR`, `KLING_TOKEN_HOST_DIR`, `HEYGEN_TOKEN_HOST_DIR` e `RADAR_META_TOKEN_HOST_DIR` no `.env` operacional apontando para as pastas que contêm os arquivos `luma_api_key`, `kling_api_key`, `heygen_api_key` e `radar_meta_token`.
 
 ### MCP Server para comandos no host
 

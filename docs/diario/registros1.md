@@ -3135,3 +3135,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: no redesign responsivo, o quadro foi deliberadamente devolvido ao fluxo normal do cabeçalho para evitar sobreposição; por isso, apesar de preservar o layout, ele rolava junto com o restante da página e deixava de cumprir a função de acompanhamento contínuo.
 - Correção na causa: o quadro voltou a usar posicionamento fixo em relação à viewport, com ancoragem superior/direita, camada acima do conteúdo, largura limitada à tela e fundo translúcido com desfoque para manter a leitura durante o scroll.
 - Proteção contra regressão: o teste E2E confirma que o quadro usa `position: fixed` e mantém as mesmas coordenadas superior e direita depois de rolar até o final da página; o limite de altura foi atualizado para contemplar a seção de impacto estimado adicionada posteriormente ao quadro.
+
+## 2026-08-05 — Disponibilização do token Radar Meta para o modelo
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o token foi colocado no host em `/root/infra/radarmeta-token/radar_meta_token`, mas o fluxo versionado do `sandbox-orchestrator` ainda não montava esse diretório nem exportava uma variável para o ambiente do runner/Codex App Server; por isso novas execuções do modelo não teriam acesso à credencial.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume somente leitura configurável por `RADAR_META_TOKEN_HOST_DIR` em `/run/secrets/radarmeta-token` e export de `RADAR_META_TOKEN` quando `/run/secrets/radarmeta-token/radar_meta_token` existir.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrução de credenciais externas agora reconhece `RADAR_META_TOKEN` quando estiver exportada e menciona Radar Meta no fallback seguro.
+- Documentação atualizada em `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` com o caminho esperado e a variável `RADAR_META_TOKEN_HOST_DIR`, mantendo o segredo fora do repositório.
