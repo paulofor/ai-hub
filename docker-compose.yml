@@ -93,6 +93,7 @@ services:
       - ${KLING_TOKEN_HOST_DIR:-/root/infra/kling-token}:/run/secrets/kling-token:ro
       - ${HEYGEN_TOKEN_HOST_DIR:-/root/infra/heygen-token}:/run/secrets/heygen-token:ro
       - ${RADAR_META_TOKEN_HOST_DIR:-/root/infra/radarmeta-token}:/run/secrets/radarmeta-token:ro
+      - ${META_TOKEN_HOST_DIR:-/root/infra/meta-token}:/run/secrets/meta-token:ro
       - ${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}:/run/secrets/aws:ro
       - codex-auth-data:/var/lib/ai-hub/codex
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
@@ -125,6 +126,9 @@ services:
       fi;
       if [ -f /run/secrets/radarmeta-token/radar_meta_token ]; then
         export RADAR_META_TOKEN=$(cat /run/secrets/radarmeta-token/radar_meta_token);
+      fi;
+      if [ -f /run/secrets/meta-token/meta_token ]; then
+        export META_TOKEN=$(cat /run/secrets/meta-token/meta_token);
       fi;
       if [ -f /run/secrets/aws/acesso_aws ]; then
         AWS_ACCESS_KEY_ID_VALUE=$(grep -E '^AWS_ACCESS_KEY_ID=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
