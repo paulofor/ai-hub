@@ -3142,3 +3142,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse acesso ainda não estava disponível?”. Resposta: a sandbox não contém nenhuma variável de ambiente reconhecida para o token e possui apenas `known_hosts`, sem chave SSH autorizada; a captura de tela comprova a existência e a localização do arquivo, mas não transporta seu conteúdo.
 - Ação segura: gerado um par `ed25519` exclusivo em `/root/.ssh/marketing_hub_meta_token_ed25519`, mantendo a chave privada somente na sandbox. A chave pública será fornecida ao usuário para cadastro temporário no host autorizado.
 - Estado atual: nenhuma credencial ou valor de token foi exibido, copiado para o repositório ou publicado. A importação depende do cadastro da chave pública na VPS.
+
+## 2026-08-05 — Inventário seguro de tokens disponíveis na sandbox
+
+- Solicitação recebida: disponibilizar no ambiente do modelo todos os demais tokens armazenados na VPS que ainda não estivessem provisionados.
+- Inventário realizado sem imprimir valores: AWS, Gemini, GitHub, HeyGen, Kling, Luma, OpenAI e Pepper já estão definidos no ambiente; Meta, Runway e Seedance não foram encontrados entre as variáveis disponíveis.
+- Pergunta explícita de causa raiz: “por que os tokens restantes não estão disponíveis?”. Resposta: variáveis de ambiente do processo gerenciado só podem ser injetadas pela plataforma que inicia a sandbox; um `export` executado dentro de um comando filho não altera nem persiste no processo do modelo. Além disso, a chave exclusiva preparada para leitura do VPS foi recusada por autenticação, e o endpoint MCP saudável executou em um contexto que não contém `/root/infra`.
+- Segurança: nenhum valor secreto foi lido, exibido, gravado no repositório ou incluído em logs. A disponibilização de Meta, Runway e Seedance depende de cadastrar a chave pública no VPS e de injetar os valores como secrets do ambiente gerenciado.
