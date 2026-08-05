@@ -3135,3 +3135,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: no redesign responsivo, o quadro foi deliberadamente devolvido ao fluxo normal do cabeçalho para evitar sobreposição; por isso, apesar de preservar o layout, ele rolava junto com o restante da página e deixava de cumprir a função de acompanhamento contínuo.
 - Correção na causa: o quadro voltou a usar posicionamento fixo em relação à viewport, com ancoragem superior/direita, camada acima do conteúdo, largura limitada à tela e fundo translúcido com desfoque para manter a leitura durante o scroll.
 - Proteção contra regressão: o teste E2E confirma que o quadro usa `position: fixed` e mantém as mesmas coordenadas superior e direita depois de rolar até o final da página; o limite de altura foi atualizado para contemplar a seção de impacto estimado adicionada posteriormente ao quadro.
+
+## 2026-08-05 — Preparação de acesso seguro ao token da Meta
+
+- Solicitação recebida: disponibilizar no ambiente do modelo o token armazenado na VPS em `/root/infra/radarmeta-token/radar_meta_token`.
+- Pergunta explícita de causa raiz: “por que esse acesso ainda não estava disponível?”. Resposta: a sandbox não contém nenhuma variável de ambiente reconhecida para o token e possui apenas `known_hosts`, sem chave SSH autorizada; a captura de tela comprova a existência e a localização do arquivo, mas não transporta seu conteúdo.
+- Ação segura: gerado um par `ed25519` exclusivo em `/root/.ssh/marketing_hub_meta_token_ed25519`, mantendo a chave privada somente na sandbox. A chave pública será fornecida ao usuário para cadastro temporário no host autorizado.
+- Estado atual: nenhuma credencial ou valor de token foi exibido, copiado para o repositório ou publicado. A importação depende do cadastro da chave pública na VPS.
