@@ -600,7 +600,14 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
-    json: { day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 } }
+    json: {
+      day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 },
+      recentSalesImpact: [
+        { requestId: 701, createdAt: '2026-07-26T10:00:00Z', score: 2 },
+        { requestId: 702, createdAt: '2026-07-26T11:00:00Z', score: 4 },
+        { requestId: 703, createdAt: '2026-07-26T12:00:00Z', score: 5 }
+      ]
+    }
   }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -624,13 +631,15 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(operationalDayCard.getByText('Interações')).toBeVisible();
   await expect(operationalDayCard.getByText('3', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByRole('img', { name: 'Gráfico de linha da nota de impacto em vendas das últimas 100 solicitações' })).toBeVisible();
   await expect(operationalDayCard).toHaveCSS('position', 'fixed');
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
     return { height: box.height, right: box.right, top: box.top };
   });
-  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(240);
+  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(330);
+  await operationalDayCard.screenshot({ path: '/tmp/ai-hub-nota-vendas-ultimas-solicitacoes.png' });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
@@ -1053,4 +1062,35 @@ test('shows the operational-day sales impact scoreboard', async ({ page }) => {
   await expect(page.locator('[title="Muito baixo: 1"]')).toBeVisible();
   await expect(page.locator('[title="Muito alto: 1"]')).toBeVisible();
   await page.screenshot({ path: '/tmp/ai-hub-placar-vendas-operacional.png', fullPage: true });
+});
+
+test('lists score-five sales requests in pages of 25 and opens request details', async ({ page }) => {
+  let requestedSize = 0;
+  await page.route('**/api/codex/requests/sales-impact/5?**', (route) => {
+    const url = new URL(route.request().url());
+    requestedSize = Number(url.searchParams.get('size'));
+    return route.fulfill({ json: {
+      content: [
+        { id: 901, title: 'Checkout com maior conversão', createdAt: '2026-08-06T12:00:00Z' },
+        { id: 900, title: 'Oferta de alto impacto', createdAt: '2026-08-06T11:00:00Z' }
+      ],
+      number: 0,
+      totalPages: 2,
+      totalElements: 27,
+      first: true,
+      last: false
+    } });
+  });
+
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Nota 5 em Vendas' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Solicitações com nota 5 em vendas' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Checkout com maior conversão/ })).toBeVisible();
+  await expect(page.getByText('Página 1 de 2')).toBeVisible();
+  expect(requestedSize).toBe(25);
+  await page.screenshot({ path: '/tmp/ai-hub-solicitacoes-nota-5-vendas.png', fullPage: true });
+
+  await page.getByRole('link', { name: /Checkout com maior conversão/ }).click();
+  await expect(page).toHaveURL(/\/codex\/requests\/901$/);
 });
