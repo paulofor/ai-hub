@@ -3175,3 +3175,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Acessibilidade: o nome acessível do gráfico, os detalhes de cada ponto e a mensagem do alerta foram atualizados para descrever a média móvel e a ausência de mudança dos tokens da execução.
 - Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.
 - Validação visual: foi tentada captura local com Playwright e APIs simuladas; o navegador foi provisionado, porém a página gerada ficou em branco neste ambiente, portanto a imagem inválida não foi versionada.
+
+## 2026-08-06 16:35:00 UTC - Novo disparo de deploy do quadro operacional
+
+- Solicitação recebida: realizar uma alteração simples para gerar um novo deploy, pois o GitHub apresentou problemas na tentativa anterior.
+- Pergunta explícita de causa raiz: “por que o deploy precisa ser disparado novamente?”. Resposta: a implementação já estava versionada, mas a execução externa do GitHub responsável por publicar o commit anterior apresentou problemas; sem um novo commit não há um novo evento de alteração para a pipeline processar.
+- Alteração simples aplicada: o cartão de interações agora apresenta uma dica ao passar o mouse, esclarecendo que o alerta de inatividade acompanha os tokens da solicitação em execução. A mudança é funcionalmente segura, melhora a compreensão do diagnóstico e gera um novo commit para disparar a automação de deploy.
+- Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.
