@@ -3211,3 +3211,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que o deploy precisa ser disparado novamente?”. Resposta: a implementação já estava versionada, mas a execução externa do GitHub responsável por publicar o commit anterior apresentou problemas; sem um novo commit não há um novo evento de alteração para a pipeline processar.
 - Alteração simples aplicada: o cartão de interações agora apresenta uma dica ao passar o mouse, esclarecendo que o alerta de inatividade acompanha os tokens da solicitação em execução. A mudança é funcionalmente segura, melhora a compreensão do diagnóstico e gera um novo commit para disparar a automação de deploy.
 - Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.
+
+## 2026-08-06 — Recuperação manual do CI após perda de webhook
+
+- Solicitação: retomar o ajuste dos workflows e verificar o PR #620, o deploy e a funcionalidade afetada.
+- Causa-raiz: o PR #620 foi fechado sem merge e continha apenas registro documental; a correção dos workflows entrou depois pelo PR #633, mas a pane do GitHub Actions impediu a criação do run do merge. O workflow aceitava somente `push` e `pull_request`, portanto não havia mecanismo para recuperar manualmente um evento de push perdido.
+- Alternativas avaliadas: aguardar o webhook perdido não cria nova execução; gerar commit vazio adiciona ruído e exige novo ciclo de PR; permitir `workflow_dispatch` em `main` cria recuperação explícita, auditável e reutilizável com baixo risco. Foi escolhida a terceira alternativa.
+- Ajuste: o CI agora aceita disparo manual, e os jobs de build/publicação de imagens e deploy também são habilitados nesse evento somente quando a referência selecionada é `main`.
+- Segurança: execuções manuais em outras branches não publicam imagens nem fazem deploy; deploys produtivos continuam sem cancelamento automático.
+- Estado externo: o GitHub ainda classifica Actions como indisponibilidade grave e limita webhooks. A tentativa de cancelar o run obsoleto `31121725143`, exibido como `queued`, foi recusada pela API como se ele já estivesse concluído; nenhuma nova execução foi criada.
+- Validação local: `actionlint .github/workflows/ci.yml` e `git diff --check` aprovados.
