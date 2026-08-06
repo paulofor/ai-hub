@@ -15,6 +15,7 @@ const links = [
   { to: '/construir-com-persona', label: 'Construir com Persona' },
   { to: '/codex-chatgpt', label: 'Codex ChatGPT' },
   { to: '/codex-chatgpt-mkt', label: 'Codex ChatGPT MKT' },
+  { to: '/codex-chatgpt-mkt/nota-5-vendas', label: 'Nota 5 em Vendas' },
   { to: '/codex-chatgpt-sandbox', label: 'Codex ChatGPT Sandbox' },
   { to: '/codex/models', label: 'Modelos Codex' },
   { to: '/source-repository-config', label: 'Config. Repositório' },
@@ -32,6 +33,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
         <NavLink
           key={link.to}
           to={link.to}
+          end={link.to === '/codex-chatgpt-mkt'}
           onClick={onNavigate}
           className={({ isActive }) =>
             clsx(

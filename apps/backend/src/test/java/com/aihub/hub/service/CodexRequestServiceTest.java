@@ -5,6 +5,7 @@ import com.aihub.hub.domain.CodexDocumentAccessLog;
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.github.GithubAppAuth;
@@ -291,6 +292,14 @@ class CodexRequestServiceTest {
                 "{\"impacto_vendas_inexistente\":\"alto\"}",
                 "{\"salesImpact\":\"MUITO ALTO\"}"
             ));
+        Instant older = Instant.parse("2026-07-20T12:00:00Z");
+        Instant newer = Instant.parse("2026-07-21T12:00:00Z");
+        when(codexRequestRepository.findRecentSalesImpactRowsByProfile(
+            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any()))
+            .thenReturn(List.of(
+                new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"},
+                new Object[] {21L, older, "{\"impactoAumentoVendas\":\"baixo\"}"}
+            ));
 
         var metrics = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
         var score = metrics.salesImpactDay();
@@ -303,8 +312,35 @@ class CodexRequestServiceTest {
         assertThat(score.total()).isEqualTo(3);
         assertThat(metrics.salesImpactWeek().total()).isEqualTo(3);
         assertThat(metrics.salesImpactMonth().total()).isEqualTo(3);
+        assertThat(metrics.recentSalesImpact())
+            .extracting(
+                CodexDashboardMetrics.CodexSalesImpactPoint::requestId,
+                CodexDashboardMetrics.CodexSalesImpactPoint::score)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(21L, 2),
+                org.assertj.core.groups.Tuple.tuple(22L, 5));
         verify(codexRequestRepository, times(3))
             .findResponseTextsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT));
+    }
+
+    @Test
+    void listSalesImpactRequestsReturnsOnlyScoreFiveWithTitlesAndTwentyFiveItemPages() {
+        when(codexRequestRepository.findSalesImpactRowsByProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT))
+            .thenReturn(List.of(
+                new Object[] {33L, Instant.parse("2026-08-06T12:00:00Z"), "{\"titulo\":\"Oferta campeã\",\"impactoAumentoVendas\":\"muito_alto\"}"},
+                new Object[] {32L, Instant.parse("2026-08-06T11:00:00Z"), "{\"titulo\":\"Ajuste indireto\",\"impactoAumentoVendas\":\"medio\"}"},
+                new Object[] {31L, Instant.parse("2026-08-06T10:00:00Z"), "{\"title\":\"Checkout otimizado\",\"salesImpact\":\"MUITO ALTO\"}"}
+            ));
+
+        var result = buildService().listSalesImpactRequests(5, 0, 25);
+
+        assertThat(result.getSize()).isEqualTo(25);
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent())
+            .extracting("id", "title")
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(33L, "Oferta campeã"),
+                org.assertj.core.groups.Tuple.tuple(31L, "Checkout otimizado"));
     }
 
     @Test

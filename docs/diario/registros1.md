@@ -3150,3 +3150,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrução de credenciais externas agora reconhece `META_TOKEN` quando estiver exportada e orienta o modelo a não imprimir o valor.
 - Ajuste aplicado em `.github/workflows/ci.yml`: o `rsync --delete` agora exclui `infra/` da sincronização, preservando diretórios operacionais/segredos no destino remoto em vez de removê-los por ausência no repositório.
 - Documentação e testes atualizados em `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md`, `apps/sandbox-orchestrator/README.md`, `docs/sandbox-architecture.md` e `apps/sandbox-orchestrator/tests/jobs.test.ts` com o caminho esperado `/root/infra/meta-token/meta_token` e a variável `META_TOKEN_HOST_DIR`.
+
+## 2026-08-06 — Linha de nota comercial das últimas 100 solicitações
+
+- Solicitação recebida: preencher a região inferior do quadro flutuante do dia operacional com um gráfico de linha das 100 solicitações mais recentes, usando no eixo Y a nota de impacto estimado em vendas.
+- Pergunta explícita de causa raiz: “por que esse gráfico não existia nessa região?”. Resposta: o contrato de métricas expunha somente contagens agregadas por nível e período; ele descartava a ordem e a nota individual de cada solicitação. Sem uma série ordenada, o frontend não tinha dados corretos para desenhar a evolução e tentar inferi-la dos agregados produziria um gráfico falso.
+- Correção na causa: o endpoint de métricas agora consulta as 100 solicitações mais recentes do perfil, converte os cinco níveis comerciais em notas de 1 a 5 e entrega a série em ordem cronológica, preservando também solicitações ainda sem nota.
+- Interface: o quadro flutuante do perfil MKT ganhou um gráfico SVG responsivo “Nota x vendas”, com escala Y de 1 a 5, orientação temporal, estado vazio e identificação acessível de solicitação e nota em cada ponto.
+- Proteção contra regressão: o teste de serviço valida a conversão dos níveis em notas e a inversão correta do resultado mais-recente-primeiro do banco para a ordem cronológica exibida.
+
+## 2026-08-06 — Menu de solicitações com nota 5 em vendas
+
+- Solicitação recebida: criar um item de menu que liste os títulos das solicitações com nota 5 de impacto em vendas, com 25 itens por página e acesso ao detalhe ao clicar.
+- Pergunta explícita de causa raiz: “por que essa consulta não podia ser montada corretamente apenas no frontend?”. Resposta: a nota comercial está dentro do JSON estruturado da resposta e não no campo genérico de avaliação nem nos resumos paginados existentes. Filtrar uma página pronta no navegador perderia solicitações, produziria totais incorretos e quebraria a paginação.
+- Correção na causa: foi criado um endpoint específico que considera apenas respostas do perfil MKT, interpreta a classificação comercial, seleciona nota 5, extrai o título estruturado e só então pagina o resultado em blocos fixos de 25.
+- Interface: o menu “Nota 5 em Vendas” abre uma tela com total, títulos, identificador/data, estados de carregamento/vazio/erro, paginação anterior/próxima e links diretos para o detalhe de cada solicitação.
+- Proteção contra regressão: testes de serviço validam que notas diferentes são descartadas, títulos em chaves compatíveis são extraídos e o tamanho da página é 25; o cenário E2E valida menu, listagem, parâmetro de paginação e navegação ao detalhe.

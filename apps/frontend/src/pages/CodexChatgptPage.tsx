@@ -53,6 +53,13 @@ interface CodexSalesImpactScore {
 interface CodexDashboardMetrics {
   day: CodexDashboardMetricWindow;
   salesImpactDay?: CodexSalesImpactScore;
+  recentSalesImpact?: CodexSalesImpactPoint[];
+}
+
+interface CodexSalesImpactPoint {
+  requestId: number;
+  createdAt: string;
+  score?: number | null;
 }
 
 interface EnvironmentOption {
@@ -812,6 +819,51 @@ const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
       aria-label={labels[level]}
       role="img"
     />
+  );
+};
+
+const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoint[] }) => {
+  const width = 210;
+  const height = 62;
+  const left = 16;
+  const right = 4;
+  const top = 5;
+  const bottom = 12;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const evaluated = points
+    .map((point, index) => ({ ...point, index }))
+    .filter((point): point is CodexSalesImpactPoint & { score: number; index: number } =>
+      typeof point.score === 'number' && point.score >= 1 && point.score <= 5
+    );
+  const xFor = (index: number) => left + (points.length <= 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
+  const yFor = (score: number) => top + ((5 - score) / 4) * plotHeight;
+  const linePoints = evaluated.map((point) => `${xFor(point.index)},${yFor(point.score)}`).join(' ');
+
+  return (
+    <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Nota x vendas</p>
+        <p className="text-[9px] text-slate-500">últimas {points.length}/100</p>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label="Gráfico de linha da nota de impacto em vendas das últimas 100 solicitações">
+        {[1, 3, 5].map((score) => (
+          <g key={score}>
+            <line x1={left} x2={width - right} y1={yFor(score)} y2={yFor(score)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth="0.75" />
+            <text x="2" y={yFor(score) + 2.5} className="fill-slate-500 text-[7px]">{score}</text>
+          </g>
+        ))}
+        {evaluated.length > 1 ? <polyline points={linePoints} fill="none" className="stroke-emerald-600 dark:stroke-emerald-400" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {evaluated.map((point) => (
+          <circle key={point.requestId} cx={xFor(point.index)} cy={yFor(point.score)} r="1.8" className="fill-emerald-600 dark:fill-emerald-400">
+            <title>{`Solicitação #${point.requestId}: nota ${point.score} de 5`}</title>
+          </circle>
+        ))}
+        {evaluated.length === 0 ? <text x={width / 2} y={height / 2} textAnchor="middle" className="fill-slate-400 text-[8px]">Sem notas disponíveis</text> : null}
+        <text x={left} y={height - 2} className="fill-slate-500 text-[7px]">mais antiga</text>
+        <text x={width - right} y={height - 2} textAnchor="end" className="fill-slate-500 text-[7px]">mais recente</text>
+      </svg>
+    </div>
   );
 };
 
@@ -2768,6 +2820,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   </div>
                 ))}
               </div>
+              <RecentSalesImpactChart points={dailyMetrics?.recentSalesImpact} />
             </div>
           ) : null}
           <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
