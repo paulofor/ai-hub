@@ -8,6 +8,7 @@ on:
   push:
     branches: ["main", "master"]
   pull_request:
+  workflow_dispatch:
 
 # Pull requests receive frequent revisions and only their latest CI result is useful.
 # Pushes to the production branch are never cancelled here because they may deploy.
@@ -75,7 +76,7 @@ jobs:
         run: npm --prefix apps/sandbox-orchestrator test
 
   docker:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -176,7 +177,7 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-sandbox:buildcache,mode=max
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs:
       - backend
       - frontend
