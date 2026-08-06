@@ -18,6 +18,7 @@ import SourceRepositoryConfigPage from './pages/SourceRepositoryConfigPage';
 import ProductsPage from './pages/ProductsPage';
 import PersonaReviewPage from './pages/PersonaReviewPage';
 import SystemHealthPage from './pages/SystemHealthPage';
+import SalesImpactRequestsPage from './pages/SalesImpactRequestsPage';
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
         <Route path="/construir-com-persona" element={<PersonaReviewPage />} />
         <Route path="/codex-chatgpt" element={<CodexChatgptPage />} />
         <Route path="/codex-chatgpt-mkt" element={<CodexChatgptPage variant="marketing" />} />
+        <Route path="/codex-chatgpt-mkt/nota-5-vendas" element={<SalesImpactRequestsPage />} />
         <Route path="/codex-chatgpt-sandbox" element={<CodexChatgptPage variant="sandbox" />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />

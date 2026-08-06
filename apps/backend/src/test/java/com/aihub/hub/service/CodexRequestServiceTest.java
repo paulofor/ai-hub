@@ -5,6 +5,7 @@ import com.aihub.hub.domain.CodexDocumentAccessLog;
 import com.aihub.hub.domain.CodexInteractionRecord;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.dto.CreateCodexRequest;
+import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.github.GithubAppAuth;
@@ -279,7 +280,7 @@ class CodexRequestServiceTest {
     }
 
     @Test
-    void dashboardMetricsCountsDailySalesImpactFromStructuredMarketingResponses() {
+    void dashboardMetricsCountsSalesImpactByDayWeekAndMonthFromStructuredMarketingResponses() {
         when(codexRequestRepository.summarizeMetricsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
             .thenReturn(new Object[] {4L, 4L, 1_000L});
         when(codexRequestRepository.findMetricRowsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
@@ -291,8 +292,17 @@ class CodexRequestServiceTest {
                 "{\"impacto_vendas_inexistente\":\"alto\"}",
                 "{\"salesImpact\":\"MUITO ALTO\"}"
             ));
+        Instant older = Instant.parse("2026-07-20T12:00:00Z");
+        Instant newer = Instant.parse("2026-07-21T12:00:00Z");
+        when(codexRequestRepository.findRecentSalesImpactRowsByProfile(
+            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any()))
+            .thenReturn(List.of(
+                new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"},
+                new Object[] {21L, older, "{\"impactoAumentoVendas\":\"baixo\"}"}
+            ));
 
-        var score = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT).salesImpactDay();
+        var metrics = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
+        var score = metrics.salesImpactDay();
 
         assertThat(score.muitoBaixo()).isEqualTo(1);
         assertThat(score.baixo()).isZero();
@@ -300,6 +310,37 @@ class CodexRequestServiceTest {
         assertThat(score.alto()).isEqualTo(1);
         assertThat(score.muitoAlto()).isEqualTo(1);
         assertThat(score.total()).isEqualTo(3);
+        assertThat(metrics.salesImpactWeek().total()).isEqualTo(3);
+        assertThat(metrics.salesImpactMonth().total()).isEqualTo(3);
+        assertThat(metrics.recentSalesImpact())
+            .extracting(
+                CodexDashboardMetrics.CodexSalesImpactPoint::requestId,
+                CodexDashboardMetrics.CodexSalesImpactPoint::score)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(21L, 2),
+                org.assertj.core.groups.Tuple.tuple(22L, 5));
+        verify(codexRequestRepository, times(3))
+            .findResponseTextsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT));
+    }
+
+    @Test
+    void listSalesImpactRequestsReturnsOnlyScoreFiveWithTitlesAndTwentyFiveItemPages() {
+        when(codexRequestRepository.findSalesImpactRowsByProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT))
+            .thenReturn(List.of(
+                new Object[] {33L, Instant.parse("2026-08-06T12:00:00Z"), "{\"titulo\":\"Oferta campeã\",\"impactoAumentoVendas\":\"muito_alto\"}"},
+                new Object[] {32L, Instant.parse("2026-08-06T11:00:00Z"), "{\"titulo\":\"Ajuste indireto\",\"impactoAumentoVendas\":\"medio\"}"},
+                new Object[] {31L, Instant.parse("2026-08-06T10:00:00Z"), "{\"title\":\"Checkout otimizado\",\"salesImpact\":\"MUITO ALTO\"}"}
+            ));
+
+        var result = buildService().listSalesImpactRequests(5, 0, 25);
+
+        assertThat(result.getSize()).isEqualTo(25);
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent())
+            .extracting("id", "title")
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(33L, "Oferta campeã"),
+                org.assertj.core.groups.Tuple.tuple(31L, "Checkout otimizado"));
     }
 
     @Test
@@ -1155,6 +1196,37 @@ class CodexRequestServiceTest {
         assertThat(completed.getWorkBatchKey()).isNull();
         verify(githubApiClient).deleteBranch("owner", "repo", workBranch);
         verify(codexRequestRepository).save(completed);
+    }
+
+    @Test
+    void discardBatchKeepsNewestRequestsAttachedAndPreservesWorkBranch() {
+        CodexRequestService service = buildService(true);
+        String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest oldest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "antiga");
+        oldest.setStatus(CodexRequestStatus.COMPLETED);
+        oldest.setWorkBranch(workBranch);
+        oldest.setWorkBatchKey(workBranch);
+        CodexRequest newest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "recente");
+        newest.setStatus(CodexRequestStatus.COMPLETED);
+        newest.setWorkBranch(workBranch);
+        newest.setWorkBatchKey(workBranch);
+
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(oldest, newest));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> result = service.discardBatch(
+            "owner/repo@main",
+            CodexIntegrationProfile.CHATGPT_CODEX_MKT,
+            workBranch,
+            1
+        );
+
+        assertThat(result).containsEntry("retained", 1).containsEntry("detached", 1);
+        assertThat(oldest.getWorkBatchKey()).isNull();
+        assertThat(newest.getWorkBatchKey()).isEqualTo(workBranch);
+        verify(githubApiClient, never()).deleteBranch(anyString(), anyString(), anyString());
+        verify(codexRequestRepository).save(oldest);
+        verify(codexRequestRepository, never()).save(newest);
     }
 
     @Test

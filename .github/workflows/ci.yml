@@ -218,6 +218,7 @@ jobs:
             --exclude '.git/' \
             --exclude 'node_modules/' \
             --exclude '.env' \
+            --exclude 'infra/' \
             --exclude 'apps/backend/.env' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
       - name: Authenticate registry on VPS

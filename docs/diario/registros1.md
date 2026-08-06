@@ -3128,3 +3128,86 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: (1) reexecutar os workflows, que duplicaria a fila sem corrigir a causa configurável; (2) cancelar qualquer execução anterior, inclusive em `main`, com risco de interromper deploy produtivo; (3) cancelar somente revisões obsoletas de PR e limitar a duração dos jobs, preservando pushes/deploys de produção. A alternativa 3 foi escolhida pelo melhor equilíbrio entre redução de fila e segurança operacional.
 - Ajuste aplicado em `.github/workflows/ci.yml`: concorrência no nível do workflow agrupa cada PR e cancela apenas revisões anteriores desse PR; execuções de `main` nunca são canceladas por essa regra. Backend, MCP Server, frontend, sandbox, build Docker e deploy receberam timeouts proporcionais.
 - Validação executada: `actionlint .github/workflows/ci.yml .github/workflows/liquibase-mysql57.yml` e `git diff --check`. Nenhum Pull Request foi criado e nenhuma alteração foi publicada.
+## 2026-08-04 — Retenção configurável das solicitações mais recentes
+
+- Solicitação recebida: substituir a ação destrutiva que zerava e descartava todo o lote por uma opção em que o usuário escolhe quantas solicitações recentes deseja manter.
+- Pergunta explícita de causa raiz: “por que esse problema aconteceu?”. Resposta: o contrato do descarte em lote só representava uma operação tudo-ou-nada; a API sempre percorria todas as solicitações e apagava a branch, enquanto a interface não enviava qualquer critério de retenção. Portanto, apenas trocar o texto do botão não protegeria as solicitações recentes.
+- Correção na causa: o endpoint passou a aceitar `keepLast`, validar valores negativos e operar somente sobre o prefixo mais antigo da lista cronológica. Quando há solicitações retidas, elas permanecem ligadas ao lote e a branch de trabalho é preservada.
+- Interface: os dois pontos que ofereciam o descarte total agora exibem um campo numérico “Manter últimas” e a ação “Remover mais antigas”, com mínimo de uma solicitação, confirmação informando quantas serão mantidas/removidas e bloqueio quando o lote não possui itens excedentes.
+- Proteção contra regressão: adicionado teste de serviço que comprova que apenas a solicitação antiga é desanexada, a mais recente continua no lote e a branch remota não é apagada.
+- Validações executadas: teste direcionado do backend com 40 casos, build e lint do frontend e inspeção de whitespace aprovados.
+
+## 2026-08-04 — Explicação do descarte desabilitado
+
+- Problema observado: a ação “Remover mais antigas” aparecia desabilitada embora a seção “Últimas execuções” exibisse diversas solicitações.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ação opera exclusivamente sobre solicitações ligadas ao lote aberto, enquanto o histórico também mostra execuções de lotes encerrados por PR. A interface aplicava corretamente essa regra, mas não explicava qual conjunto estava sendo contado, fazendo o histórico parecer contradizer o botão.
+- Correção na causa: os dois pontos da interface agora mostram o motivo específico do bloqueio e o repetem no tooltip do botão: ausência de lote aberto ou quantidade do lote atual menor ou igual ao valor escolhido em “Manter últimas”.
+- Proteção contra regressão: adicionado teste E2E com várias execuções de lotes encerrados, validando que o botão permanece seguro e que a diferença entre histórico e lote aberto fica visível ao usuário.
+
+## 2026-08-04 — Corte manual do contexto enviado ao modelo
+
+- Esclarecimento recebido: o controle desejado não era a retenção das solicitações do lote, mas a possibilidade de limitar manualmente as mensagens anteriores incluídas no prompt seguinte.
+- Pergunta explícita de causa raiz: “por que o contexto enviado continuava crescendo?”. Resposta: `buildConversationPromptFromHistory` serializava todas as mensagens do diálogo local no bloco “Histórico da conversa”. O context manager do sandbox possui proteções automáticas por itens e tokens, mas elas atuam no histórico interno da execução e não ofereciam ao usuário um corte explícito do diálogo montado pelo frontend.
+- Correção na causa: o rodapé do compositor agora possui um controle separado “Contexto: manter últimas N mensagens”. A ação remove as mensagens mais antigas do diálogo local, desvincula uma conversa salva para impedir que seu conteúdo seja reinjetado e faz com que somente as N mais recentes componham os prompts seguintes, sem apagar o histórico de execuções nem mexer no lote/branch.
+- Proteção contra regressão: adicionado teste E2E que inicia com quatro mensagens, mantém duas, envia uma nova solicitação e comprova que o prompt contém apenas o par recente.
+
+## 2026-08-04 — Gráficos de relevância estimada em vendas no dashboard
+
+- Solicitação recebida: adicionar ao dashboard novos gráficos com os contadores de relevância em vendas.
+- Pergunta explícita de causa raiz: “por que esses contadores não estavam disponíveis no dashboard?”. Resposta: o backend calculava a distribuição de impacto comercial somente para a janela diária e a interface a apresentava exclusivamente no painel operacional do perfil MKT; o dashboard geral não consultava as métricas filtradas desse perfil nem possuía uma visualização por período.
+- Correção na causa: o contrato de métricas passou a calcular os cinco níveis de impacto estimado também para semana e mês. O dashboard consulta separadamente o perfil `CHATGPT_CODEX_MKT` e apresenta três gráficos de barras horizontais (hoje, semana e mês), com total, contagem e percentual por nível.
+- Transparência preservada: a seção identifica os dados como relevância declarada/estimada pelo modelo e informa que os contadores não representam vendas confirmadas.
+- Proteção contra regressão: o teste de serviço agora valida os totais diário, semanal e mensal e confirma as três consultas por janela.
+## 2026-08-04 — Quadro do dia operacional flutuante
+
+- Solicitação recebida: manter o quadro do dia operacional sempre visível no canto superior direito durante a rolagem da página.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: no redesign responsivo, o quadro foi deliberadamente devolvido ao fluxo normal do cabeçalho para evitar sobreposição; por isso, apesar de preservar o layout, ele rolava junto com o restante da página e deixava de cumprir a função de acompanhamento contínuo.
+- Correção na causa: o quadro voltou a usar posicionamento fixo em relação à viewport, com ancoragem superior/direita, camada acima do conteúdo, largura limitada à tela e fundo translúcido com desfoque para manter a leitura durante o scroll.
+- Proteção contra regressão: o teste E2E confirma que o quadro usa `position: fixed` e mantém as mesmas coordenadas superior e direita depois de rolar até o final da página; o limite de altura foi atualizado para contemplar a seção de impacto estimado adicionada posteriormente ao quadro.
+
+## 2026-08-05 — Disponibilização do token Radar Meta para o modelo
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o token foi colocado no host em `/root/infra/radarmeta-token/radar_meta_token`, mas o fluxo versionado do `sandbox-orchestrator` ainda não montava esse diretório nem exportava uma variável para o ambiente do runner/Codex App Server; por isso novas execuções do modelo não teriam acesso à credencial.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume somente leitura configurável por `RADAR_META_TOKEN_HOST_DIR` em `/run/secrets/radarmeta-token` e export de `RADAR_META_TOKEN` quando `/run/secrets/radarmeta-token/radar_meta_token` existir.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrução de credenciais externas agora reconhece `RADAR_META_TOKEN` quando estiver exportada e menciona Radar Meta no fallback seguro.
+- Documentação atualizada em `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` com o caminho esperado e a variável `RADAR_META_TOKEN_HOST_DIR`, mantendo o segredo fora do repositório.
+
+## 2026-08-05 - Disponibilização do token Meta ao modelo sem apagar diretórios do workflow
+- Solicitação recebida: disponibilizar ao modelo o token da Meta salvo no host em `/root/infra/meta-token/meta_token`, sem versionar o segredo e sem apagar o diretório no workflow de deploy.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o token foi criado no host, mas o fluxo versionado ainda não montava `/root/infra/meta-token` no `sandbox-orchestrator`, não exportava `META_TOKEN` antes de iniciar o runner/Codex App Server e o `rsync --delete` do workflow de deploy não protegia explicitamente o diretório operacional `infra/` dentro do destino remoto.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume somente leitura configurável por `META_TOKEN_HOST_DIR` em `/run/secrets/meta-token` e export de `META_TOKEN` quando `/run/secrets/meta-token/meta_token` existir.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrução de credenciais externas agora reconhece `META_TOKEN` quando estiver exportada e orienta o modelo a não imprimir o valor.
+- Ajuste aplicado em `.github/workflows/ci.yml`: o `rsync --delete` agora exclui `infra/` da sincronização, preservando diretórios operacionais/segredos no destino remoto em vez de removê-los por ausência no repositório.
+- Documentação e testes atualizados em `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md`, `apps/sandbox-orchestrator/README.md`, `docs/sandbox-architecture.md` e `apps/sandbox-orchestrator/tests/jobs.test.ts` com o caminho esperado `/root/infra/meta-token/meta_token` e a variável `META_TOKEN_HOST_DIR`.
+
+## 2026-08-06 — Linha de nota comercial das últimas 100 solicitações
+
+- Solicitação recebida: preencher a região inferior do quadro flutuante do dia operacional com um gráfico de linha das 100 solicitações mais recentes, usando no eixo Y a nota de impacto estimado em vendas.
+- Pergunta explícita de causa raiz: “por que esse gráfico não existia nessa região?”. Resposta: o contrato de métricas expunha somente contagens agregadas por nível e período; ele descartava a ordem e a nota individual de cada solicitação. Sem uma série ordenada, o frontend não tinha dados corretos para desenhar a evolução e tentar inferi-la dos agregados produziria um gráfico falso.
+- Correção na causa: o endpoint de métricas agora consulta as 100 solicitações mais recentes do perfil, converte os cinco níveis comerciais em notas de 1 a 5 e entrega a série em ordem cronológica, preservando também solicitações ainda sem nota.
+- Interface: o quadro flutuante do perfil MKT ganhou um gráfico SVG responsivo “Nota x vendas”, com escala Y de 1 a 5, orientação temporal, estado vazio e identificação acessível de solicitação e nota em cada ponto.
+- Proteção contra regressão: o teste de serviço valida a conversão dos níveis em notas e a inversão correta do resultado mais-recente-primeiro do banco para a ordem cronológica exibida.
+
+## 2026-08-06 — Menu de solicitações com nota 5 em vendas
+
+- Solicitação recebida: criar um item de menu que liste os títulos das solicitações com nota 5 de impacto em vendas, com 25 itens por página e acesso ao detalhe ao clicar.
+- Pergunta explícita de causa raiz: “por que essa consulta não podia ser montada corretamente apenas no frontend?”. Resposta: a nota comercial está dentro do JSON estruturado da resposta e não no campo genérico de avaliação nem nos resumos paginados existentes. Filtrar uma página pronta no navegador perderia solicitações, produziria totais incorretos e quebraria a paginação.
+- Correção na causa: foi criado um endpoint específico que considera apenas respostas do perfil MKT, interpreta a classificação comercial, seleciona nota 5, extrai o título estruturado e só então pagina o resultado em blocos fixos de 25.
+- Interface: o menu “Nota 5 em Vendas” abre uma tela com total, títulos, identificador/data, estados de carregamento/vazio/erro, paginação anterior/próxima e links diretos para o detalhe de cada solicitação.
+- Proteção contra regressão: testes de serviço validam que notas diferentes são descartadas, títulos em chaves compatíveis são extraídos e o tamanho da página é 25; o cenário E2E valida menu, listagem, parâmetro de paginação e navegação ao detalhe.
+
+## 2026-08-06 16:15:00 UTC - Média móvel e diagnóstico por tokens no quadro operacional
+
+- Solicitação recebida: trocar o gráfico do quadro flutuante por uma média móvel de 10 pontos e fazer o diagnóstico de inatividade acompanhar a mudança de tokens da solicitação em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o gráfico ligava diretamente as notas individuais, deixando o sinal sujeito à oscilação de cada solicitação, e o alerta de inatividade observava o total diário agregado de interações. Esse agregado não representa o progresso da solicitação atualmente em execução: pode permanecer parado durante uma execução saudável e pode mudar por outra solicitação sem comprovar avanço do trabalho corrente.
+- Correção aplicada na causa: o gráfico agora calcula cada ponto a partir das 10 notas válidas consecutivas mais recentes e informa quando ainda não há 10 avaliações; o temporizador de cinco minutos agora é reiniciado somente quando muda o `totalTokens` da solicitação com status `RUNNING`, é associado ao id dessa solicitação e é removido quando não existe execução com telemetria de tokens.
+- Acessibilidade: o nome acessível do gráfico, os detalhes de cada ponto e a mensagem do alerta foram atualizados para descrever a média móvel e a ausência de mudança dos tokens da execução.
+- Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.
+- Validação visual: foi tentada captura local com Playwright e APIs simuladas; o navegador foi provisionado, porém a página gerada ficou em branco neste ambiente, portanto a imagem inválida não foi versionada.
+
+## 2026-08-06 16:35:00 UTC - Novo disparo de deploy do quadro operacional
+
+- Solicitação recebida: realizar uma alteração simples para gerar um novo deploy, pois o GitHub apresentou problemas na tentativa anterior.
+- Pergunta explícita de causa raiz: “por que o deploy precisa ser disparado novamente?”. Resposta: a implementação já estava versionada, mas a execução externa do GitHub responsável por publicar o commit anterior apresentou problemas; sem um novo commit não há um novo evento de alteração para a pipeline processar.
+- Alteração simples aplicada: o cartão de interações agora apresenta uma dica ao passar o mouse, esclarecendo que o alerta de inatividade acompanha os tokens da solicitação em execução. A mudança é funcionalmente segura, melhora a compreensão do diagnóstico e gera um novo commit para disparar a automação de deploy.
+- Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.

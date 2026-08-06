@@ -98,6 +98,21 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
           and cr.responseText is not null
         """)
     List<String> findResponseTextsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
+    @Query("""
+        select cr.id, cr.createdAt, cr.responseText
+        from CodexRequest cr
+        where cr.profile = :profile
+        order by cr.createdAt desc
+        """)
+    List<Object[]> findRecentSalesImpactRowsByProfile(@Param("profile") CodexIntegrationProfile profile, Pageable pageable);
+    @Query("""
+        select cr.id, cr.createdAt, cr.responseText
+        from CodexRequest cr
+        where cr.profile = :profile
+          and cr.responseText is not null
+        order by cr.createdAt desc
+        """)
+    List<Object[]> findSalesImpactRowsByProfile(@Param("profile") CodexIntegrationProfile profile);
     List<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating);
     List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
     List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);

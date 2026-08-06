@@ -14,6 +14,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.dto.UpdatePendingCodexRequest;
@@ -36,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -332,6 +334,60 @@ public class CodexRequestService {
     }
 
     @Transactional(readOnly = true)
+    public Page<CodexSalesImpactRequest> listSalesImpactRequests(int score, int page, int size) {
+        if (score < 1 || score > 5) {
+            throw new IllegalArgumentException("score deve estar entre 1 e 5");
+        }
+        List<CodexSalesImpactRequest> matches = codexRequestRepository
+            .findSalesImpactRowsByProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT)
+            .stream()
+            .filter(row -> salesImpactScore(row[2] instanceof String response ? response : "") == score)
+            .map(row -> new CodexSalesImpactRequest(
+                ((Number) row[0]).longValue(),
+                extractSalesImpactTitle(row[2] instanceof String response ? response : "", ((Number) row[0]).longValue()),
+                (Instant) row[1]
+            ))
+            .toList();
+        int from = Math.min(page * size, matches.size());
+        int to = Math.min(from + size, matches.size());
+        return new PageImpl<>(matches.subList(from, to), PageRequest.of(page, size), matches.size());
+    }
+
+    private int salesImpactScore(String response) {
+        return switch (extractSalesImpactLevel(response)) {
+            case "muito_baixo" -> 1;
+            case "baixo" -> 2;
+            case "medio" -> 3;
+            case "alto" -> 4;
+            case "muito_alto" -> 5;
+            default -> 0;
+        };
+    }
+
+    private String extractSalesImpactTitle(String response, long requestId) {
+        String candidate = extractJsonObjectCandidate(response);
+        if (StringUtils.hasText(candidate)) {
+            try {
+                JsonNode node = objectMapper.readTree(candidate);
+                if (node != null && node.isTextual()) {
+                    return extractSalesImpactTitle(node.asText(), requestId);
+                }
+                if (node != null && node.isObject()) {
+                    for (String key : List.of("titulo", "título", "title")) {
+                        JsonNode value = node.get(key);
+                        if (value != null && value.isTextual() && StringUtils.hasText(value.asText())) {
+                            return value.asText().trim();
+                        }
+                    }
+                }
+            } catch (JsonProcessingException ignored) {
+                // O fallback identificável abaixo mantém a solicitação acessível mesmo para JSON legado inválido.
+            }
+        }
+        return "Solicitação #" + requestId;
+    }
+
+    @Transactional(readOnly = true)
     public Optional<Long> previousRequestId(Long id) {
         return codexRequestRepository.findFirstByIdLessThanOrderByIdDesc(id)
             .map(CodexRequest::getId);
@@ -368,8 +424,34 @@ public class CodexRequestService {
             buildMetricWindow(weekStart, profile),
             buildMetricWindow(monthStart, profile),
             buildMetricSeries(seriesStart, today, operationalToday, zone, profile),
-            buildSalesImpactScore(dayStart, profile)
+            buildSalesImpactScore(dayStart, profile),
+            buildSalesImpactScore(weekStart, profile),
+            buildSalesImpactScore(monthStart, profile),
+            buildRecentSalesImpact(profile)
         );
+    }
+
+    private List<CodexDashboardMetrics.CodexSalesImpactPoint> buildRecentSalesImpact(CodexIntegrationProfile profile) {
+        if (profile == null) {
+            return List.of();
+        }
+        List<Object[]> rows = codexRequestRepository.findRecentSalesImpactRowsByProfile(profile, PageRequest.of(0, 100));
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<CodexDashboardMetrics.CodexSalesImpactPoint> points = new ArrayList<>(rows.size());
+        for (int index = rows.size() - 1; index >= 0; index--) {
+            Object[] row = rows.get(index);
+            String level = extractSalesImpactLevel(row[2] instanceof String response ? response : "");
+            int resolvedScore = salesImpactScore(row[2] instanceof String response ? response : "");
+            Integer score = resolvedScore == 0 ? null : resolvedScore;
+            points.add(new CodexDashboardMetrics.CodexSalesImpactPoint(
+                ((Number) row[0]).longValue(),
+                (Instant) row[1],
+                score
+            ));
+        }
+        return points;
     }
 
     private CodexDashboardMetrics.CodexDashboardMetricWindow buildMetricWindow(Instant start) {
@@ -723,6 +805,11 @@ public class CodexRequestService {
 
     @Transactional
     public Map<String, Object> discardBatch(String environment, CodexIntegrationProfile profile, String workBatchKey) {
+        return discardBatch(environment, profile, workBatchKey, 0);
+    }
+
+    @Transactional
+    public Map<String, Object> discardBatch(String environment, CodexIntegrationProfile profile, String workBatchKey, int keepLast) {
         if (!StringUtils.hasText(environment)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente é obrigatório para descartar lote");
         }
@@ -732,13 +819,20 @@ public class CodexRequestService {
         if (!StringUtils.hasText(workBatchKey)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lote é obrigatório para descartar lote");
         }
+        if (keepLast < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantidade de solicitações a manter não pode ser negativa");
+        }
 
-        List<CodexRequest> batchRequests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey.trim()).stream()
+        List<CodexRequest> matchingRequests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey.trim()).stream()
             .filter(item -> environment.equals(item.getEnvironment()))
             .filter(item -> profile.equals(item.getProfile()))
             .toList();
+        int retained = Math.min(keepLast, matchingRequests.size());
+        List<CodexRequest> batchRequests = matchingRequests.subList(0, matchingRequests.size() - retained);
 
-        RemoteBranchDeletionResult branchDeletion = deleteRemoteWorkBranch(environment, workBatchKey.trim());
+        RemoteBranchDeletionResult branchDeletion = retained == 0
+            ? deleteRemoteWorkBranch(environment, workBatchKey.trim())
+            : new RemoteBranchDeletionResult(false, null);
 
         int deleted = 0;
         int cancelled = 0;
@@ -775,6 +869,7 @@ public class CodexRequestService {
         result.put("deleted", deleted);
         result.put("cancelled", cancelled);
         result.put("detached", detached);
+        result.put("retained", retained);
         result.put("branchDeleted", branchDeletion.deleted());
         if (StringUtils.hasText(branchDeletion.warning())) {
             result.put("branchDeletionWarning", branchDeletion.warning());

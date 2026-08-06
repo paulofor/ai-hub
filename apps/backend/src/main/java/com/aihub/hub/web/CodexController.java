@@ -8,6 +8,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.dto.UpdatePendingCodexRequest;
@@ -94,6 +95,16 @@ public class CodexController {
     @GetMapping("/metrics")
     public CodexDashboardMetrics metrics(@RequestParam(required = false) String profile) {
         return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
+    }
+
+    @GetMapping("/sales-impact/{score}")
+    public Page<CodexSalesImpactRequest> salesImpactRequests(@PathVariable int score,
+                                                             @RequestParam(defaultValue = "0") int page,
+                                                             @RequestParam(defaultValue = "25") int size) {
+        if (score < 1 || score > 5 || page < 0 || size != 25) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe score de 1 a 5, página não negativa e 25 itens por página");
+        }
+        return codexRequestService.listSalesImpactRequests(score, page, size);
     }
 
     @GetMapping("/{id}/previous")
@@ -243,6 +254,10 @@ public class CodexController {
             workBatchKey = value;
         }
         String profileValue = payload.get("profile") instanceof String value ? value : null;
+        int keepLast = payload.get("keepLast") instanceof Number value ? value.intValue() : 0;
+        if (keepLast < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantidade de solicitações a manter não pode ser negativa");
+        }
         CodexIntegrationProfile profile;
         try {
             profile = StringUtils.hasText(profileValue)
@@ -251,7 +266,7 @@ public class CodexController {
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Perfil inválido para descartar lote");
         }
-        return codexRequestService.discardBatch(environment, profile, workBatchKey);
+        return codexRequestService.discardBatch(environment, profile, workBatchKey, keepLast);
     }
 
     @PatchMapping("/{id}")

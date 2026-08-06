@@ -31,6 +31,7 @@ interface DiscardBatchResult {
   branchDeleted?: boolean;
   branchDeletionWarning?: string;
   total?: number;
+  retained?: number;
 }
 
 interface CodexDashboardMetricWindow {
@@ -52,6 +53,13 @@ interface CodexSalesImpactScore {
 interface CodexDashboardMetrics {
   day: CodexDashboardMetricWindow;
   salesImpactDay?: CodexSalesImpactScore;
+  recentSalesImpact?: CodexSalesImpactPoint[];
+}
+
+interface CodexSalesImpactPoint {
+  requestId: number;
+  createdAt: string;
+  score?: number | null;
 }
 
 interface EnvironmentOption {
@@ -115,7 +123,8 @@ interface SavedConversation {
 }
 
 const POLL_INTERVAL_MS = 5000;
-const INTERACTION_STALE_ALERT_MS = 5 * 60 * 1000;
+const RUNNING_TOKEN_STALE_ALERT_MS = 5 * 60 * 1000;
+const SALES_IMPACT_MOVING_AVERAGE_SIZE = 10;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -814,6 +823,58 @@ const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
   );
 };
 
+const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoint[] }) => {
+  const width = 210;
+  const height = 62;
+  const left = 16;
+  const right = 4;
+  const top = 5;
+  const bottom = 12;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const evaluated = points
+    .map((point, index) => ({ ...point, index }))
+    .filter((point): point is CodexSalesImpactPoint & { score: number; index: number } =>
+      typeof point.score === 'number' && point.score >= 1 && point.score <= 5
+    );
+  const movingAverage = evaluated.slice(SALES_IMPACT_MOVING_AVERAGE_SIZE - 1).map((point, index) => {
+    const window = evaluated.slice(index, index + SALES_IMPACT_MOVING_AVERAGE_SIZE);
+    return {
+      ...point,
+      score: window.reduce((sum, item) => sum + item.score, 0) / SALES_IMPACT_MOVING_AVERAGE_SIZE
+    };
+  });
+  const xFor = (index: number) => left + (points.length <= 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
+  const yFor = (score: number) => top + ((5 - score) / 4) * plotHeight;
+  const linePoints = movingAverage.map((point) => `${xFor(point.index)},${yFor(point.score)}`).join(' ');
+
+  return (
+    <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média móvel (10 pontos)</p>
+        <p className="text-[9px] text-slate-500">últimas {points.length}/100</p>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label="Gráfico da média móvel de 10 pontos da nota de impacto em vendas">
+        {[1, 3, 5].map((score) => (
+          <g key={score}>
+            <line x1={left} x2={width - right} y1={yFor(score)} y2={yFor(score)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth="0.75" />
+            <text x="2" y={yFor(score) + 2.5} className="fill-slate-500 text-[7px]">{score}</text>
+          </g>
+        ))}
+        {movingAverage.length > 1 ? <polyline points={linePoints} fill="none" className="stroke-emerald-600 dark:stroke-emerald-400" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {movingAverage.map((point) => (
+          <circle key={point.requestId} cx={xFor(point.index)} cy={yFor(point.score)} r="1.8" className="fill-emerald-600 dark:fill-emerald-400">
+            <title>{`Solicitação #${point.requestId}: média móvel ${point.score.toFixed(2)} de 5`}</title>
+          </circle>
+        ))}
+        {movingAverage.length === 0 ? <text x={width / 2} y={height / 2} textAnchor="middle" className="fill-slate-400 text-[8px]">São necessárias 10 notas</text> : null}
+        <text x={left} y={height - 2} className="fill-slate-500 text-[7px]">mais antiga</text>
+        <text x={width - right} y={height - 2} textAnchor="end" className="fill-slate-500 text-[7px]">mais recente</text>
+      </svg>
+    </div>
+  );
+};
+
 const CommentReadStatusBadge = ({ read }: { read: boolean }) => (
   <span
     title={read ? 'Comentário lido' : 'Comentário pendente de leitura'}
@@ -1455,7 +1516,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [growthMission, setGrowthMission] = useState<GrowthMission | null>(null);
   const [growthMissionDraft, setGrowthMissionDraft] = useState<GrowthMission>(EMPTY_GROWTH_MISSION);
   const [growthMissionSaving, setGrowthMissionSaving] = useState(false);
-  const [interactionIsStale, setInteractionIsStale] = useState(false);
+  const [runningTokensAreStale, setRunningTokensAreStale] = useState(false);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
@@ -1463,6 +1524,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
+  const [requestsToKeep, setRequestsToKeep] = useState(5);
+  const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<number | null>(null);
@@ -1483,8 +1546,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const interactionActivityRef = useRef<{ startsAt: string; count: number } | null>(null);
-  const interactionStaleTimeoutRef = useRef<number | null>(null);
+  const runningTokenActivityRef = useRef<{ requestId: number; totalTokens: number } | null>(null);
+  const runningTokenStaleTimeoutRef = useRef<number | null>(null);
 
   useModelResponseTabMarker(conversation, config.title);
 
@@ -1495,8 +1558,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, []);
 
   useEffect(() => () => {
-    if (interactionStaleTimeoutRef.current) {
-      window.clearTimeout(interactionStaleTimeoutRef.current);
+    if (runningTokenStaleTimeoutRef.current) {
+      window.clearTimeout(runningTokenStaleTimeoutRef.current);
     }
   }, []);
 
@@ -1635,6 +1698,29 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       }
 
       setRequests((current) => mergeCodexRequestList(current, nextRequests));
+      const runningRequest = nextRequests.find((item) => item.status === 'RUNNING' && Number.isFinite(item.totalTokens));
+      if (!runningRequest || runningRequest.totalTokens === undefined) {
+        runningTokenActivityRef.current = null;
+        setRunningTokensAreStale(false);
+        if (runningTokenStaleTimeoutRef.current) {
+          window.clearTimeout(runningTokenStaleTimeoutRef.current);
+          runningTokenStaleTimeoutRef.current = null;
+        }
+      } else {
+        const previous = runningTokenActivityRef.current;
+        if (!previous || previous.requestId !== runningRequest.id || previous.totalTokens !== runningRequest.totalTokens) {
+          runningTokenActivityRef.current = { requestId: runningRequest.id, totalTokens: runningRequest.totalTokens };
+          setRunningTokensAreStale(false);
+          if (runningTokenStaleTimeoutRef.current) {
+            window.clearTimeout(runningTokenStaleTimeoutRef.current);
+          }
+          if (config.profile === 'CHATGPT_CODEX_MKT') {
+            runningTokenStaleTimeoutRef.current = window.setTimeout(() => {
+              setRunningTokensAreStale(true);
+            }, RUNNING_TOKEN_STALE_ALERT_MS);
+          }
+        }
+      }
       return nextRequests;
     } finally {
       setRequestsLoading(false);
@@ -1645,22 +1731,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {
       params: { profile: config.profile }
     });
-    const observedDay = response.data?.day;
-    if (observedDay && Number.isFinite(observedDay.interactionCount)) {
-      const previous = interactionActivityRef.current;
-      if (!previous || previous.startsAt !== observedDay.startsAt || previous.count !== observedDay.interactionCount) {
-        interactionActivityRef.current = { startsAt: observedDay.startsAt, count: observedDay.interactionCount };
-        setInteractionIsStale(false);
-        if (interactionStaleTimeoutRef.current) {
-          window.clearTimeout(interactionStaleTimeoutRef.current);
-        }
-        if (config.profile === 'CHATGPT_CODEX_MKT') {
-          interactionStaleTimeoutRef.current = window.setTimeout(() => {
-            setInteractionIsStale(true);
-          }, INTERACTION_STALE_ALERT_MS);
-        }
-      }
-    }
     setDailyMetrics(response.data);
     return response.data;
   }, [config.profile]);
@@ -2563,7 +2633,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [loadRequests, ratingRequestId, registerTelemetry, updateAssistantFromRequest]);
 
-  const handleDiscardBatchRequests = useCallback(async () => {
+  const handleTrimBatchRequests = useCallback(async () => {
     if (bulkDiscardLoading) return;
 
     setBulkDiscardLoading(true);
@@ -2571,25 +2641,31 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const latestRequests = await loadRequests();
       const currentBatchKey = findOpenBatchKey(latestRequests, selectedEnvironment, config.profile);
       const batchRequests = getOpenBatchRequests(latestRequests, selectedEnvironment, config.profile, currentBatchKey);
-      const requestsToDiscard = batchRequests.filter((item) => item.status === 'PENDING' || item.status === 'RUNNING');
 
       if (currentBatchKey && batchRequests.length > 0) {
-        const confirmed = window.confirm(`Zerar este lote com ${batchRequests.length} solicitação(ões)? Solicitações pendentes/em execução serão descartadas e solicitações concluídas sairão do lote atual.`);
+        const keepLast = Math.min(Math.max(1, requestsToKeep), batchRequests.length);
+        const discardCount = batchRequests.length - keepLast;
+        const requestsToDiscard = batchRequests.slice(0, discardCount).filter((item) => item.status === 'PENDING' || item.status === 'RUNNING');
+        if (discardCount === 0) {
+          setError(`O lote possui ${batchRequests.length} solicitação(ões); reduza a quantidade a manter para remover as mais antigas.`);
+          return;
+        }
+        const confirmed = window.confirm(`Manter as ${keepLast} solicitação(ões) mais recentes e remover ${discardCount} mais antiga(s) deste lote? Solicitações antigas pendentes/em execução serão canceladas.`);
         if (!confirmed) return;
 
         const response = await client.post<DiscardBatchResult>('/codex/requests/batch/discard', {
           environment: selectedEnvironment,
           profile: config.profile,
-          workBatchKey: currentBatchKey
+          workBatchKey: currentBatchKey,
+          keepLast
         });
         const result = response.data;
         const branchMessage = result.branchDeleted === false && result.branchDeletionWarning
           ? ` ${result.branchDeletionWarning}`
           : '';
-        registerTelemetry('execution_success', `${result.total ?? batchRequests.length} solicitação(ões) removida(s) do lote atual; ${result.cancelled ?? requestsToDiscard.length} cancelada(s), ${result.deleted ?? 0} apagada(s), ${result.detached ?? 0} desanexada(s).${branchMessage}`);
+        registerTelemetry('execution_success', `${result.total ?? discardCount} solicitação(ões) antiga(s) removida(s) do lote atual; ${result.retained ?? keepLast} mais recente(s) mantida(s), ${result.cancelled ?? requestsToDiscard.length} cancelada(s), ${result.deleted ?? 0} apagada(s), ${result.detached ?? 0} desanexada(s).${branchMessage}`);
       }
 
-      setConversation([]);
       setEditingRequestId(null);
       setEditingDraft('');
       setPrResult(null);
@@ -2601,10 +2677,33 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setBulkDiscardLoading(false);
     }
-  }, [bulkDiscardLoading, config.profile, loadRequests, registerTelemetry, selectedEnvironment]);
+  }, [bulkDiscardLoading, config.profile, loadRequests, registerTelemetry, requestsToKeep, selectedEnvironment]);
+
+  const handleTrimConversationContext = useCallback(() => {
+    const keepLast = Math.min(Math.max(1, contextMessagesToKeep), conversation.length);
+    const discardCount = conversation.length - keepLast;
+    if (discardCount <= 0) return;
+
+    const confirmed = window.confirm(`Remover ${discardCount} mensagem(ns) mais antiga(s) do contexto deste diálogo e manter somente as ${keepLast} mais recentes? O histórico de execuções não será apagado.`);
+    if (!confirmed) return;
+
+    setConversation((current) => current.slice(-keepLast));
+    setSelectedSavedConversationId('');
+    setSelectedSavedConversationMessages([]);
+    setEditingRequestId(null);
+    setEditingDraft('');
+    registerTelemetry('execution_success', `${discardCount} mensagem(ns) antiga(s) removida(s) do contexto enviado ao modelo; ${keepLast} mantida(s).`);
+  }, [contextMessagesToKeep, conversation.length, registerTelemetry]);
 
   const activeBatchKey = findOpenBatchKey(requests, selectedEnvironment, config.profile);
   const activeBatchRequests = getOpenBatchRequests(requests, selectedEnvironment, config.profile, activeBatchKey);
+  const trimBatchDisabledReason = bulkDiscardLoading
+    ? 'A remoção das solicitações antigas está em andamento.'
+    : !activeBatchKey || activeBatchRequests.length === 0
+      ? 'Não há solicitações em um lote aberto. As execuções exibidas no histórico podem pertencer a lotes já encerrados por um PR.'
+      : activeBatchRequests.length <= requestsToKeep
+        ? `O lote atual tem ${activeBatchRequests.length} solicitação(ões). Para habilitar a remoção, escolha manter menos de ${activeBatchRequests.length}.`
+        : undefined;
   const activeBatchCompleted = activeBatchRequests.filter((item) => item.status === 'COMPLETED').length;
   const activeBatchCompletedCodeChanges = activeBatchRequests
     .filter((item) => item.status === 'COMPLETED' && marketingResponseIndicatesCodeChange(item.responseText))
@@ -2635,9 +2734,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   };
   const activeBatchRunning = activeBatchRequests.filter((item) => item.status === 'RUNNING').length;
   const activeBatchPending = activeBatchRequests.filter((item) => item.status === 'PENDING').length;
-  const activeBatchDiscardableRequests = (activeBatchKey ? activeBatchRequests : [])
-    .filter((item) => item.profile === config.profile);
-  const activeBatchDiscardable = activeBatchDiscardableRequests.length;
   const activeBatchPrUrl = activeBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
   const selectedSavedConversation = selectedSavedConversationId
     ? savedConversations.find((item) => item.id === selectedSavedConversationId)
@@ -2693,7 +2789,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className={`w-full rounded-lg border bg-white/95 px-3 py-2 text-right shadow-sm backdrop-blur sm:w-[236px] dark:bg-slate-900/90 ${interactionIsStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
+        <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
           <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
             {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
@@ -2708,15 +2804,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 {formatMetricNumber(dailyMetrics?.day?.requestCount)}
               </p>
             </div>
-            <div className={`rounded border px-1.5 py-1 ${interactionIsStale ? 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-500 dark:bg-amber-950/50' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80'}`}>
-              <p className={`text-[9px] font-semibold uppercase tracking-wide ${interactionIsStale ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+            <div title="O alerta de inatividade acompanha os tokens da solicitação em execução." className={`rounded border px-1.5 py-1 ${runningTokensAreStale ? 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-500 dark:bg-amber-950/50' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80'}`}>
+              <p className={`text-[9px] font-semibold uppercase tracking-wide ${runningTokensAreStale ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
                 Interações
-                {interactionIsStale ? <span className="ml-1 inline-flex h-3 w-3 animate-pulse items-center justify-center rounded-full bg-amber-500 text-[9px] text-white" aria-hidden="true">!</span> : null}
+                {runningTokensAreStale ? <span className="ml-1 inline-flex h-3 w-3 animate-pulse items-center justify-center rounded-full bg-amber-500 text-[9px] text-white" aria-hidden="true">!</span> : null}
               </p>
               <p className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-100">
                 {formatMetricNumber(dailyMetrics?.day?.interactionCount)}
               </p>
-              {interactionIsStale ? <span role="status" className="sr-only">Alerta: interações sem alteração há 5 minutos.</span> : null}
+              {runningTokensAreStale ? <span role="status" className="sr-only">Alerta: tokens da solicitação em execução sem alteração há 5 minutos.</span> : null}
             </div>
           </div>
           {config.profile === 'CHATGPT_CODEX_MKT' ? (
@@ -2739,6 +2835,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   </div>
                 ))}
               </div>
+              <RecentSalesImpactChart points={dailyMetrics?.recentSalesImpact} />
             </div>
           ) : null}
           <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
@@ -2858,7 +2955,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </div>
           <div className="flex flex-wrap gap-2">
             {activeBatchPrUrl ? <a href={activeBatchPrUrl} target="_blank" rel="noreferrer" className="rounded-md border border-emerald-600 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Abrir PR do lote</a> : null}
-            <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar lote'}</button>
+            <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+              Manter últimas
+              <input type="number" min="1" step="1" value={requestsToKeep} onChange={(event) => setRequestsToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de solicitações mais recentes a manter" />
+            </label>
+            <button type="button" onClick={handleTrimBatchRequests} disabled={Boolean(trimBatchDisabledReason)} title={trimBatchDisabledReason} className="rounded-md border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">{bulkDiscardLoading ? 'Removendo antigas...' : 'Remover mais antigas'}</button>
           </div>
         </div>
         {activeBatchKey ? <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
@@ -2869,6 +2970,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">{activeBatchPending} pendente(s)</span>
           </div>
         </div> : <p className="mt-3 text-slate-500">Nenhum lote aberto para o ambiente selecionado.</p>}
+        {trimBatchDisabledReason && !bulkDiscardLoading ? <p className="mt-2 text-xs text-slate-500">{trimBatchDisabledReason}</p> : null}
         {accumulatedCodeWarning ? (
           <p className="mt-3 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
             Código acumulado para merge: {accumulatedCodeWarning}
@@ -3184,8 +3286,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100">Código pendente</span> : null}
             </button>
           ) : null}
-          {!sandboxOnly ? <button type="button" onClick={handleDiscardBatchRequests} disabled={bulkDiscardLoading || (!activeBatchDiscardable && conversation.length === 0)} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">{bulkDiscardLoading ? 'Descartando...' : 'Zerar e descartar solicitações'}</button> : null}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              Contexto: manter últimas
+              <input type="number" min="1" step="1" value={contextMessagesToKeep} onChange={(event) => setContextMessagesToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de mensagens mais recentes a manter no contexto" />
+              mensagens
+            </label>
+            <button type="button" onClick={handleTrimConversationContext} disabled={conversation.length <= contextMessagesToKeep} title={conversation.length <= contextMessagesToKeep ? `O diálogo possui ${conversation.length} mensagem(ns); escolha um limite menor para cortar o contexto.` : 'Remove mensagens antigas apenas do contexto deste diálogo.'} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">Cortar contexto antigo</button>
+          </div>
         </div>
+        <p className="text-xs text-slate-500">Este corte controla o histórico incluído nos próximos prompts. Ele não apaga as execuções listadas abaixo nem altera o lote de trabalho.</p>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}
         {prResult ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-2">

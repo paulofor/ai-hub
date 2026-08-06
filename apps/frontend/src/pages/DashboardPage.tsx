@@ -25,7 +25,27 @@ interface CodexDashboardMetrics {
     weekly: CodexDashboardMetricWindow[];
     monthly: CodexDashboardMetricWindow[];
   };
+  salesImpactDay?: SalesImpactScore;
+  salesImpactWeek?: SalesImpactScore;
+  salesImpactMonth?: SalesImpactScore;
 }
+
+interface SalesImpactScore {
+  muitoBaixo: number;
+  baixo: number;
+  medio: number;
+  alto: number;
+  muitoAlto: number;
+  total: number;
+}
+
+const SALES_IMPACT_LEVELS = [
+  { key: 'muitoBaixo', label: 'Muito baixo', color: 'bg-slate-400' },
+  { key: 'baixo', label: 'Baixo', color: 'bg-rose-400' },
+  { key: 'medio', label: 'Médio', color: 'bg-amber-400' },
+  { key: 'alto', label: 'Alto', color: 'bg-emerald-500' },
+  { key: 'muitoAlto', label: 'Muito alto', color: 'bg-teal-600' }
+] as const;
 
 function formatModuleDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : 'indisponível';
@@ -73,6 +93,11 @@ export default function DashboardPage() {
 
   const { data: metrics } = useFetch<CodexDashboardMetrics>(
     () => client.get('/codex/requests/metrics').then((res) => res.data),
+    []
+  );
+
+  const { data: salesMetrics } = useFetch<CodexDashboardMetrics>(
+    () => client.get('/codex/requests/metrics', { params: { profile: 'CHATGPT_CODEX_MKT' } }).then((res) => res.data),
     []
   );
 
@@ -128,6 +153,23 @@ export default function DashboardPage() {
         />
       </div>
 
+      <section className="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 sm:p-5">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Relevância estimada em vendas</h3>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            Distribuição das entregas do perfil de Marketing por potencial declarado de impacto comercial.
+          </p>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SalesImpactChart title="Hoje" score={salesMetrics?.salesImpactDay} />
+          <SalesImpactChart title="Esta semana" score={salesMetrics?.salesImpactWeek} />
+          <SalesImpactChart title="Este mês" score={salesMetrics?.salesImpactMonth} />
+        </div>
+        <p className="mt-4 text-xs text-slate-500">
+          Estes contadores representam relevância estimada pelo modelo, não vendas confirmadas.
+        </p>
+      </section>
+
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -156,6 +198,43 @@ export default function DashboardPage() {
       </div>
 
     </section>
+  );
+}
+
+function SalesImpactChart({ title, score }: { title: string; score?: SalesImpactScore }) {
+  const total = score?.total ?? 0;
+
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="flex items-baseline justify-between gap-3">
+        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</h4>
+        <span className="text-2xl font-bold text-emerald-600">{formatMetricNumber(total)}</span>
+      </div>
+      <p className="text-xs text-slate-500">entregas avaliadas</p>
+      {total > 0 ? (
+        <div className="mt-4 space-y-3">
+          {SALES_IMPACT_LEVELS.map(({ key, label, color }) => {
+            const value = score?.[key] ?? 0;
+            const percentage = Math.round((value / total) * 100);
+            return (
+              <div key={key}>
+                <div className="mb-1 flex justify-between gap-2 text-xs">
+                  <span className="text-slate-600 dark:text-slate-300">{label}</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{value} · {percentage}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                  <div className={`h-full rounded-full ${color}`} style={{ width: `${percentage}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500 dark:border-slate-800">
+          Sem avaliações no período.
+        </div>
+      )}
+    </div>
   );
 }
 

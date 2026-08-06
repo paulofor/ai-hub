@@ -1,11 +1,29 @@
 import { expect, test } from '@playwright/test';
 
 test('renders the dashboard shell', async ({ page }) => {
+  await page.route('**/api/source-modules/changes', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/metrics**', (route) => {
+    const emptyWindow = { startsAt: '2026-08-04T06:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 };
+    const emptySeries = { daily: [], weekly: [], monthly: [] };
+    if (route.request().url().includes('profile=CHATGPT_CODEX_MKT')) {
+      return route.fulfill({ json: {
+        day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries,
+        salesImpactDay: { muitoBaixo: 1, baixo: 2, medio: 3, alto: 4, muitoAlto: 5, total: 15 },
+        salesImpactWeek: { muitoBaixo: 2, baixo: 3, medio: 5, alto: 8, muitoAlto: 7, total: 25 },
+        salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 }
+      } });
+    }
+    return route.fulfill({ json: { day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries } });
+  });
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'AI Hub 6' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Relevância estimada em vendas' })).toBeVisible();
+  await expect(page.getByText('50', { exact: true })).toBeVisible();
+  await expect(page.getByText('Estes contadores representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-dashboard-relevancia-vendas.png', fullPage: true });
 });
 
 test('offers GPT-5.6 and sends the selected model with the request', async ({ page }) => {
@@ -151,6 +169,70 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await expect(requestPrButton).toBeEnabled();
   await expect(requestPrButton).toHaveClass(/border-indigo-500/);
   await expect(requestPrButton.getByText('Código pendente')).toHaveClass(/bg-indigo-200/);
+});
+
+test('explains why old history does not enable trimming the open batch', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { requestCount: 6, interactionCount: 6, durationMs: 1000 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: {
+    content: Array.from({ length: 6 }, (_, index) => ({
+      id: 700 - index,
+      environment: 'produção',
+      profile: 'CHATGPT_CODEX',
+      prompt: `Execução encerrada ${index + 1}`,
+      status: 'COMPLETED',
+      createdAt: `2026-08-04T1${index}:00:00Z`,
+      workBatchKey: `aihub/lote-encerrado-${index}`,
+      pullRequestUrl: `https://github.com/example/repo/pull/${index + 1}`
+    }))
+  } }));
+
+  await page.goto('/codex-chatgpt');
+
+  const trimButton = page.getByRole('button', { name: 'Remover mais antigas' });
+  await expect(page.getByText('Não há solicitações em um lote aberto. As execuções exibidas no histórico podem pertencer a lotes já encerrados por um PR.').last()).toBeVisible();
+  await expect(trimButton).toBeDisabled();
+  await expect(trimButton).toHaveAttribute('title', /lotes já encerrados por um PR/);
+  await expect(page.getByRole('link', { name: 'Abrir detalhes' })).toHaveCount(6);
+});
+
+test('cuts old dialog messages out of subsequent model prompts', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: {} } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  let submittedPrompt = '';
+  await page.route('**/api/codex/requests**', async (route) => {
+    if (route.request().method() === 'POST') {
+      submittedPrompt = (route.request().postDataJSON() as { prompt: string }).prompt;
+      await route.fulfill({ json: { id: 900, profile: 'CHATGPT_CODEX', status: 'PENDING', createdAt: '2026-08-04T12:00:00Z' } });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.addInitScript(() => window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX', JSON.stringify([
+    { id: 'u1', role: 'user', content: 'mensagem muito antiga', createdAt: '2026-08-04T10:00:00Z' },
+    { id: 'a1', role: 'assistant', content: 'resposta muito antiga', createdAt: '2026-08-04T10:01:00Z' },
+    { id: 'u2', role: 'user', content: 'mensagem recente', createdAt: '2026-08-04T10:02:00Z' },
+    { id: 'a2', role: 'assistant', content: 'resposta recente', createdAt: '2026-08-04T10:03:00Z' }
+  ])));
+
+  await page.goto('/codex-chatgpt');
+  await page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto').fill('2');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Cortar contexto antigo' }).click();
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('próxima pergunta');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => submittedPrompt).not.toContain('mensagem muito antiga');
+  await expect.poll(() => submittedPrompt).toContain('mensagem recente');
+  await expect.poll(() => submittedPrompt).toContain('resposta recente');
 });
 
 test('renders structured model JSON as cards in the default ChatGPT dialog', async ({ page }) => {
@@ -518,7 +600,14 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
-    json: { day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 } }
+    json: {
+      day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 },
+      recentSalesImpact: [
+        { requestId: 701, createdAt: '2026-07-26T10:00:00Z', score: 2 },
+        { requestId: 702, createdAt: '2026-07-26T11:00:00Z', score: 4 },
+        { requestId: 703, createdAt: '2026-07-26T12:00:00Z', score: 5 }
+      ]
+    }
   }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -542,13 +631,15 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(operationalDayCard.getByText('Interações')).toBeVisible();
   await expect(operationalDayCard.getByText('3', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByRole('img', { name: 'Gráfico de linha da nota de impacto em vendas das últimas 100 solicitações' })).toBeVisible();
   await expect(operationalDayCard).toHaveCSS('position', 'fixed');
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
     return { height: box.height, right: box.right, top: box.top };
   });
-  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(150);
+  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(330);
+  await operationalDayCard.screenshot({ path: '/tmp/ai-hub-nota-vendas-ultimas-solicitacoes.png' });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
@@ -971,4 +1062,35 @@ test('shows the operational-day sales impact scoreboard', async ({ page }) => {
   await expect(page.locator('[title="Muito baixo: 1"]')).toBeVisible();
   await expect(page.locator('[title="Muito alto: 1"]')).toBeVisible();
   await page.screenshot({ path: '/tmp/ai-hub-placar-vendas-operacional.png', fullPage: true });
+});
+
+test('lists score-five sales requests in pages of 25 and opens request details', async ({ page }) => {
+  let requestedSize = 0;
+  await page.route('**/api/codex/requests/sales-impact/5?**', (route) => {
+    const url = new URL(route.request().url());
+    requestedSize = Number(url.searchParams.get('size'));
+    return route.fulfill({ json: {
+      content: [
+        { id: 901, title: 'Checkout com maior conversão', createdAt: '2026-08-06T12:00:00Z' },
+        { id: 900, title: 'Oferta de alto impacto', createdAt: '2026-08-06T11:00:00Z' }
+      ],
+      number: 0,
+      totalPages: 2,
+      totalElements: 27,
+      first: true,
+      last: false
+    } });
+  });
+
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Nota 5 em Vendas' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Solicitações com nota 5 em vendas' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Checkout com maior conversão/ })).toBeVisible();
+  await expect(page.getByText('Página 1 de 2')).toBeVisible();
+  expect(requestedSize).toBe(25);
+  await page.screenshot({ path: '/tmp/ai-hub-solicitacoes-nota-5-vendas.png', fullPage: true });
+
+  await page.getByRole('link', { name: /Checkout com maior conversão/ }).click();
+  await expect(page).toHaveURL(/\/codex\/requests\/901$/);
 });
