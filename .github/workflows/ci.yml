@@ -9,9 +9,16 @@ on:
     branches: ["main", "master"]
   pull_request:
 
+# Pull requests receive frequent revisions and only their latest CI result is useful.
+# Pushes to the production branch are never cancelled here because they may deploy.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Set up Java
@@ -24,6 +31,7 @@ jobs:
 
   mcp-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Set up Java
@@ -36,6 +44,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node
@@ -51,6 +60,7 @@ jobs:
 
   sandbox:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node
@@ -67,6 +77,7 @@ jobs:
   docker:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -173,6 +184,7 @@ jobs:
       - mcp-server
       - docker
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: production-deploy-${{ github.ref }}
       cancel-in-progress: false

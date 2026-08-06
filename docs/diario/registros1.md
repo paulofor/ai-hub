@@ -3099,6 +3099,35 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Validação: build TypeScript/Vite e lint aprovados; `git diff --check` aprovado; inspeção no Chromium em desktop e emulação de iPhone 15 Pro aprovada, com largura do documento igual à viewport (393 px) e sem overflow horizontal.
 - Nenhum Pull Request foi criado e nenhuma alteração foi publicada.
 
+## 2026-08-04 — Auditoria do PR #4702 do Marketing Hub
+
+- Solicitação: acompanhar merge, deploy e validar a produção do vídeo MUSA por quatro cenas.
+- Causa-raiz da pendência: o PR #4702 foi mesclado, mas seus arquivos implementam a organização visual do Estúdio e o catálogo MCP; não incluem endpoints, jobs ou controles para gerar, aprovar e selecionar quatro clipes independentes.
+- Validação: frontend e workflow do Operador concluíram com sucesso; backend e publicação de containers ainda estavam em execução durante a auditoria. A tela publicada do projeto 1 foi aberta com Chromium e confirmou a sequência visual de nove etapas, porém mostrou apenas o asset anterior #1941 e nenhum controle de geração/regeneração por cena.
+- Decisão: não solicitar nova renderização nem gerar custo enquanto a operação por cenas não existir no sistema; será necessária implementação versionada no repositório `paulofor/marketing-hub` e novo PR antes da execução pela tela.
+
+## 2026-08-04 — Cadastro de Agentes bloqueado pelo repositório selecionado
+
+- Solicitação: implementar o Cadastro de Agentes no Marketing Hub, começando pela migração do Operador de Crescimento e pelos contratos versionados.
+- Pergunta explícita de causa raiz: “por que a implementação não pode ser feita neste workspace?”. Resposta: o ambiente montado aponta para `paulofor/ai-hub`, na branch `ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt`; as entidades, APIs, worker, migrations e tela do Operador de Crescimento pertencem ao repositório `paulofor/marketing-hub`, que não existe neste workspace.
+- Alternativas avaliadas: criar um cadastro paralelo no AI Hub, registrar apenas documentação ou implementar no repositório canônico. Criar uma segunda fonte de verdade foi descartado; documentação isolada não satisfaz a solicitação; a implementação no Marketing Hub é a opção correta.
+- Decisão: não alterar código funcional nem criar PR no repositório incorreto. A continuação exige selecionar/montar `paulofor/marketing-hub`; então será possível auditar o estado já publicado, migrar o Operador sem interromper seus ciclos e validar backend, frontend, migrations, contratos e worker.
+
+## 2026-08-04 — Biblioteca de Personas e Agente Cliente bloqueados pelo repositório selecionado
+
+- Solicitação: implementar no Marketing Hub a Biblioteca de Personas e a primeira versão somente leitura do Agente Cliente, mantendo avaliações simuladas separadas dos resultados humanos reais.
+- Pergunta explícita de causa raiz: “por que a implementação não pode ser concluída neste workspace?”. Resposta: o workspace selecionado contém `paulofor/ai-hub`; os produtos, ofertas, vídeos, páginas, experimentos, sessões, contratos MCP e infraestrutura dos agentes que a funcionalidade precisa integrar pertencem ao repositório `paulofor/marketing-hub`, ausente neste ambiente.
+- Alternativas avaliadas: (1) criar personas no AI Hub, com alto risco de duplicar a fonte de verdade e nenhuma integração operacional; (2) registrar apenas um documento, com baixo esforço mas sem cadastro, versionamento ou avaliações auditáveis; (3) implementar no Marketing Hub uma biblioteca estruturada e o agente somente leitura, preservando contratos versionados. A terceira alternativa é a única aderente ao objetivo.
+- Decisão: nenhuma implementação funcional foi feita no repositório incorreto e nenhum PR foi criado. A continuação requer selecionar/montar `paulofor/marketing-hub`; então deverão ser implementados cadastro/versionamento de personas, evidências e confiança, avaliações por ativo, separação entre previsão simulada e comportamento humano, worker somente leitura, painel, APIs/MCP, migrations e testes.
+
+## 2026-08-06 — Proteção do CI contra filas obsoletas
+
+- Solicitação recebida: investigar e ajustar o workflow deste projeto após execuções permanecerem paradas no GitHub Actions.
+- Gargalo comercial preservado: instrumentação do Agenda Cheia, com zero eventos recebidos; a correção do CI é indireta e não foi tratada como venda.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: as execuções atuais nem chegaram a iniciar jobs e permaneceram em `queued`, evidenciando indisponibilidade/capacidade externa do GitHub; no repositório, porém, a concorrência protegia somente o job de deploy, deixando revisões antigas de Pull Requests consumirem fila, e os jobs não possuíam limites explícitos de duração.
+- Alternativas avaliadas: (1) reexecutar os workflows, que duplicaria a fila sem corrigir a causa configurável; (2) cancelar qualquer execução anterior, inclusive em `main`, com risco de interromper deploy produtivo; (3) cancelar somente revisões obsoletas de PR e limitar a duração dos jobs, preservando pushes/deploys de produção. A alternativa 3 foi escolhida pelo melhor equilíbrio entre redução de fila e segurança operacional.
+- Ajuste aplicado em `.github/workflows/ci.yml`: concorrência no nível do workflow agrupa cada PR e cancela apenas revisões anteriores desse PR; execuções de `main` nunca são canceladas por essa regra. Backend, MCP Server, frontend, sandbox, build Docker e deploy receberam timeouts proporcionais.
+- Validação executada: `actionlint .github/workflows/ci.yml .github/workflows/liquibase-mysql57.yml` e `git diff --check`. Nenhum Pull Request foi criado e nenhuma alteração foi publicada.
 ## 2026-08-04 — Retenção configurável das solicitações mais recentes
 
 - Solicitação recebida: substituir a ação destrutiva que zerava e descartava todo o lote por uma opção em que o usuário escolhe quantas solicitações recentes deseja manter.
