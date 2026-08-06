@@ -3166,3 +3166,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: foi criado um endpoint específico que considera apenas respostas do perfil MKT, interpreta a classificação comercial, seleciona nota 5, extrai o título estruturado e só então pagina o resultado em blocos fixos de 25.
 - Interface: o menu “Nota 5 em Vendas” abre uma tela com total, títulos, identificador/data, estados de carregamento/vazio/erro, paginação anterior/próxima e links diretos para o detalhe de cada solicitação.
 - Proteção contra regressão: testes de serviço validam que notas diferentes são descartadas, títulos em chaves compatíveis são extraídos e o tamanho da página é 25; o cenário E2E valida menu, listagem, parâmetro de paginação e navegação ao detalhe.
+
+## 2026-08-06 16:15:00 UTC - Média móvel e diagnóstico por tokens no quadro operacional
+
+- Solicitação recebida: trocar o gráfico do quadro flutuante por uma média móvel de 10 pontos e fazer o diagnóstico de inatividade acompanhar a mudança de tokens da solicitação em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o gráfico ligava diretamente as notas individuais, deixando o sinal sujeito à oscilação de cada solicitação, e o alerta de inatividade observava o total diário agregado de interações. Esse agregado não representa o progresso da solicitação atualmente em execução: pode permanecer parado durante uma execução saudável e pode mudar por outra solicitação sem comprovar avanço do trabalho corrente.
+- Correção aplicada na causa: o gráfico agora calcula cada ponto a partir das 10 notas válidas consecutivas mais recentes e informa quando ainda não há 10 avaliações; o temporizador de cinco minutos agora é reiniciado somente quando muda o `totalTokens` da solicitação com status `RUNNING`, é associado ao id dessa solicitação e é removido quando não existe execução com telemetria de tokens.
+- Acessibilidade: o nome acessível do gráfico, os detalhes de cada ponto e a mensagem do alerta foram atualizados para descrever a média móvel e a ausência de mudança dos tokens da execução.
+- Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.
+- Validação visual: foi tentada captura local com Playwright e APIs simuladas; o navegador foi provisionado, porém a página gerada ficou em branco neste ambiente, portanto a imagem inválida não foi versionada.
+
+## 2026-08-06 16:35:00 UTC - Novo disparo de deploy do quadro operacional
+
+- Solicitação recebida: realizar uma alteração simples para gerar um novo deploy, pois o GitHub apresentou problemas na tentativa anterior.
+- Pergunta explícita de causa raiz: “por que o deploy precisa ser disparado novamente?”. Resposta: a implementação já estava versionada, mas a execução externa do GitHub responsável por publicar o commit anterior apresentou problemas; sem um novo commit não há um novo evento de alteração para a pipeline processar.
+- Alteração simples aplicada: o cartão de interações agora apresenta uma dica ao passar o mouse, esclarecendo que o alerta de inatividade acompanha os tokens da solicitação em execução. A mudança é funcionalmente segura, melhora a compreensão do diagnóstico e gera um novo commit para disparar a automação de deploy.
+- Validações executadas: `npm run build`, `npm run lint` e `git diff --check`.

@@ -123,7 +123,8 @@ interface SavedConversation {
 }
 
 const POLL_INTERVAL_MS = 5000;
-const INTERACTION_STALE_ALERT_MS = 5 * 60 * 1000;
+const RUNNING_TOKEN_STALE_ALERT_MS = 5 * 60 * 1000;
+const SALES_IMPACT_MOVING_AVERAGE_SIZE = 10;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -836,30 +837,37 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
     .filter((point): point is CodexSalesImpactPoint & { score: number; index: number } =>
       typeof point.score === 'number' && point.score >= 1 && point.score <= 5
     );
+  const movingAverage = evaluated.slice(SALES_IMPACT_MOVING_AVERAGE_SIZE - 1).map((point, index) => {
+    const window = evaluated.slice(index, index + SALES_IMPACT_MOVING_AVERAGE_SIZE);
+    return {
+      ...point,
+      score: window.reduce((sum, item) => sum + item.score, 0) / SALES_IMPACT_MOVING_AVERAGE_SIZE
+    };
+  });
   const xFor = (index: number) => left + (points.length <= 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
   const yFor = (score: number) => top + ((5 - score) / 4) * plotHeight;
-  const linePoints = evaluated.map((point) => `${xFor(point.index)},${yFor(point.score)}`).join(' ');
+  const linePoints = movingAverage.map((point) => `${xFor(point.index)},${yFor(point.score)}`).join(' ');
 
   return (
     <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Nota x vendas</p>
+        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média móvel (10 pontos)</p>
         <p className="text-[9px] text-slate-500">últimas {points.length}/100</p>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label="Gráfico de linha da nota de impacto em vendas das últimas 100 solicitações">
+      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label="Gráfico da média móvel de 10 pontos da nota de impacto em vendas">
         {[1, 3, 5].map((score) => (
           <g key={score}>
             <line x1={left} x2={width - right} y1={yFor(score)} y2={yFor(score)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth="0.75" />
             <text x="2" y={yFor(score) + 2.5} className="fill-slate-500 text-[7px]">{score}</text>
           </g>
         ))}
-        {evaluated.length > 1 ? <polyline points={linePoints} fill="none" className="stroke-emerald-600 dark:stroke-emerald-400" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /> : null}
-        {evaluated.map((point) => (
+        {movingAverage.length > 1 ? <polyline points={linePoints} fill="none" className="stroke-emerald-600 dark:stroke-emerald-400" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {movingAverage.map((point) => (
           <circle key={point.requestId} cx={xFor(point.index)} cy={yFor(point.score)} r="1.8" className="fill-emerald-600 dark:fill-emerald-400">
-            <title>{`Solicitação #${point.requestId}: nota ${point.score} de 5`}</title>
+            <title>{`Solicitação #${point.requestId}: média móvel ${point.score.toFixed(2)} de 5`}</title>
           </circle>
         ))}
-        {evaluated.length === 0 ? <text x={width / 2} y={height / 2} textAnchor="middle" className="fill-slate-400 text-[8px]">Sem notas disponíveis</text> : null}
+        {movingAverage.length === 0 ? <text x={width / 2} y={height / 2} textAnchor="middle" className="fill-slate-400 text-[8px]">São necessárias 10 notas</text> : null}
         <text x={left} y={height - 2} className="fill-slate-500 text-[7px]">mais antiga</text>
         <text x={width - right} y={height - 2} textAnchor="end" className="fill-slate-500 text-[7px]">mais recente</text>
       </svg>
@@ -1508,7 +1516,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [growthMission, setGrowthMission] = useState<GrowthMission | null>(null);
   const [growthMissionDraft, setGrowthMissionDraft] = useState<GrowthMission>(EMPTY_GROWTH_MISSION);
   const [growthMissionSaving, setGrowthMissionSaving] = useState(false);
-  const [interactionIsStale, setInteractionIsStale] = useState(false);
+  const [runningTokensAreStale, setRunningTokensAreStale] = useState(false);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
@@ -1538,8 +1546,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const interactionActivityRef = useRef<{ startsAt: string; count: number } | null>(null);
-  const interactionStaleTimeoutRef = useRef<number | null>(null);
+  const runningTokenActivityRef = useRef<{ requestId: number; totalTokens: number } | null>(null);
+  const runningTokenStaleTimeoutRef = useRef<number | null>(null);
 
   useModelResponseTabMarker(conversation, config.title);
 
@@ -1550,8 +1558,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, []);
 
   useEffect(() => () => {
-    if (interactionStaleTimeoutRef.current) {
-      window.clearTimeout(interactionStaleTimeoutRef.current);
+    if (runningTokenStaleTimeoutRef.current) {
+      window.clearTimeout(runningTokenStaleTimeoutRef.current);
     }
   }, []);
 
@@ -1690,6 +1698,29 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       }
 
       setRequests((current) => mergeCodexRequestList(current, nextRequests));
+      const runningRequest = nextRequests.find((item) => item.status === 'RUNNING' && Number.isFinite(item.totalTokens));
+      if (!runningRequest || runningRequest.totalTokens === undefined) {
+        runningTokenActivityRef.current = null;
+        setRunningTokensAreStale(false);
+        if (runningTokenStaleTimeoutRef.current) {
+          window.clearTimeout(runningTokenStaleTimeoutRef.current);
+          runningTokenStaleTimeoutRef.current = null;
+        }
+      } else {
+        const previous = runningTokenActivityRef.current;
+        if (!previous || previous.requestId !== runningRequest.id || previous.totalTokens !== runningRequest.totalTokens) {
+          runningTokenActivityRef.current = { requestId: runningRequest.id, totalTokens: runningRequest.totalTokens };
+          setRunningTokensAreStale(false);
+          if (runningTokenStaleTimeoutRef.current) {
+            window.clearTimeout(runningTokenStaleTimeoutRef.current);
+          }
+          if (config.profile === 'CHATGPT_CODEX_MKT') {
+            runningTokenStaleTimeoutRef.current = window.setTimeout(() => {
+              setRunningTokensAreStale(true);
+            }, RUNNING_TOKEN_STALE_ALERT_MS);
+          }
+        }
+      }
       return nextRequests;
     } finally {
       setRequestsLoading(false);
@@ -1700,22 +1731,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {
       params: { profile: config.profile }
     });
-    const observedDay = response.data?.day;
-    if (observedDay && Number.isFinite(observedDay.interactionCount)) {
-      const previous = interactionActivityRef.current;
-      if (!previous || previous.startsAt !== observedDay.startsAt || previous.count !== observedDay.interactionCount) {
-        interactionActivityRef.current = { startsAt: observedDay.startsAt, count: observedDay.interactionCount };
-        setInteractionIsStale(false);
-        if (interactionStaleTimeoutRef.current) {
-          window.clearTimeout(interactionStaleTimeoutRef.current);
-        }
-        if (config.profile === 'CHATGPT_CODEX_MKT') {
-          interactionStaleTimeoutRef.current = window.setTimeout(() => {
-            setInteractionIsStale(true);
-          }, INTERACTION_STALE_ALERT_MS);
-        }
-      }
-    }
     setDailyMetrics(response.data);
     return response.data;
   }, [config.profile]);
@@ -2774,7 +2789,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${interactionIsStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
+        <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
           <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
             {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
@@ -2789,15 +2804,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 {formatMetricNumber(dailyMetrics?.day?.requestCount)}
               </p>
             </div>
-            <div className={`rounded border px-1.5 py-1 ${interactionIsStale ? 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-500 dark:bg-amber-950/50' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80'}`}>
-              <p className={`text-[9px] font-semibold uppercase tracking-wide ${interactionIsStale ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+            <div title="O alerta de inatividade acompanha os tokens da solicitação em execução." className={`rounded border px-1.5 py-1 ${runningTokensAreStale ? 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-500 dark:bg-amber-950/50' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80'}`}>
+              <p className={`text-[9px] font-semibold uppercase tracking-wide ${runningTokensAreStale ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
                 Interações
-                {interactionIsStale ? <span className="ml-1 inline-flex h-3 w-3 animate-pulse items-center justify-center rounded-full bg-amber-500 text-[9px] text-white" aria-hidden="true">!</span> : null}
+                {runningTokensAreStale ? <span className="ml-1 inline-flex h-3 w-3 animate-pulse items-center justify-center rounded-full bg-amber-500 text-[9px] text-white" aria-hidden="true">!</span> : null}
               </p>
               <p className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-100">
                 {formatMetricNumber(dailyMetrics?.day?.interactionCount)}
               </p>
-              {interactionIsStale ? <span role="status" className="sr-only">Alerta: interações sem alteração há 5 minutos.</span> : null}
+              {runningTokensAreStale ? <span role="status" className="sr-only">Alerta: tokens da solicitação em execução sem alteração há 5 minutos.</span> : null}
             </div>
           </div>
           {config.profile === 'CHATGPT_CODEX_MKT' ? (
