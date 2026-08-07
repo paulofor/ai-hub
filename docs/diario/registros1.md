@@ -3235,3 +3235,28 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que as correções estavam sendo publicadas em ciclos parciais?”. Resposta: as instruções existentes recomendavam execução local apenas para desenvolvimentos complexos e em alguns perfis, enquanto a orientação comum também incentivava commits e atualização de PR; não havia uma barreira universal e inequívoca proibindo usar commit, push, PR, pipeline ou deploy como mecanismo de teste.
 - Correção na causa: foi criada uma instrução única de validação local anterior à publicação, aplicada tanto ao fluxo Codex App Server quanto ao runner Responses API, independentemente do perfil. Ela exige investigação, implementação, testes, refinamento iterativo e revisão do diff na sandbox antes de consolidar uma única publicação, além de exigir o relato explícito de limitações reais quando algum teste essencial não puder ser executado localmente.
 - Proteção contra regressão: os testes dos dois motores de execução verificam que o prompt contém o escopo para todos os perfis, a proibição de publicar para testar e a exigência de uma entrega consolidada somente após a validação local.
+
+## 2026-08-07 — Gate de cinco rodadas locais para produto novo
+
+- Solicitação recebida: analisar especialmente as 20 solicitações mais recentes do dia e evitar a sequência de homologações parciais, merges e novos erros em produtos novos.
+- Evidência: as solicitações 1548 a 1567 registraram dez PRs distintos (`#4776` a `#4785`) em aproximadamente quatro horas; os ajustes sucessivos abrangeram responsividade, formulário, métricas de teste, observabilidade, CI e prontidão do mesmo fluxo comercial.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a regra de validação local já proibia publicar para testar, mas não definia uma matriz ponta a ponta, quantidade mínima de rodadas consecutivas nem reinício da homologação após uma correção. Assim, testes locais pontuais podiam aprovar cada ajuste isolado sem validar o produto inteiro.
+- Alternativas avaliadas: (1) manter apenas a orientação genérica, com baixo esforço e baixa proteção; (2) depender de uma pipeline mais ampla, útil como segunda barreira, mas ainda posterior à publicação; (3) criar um gate explícito no prompt dos dois motores, com matriz ponta a ponta, cinco rodadas locais consecutivas, reinício da contagem após falha e bloqueio de PR/merge/deploy enquanto houver pendência. Escolhida a alternativa 3 por atuar antes da publicação e cobrir a causa observada.
+- Ajuste aplicado: a instrução universal agora exige, para produto ou fluxo novo, matriz com caminho feliz, validações/falhas, integrações/observabilidade, métricas/segregação de testes e dispositivos relevantes, seguida de pelo menos cinco rodadas locais completas consecutivas sem falhas.
+- Proteção contra regressão: os testes dos fluxos Codex App Server e Responses API verificam a presença do mínimo de cinco rodadas, do reinício da contagem e do bloqueio de PR, merge ou deploy com critérios pendentes.
+
+## 2026-08-07 — Contador do histórico enviado no prompt atual
+
+- Solicitação recebida: mostrar, na região dos controles de envio e corte de contexto, quantas mensagens de diálogo compõem o prompt da solicitação atual.
+- Pergunta explícita de causa raiz: “por que essa quantidade não estava visível?”. Resposta: a interface mostrava apenas o limite configurado para um corte manual, enquanto o prompt pode combinar o diálogo corrente com mensagens de uma conversa salva ainda não reproduzidas na tela; por isso o limite e o tamanho visível do diálogo não representavam necessariamente a quantidade realmente enviada.
+- Alternativas avaliadas: (1) exibir apenas `conversation.length`, simples mas inexato com conversa salva; (2) contar todo o texto do prompt, exato em volume mas misturando instruções e diálogo; (3) compartilhar com o contador a mesma seleção de mensagens usada para montar `Histórico da conversa`. Escolhida a terceira por manter uma única fonte de verdade.
+- Ajuste aplicado: o rodapé do compositor agora exibe `Prompt atual: N mensagens de histórico`, com atualização imediata após corte ou mudança de contexto e pluralização correta.
+- Proteção contra regressão: o cenário E2E de corte de contexto valida a contagem inicial de quatro mensagens e a atualização para duas antes do envio da próxima solicitação.
+
+## 2026-08-07 — Timeout de seis horas por solicitação Codex
+
+- Solicitação recebida: aumentar para seis horas o timeout máximo de uma solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o turno do Codex App Server tinha limite máximo de duas horas definido em dois pontos independentes — fallback do código e arquivo de ambiente —, permitindo interrupção prematura de investigações e homologações extensas e criando risco de divergência entre ambientes.
+- Alternativas avaliadas: (1) alterar apenas a variável de ambiente, com menor esforço, mas mantendo fallback e documentação incorretos; (2) remover o limite absoluto e depender somente do timeout de inatividade, aumentando o risco de execução indefinida; (3) elevar configuração, fallback e documentação para seis horas e proteger o valor com teste. Escolhida a terceira por manter segurança operacional e uma única expectativa explícita em todos os ambientes.
+- Ajuste aplicado: `CODEX_APP_SERVER_TURN_TIMEOUT_MS` e seu fallback passaram de `7.200.000` para `21.600.000` milissegundos; o timeout de inatividade continua em 15 minutos para detectar turnos parados.
+- Proteção contra regressão: teste automatizado confirma que o limite padrão corresponde exatamente a seis horas.

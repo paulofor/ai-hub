@@ -2046,16 +2046,25 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     [promptHints]
   );
 
-  const buildConversationPromptFromHistory = useCallback((message: string, historyMessages: ChatMessage[]) => {
+  const resolvePromptHistoryMessages = useCallback((historyMessages: ChatMessage[]) => {
     const savedContextMessages = conversationMessagesMatchSavedContext(historyMessages)
       ? []
       : selectedSavedConversationMessages;
-    const promptHistoryMessages = [
+    return [
       ...savedContextMessages.map((item) => ({ role: item.role, content: item.content })),
       ...historyMessages
         .filter((item) => item.role === 'user' || item.role === 'assistant')
         .map((item) => ({ role: item.role, content: item.content }))
     ];
+  }, [conversationMessagesMatchSavedContext, selectedSavedConversationMessages]);
+
+  const currentPromptHistoryMessageCount = useMemo(
+    () => resolvePromptHistoryMessages(conversation).length,
+    [conversation, resolvePromptHistoryMessages]
+  );
+
+  const buildConversationPromptFromHistory = useCallback((message: string, historyMessages: ChatMessage[]) => {
+    const promptHistoryMessages = resolvePromptHistoryMessages(historyMessages);
     const history = promptHistoryMessages.map((item) => `${item.role === 'user' ? 'Usuário' : 'Modelo'}: ${item.content}`).join('\n\n');
     const selectedConversation = selectedSavedConversationId
       ? savedConversations.find((item) => item.id === selectedSavedConversationId)
@@ -2087,7 +2096,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       selectedPromptHintPhrases.length > 0 ? `Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:\n${selectedPromptHintPhrases.join('\n')}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.profile, config.promptExtraLines, config.promptModeLine, conversationMessagesMatchSavedContext, growthMission, products, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId, selectedSavedConversationMessages]);
+  }, [config.profile, config.promptExtraLines, config.promptModeLine, growthMission, products, resolvePromptHistoryMessages, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -3286,7 +3295,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100">Código pendente</span> : null}
             </button>
           ) : null}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200" aria-live="polite">
+              Prompt atual: {currentPromptHistoryMessageCount} {currentPromptHistoryMessageCount === 1 ? 'mensagem' : 'mensagens'} de histórico
+            </span>
             <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               Contexto: manter últimas
               <input type="number" min="1" step="1" value={contextMessagesToKeep} onChange={(event) => setContextMessagesToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de mensagens mais recentes a manter no contexto" />

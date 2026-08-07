@@ -80,6 +80,8 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 
 const exec = promisify(execCallback);
 
+export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
 const IMAGE_TOOL_ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const INSPECTION_SHELL_EXECUTABLES = new Set([
@@ -360,7 +362,7 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
-    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 120 * 60 * 1000);
+    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, DEFAULT_CODEX_TURN_TIMEOUT_MS);
     this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS, 15 * 60 * 1000);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
@@ -1376,7 +1378,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildLocalValidationBeforePublicationInstruction(): string {
-    return 'Regra obrigatória para todos os perfis: quando a tarefa envolver código, faça toda a investigação, implementação, execução de testes e ajustes iterativos primeiro no ambiente local da sandbox. Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste e não envie uma correção parcial ao repositório para descobrir o próximo erro no ambiente publicado. Antes de qualquer commit ou publicação, valide localmente a solução completa com os testes relevantes, revise o diff e confirme que os critérios da solicitação foram atendidos; somente então consolide a entrega em uma única publicação. Se uma validação essencial não puder ser executada localmente por limitação real do ambiente, declare a limitação e a evidência disponível em vez de publicar apenas para testar.';
+    return 'Regra obrigatória para todos os perfis: quando a tarefa envolver código, faça toda a investigação, implementação, execução de testes e ajustes iterativos primeiro no ambiente local da sandbox. Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste e não envie uma correção parcial ao repositório para descobrir o próximo erro no ambiente publicado. Antes de qualquer commit ou publicação, valide localmente a solução completa com os testes relevantes, revise o diff e confirme que os critérios da solicitação foram atendidos; somente então consolide a entrega em uma única publicação. Para produto ou fluxo novo, defina antes de testar uma matriz de homologação ponta a ponta que cubra caminho feliz, validações e falhas, integrações e observabilidade, métricas e segregação de dados de teste, além dos navegadores e dispositivos relevantes; execute pelo menos cinco rodadas locais completas e consecutivas sem falhas. Se qualquer rodada revelar um defeito, investigue a causa raiz, corrija e reinicie a contagem das cinco rodadas; não peça PR, merge ou deploy enquanto algum critério estiver pendente. Se uma validação essencial não puder ser executada localmente por limitação real do ambiente, declare a limitação e a evidência disponível em vez de publicar apenas para testar.';
   }
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
