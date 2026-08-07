@@ -224,9 +224,11 @@ test('cuts old dialog messages out of subsequent model prompts', async ({ page }
   ])));
 
   await page.goto('/codex-chatgpt');
+  await expect(page.getByText('Prompt atual: 4 mensagens de histórico')).toBeVisible();
   await page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto').fill('2');
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Cortar contexto antigo' }).click();
+  await expect(page.getByText('Prompt atual: 2 mensagens de histórico')).toBeVisible();
   await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('próxima pergunta');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
