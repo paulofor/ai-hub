@@ -795,6 +795,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
     assert.ok(input?.[0]?.text?.includes('Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste'));
     assert.ok(input?.[0]?.text?.includes('somente então consolide a entrega em uma única publicação'));
+    assert.ok(input?.[0]?.text?.includes('execute pelo menos cinco rodadas locais completas e consecutivas sem falhas'));
+    assert.ok(input?.[0]?.text?.includes('reinicie a contagem das cinco rodadas'));
+    assert.ok(input?.[0]?.text?.includes('não peça PR, merge ou deploy enquanto algum critério estiver pendente'));
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
     assert.ok(input?.[0]?.text?.includes('A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium'));
@@ -2928,6 +2931,9 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Regra obrigatória para todos os perfis/i);
     assert.match(promptText, /Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste/i);
     assert.match(promptText, /somente então consolide a entrega em uma única publicação/i);
+    assert.match(promptText, /execute pelo menos cinco rodadas locais completas e consecutivas sem falhas/i);
+    assert.match(promptText, /reinicie a contagem das cinco rodadas/i);
+    assert.match(promptText, /não peça PR, merge ou deploy enquanto algum critério estiver pendente/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
