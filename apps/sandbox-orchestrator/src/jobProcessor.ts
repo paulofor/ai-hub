@@ -80,6 +80,8 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 
 const exec = promisify(execCallback);
 
+export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
 const IMAGE_TOOL_ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const INSPECTION_SHELL_EXECUTABLES = new Set([
@@ -360,7 +362,7 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
-    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, 120 * 60 * 1000);
+    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, DEFAULT_CODEX_TURN_TIMEOUT_MS);
     this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS, 15 * 60 * 1000);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';

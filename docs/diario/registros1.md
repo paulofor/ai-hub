@@ -3252,3 +3252,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: (1) exibir apenas `conversation.length`, simples mas inexato com conversa salva; (2) contar todo o texto do prompt, exato em volume mas misturando instruções e diálogo; (3) compartilhar com o contador a mesma seleção de mensagens usada para montar `Histórico da conversa`. Escolhida a terceira por manter uma única fonte de verdade.
 - Ajuste aplicado: o rodapé do compositor agora exibe `Prompt atual: N mensagens de histórico`, com atualização imediata após corte ou mudança de contexto e pluralização correta.
 - Proteção contra regressão: o cenário E2E de corte de contexto valida a contagem inicial de quatro mensagens e a atualização para duas antes do envio da próxima solicitação.
+
+## 2026-08-07 — Timeout de seis horas por solicitação Codex
+
+- Solicitação recebida: aumentar para seis horas o timeout máximo de uma solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o turno do Codex App Server tinha limite máximo de duas horas definido em dois pontos independentes — fallback do código e arquivo de ambiente —, permitindo interrupção prematura de investigações e homologações extensas e criando risco de divergência entre ambientes.
+- Alternativas avaliadas: (1) alterar apenas a variável de ambiente, com menor esforço, mas mantendo fallback e documentação incorretos; (2) remover o limite absoluto e depender somente do timeout de inatividade, aumentando o risco de execução indefinida; (3) elevar configuração, fallback e documentação para seis horas e proteger o valor com teste. Escolhida a terceira por manter segurança operacional e uma única expectativa explícita em todos os ambientes.
+- Ajuste aplicado: `CODEX_APP_SERVER_TURN_TIMEOUT_MS` e seu fallback passaram de `7.200.000` para `21.600.000` milissegundos; o timeout de inatividade continua em 15 minutos para detectar turnos parados.
+- Proteção contra regressão: teste automatizado confirma que o limite padrão corresponde exatamente a seis horas.

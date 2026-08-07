@@ -8,7 +8,7 @@ import request from 'supertest';
 
 import { createApp } from '../src/server.js';
 import { buildJobPayload } from '../src/jobPayload.js';
-import { openAIClientConfigForTests, SandboxJobProcessor } from '../src/jobProcessor.js';
+import { DEFAULT_CODEX_TURN_TIMEOUT_MS, openAIClientConfigForTests, SandboxJobProcessor } from '../src/jobProcessor.js';
 import { JobProcessor, SandboxJob } from '../src/types.js';
 
 class StubProcessor implements JobProcessor {
@@ -25,6 +25,10 @@ class StubProcessor implements JobProcessor {
     job.updatedAt = job.finishedAt;
   }
 }
+
+test('uses a six-hour default timeout for Codex requests', () => {
+  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 21_600_000);
+});
 
 class SleepingProcessor implements JobProcessor {
   async process(job: SandboxJob): Promise<void> {
