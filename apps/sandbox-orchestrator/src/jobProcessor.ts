@@ -1375,6 +1375,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'Orientacao importante para perfis Codex ChatGPT: quando a solicitacao for criar um artefato dentro do Marketing Hub, faca isso pelo front-end do sistema; se o front-end ainda nao tiver a funcionalidade necessaria, implemente essa funcionalidade, avise o usuario e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitacao for alterar uma funcionalidade de modulo, altere o codigo do repositorio, valide e deixe a mudanca pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteracao.';
   }
 
+  private buildLocalValidationBeforePublicationInstruction(): string {
+    return 'Regra obrigatória para todos os perfis: quando a tarefa envolver código, faça toda a investigação, implementação, execução de testes e ajustes iterativos primeiro no ambiente local da sandbox. Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste e não envie uma correção parcial ao repositório para descobrir o próximo erro no ambiente publicado. Antes de qualquer commit ou publicação, valide localmente a solução completa com os testes relevantes, revise o diff e confirme que os critérios da solicitação foram atendidos; somente então consolide a entrega em uma única publicação. Se uma validação essencial não puder ser executada localmente por limitação real do ambiente, declare a limitação e a evidência disponível em vez de publicar apenas para testar.';
+  }
+
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const localDevelopmentInstruction = 'Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local.';
@@ -1392,6 +1396,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const sshClientInstruction = this.buildSshClientInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const browserTestingInstruction = this.buildBrowserTestingInstruction();
+    const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
       ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
@@ -1405,8 +1410,9 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
+    const taskDescriptionWithValidationGate = `${localValidationBeforePublicationInstruction}\n\n${taskDescription}`;
     return [
-      { type: 'text', text: taskDescription },
+      { type: 'text', text: taskDescriptionWithValidationGate },
       ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
         type: 'image',
         url: attachment.dataUrl,
@@ -1671,6 +1677,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const sshClientInstruction = this.buildSshClientInstruction();
     const repositoryModuleTestInstruction = 'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.';
+    const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
     const noPrButEditInstruction = 'Não criar Pull Request sem pedido explícito não significa evitar alterações: quando o usuário solicitar ajuste, correção ou implementação e você identificar a solução, altere os arquivos necessários, valide e deixe as mudanças prontas na branch/worktree; apenas não abra nem publique o PR até o usuário pedir.';
     const productionPublicationInstruction = 'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.';
     const codexChatgptOperationalInstruction = this.buildCodexChatgptOperationalInstruction();
@@ -1717,7 +1724,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
