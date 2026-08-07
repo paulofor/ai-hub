@@ -629,9 +629,11 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[1]');
   await expect(operationalDayCard.getByText('Solicitações')).toBeVisible();
   await expect(operationalDayCard.getByText('Interações')).toBeVisible();
-  await expect(operationalDayCard.getByText('3', { exact: true })).toBeVisible();
-  await expect(operationalDayCard.getByText('12', { exact: true })).toBeVisible();
-  await expect(operationalDayCard.getByRole('img', { name: 'Gráfico de linha da nota de impacto em vendas das últimas 100 solicitações' })).toBeVisible();
+  await expect(operationalDayCard.locator('p').getByText('3', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.locator('p').getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByRole('img', { name: 'Gráfico da média móvel de 6 pontos da nota de impacto em vendas' })).toBeVisible();
+  await expect(operationalDayCard.getByText('Média móvel (6 pontos)')).toBeVisible();
+  await expect(operationalDayCard.getByText('São necessárias 6 notas')).toBeVisible();
   await expect(operationalDayCard).toHaveCSS('position', 'fixed');
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {

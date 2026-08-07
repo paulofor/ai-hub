@@ -3221,3 +3221,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Segurança: execuções manuais em outras branches não publicam imagens nem fazem deploy; deploys produtivos continuam sem cancelamento automático.
 - Estado externo: o GitHub ainda classifica Actions como indisponibilidade grave e limita webhooks. A tentativa de cancelar o run obsoleto `31121725143`, exibido como `queued`, foi recusada pela API como se ele já estivesse concluído; nenhuma nova execução foi criada.
 - Validação local: `actionlint .github/workflows/ci.yml` e `git diff --check` aprovados.
+
+## 2026-08-06 — Média móvel de seis pontos no quadro operacional
+
+- Solicitação recebida: alterar para seis pontos a média móvel da nota de impacto estimado em vendas exibida no quadro operacional.
+- Pergunta explícita de causa raiz: “por que a interface ainda calculava e informava uma janela de dez pontos?”. Resposta: o tamanho da janela estava configurado como uma constante de valor 10 e os três textos que descrevem a janela repetiam esse número literalmente, criando ainda o risco de divergência entre o cálculo e a informação apresentada ao usuário.
+- Correção aplicada na causa: a janela foi configurada para seis avaliações válidas consecutivas e o título, o nome acessível e o estado sem dados passaram a derivar o número da mesma constante usada no cálculo.
+- Proteção contra regressão: o cenário E2E do quadro operacional passou a conferir o título, o nome acessível e a quantidade mínima de notas da nova janela de seis pontos.

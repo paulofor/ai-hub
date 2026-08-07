@@ -124,7 +124,7 @@ interface SavedConversation {
 
 const POLL_INTERVAL_MS = 5000;
 const RUNNING_TOKEN_STALE_ALERT_MS = 5 * 60 * 1000;
-const SALES_IMPACT_MOVING_AVERAGE_SIZE = 10;
+const SALES_IMPACT_MOVING_AVERAGE_SIZE = 6;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -851,10 +851,10 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
   return (
     <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média móvel (10 pontos)</p>
+        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média móvel ({SALES_IMPACT_MOVING_AVERAGE_SIZE} pontos)</p>
         <p className="text-[9px] text-slate-500">últimas {points.length}/100</p>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label="Gráfico da média móvel de 10 pontos da nota de impacto em vendas">
+      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label={`Gráfico da média móvel de ${SALES_IMPACT_MOVING_AVERAGE_SIZE} pontos da nota de impacto em vendas`}>
         {[1, 3, 5].map((score) => (
           <g key={score}>
             <line x1={left} x2={width - right} y1={yFor(score)} y2={yFor(score)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth="0.75" />
@@ -867,7 +867,7 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
             <title>{`Solicitação #${point.requestId}: média móvel ${point.score.toFixed(2)} de 5`}</title>
           </circle>
         ))}
-        {movingAverage.length === 0 ? <text x={width / 2} y={height / 2} textAnchor="middle" className="fill-slate-400 text-[8px]">São necessárias 10 notas</text> : null}
+        {movingAverage.length === 0 ? <text x={width / 2} y={height / 2} textAnchor="middle" className="fill-slate-400 text-[8px]">São necessárias {SALES_IMPACT_MOVING_AVERAGE_SIZE} notas</text> : null}
         <text x={left} y={height - 2} className="fill-slate-500 text-[7px]">mais antiga</text>
         <text x={width - right} y={height - 2} textAnchor="end" className="fill-slate-500 text-[7px]">mais recente</text>
       </svg>
