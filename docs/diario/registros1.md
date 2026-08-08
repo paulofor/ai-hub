@@ -3267,3 +3267,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Sincronizado pela API o primeiro caso real do plano comercial 2: caso 1, experimento 85, Estrategista 4 e Operador 85 reconhecidos como `COMPLETED`.
 - O estado consolidado ficou `WAITING_FOR_AGENTS`, com o gate factual `adSpecialistState=REQUIRED` para o criativo 261 e exigência de aprovação humana preservada.
 - Uma segunda sincronização reutilizou o caso 1, comprovando idempotência e ausência de duplicidade; nenhuma campanha, gasto ou publicação foi acionada.
+
+## 2026-08-08 — Homologação produtiva do parecer do Agente Aprovador nos criativos
+
+- Solicitação: após o deploy do complemento, validar pela tela um criativo aprovado e outro reprovado antes de qualquer retomada da mídia.
+- Gargalo declarado: visibilidade confiável do gate técnico; critério esperado de 100% de correspondência entre o parecer persistido e o estado exibido, mantendo publicação bloqueada para reprovação.
+- Pergunta explícita de causa raiz: “por que os estados aprovado e reprovado ainda não podem ser homologados com dados reais?” Resposta: o complemento está publicado e o contrato da API expõe os campos de parecer, mas os criativos existentes são legados e nenhum parecer do agente foi persistido em produção; uma varredura dos 79 experimentos encontrou zero criativos com `agentReviewStatus` preenchido.
+- Evidência do experimento 85: os criativos 259, 260 e 261 retornam `agentReviewStatus=null`; a interface mostra os três como `Agente: legado sem análise` em desktop e emulação de iPhone 15 Pro, sem erro visual.
+- Proteção comercial preservada: experimento 85 permanece `PAUSED`; nenhuma campanha, orçamento, criativo ou parecer foi alterado. Não foi injetado resultado artificial no endpoint interno do worker.
+- Pendência factual: submeter criativos reais ao Agente Aprovador e aguardar decisões auditáveis para então repetir a homologação dos estados `APPROVED` e `REJECTED` pela tela.
