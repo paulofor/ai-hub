@@ -67,6 +67,11 @@ services:
 
   sandbox-orchestrator:
     image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
+    # O orquestrador executa ferramentas que podem criar netos. O init do
+    # Docker adota e coleta processos órfãos para que eles não virem zombies.
+    init: true
+    # Limite de contenção: uma falha não pode esgotar a tabela de PIDs do host.
+    pids_limit: ${SANDBOX_ORCHESTRATOR_PIDS_LIMIT:-512}
     build:
       context: ./apps/sandbox-orchestrator
     env_file:
@@ -150,6 +155,9 @@ services:
           - sandbox-orchestrator
   mcp-server:
     image: ${MCP_SERVER_IMAGE:-ghcr.io/paulofor/ai-hub-6-mcp-server:latest}
+    # Comandos Linux também podem deixar subprocessos órfãos; tini os coleta.
+    init: true
+    pids_limit: ${MCP_SERVER_PIDS_LIMIT:-128}
     build:
       context: ./apps/mcp-server
     env_file:
