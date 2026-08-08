@@ -3267,3 +3267,21 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a orientação anterior exigia incondicionalmente cinco rodadas para todo produto ou fluxo novo e só depois explicava o reinício da contagem após uma correção, levando o modelo a repetir homologações mesmo quando a primeira rodada completa já passava sem defeitos.
 - Correção na causa: a instrução universal agora separa os dois caminhos de forma explícita: uma rodada completa sem defeitos encerra a homologação; somente a descoberta e correção de um defeito ativa o gate de cinco rodadas consecutivas após a última correção.
 - Proteção contra regressão: os testes dos prompts do Codex App Server e do runner Responses API verificam tanto o encerramento após a primeira rodada limpa quanto a aplicação condicional das cinco rodadas depois de uma correção.
+
+## 2026-08-08 19:57:57 UTC-3 — Contenção e coleta de processos órfãos
+
+- Solicitação recebida: investigar como evitar a grande quantidade de processos do AI Hub no host, que chegou a exibir 918 processos zombies.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os dois contêineres que executam comandos e árvores de subprocessos ( e ) estavam sem processo init () e sem limite de PIDs. Quando uma ferramenta encerra deixando descendentes órfãos, o processo principal do contêiner passa a ser responsável por coletá-los; sem um init dedicado, esses descendentes encerrados podem permanecer como zombies e se acumular na tabela de processos do host.
+- Evidência operacional: após a recriação dos contêineres, a consulta pelo MCP não encontrou zombies no momento da análise, mas confirmou  e ausência de  em todos os contêineres. O  mantém uma árvore Node → Codex → code-mode-host e o MCP cria shells para comandos, portanto ambos são pontos reais de criação de descendentes.
+- Correção na causa: habilitado  nos serviços  e , fazendo o Docker inserir um init mínimo que adota e coleta órfãos.
+- Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
+- Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com  e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
+
+## 2026-08-08 19:58:13 UTC-3 — Retificação do registro de contenção de processos
+
+- Retificação: o registro imediatamente anterior perdeu trechos entre crases durante a escrita pelo shell; por respeito à política append-only, ele não foi apagado e os dados completos são registrados abaixo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os dois contêineres que executam comandos e árvores de subprocessos (`sandbox-orchestrator` e `mcp-server`) estavam sem processo init (`HostConfig.Init=null`) e sem limite de PIDs. Quando uma ferramenta encerra deixando descendentes órfãos, o processo principal do contêiner passa a ser responsável por coletá-los; sem um init dedicado, esses descendentes encerrados podem permanecer como zombies e se acumular na tabela de processos do host.
+- Evidência operacional: após a recriação dos contêineres, a consulta pelo MCP não encontrou zombies no momento da análise, mas confirmou `init=null` e ausência de `PidsLimit` em todos os contêineres. O `sandbox-orchestrator` mantém uma árvore Node → Codex → code-mode-host e o MCP cria shells para comandos, portanto ambos são pontos reais de criação de descendentes.
+- Correção na causa: habilitado `init: true` nos serviços `sandbox-orchestrator` e `mcp-server`, fazendo o Docker inserir um init mínimo que adota e coleta órfãos.
+- Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
+- Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com `kill` e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
