@@ -3260,3 +3260,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: (1) alterar apenas a variável de ambiente, com menor esforço, mas mantendo fallback e documentação incorretos; (2) remover o limite absoluto e depender somente do timeout de inatividade, aumentando o risco de execução indefinida; (3) elevar configuração, fallback e documentação para seis horas e proteger o valor com teste. Escolhida a terceira por manter segurança operacional e uma única expectativa explícita em todos os ambientes.
 - Ajuste aplicado: `CODEX_APP_SERVER_TURN_TIMEOUT_MS` e seu fallback passaram de `7.200.000` para `21.600.000` milissegundos; o timeout de inatividade continua em 15 minutos para detectar turnos parados.
 - Proteção contra regressão: teste automatizado confirma que o limite padrão corresponde exatamente a seis horas.
+
+## 2026-08-08 — Cinco rodadas de homologação somente após correção
+
+- Solicitação recebida: esclarecer ao modelo que repetir cinco vezes a homologação só é necessário quando algum defeito for encontrado e corrigido; se a primeira homologação não encontrar defeitos, não é necessário repeti-la.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a orientação anterior exigia incondicionalmente cinco rodadas para todo produto ou fluxo novo e só depois explicava o reinício da contagem após uma correção, levando o modelo a repetir homologações mesmo quando a primeira rodada completa já passava sem defeitos.
+- Correção na causa: a instrução universal agora separa os dois caminhos de forma explícita: uma rodada completa sem defeitos encerra a homologação; somente a descoberta e correção de um defeito ativa o gate de cinco rodadas consecutivas após a última correção.
+- Proteção contra regressão: os testes dos prompts do Codex App Server e do runner Responses API verificam tanto o encerramento após a primeira rodada limpa quanto a aplicação condicional das cinco rodadas depois de uma correção.
