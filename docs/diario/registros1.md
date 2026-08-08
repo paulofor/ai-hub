@@ -3260,3 +3260,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: (1) alterar apenas a variável de ambiente, com menor esforço, mas mantendo fallback e documentação incorretos; (2) remover o limite absoluto e depender somente do timeout de inatividade, aumentando o risco de execução indefinida; (3) elevar configuração, fallback e documentação para seis horas e proteger o valor com teste. Escolhida a terceira por manter segurança operacional e uma única expectativa explícita em todos os ambientes.
 - Ajuste aplicado: `CODEX_APP_SERVER_TURN_TIMEOUT_MS` e seu fallback passaram de `7.200.000` para `21.600.000` milissegundos; o timeout de inatividade continua em 15 minutos para detectar turnos parados.
 - Proteção contra regressão: teste automatizado confirma que o limite padrão corresponde exatamente a seis horas.
+## 2026-08-08 — Homologação produtiva do Orquestrador de Agentes do Marketing Hub
+
+- Confirmado no GitHub que o Orquestrador v1 está no `main` do `paulofor/marketing-hub`, incorporado pelo merge do PR 4792, com workflows de backend e deploy concluídos com sucesso.
+- Identificado que `iahub.xyz` é o AI Hub e não a origem da API do Marketing Hub; a API produtiva correta foi validada em `http://191.252.181.168`.
+- Sincronizado pela API o primeiro caso real do plano comercial 2: caso 1, experimento 85, Estrategista 4 e Operador 85 reconhecidos como `COMPLETED`.
+- O estado consolidado ficou `WAITING_FOR_AGENTS`, com o gate factual `adSpecialistState=REQUIRED` para o criativo 261 e exigência de aprovação humana preservada.
+- Uma segunda sincronização reutilizou o caso 1, comprovando idempotência e ausência de duplicidade; nenhuma campanha, gasto ou publicação foi acionada.
