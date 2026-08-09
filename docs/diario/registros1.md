@@ -3285,3 +3285,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: habilitado `init: true` nos serviços `sandbox-orchestrator` e `mcp-server`, fazendo o Docker inserir um init mínimo que adota e coleta órfãos.
 - Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
 - Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com `kill` e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
+
+## 2026-08-09 — Tela de detalhe das solicitações com nota 5 em vendas
+
+- Criada uma rota de detalhe dedicada para as solicitações de alto impacto em vendas, preservando o contexto da área Codex ChatGPT MKT.
+- A nova tela apresenta o prompt e a resposta em formato de diálogo, além das métricas de duração, tokens de entrada e saída, horário de início e horário de fim.
+- Adicionada navegação para a próxima solicitação mais antiga que também tenha nota 5 (sem sair do conjunto filtrado) e retorno para a listagem.
+- Atualizada a listagem para abrir a nova rota e ampliado o teste E2E para validar conteúdo, métricas, navegação e captura visual da tela.

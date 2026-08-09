@@ -57,7 +57,7 @@ export default function SalesImpactRequestsPage() {
           <ul className="divide-y divide-slate-200 dark:divide-slate-800">
             {result.content.map((request) => (
               <li key={request.id}>
-                <Link to={`/codex/requests/${request.id}`} className="flex items-center justify-between gap-4 px-5 py-4 transition hover:bg-emerald-50 dark:hover:bg-emerald-950/30">
+                <Link to={`/codex-chatgpt-mkt/nota-5-vendas/${request.id}`} className="flex items-center justify-between gap-4 px-5 py-4 transition hover:bg-emerald-50 dark:hover:bg-emerald-950/30">
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900 dark:text-slate-100">{request.title}</p>
                     <p className="mt-1 text-xs text-slate-500">Solicitação #{request.id} · {formatDateTime(request.createdAt)}</p>

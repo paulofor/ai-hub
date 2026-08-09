@@ -353,6 +353,24 @@ public class CodexRequestService {
         return new PageImpl<>(matches.subList(from, to), PageRequest.of(page, size), matches.size());
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Long> previousSalesImpactRequestId(int score, long requestId) {
+        if (score < 1 || score > 5) {
+            throw new IllegalArgumentException("score deve estar entre 1 e 5");
+        }
+        List<Object[]> rows = codexRequestRepository
+            .findSalesImpactRowsByProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT)
+            .stream()
+            .filter(row -> salesImpactScore(row[2] instanceof String response ? response : "") == score)
+            .toList();
+        for (int index = 0; index < rows.size() - 1; index++) {
+            if (((Number) rows.get(index)[0]).longValue() == requestId) {
+                return Optional.of(((Number) rows.get(index + 1)[0]).longValue());
+            }
+        }
+        return Optional.empty();
+    }
+
     private int salesImpactScore(String response) {
         return switch (extractSalesImpactLevel(response)) {
             case "muito_baixo" -> 1;
