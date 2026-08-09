@@ -3293,3 +3293,25 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: a API passou a entregar todas as notas válidas desde o início da semana operacional, em ordem cronológica e sem o limite arbitrário das 100 solicitações mais recentes; o início semanal agora também usa segunda-feira às 03h em `America/Sao_Paulo`.
 - Interface: o painel agora oferece seletores Diário e Semanal. A visão diária desenha uma barra por nota (escala de 1 a 5), enquanto a semanal agrupa as notas pelo dia operacional e apresenta um tick com a média de cada dia, além da média geral do período.
 - Proteção contra regressão: o teste de serviço valida a linha temporal e o corte semanal operacional, e o cenário E2E valida as duas visualizações, seus nomes acessíveis e a troca de período.
+
+## 2026-08-09 — Média diária operacional em 21 dias
+
+- Solicitação recebida: exibir no gráfico de notas de venda o valor médio diário operacional em um intervalo de 21 dias.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a linha temporal entregue pela API começava somente no início da semana operacional e a visão diária desenhava cada avaliação individual do dia atual; portanto, o frontend não recebia histórico suficiente nem agregava as notas por dia para representar 21 médias diárias.
+- Correção na causa: a API passou a carregar as notas desde o início do vigésimo primeiro dia operacional, incluindo o dia atual, e a visão diária agora agrupa as notas pela data operacional (03h–03h) e desenha um tick com a média de cada dia que possui avaliações.
+- Clareza da interface: título, descrição, rótulo acessível e datas do eixo informam que a visualização cobre as médias diárias operacionais dos últimos 21 dias; a visão semanal foi preservada.
+- Proteção contra regressão: o teste de serviço fixa o relógio e confere o instante exato do corte de 21 dias, enquanto o cenário E2E valida o novo título, a descrição e o nome acessível do gráfico.
+
+## 2026-08-09 — Limite de 100 pontos na média móvel do quadro operacional
+
+- Solicitação recebida: manter no gráfico compacto do quadro operacional somente as 100 notas válidas mais recentes, sem alterar a média móvel de seis pontos.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ampliação da linha temporal compartilhada para 21 dias fez o quadro operacional receber mais de 100 registros, mas o componente apenas mostrava o texto `/100`; ele não recortava a série e ainda dimensionava o eixo horizontal pela quantidade bruta, inclusive por registros sem nota válida.
+- Correção na causa: o gráfico agora filtra primeiro as notas válidas, conserva somente as 100 mais recentes e recalcula os índices do eixo sobre esse recorte. O cálculo da média móvel permanece com a constante de seis avaliações consecutivas.
+- Proteção contra regressão: o cenário E2E fornece mais de 100 notas válidas e um registro sem nota, confirma o indicador `últimas 100/100` e verifica os 95 pontos resultantes da média móvel de seis posições.
+
+## 2026-08-09 — Duas rodadas de validação após correção
+
+- Solicitação recebida: reduzir de cinco para duas as execuções exigidas nas validações repetidas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a quantidade estava repetida literalmente em três trechos da mesma instrução universal — ativação do gate, execução após a última correção e reinício da contagem — e também nas asserções dos dois caminhos de execução, mantendo a exigência anterior de cinco rodadas em todos os perfis.
+- Correção na causa: os três trechos coerentes da instrução universal agora exigem duas rodadas locais completas e consecutivas somente depois de uma correção; uma primeira rodada sem defeitos continua encerrando a homologação sem repetição.
+- Proteção contra regressão: os testes dos fluxos Codex App Server e Responses API passaram a conferir a ativação condicional, a execução e o reinício da contagem em duas rodadas.

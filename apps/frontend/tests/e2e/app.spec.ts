@@ -12,6 +12,7 @@ test('renders the dashboard shell', async ({ page }) => {
         salesImpactWeek: { muitoBaixo: 2, baixo: 3, medio: 5, alto: 8, muitoAlto: 7, total: 25 },
         salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 },
         recentSalesImpact: [
+          { requestId: 0, createdAt: '2026-07-20T07:00:00Z', score: 5 },
           { requestId: 1, createdAt: '2026-08-04T07:00:00Z', score: 2 },
           { requestId: 2, createdAt: '2026-08-04T08:00:00Z', score: 4 }
         ]
@@ -25,13 +26,14 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Notas de venda' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Gráfico diário com uma barra por nota de venda' })).toBeVisible();
-  await expect(page.getByText('Cada barra é uma nota de venda.')).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Gráfico com a média diária operacional dos últimos 21 dias' })).toBeVisible();
+  await expect(page.getByText('Média diária operacional · últimos 21 dias')).toBeVisible();
+  await expect(page.getByText('Cada tick é a média das notas daquele dia operacional.')).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-dashboard-media-diaria-21-dias.png', fullPage: true });
   await page.getByRole('button', { name: 'Semanal' }).click();
   await expect(page.getByRole('img', { name: 'Gráfico semanal com um tick de média por dia operacional' })).toBeVisible();
-  await expect(page.getByText('Cada tick é a média geral das notas daquele dia.')).toBeVisible();
+  await expect(page.getByText('Cada tick é a média das notas daquele dia operacional.')).toBeVisible();
   await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
-  await page.screenshot({ path: '/tmp/ai-hub-dashboard-relevancia-vendas.png', fullPage: true });
 });
 
 test('offers GPT-5.6 and sends the selected model with the request', async ({ page }) => {
@@ -613,6 +615,12 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
     json: {
       day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 },
       recentSalesImpact: [
+        ...Array.from({ length: 103 }, (_, index) => ({
+          requestId: 500 + index,
+          createdAt: `2026-07-25T${String(index % 24).padStart(2, '0')}:00:00Z`,
+          score: (index % 5) + 1
+        })),
+        { requestId: 699, createdAt: '2026-07-26T09:00:00Z', score: null },
         { requestId: 701, createdAt: '2026-07-26T10:00:00Z', score: 2 },
         { requestId: 702, createdAt: '2026-07-26T11:00:00Z', score: 4 },
         { requestId: 703, createdAt: '2026-07-26T12:00:00Z', score: 5 }
@@ -643,7 +651,8 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(operationalDayCard.locator('p').getByText('12', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByRole('img', { name: 'Gráfico da média móvel de 6 pontos da nota de impacto em vendas' })).toBeVisible();
   await expect(operationalDayCard.getByText('Média móvel (6 pontos)')).toBeVisible();
-  await expect(operationalDayCard.getByText('São necessárias 6 notas')).toBeVisible();
+  await expect(operationalDayCard.getByText('últimas 100/100')).toBeVisible();
+  await expect(operationalDayCard.locator('svg circle')).toHaveCount(95);
   await expect(operationalDayCard).toHaveCSS('position', 'fixed');
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {

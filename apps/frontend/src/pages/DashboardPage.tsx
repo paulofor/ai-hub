@@ -212,7 +212,10 @@ function SalesImpactTimeline({ view, metrics }: { view: 'daily' | 'weekly'; metr
   const points = (metrics?.recentSalesImpact ?? []).filter((point): point is SalesImpactPoint & { score: number } =>
     typeof point.score === 'number' && point.score >= 1 && point.score <= 5
   );
-  const start = new Date(view === 'daily' ? metrics?.day?.startsAt ?? 0 : metrics?.week?.startsAt ?? 0).getTime();
+  const operationalDayStart = new Date(metrics?.day?.startsAt ?? 0).getTime();
+  const start = view === 'daily'
+    ? operationalDayStart - 20 * 24 * 60 * 60 * 1000
+    : new Date(metrics?.week?.startsAt ?? 0).getTime();
   const visiblePoints = points.filter((point) => new Date(point.createdAt).getTime() >= start);
 
   if (visiblePoints.length === 0) {
@@ -236,25 +239,20 @@ function SalesImpactTimeline({ view, metrics }: { view: 'daily' | 'weekly'; metr
   return (
     <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
       <div className="flex items-end justify-between gap-3">
-        <div><h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{view === 'daily' ? 'Notas do dia operacional' : 'Média diária da semana operacional'}</h4>
-          <p className="text-xs text-slate-500">{view === 'daily' ? 'Cada barra é uma nota de venda.' : 'Cada tick é a média geral das notas daquele dia.'}</p></div>
+        <div><h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{view === 'daily' ? 'Média diária operacional · últimos 21 dias' : 'Média diária da semana operacional'}</h4>
+          <p className="text-xs text-slate-500">Cada tick é a média das notas daquele dia operacional.</p></div>
         <div className="text-right"><span className="text-2xl font-bold text-emerald-600">{average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span><p className="text-xs text-slate-500">média geral</p></div>
       </div>
-      <div className="mt-5 flex h-52 gap-3" role="img" aria-label={view === 'daily' ? 'Gráfico diário com uma barra por nota de venda' : 'Gráfico semanal com um tick de média por dia operacional'}>
+      <div className="mt-5 flex h-52 gap-3" role="img" aria-label={view === 'daily' ? 'Gráfico com a média diária operacional dos últimos 21 dias' : 'Gráfico semanal com um tick de média por dia operacional'}>
         <div className="flex flex-col justify-between pb-6 text-xs text-slate-400">{[5, 4, 3, 2, 1].map((tick) => <span key={tick}>{tick}</span>)}</div>
         <div className="relative flex min-w-0 flex-1 items-end gap-2 border-b border-l border-slate-200 px-2 pb-6 dark:border-slate-700">
-          {view === 'daily' ? visiblePoints.map((point) => (
-            <div key={point.requestId} className="flex min-w-[12px] flex-1 flex-col items-center justify-end" style={{ height: '100%' }} title={`Nota ${point.score} · ${new Date(point.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`}>
-              <span className="mb-1 text-[10px] font-semibold text-slate-600 dark:text-slate-300">{point.score}</span>
-              <div className="w-full max-w-10 rounded-t bg-emerald-500" style={{ height: `${point.score * 20}%` }} />
-            </div>
-          )) : dailyAverages.map((point) => (
+          {dailyAverages.map((point) => (
             <div key={point.date} className="relative h-full flex-1 text-center" title={`${formatChartDate(`${point.date}T12:00:00Z`)} · média ${point.average.toFixed(1)}`}>
               <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: `calc(${point.average * 20}% - 6px)` }}>
                 <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-700 dark:text-emerald-300">{point.average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>
                 <div className="h-3 w-3 rounded-full border-2 border-white bg-emerald-500 shadow" />
               </div>
-              <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-slate-500">{formatChartDate(`${point.date}T12:00:00Z`, { weekday: 'short' }).replace('.', '')}</span>
+              <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-slate-500">{view === 'daily' ? formatChartDate(`${point.date}T12:00:00Z`) : formatChartDate(`${point.date}T12:00:00Z`, { weekday: 'short' }).replace('.', '')}</span>
             </div>
           ))}
         </div>

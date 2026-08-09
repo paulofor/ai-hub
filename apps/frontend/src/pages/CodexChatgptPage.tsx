@@ -824,6 +824,7 @@ const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
 };
 
 const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoint[] }) => {
+  const maximumPoints = 100;
   const width = 210;
   const height = 62;
   const left = 16;
@@ -833,10 +834,11 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const evaluated = points
-    .map((point, index) => ({ ...point, index }))
-    .filter((point): point is CodexSalesImpactPoint & { score: number; index: number } =>
+    .filter((point): point is CodexSalesImpactPoint & { score: number } =>
       typeof point.score === 'number' && point.score >= 1 && point.score <= 5
-    );
+    )
+    .slice(-maximumPoints)
+    .map((point, index) => ({ ...point, index }));
   const movingAverage = evaluated.slice(SALES_IMPACT_MOVING_AVERAGE_SIZE - 1).map((point, index) => {
     const window = evaluated.slice(index, index + SALES_IMPACT_MOVING_AVERAGE_SIZE);
     return {
@@ -844,7 +846,7 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
       score: window.reduce((sum, item) => sum + item.score, 0) / SALES_IMPACT_MOVING_AVERAGE_SIZE
     };
   });
-  const xFor = (index: number) => left + (points.length <= 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
+  const xFor = (index: number) => left + (evaluated.length <= 1 ? plotWidth : (index / (evaluated.length - 1)) * plotWidth);
   const yFor = (score: number) => top + ((5 - score) / 4) * plotHeight;
   const linePoints = movingAverage.map((point) => `${xFor(point.index)},${yFor(point.score)}`).join(' ');
 
@@ -852,7 +854,7 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
     <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média móvel ({SALES_IMPACT_MOVING_AVERAGE_SIZE} pontos)</p>
-        <p className="text-[9px] text-slate-500">últimas {points.length}/100</p>
+        <p className="text-[9px] text-slate-500">últimas {evaluated.length}/{maximumPoints}</p>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label={`Gráfico da média móvel de ${SALES_IMPACT_MOVING_AVERAGE_SIZE} pontos da nota de impacto em vendas`}>
         {[1, 3, 5].map((score) => (

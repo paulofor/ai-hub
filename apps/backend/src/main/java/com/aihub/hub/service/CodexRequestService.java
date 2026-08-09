@@ -426,6 +426,7 @@ public class CodexRequestService {
         LocalDate operationalWeekStart = operationalToday
             .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         Instant weekStart = operationalDayStart(operationalWeekStart, zone);
+        Instant salesImpactTimelineStart = operationalDayStart(operationalToday.minusDays(20), zone);
         Instant monthStart = today
             .withDayOfMonth(1)
             .atStartOfDay(zone)
@@ -444,18 +445,18 @@ public class CodexRequestService {
             buildSalesImpactScore(dayStart, profile),
             buildSalesImpactScore(weekStart, profile),
             buildSalesImpactScore(monthStart, profile),
-            buildSalesImpactTimeline(weekStart, profile)
+            buildSalesImpactTimeline(salesImpactTimelineStart, profile)
         );
     }
 
     private List<CodexDashboardMetrics.CodexSalesImpactPoint> buildSalesImpactTimeline(
-        Instant weekStart,
+        Instant timelineStart,
         CodexIntegrationProfile profile
     ) {
         if (profile == null) {
             return List.of();
         }
-        List<Object[]> rows = codexRequestRepository.findSalesImpactRowsSinceAndProfile(weekStart, profile);
+        List<Object[]> rows = codexRequestRepository.findSalesImpactRowsSinceAndProfile(timelineStart, profile);
         if (rows == null || rows.isEmpty()) {
             return List.of();
         }

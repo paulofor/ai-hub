@@ -301,7 +301,11 @@ class CodexRequestServiceTest {
                 new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"}
             ));
 
-        var metrics = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
+        CodexRequestService service = buildService();
+        ZoneId zone = ZoneId.of("America/Sao_Paulo");
+        ReflectionTestUtils.setField(service, "dashboardClock", Clock.fixed(Instant.parse("2026-08-09T12:00:00Z"), zone));
+
+        var metrics = service.dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
         var score = metrics.salesImpactDay();
 
         assertThat(score.muitoBaixo()).isEqualTo(1);
@@ -321,6 +325,10 @@ class CodexRequestServiceTest {
                 org.assertj.core.groups.Tuple.tuple(22L, 5));
         verify(codexRequestRepository, times(3))
             .findResponseTextsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT));
+        verify(codexRequestRepository).findSalesImpactRowsSinceAndProfile(
+            eq(Instant.parse("2026-07-20T06:00:00Z")),
+            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)
+        );
     }
 
     @Test
