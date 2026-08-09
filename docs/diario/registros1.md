@@ -3286,9 +3286,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
 - Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com `kill` e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
 
-## 2026-08-09 — Tela de detalhe das solicitações com nota 5 em vendas
+## 2026-08-09 — Gráficos diário e semanal das notas de venda
 
-- Criada uma rota de detalhe dedicada para as solicitações de alto impacto em vendas, preservando o contexto da área Codex ChatGPT MKT.
-- A nova tela apresenta o prompt e a resposta em formato de diálogo, além das métricas de duração, tokens de entrada e saída, horário de início e horário de fim.
-- Adicionada navegação para a próxima solicitação mais antiga que também tenha nota 5 (sem sair do conjunto filtrado) e retorno para a listagem.
-- Atualizada a listagem para abrir a nova rota e ampliado o teste E2E para validar conteúdo, métricas, navegação e captura visual da tela.
+- Solicitação recebida: substituir os contadores de distribuição de relevância em vendas por uma visão diária e semanal, com uma barra para cada nota e um tick para a média geral, respeitando o dia operacional.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o dashboard recebia apenas totais agregados por categoria para dia, semana e mês; essa agregação descartava a ordem, o horário e a relação de cada nota com seu dia operacional, tornando impossível desenhar tanto uma barra por avaliação quanto médias diárias corretas. Além disso, a semana começava à meia-noite civil, enquanto o dia operacional já começava às 03h.
+- Correção na causa: a API passou a entregar todas as notas válidas desde o início da semana operacional, em ordem cronológica e sem o limite arbitrário das 100 solicitações mais recentes; o início semanal agora também usa segunda-feira às 03h em `America/Sao_Paulo`.
+- Interface: o painel agora oferece seletores Diário e Semanal. A visão diária desenha uma barra por nota (escala de 1 a 5), enquanto a semanal agrupa as notas pelo dia operacional e apresenta um tick com a média de cada dia, além da média geral do período.
+- Proteção contra regressão: o teste de serviço valida a linha temporal e o corte semanal operacional, e o cenário E2E valida as duas visualizações, seus nomes acessíveis e a troca de período.

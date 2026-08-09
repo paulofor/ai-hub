@@ -109,6 +109,15 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         select cr.id, cr.createdAt, cr.responseText
         from CodexRequest cr
         where cr.profile = :profile
+          and cr.createdAt >= :start
+          and cr.responseText is not null
+        order by cr.createdAt asc
+        """)
+    List<Object[]> findSalesImpactRowsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
+    @Query("""
+        select cr.id, cr.createdAt, cr.responseText
+        from CodexRequest cr
+        where cr.profile = :profile
           and cr.responseText is not null
         order by cr.createdAt desc
         """)

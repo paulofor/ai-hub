@@ -294,11 +294,11 @@ class CodexRequestServiceTest {
             ));
         Instant older = Instant.parse("2026-07-20T12:00:00Z");
         Instant newer = Instant.parse("2026-07-21T12:00:00Z");
-        when(codexRequestRepository.findRecentSalesImpactRowsByProfile(
-            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any()))
+        when(codexRequestRepository.findSalesImpactRowsSinceAndProfile(
+            any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
             .thenReturn(List.of(
-                new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"},
-                new Object[] {21L, older, "{\"impactoAumentoVendas\":\"baixo\"}"}
+                new Object[] {21L, older, "{\"impactoAumentoVendas\":\"baixo\"}"},
+                new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"}
             ));
 
         var metrics = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
@@ -359,7 +359,7 @@ class CodexRequestServiceTest {
         var metrics = service.dashboardMetrics();
 
         assertThat(metrics.day().startsAt()).isEqualTo(Instant.parse("2026-07-22T06:00:00Z"));
-        assertThat(metrics.week().startsAt()).isEqualTo(Instant.parse("2026-07-20T03:00:00Z"));
+        assertThat(metrics.week().startsAt()).isEqualTo(Instant.parse("2026-07-20T06:00:00Z"));
         assertThat(metrics.month().startsAt()).isEqualTo(Instant.parse("2026-07-01T03:00:00Z"));
         assertThat(metrics.series().daily().getLast().startsAt()).isEqualTo(Instant.parse("2026-07-22T06:00:00Z"));
 
