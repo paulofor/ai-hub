@@ -405,10 +405,9 @@ public class CodexRequestService {
         LocalDate today = now.toLocalDate();
         LocalDate operationalToday = operationalDate(now);
         Instant dayStart = operationalDayStart(operationalToday, zone);
-        Instant weekStart = today
-            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-            .atStartOfDay(zone)
-            .toInstant();
+        LocalDate operationalWeekStart = operationalToday
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        Instant weekStart = operationalDayStart(operationalWeekStart, zone);
         Instant monthStart = today
             .withDayOfMonth(1)
             .atStartOfDay(zone)
@@ -427,21 +426,23 @@ public class CodexRequestService {
             buildSalesImpactScore(dayStart, profile),
             buildSalesImpactScore(weekStart, profile),
             buildSalesImpactScore(monthStart, profile),
-            buildRecentSalesImpact(profile)
+            buildSalesImpactTimeline(weekStart, profile)
         );
     }
 
-    private List<CodexDashboardMetrics.CodexSalesImpactPoint> buildRecentSalesImpact(CodexIntegrationProfile profile) {
+    private List<CodexDashboardMetrics.CodexSalesImpactPoint> buildSalesImpactTimeline(
+        Instant weekStart,
+        CodexIntegrationProfile profile
+    ) {
         if (profile == null) {
             return List.of();
         }
-        List<Object[]> rows = codexRequestRepository.findRecentSalesImpactRowsByProfile(profile, PageRequest.of(0, 100));
+        List<Object[]> rows = codexRequestRepository.findSalesImpactRowsSinceAndProfile(weekStart, profile);
         if (rows == null || rows.isEmpty()) {
             return List.of();
         }
         List<CodexDashboardMetrics.CodexSalesImpactPoint> points = new ArrayList<>(rows.size());
-        for (int index = rows.size() - 1; index >= 0; index--) {
-            Object[] row = rows.get(index);
+        for (Object[] row : rows) {
             String level = extractSalesImpactLevel(row[2] instanceof String response ? response : "");
             int resolvedScore = salesImpactScore(row[2] instanceof String response ? response : "");
             Integer score = resolvedScore == 0 ? null : resolvedScore;

@@ -10,7 +10,11 @@ test('renders the dashboard shell', async ({ page }) => {
         day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries,
         salesImpactDay: { muitoBaixo: 1, baixo: 2, medio: 3, alto: 4, muitoAlto: 5, total: 15 },
         salesImpactWeek: { muitoBaixo: 2, baixo: 3, medio: 5, alto: 8, muitoAlto: 7, total: 25 },
-        salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 }
+        salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 },
+        recentSalesImpact: [
+          { requestId: 1, createdAt: '2026-08-04T07:00:00Z', score: 2 },
+          { requestId: 2, createdAt: '2026-08-04T08:00:00Z', score: 4 }
+        ]
       } });
     }
     return route.fulfill({ json: { day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries } });
@@ -20,9 +24,13 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'AI Hub 6' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Relevância estimada em vendas' })).toBeVisible();
-  await expect(page.getByText('50', { exact: true })).toBeVisible();
-  await expect(page.getByText('Estes contadores representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Notas de venda' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Gráfico diário com uma barra por nota de venda' })).toBeVisible();
+  await expect(page.getByText('Cada barra é uma nota de venda.')).toBeVisible();
+  await page.getByRole('button', { name: 'Semanal' }).click();
+  await expect(page.getByRole('img', { name: 'Gráfico semanal com um tick de média por dia operacional' })).toBeVisible();
+  await expect(page.getByText('Cada tick é a média geral das notas daquele dia.')).toBeVisible();
+  await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
   await page.screenshot({ path: '/tmp/ai-hub-dashboard-relevancia-vendas.png', fullPage: true });
 });
 

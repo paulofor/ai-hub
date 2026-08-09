@@ -3285,3 +3285,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: habilitado `init: true` nos serviços `sandbox-orchestrator` e `mcp-server`, fazendo o Docker inserir um init mínimo que adota e coleta órfãos.
 - Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
 - Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com `kill` e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
+
+## 2026-08-09 — Gráficos diário e semanal das notas de venda
+
+- Solicitação recebida: substituir os contadores de distribuição de relevância em vendas por uma visão diária e semanal, com uma barra para cada nota e um tick para a média geral, respeitando o dia operacional.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o dashboard recebia apenas totais agregados por categoria para dia, semana e mês; essa agregação descartava a ordem, o horário e a relação de cada nota com seu dia operacional, tornando impossível desenhar tanto uma barra por avaliação quanto médias diárias corretas. Além disso, a semana começava à meia-noite civil, enquanto o dia operacional já começava às 03h.
+- Correção na causa: a API passou a entregar todas as notas válidas desde o início da semana operacional, em ordem cronológica e sem o limite arbitrário das 100 solicitações mais recentes; o início semanal agora também usa segunda-feira às 03h em `America/Sao_Paulo`.
+- Interface: o painel agora oferece seletores Diário e Semanal. A visão diária desenha uma barra por nota (escala de 1 a 5), enquanto a semanal agrupa as notas pelo dia operacional e apresenta um tick com a média de cada dia, além da média geral do período.
+- Proteção contra regressão: o teste de serviço valida a linha temporal e o corte semanal operacional, e o cenário E2E valida as duas visualizações, seus nomes acessíveis e a troca de período.
