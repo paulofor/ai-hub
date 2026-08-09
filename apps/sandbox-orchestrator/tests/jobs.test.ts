@@ -800,9 +800,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste'));
     assert.ok(input?.[0]?.text?.includes('somente então consolide a entrega em uma única publicação'));
     assert.ok(input?.[0]?.text?.includes('se ela terminar sem revelar defeitos, considere a homologação concluída'));
-    assert.ok(input?.[0]?.text?.includes('A exigência de cinco rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção'));
-    assert.ok(input?.[0]?.text?.includes('depois da última correção, execute cinco rodadas locais completas e consecutivas sem falhas'));
-    assert.ok(input?.[0]?.text?.includes('reinicie a contagem das cinco rodadas'));
+    assert.ok(input?.[0]?.text?.includes('A exigência de duas rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção'));
+    assert.ok(input?.[0]?.text?.includes('depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas'));
+    assert.ok(input?.[0]?.text?.includes('reinicie a contagem das duas rodadas'));
     assert.ok(input?.[0]?.text?.includes('não peça PR, merge ou deploy enquanto algum critério estiver pendente'));
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
@@ -2938,9 +2938,9 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste/i);
     assert.match(promptText, /somente então consolide a entrega em uma única publicação/i);
     assert.match(promptText, /se ela terminar sem revelar defeitos, considere a homologação concluída/i);
-    assert.match(promptText, /A exigência de cinco rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção/i);
-    assert.match(promptText, /depois da última correção, execute cinco rodadas locais completas e consecutivas sem falhas/i);
-    assert.match(promptText, /reinicie a contagem das cinco rodadas/i);
+    assert.match(promptText, /A exigência de duas rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção/i);
+    assert.match(promptText, /depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas/i);
+    assert.match(promptText, /reinicie a contagem das duas rodadas/i);
     assert.match(promptText, /não peça PR, merge ou deploy enquanto algum critério estiver pendente/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
