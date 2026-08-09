@@ -107,6 +107,16 @@ public class CodexController {
         return codexRequestService.listSalesImpactRequests(score, page, size);
     }
 
+    @GetMapping("/sales-impact/{score}/{id}/previous")
+    public ResponseEntity<Map<String, Long>> previousSalesImpactRequest(@PathVariable int score, @PathVariable Long id) {
+        if (score < 1 || score > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe score de 1 a 5");
+        }
+        return codexRequestService.previousSalesImpactRequestId(score, id)
+            .map(previousId -> ResponseEntity.ok(Map.of("id", previousId)))
+            .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/{id}/previous")
     public ResponseEntity<Map<String, Long>> previous(@PathVariable Long id) {
         return codexRequestService.previousRequestId(id)

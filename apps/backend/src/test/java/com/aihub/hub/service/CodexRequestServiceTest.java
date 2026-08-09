@@ -341,6 +341,9 @@ class CodexRequestServiceTest {
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(33L, "Oferta campeã"),
                 org.assertj.core.groups.Tuple.tuple(31L, "Checkout otimizado"));
+
+        assertThat(buildService().previousSalesImpactRequestId(5, 33L)).contains(31L);
+        assertThat(buildService().previousSalesImpactRequestId(5, 31L)).isEmpty();
     }
 
     @Test

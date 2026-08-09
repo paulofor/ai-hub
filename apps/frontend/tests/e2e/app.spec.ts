@@ -1093,6 +1093,23 @@ test('lists score-five sales requests in pages of 25 and opens request details',
       last: false
     } });
   });
+  await page.route('**/api/codex/requests/sales-impact/5/901/previous', (route) => route.fulfill({ json: { id: 900 } }));
+  await page.route('**/api/codex/requests/901', (route) => route.fulfill({ json: {
+    id: 901,
+    environment: 'marketing',
+    model: 'gpt-5',
+    version: 'aihub-6',
+    profile: 'CHATGPT_CODEX_MKT',
+    prompt: 'Como melhorar a conversão do checkout?',
+    responseText: 'Priorize uma proposta de valor clara e reduza os campos.',
+    status: 'COMPLETED',
+    createdAt: '2026-08-06T11:59:00Z',
+    startedAt: '2026-08-06T12:00:00Z',
+    finishedAt: '2026-08-06T12:02:00Z',
+    durationMs: 120000,
+    promptTokens: 1200,
+    completionTokens: 450
+  } }));
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Nota 5 em Vendas' }).click();
@@ -1104,5 +1121,9 @@ test('lists score-five sales requests in pages of 25 and opens request details',
   await page.screenshot({ path: '/tmp/ai-hub-solicitacoes-nota-5-vendas.png', fullPage: true });
 
   await page.getByRole('link', { name: /Checkout com maior conversão/ }).click();
-  await expect(page).toHaveURL(/\/codex\/requests\/901$/);
+  await expect(page).toHaveURL(/\/codex-chatgpt-mkt\/nota-5-vendas\/901$/);
+  await expect(page.getByText('Diálogo')).toBeVisible();
+  await expect(page.getByText('1.200')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Próxima (mais antiga) →' })).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-detalhe-nota-5-vendas.png', fullPage: true });
 });
