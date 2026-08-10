@@ -72,6 +72,10 @@ services:
     init: true
     # Limite de contenção: uma falha não pode esgotar a tabela de PIDs do host.
     pids_limit: ${SANDBOX_ORCHESTRATOR_PIDS_LIMIT:-512}
+    # Ferramentas executadas pelo modelo não podem disputar toda a RAM com os
+    # serviços públicos. Sem swap adicional, uma carga fugitiva fica contida.
+    mem_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-5g}
+    memswap_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-5g}
     build:
       context: ./apps/sandbox-orchestrator
     env_file:
