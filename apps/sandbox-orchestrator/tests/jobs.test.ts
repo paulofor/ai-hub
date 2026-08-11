@@ -3810,6 +3810,9 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
         }, 5);
         return { id: 'turn-123' };
       }
+      if (method === 'thread/archive') {
+        return {};
+      }
       throw new Error(`unexpected method ${method}`);
     },
     onNotification: (method: string, listener: (params: unknown) => void) => {
@@ -3861,6 +3864,7 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
+    assert.deepEqual(calls.find((call) => call.method === 'thread/archive')?.params, { threadId: 'thread-123' });
     const input = (turnStartCall.params as { input?: Array<{ text?: string; type?: string; url?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT ativo'));
     assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
@@ -3918,6 +3922,9 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
         }, 5);
         return { id: 'turn-sandbox' };
       }
+      if (method === 'thread/archive') {
+        return {};
+      }
       throw new Error(`unexpected method ${method}`);
     },
     onNotification: (method: string, listener: (params: unknown) => void) => {
@@ -3957,6 +3964,7 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.equal(await fs.stat(path.join(cwd!, '.git')).then(() => true).catch(() => false), false);
   const turnStartCall = calls.find((call) => call.method === 'turn/start');
   assert.ok(turnStartCall);
+  assert.deepEqual(calls.find((call) => call.method === 'thread/archive')?.params, { threadId: 'thread-sandbox' });
   const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
   assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT Sandbox ativo'));
   assert.ok(input?.[0]?.text?.includes('sem integração com Git'));
