@@ -99,6 +99,35 @@ test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta
   assert.match(compose, /export META_TOKEN=\$\(cat \/run\/secrets\/meta-token\/meta_token\)/);
 });
 
+test('docker compose monta e exporta a credencial Brave para o sandbox-orchestrator', async () => {
+  const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
+
+  assert.match(compose, /\$\{BRAVE_TOKEN_HOST_DIR:-\/root\/infra\/brave-token\}:\/run\/secrets\/brave-token:ro/);
+  assert.match(compose, /\/run\/secrets\/brave-token\/brave_api_key/);
+  assert.match(compose, /export BRAVE_API_KEY=\$\(cat \/run\/secrets\/brave-token\/brave_api_key\)/);
+});
+
+test('informa ao modelo quando a Brave Search API esta disponivel', () => {
+  const originalBraveApiKey = process.env.BRAVE_API_KEY;
+  process.env.BRAVE_API_KEY = 'segredo-de-teste';
+
+  try {
+    const processor = new SandboxJobProcessor();
+    const instruction = (processor as any).buildExternalApiKeysInstruction();
+
+    assert.match(instruction, /BRAVE_API_KEY/);
+    assert.match(instruction, /Brave Search API/);
+    assert.match(instruction, /X-Subscription-Token/);
+    assert.doesNotMatch(instruction, /segredo-de-teste/);
+  } finally {
+    if (originalBraveApiKey === undefined) {
+      delete process.env.BRAVE_API_KEY;
+    } else {
+      process.env.BRAVE_API_KEY = originalBraveApiKey;
+    }
+  }
+});
+
 test('imagem da sandbox instala ferramentas de execução e validação do runner', async () => {
   const dockerfile = await fs.readFile(path.resolve('Dockerfile'), 'utf8');
 

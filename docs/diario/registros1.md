@@ -3339,3 +3339,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: o bloco de finalização agora sempre solicita `thread/archive` depois de remover os listeners, tanto no sucesso quanto na falha do turno. O próprio protocolo remove a thread ativa do gerenciador, envia `Shutdown` e move seu rollout para o diretório de sessões arquivadas, liberando o estado residente sem apagar o histórico persistido.
 - Resiliência: uma falha isolada ao arquivar é registrada com o `threadId`, mas não substitui o resultado já produzido pelo job; a próxima investigação terá evidência explícita da limpeza que falhou.
 - Proteção contra regressão: os testes dos perfis ChatGPT Codex com e sem Git verificam que `thread/archive` recebe o identificador exato criado por `thread/start`, e a suíte integral do orquestrador confirma que falhas de limpeza permanecem não fatais.
+
+## 2026-08-11 — Disponibilização do token da Brave Search ao modelo
+
+- Solicitação recebida: permitir que o modelo use o token da Brave armazenado no host em `/root/infra/brave-token/brave_api_key` e informá-lo dessa disponibilidade.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o arquivo já existia no host, mas o diretório não era montado no `sandbox-orchestrator`, seu conteúdo não era exportado para o processo e a instrução de credenciais externas não conhecia a Brave. Portanto, o modelo não tinha acesso nem contexto para utilizar o token.
+- Correção na causa: o Compose agora monta o diretório somente para leitura, exporta a chave como `BRAVE_API_KEY` e o prompt operacional informa ao modelo que pode usar a Brave Search API com o header `X-Subscription-Token`, sem revelar o segredo.
+- Operação e documentação: o caminho padrão e o override `BRAVE_TOKEN_HOST_DIR` foram documentados no README e no `.env.example`; é necessário recriar o `sandbox-orchestrator` para aplicar a montagem na VPS.
+- Proteção contra regressão: testes verificam a montagem/exportação no Compose e confirmam que a instrução menciona a API, a variável e o header sem incluir o valor secreto.
