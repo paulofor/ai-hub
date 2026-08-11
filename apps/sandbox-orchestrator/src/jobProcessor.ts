@@ -1345,15 +1345,19 @@ export class SandboxJobProcessor implements JobProcessor {
 
   private buildExternalApiKeysInstruction(): string {
     const availableKeys = [
+      process.env.BRAVE_API_KEY?.trim() ? 'BRAVE_API_KEY' : undefined,
       process.env.LUMA_API_KEY?.trim() ? 'LUMA_API_KEY' : undefined,
       process.env.KLING_API_KEY?.trim() ? 'KLING_API_KEY' : undefined,
       process.env.HEYGEN_API_KEY?.trim() ? 'HEYGEN_API_KEY' : undefined,
       process.env.RADAR_META_TOKEN?.trim() ? 'RADAR_META_TOKEN' : undefined,
       process.env.META_TOKEN?.trim() ? 'META_TOKEN' : undefined,
     ].filter(Boolean);
+    const braveInstruction = process.env.BRAVE_API_KEY?.trim()
+      ? 'Para pesquisas na web, voce pode usar a Brave Search API com BRAVE_API_KEY no header X-Subscription-Token; nunca exponha o token na linha de comando, em logs, respostas ou arquivos.'
+      : 'A Brave Search API pode ser disponibilizada via BRAVE_API_KEY.';
     return availableKeys.length > 0
-      ? `As seguintes credenciais de APIs externas estao exportadas no ambiente para uso por comandos do modelo: ${availableKeys.join(', ')}. Nunca imprima esses valores em logs, respostas ou arquivos.`
-      : 'Credenciais Luma/Kling/HeyGen/Radar Meta/Meta podem ser disponibilizadas via LUMA_API_KEY, KLING_API_KEY, HEYGEN_API_KEY, RADAR_META_TOKEN e META_TOKEN; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.';
+      ? `As seguintes credenciais de APIs externas estao exportadas no ambiente para uso por comandos do modelo: ${availableKeys.join(', ')}. ${braveInstruction} Nunca imprima esses valores em logs, respostas ou arquivos.`
+      : `${braveInstruction} Credenciais Luma/Kling/HeyGen/Radar Meta/Meta podem ser disponibilizadas via LUMA_API_KEY, KLING_API_KEY, HEYGEN_API_KEY, RADAR_META_TOKEN e META_TOKEN; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.`;
   }
 
   private buildDockerCliInstruction(): string {

@@ -58,6 +58,12 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura em `/run/secrets/pepper-token`; se o arquivo existir, o conteúdo é exportado como `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner.
 - Caso prefira outro caminho no host, defina `PEPPER_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `pepper_api_token`.
 
+### Armazenamento do token da Brave Search para a sandbox
+
+- Guarde o token fora do repositório em `/root/infra/brave-token/brave_api_key`.
+- O `sandbox-orchestrator` monta esse diretório como somente leitura e exporta o conteúdo como `BRAVE_API_KEY`; a instrução enviada ao modelo informa que ele pode usar a Brave Search API sem revelar a credencial.
+- Caso prefira outro caminho no host, defina `BRAVE_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `brave_api_key`.
+
 ### Armazenamento dos tokens Luma, Kling, HeyGen, Radar Meta e Meta para a sandbox
 
 - Para chamadas às APIs Luma, Kling, HeyGen, Radar Meta e Meta executadas pelo modelo, guarde as chaves fora do repositório em `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key`, `/root/infra/heygen-token/heygen_api_key`, `/root/infra/radarmeta-token/radar_meta_token` e `/root/infra/meta-token/meta_token`.
