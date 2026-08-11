@@ -3347,3 +3347,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: o Compose agora monta o diretório somente para leitura, exporta a chave como `BRAVE_API_KEY` e o prompt operacional informa ao modelo que pode usar a Brave Search API com o header `X-Subscription-Token`, sem revelar o segredo.
 - Operação e documentação: o caminho padrão e o override `BRAVE_TOKEN_HOST_DIR` foram documentados no README e no `.env.example`; é necessário recriar o `sandbox-orchestrator` para aplicar a montagem na VPS.
 - Proteção contra regressão: testes verificam a montagem/exportação no Compose e confirmam que a instrução menciona a API, a variável e o header sem incluir o valor secreto.
+
+## 2026-08-11 — Resiliência do CI ao limite HTTP 429 do Maven Central
+
+- Solicitação recebida: corrigir a falha do job `mcp-server`, que não conseguiu resolver o parent POM do Spring Boot porque o Maven Central respondeu `429 Too Many Requests`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os jobs `backend` e `mcp-server` eram iniciados em runners independentes e em paralelo, ambos sem cache Maven, repetindo downloads do mesmo parent e das mesmas dependências. Além disso, uma resposta transitória 429 encerrava imediatamente o build, sem espera nem nova tentativa controlada.
+- Correção na causa: ambos os jobs passaram a usar a mesma chave de cache, calculada pelos dois POMs, e o `mcp-server` agora aguarda o `backend`, permitindo restaurar o repositório Maven aquecido em vez de repetir a rajada concorrente de downloads.
+- Resiliência transitória: as duas execuções Maven usam um script comum que repete exclusivamente falhas contendo HTTP 429, com espera exponencial e `-U` para reavaliar artefatos cuja tentativa anterior foi marcada como falha. Erros reais de compilação ou teste são devolvidos imediatamente, sem retries que ocultem defeitos.
+- Proteção contra regressão: o workflow foi validado com `actionlint`, e o script foi exercitado com comandos falsos para confirmar sucesso após um 429 e ausência de retry para erro não transitório.
