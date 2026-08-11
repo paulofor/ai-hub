@@ -1313,6 +1313,13 @@ export class SandboxJobProcessor implements JobProcessor {
       return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
     } finally {
       unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
+      try {
+        await client.request('thread/archive', { threadId });
+        this.log(job, `Codex App Server thread/archive concluído threadId=${threadId}`);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.log(job, `Codex App Server thread/archive falhou threadId=${threadId}: ${reason}`);
+      }
     }
   }
 
