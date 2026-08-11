@@ -3339,3 +3339,19 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: o bloco de finalização agora sempre solicita `thread/archive` depois de remover os listeners, tanto no sucesso quanto na falha do turno. O próprio protocolo remove a thread ativa do gerenciador, envia `Shutdown` e move seu rollout para o diretório de sessões arquivadas, liberando o estado residente sem apagar o histórico persistido.
 - Resiliência: uma falha isolada ao arquivar é registrada com o `threadId`, mas não substitui o resultado já produzido pelo job; a próxima investigação terá evidência explícita da limpeza que falhou.
 - Proteção contra regressão: os testes dos perfis ChatGPT Codex com e sem Git verificam que `thread/archive` recebe o identificador exato criado por `thread/start`, e a suíte integral do orquestrador confirma que falhas de limpeza permanecem não fatais.
+
+## 2026-08-11 — Disponibilização do token da Brave Search ao modelo
+
+- Solicitação recebida: permitir que o modelo use o token da Brave armazenado no host em `/root/infra/brave-token/brave_api_key` e informá-lo dessa disponibilidade.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o arquivo já existia no host, mas o diretório não era montado no `sandbox-orchestrator`, seu conteúdo não era exportado para o processo e a instrução de credenciais externas não conhecia a Brave. Portanto, o modelo não tinha acesso nem contexto para utilizar o token.
+- Correção na causa: o Compose agora monta o diretório somente para leitura, exporta a chave como `BRAVE_API_KEY` e o prompt operacional informa ao modelo que pode usar a Brave Search API com o header `X-Subscription-Token`, sem revelar o segredo.
+- Operação e documentação: o caminho padrão e o override `BRAVE_TOKEN_HOST_DIR` foram documentados no README e no `.env.example`; é necessário recriar o `sandbox-orchestrator` para aplicar a montagem na VPS.
+- Proteção contra regressão: testes verificam a montagem/exportação no Compose e confirmam que a instrução menciona a API, a variável e o header sem incluir o valor secreto.
+
+## 2026-08-11 — Resiliência do CI ao limite HTTP 429 do Maven Central
+
+- Solicitação recebida: corrigir a falha do job `mcp-server`, que não conseguiu resolver o parent POM do Spring Boot porque o Maven Central respondeu `429 Too Many Requests`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os jobs `backend` e `mcp-server` eram iniciados em runners independentes e em paralelo, ambos sem cache Maven, repetindo downloads do mesmo parent e das mesmas dependências. Além disso, uma resposta transitória 429 encerrava imediatamente o build, sem espera nem nova tentativa controlada.
+- Correção na causa: ambos os jobs passaram a usar a mesma chave de cache, calculada pelos dois POMs, e o `mcp-server` agora aguarda o `backend`, permitindo restaurar o repositório Maven aquecido em vez de repetir a rajada concorrente de downloads.
+- Resiliência transitória: as duas execuções Maven usam um script comum que repete exclusivamente falhas contendo HTTP 429, com espera exponencial e `-U` para reavaliar artefatos cuja tentativa anterior foi marcada como falha. Erros reais de compilação ou teste são devolvidos imediatamente, sem retries que ocultem defeitos.
+- Proteção contra regressão: o workflow foi validado com `actionlint`, e o script foi exercitado com comandos falsos para confirmar sucesso após um 429 e ausência de retry para erro não transitório.

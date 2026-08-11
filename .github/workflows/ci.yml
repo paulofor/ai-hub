@@ -27,10 +27,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            apps/backend/pom.xml
+            apps/mcp-server/pom.xml
       - name: Build backend
-        run: mvn -f apps/backend -B test
+        run: .github/scripts/run-with-maven-central-retry.sh mvn -U -f apps/backend -B test
 
   mcp-server:
+    # Serializa os dois consumidores do Maven Central: o backend aquece o cache
+    # compartilhado antes de o MCP server tentar resolver as mesmas dependências.
+    needs: backend
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,8 +47,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            apps/backend/pom.xml
+            apps/mcp-server/pom.xml
       - name: Build MCP server
-        run: mvn -f apps/mcp-server -B test
+        run: .github/scripts/run-with-maven-central-retry.sh mvn -U -f apps/mcp-server -B test
 
   frontend:
     runs-on: ubuntu-latest
