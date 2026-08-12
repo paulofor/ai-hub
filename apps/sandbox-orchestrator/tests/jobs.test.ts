@@ -833,6 +833,10 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
+    assert.ok(input?.[0]?.text?.includes('já autoriza todas as correções locais causalmente relacionadas'));
+    assert.ok(input?.[0]?.text?.includes('não interrompa a execução para pedir nova autorização a cada defeito descoberto'));
+    assert.ok(input?.[0]?.text?.includes('simule-os com dependências locais ou test doubles e resolva um por vez'));
+    assert.ok(input?.[0]?.text?.includes('só peça uma decisão quando existirem alternativas de produto realmente ambíguas'));
     assert.ok(input?.[0]?.text?.includes('Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste'));
     assert.ok(input?.[0]?.text?.includes('somente então consolide a entrega em uma única publicação'));
     assert.ok(input?.[0]?.text?.includes('se ela terminar sem revelar defeitos, considere a homologação concluída'));
@@ -2971,6 +2975,10 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /não apresente a ativação de Docker local como melhoria necessária/i);
     assert.match(promptText, /Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução/i);
     assert.match(promptText, /Regra obrigatória para todos os perfis/i);
+    assert.match(promptText, /já autoriza todas as correções locais causalmente relacionadas/i);
+    assert.match(promptText, /não interrompa a execução para pedir nova autorização a cada defeito descoberto/i);
+    assert.match(promptText, /simule-os com dependências locais ou test doubles e resolva um por vez/i);
+    assert.match(promptText, /só peça uma decisão quando existirem alternativas de produto realmente ambíguas/i);
     assert.match(promptText, /Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste/i);
     assert.match(promptText, /somente então consolide a entrega em uma única publicação/i);
     assert.match(promptText, /se ela terminar sem revelar defeitos, considere a homologação concluída/i);
