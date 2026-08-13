@@ -159,7 +159,7 @@ export default function DashboardPage() {
           <div>
           <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Notas de venda</h3>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Evolução das notas declaradas pelo perfil de Marketing, considerando o dia operacional (03h–03h).
+            Evolução das notas declaradas pelo perfil de Marketing, considerando o dia operacional (02h–02h).
           </p>
           </div>
           <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-slate-800" aria-label="Período do gráfico de notas de venda">

@@ -2849,7 +2849,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <RecentSalesImpactChart points={dailyMetrics?.recentSalesImpact} />
             </div>
           ) : null}
-          <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
+          <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 02:00 · São Paulo</p>
         </div>
       </div>
       {config.profile === 'CHATGPT_CODEX_MKT' ? (
