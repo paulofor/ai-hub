@@ -75,8 +75,8 @@ test('docker compose monta e exporta credenciais AWS para o sandbox-orchestrator
 test('docker compose contém memória de ferramentas sem consumir a reserva do host', async () => {
   const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
 
-  assert.match(compose, /mem_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-5g\}/);
-  assert.match(compose, /memswap_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-5g\}/);
+  assert.match(compose, /mem_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-6g\}/);
+  assert.match(compose, /memswap_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-6g\}/);
 });
 
 test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta e Meta para o sandbox-orchestrator', async () => {
