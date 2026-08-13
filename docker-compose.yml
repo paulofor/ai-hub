@@ -74,8 +74,8 @@ services:
     pids_limit: ${SANDBOX_ORCHESTRATOR_PIDS_LIMIT:-512}
     # Ferramentas executadas pelo modelo não podem disputar toda a RAM com os
     # serviços públicos. Sem swap adicional, uma carga fugitiva fica contida.
-    mem_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-5g}
-    memswap_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-5g}
+    mem_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-6g}
+    memswap_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-6g}
     build:
       context: ./apps/sandbox-orchestrator
     env_file:
