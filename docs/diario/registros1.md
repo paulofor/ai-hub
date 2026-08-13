@@ -3370,3 +3370,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o histórico operacional já confirmou que o Codex App Server foi encerrado pelo kernel com `OOMKilled=true` ao atingir o limite de 5 GiB; embora o arquivamento de threads concluídas trate a retenção de estado, cargas legítimas ainda precisam de uma margem adicional para o App Server, ferramentas e processos filhos compartilhados no mesmo contêiner.
 - Ajuste aplicado: os limites padrão de RAM e de RAM mais swap foram elevados juntos para 6 GiB, sem habilitar swap adicional e mantendo a contenção que protege os demais serviços e o host.
 - Documentação e proteção contra regressão: o `.env.example`, a referência do orquestrador e as asserções do Compose foram atualizados para refletir o novo padrão de 6 GiB.
+
+## 2026-08-13 — Corte do dia operacional às 02:00
+
+- Solicitação recebida: mudar o fim/início do dia operacional de 03:00 para 02:00 no fuso de São Paulo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o horário de corte estava fixado em 03:00 na regra central do backend e repetido nos textos explicativos do frontend; portanto, alterar somente a apresentação manteria as agregações incorretas e alterar somente o backend deixaria a interface divergente.
+- Correção na causa: a constante usada para calcular a data operacional, as janelas diária e semanal e a série diária passou para 02:00; os textos do dashboard e do quadro operacional MKT foram alinhados ao novo horário.
+- Proteção contra regressão: as expectativas do teste de métricas foram atualizadas para validar 02:00 em `America/Sao_Paulo` (05:00 UTC no cenário testado).

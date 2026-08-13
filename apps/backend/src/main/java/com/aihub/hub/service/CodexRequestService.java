@@ -83,7 +83,7 @@ public class CodexRequestService {
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
     private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
     private static final int REQUEST_TITLE_LIMIT = 140;
-    private static final LocalTime DASHBOARD_DAY_CUTOFF = LocalTime.of(3, 0);
+    private static final LocalTime DASHBOARD_DAY_CUTOFF = LocalTime.of(2, 0);
     private static final Pattern JSON_FENCE_PATTERN = Pattern.compile("(?is)```(?:json)?\\s*([\\s\\S]*?)\\s*```");
     private static final Pattern LAST_USER_MESSAGE_PATTERN = Pattern.compile(
         "(?s)(?:^|\\R)Última mensagem do usuário:\\s*\\R?(.+?)\\s*$"
