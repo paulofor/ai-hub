@@ -37,8 +37,8 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | --- | --- | --- |
 | `PORT` | Porta HTTP exposta pelo serviço | `8083` |
 | `SANDBOX_REQUEST_BODY_LIMIT` | Limite do JSON aceito nas chamadas HTTP do sandbox-orchestrator. Deve comportar o prompt e anexos enviados pelo frontend. | `50mb` |
-| `SANDBOX_ORCHESTRATOR_MEMORY_LIMIT` | Limite total de RAM do contêiner orquestrador, incluindo ferramentas e processos filhos; preserva memória para os serviços públicos e o host. | `6g` |
-| `SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT` | Soma máxima de RAM e swap do orquestrador. Igual ao limite de RAM por padrão para impedir degradação global por swap. | `6g` |
+| `SANDBOX_ORCHESTRATOR_MEMORY_LIMIT` | Limite total de RAM do contêiner orquestrador, incluindo ferramentas e processos filhos; em uma VPS de 10 GiB, preserva aproximadamente 2 GiB para os serviços públicos e o host. | `8g` |
+| `SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT` | Soma máxima de RAM e swap do orquestrador. Igual ao limite de RAM por padrão para impedir degradação global por swap. | `8g` |
 | `CODEX_APP_SERVER_ENABLED` | Quando `true`, inicia o supervisor local do `codex app-server --listen stdio://` e inclui seu estado no healthcheck. | `false` |
 | `CODEX_HOME` | Diretório persistente do Codex App Server para cache de autenticação gerenciado pelo próprio Codex. Deve ser tratado como segredo quando usar storage em arquivo. | `/var/lib/ai-hub/codex` na imagem |
 | `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX`/`CHATGPT_CODEX_MKT` via App Server. | `21600000` (6 horas) |
