@@ -3377,3 +3377,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o horário de corte estava fixado em 03:00 na regra central do backend e repetido nos textos explicativos do frontend; portanto, alterar somente a apresentação manteria as agregações incorretas e alterar somente o backend deixaria a interface divergente.
 - Correção na causa: a constante usada para calcular a data operacional, as janelas diária e semanal e a série diária passou para 02:00; os textos do dashboard e do quadro operacional MKT foram alinhados ao novo horário.
 - Proteção contra regressão: as expectativas do teste de métricas foram atualizadas para validar 02:00 em `America/Sao_Paulo` (05:00 UTC no cenário testado).
+
+## 2026-08-14 — Diagnóstico de indisponibilidade pública do AI Hub
+
+- Solicitação recebida: verificar por que o ambiente parecia travado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o proxy público continuava aceitando a conexão HTTPS, mas não conseguia estabelecer conexão com o servidor de origem; as rotas `/`, `/mcp` e `/api/health` responderam HTTP 503 após aproximadamente cinco segundos com `upstream connect error or disconnect/reset before headers` e `reset reason: connection timeout`.
+- Delimitação do diagnóstico: o problema ocorre antes de qualquer resposta da aplicação e afeta simultaneamente frontend, backend e MCP, o que descarta um travamento isolado de uma tela ou endpoint. A causa imediatamente observável é a indisponibilidade de rede do host/origem atrás do proxy; não foi possível distinguir remotamente entre VPS desligada, reinicialização ou bloqueio de rede porque o próprio MCP de diagnóstico está no mesmo host indisponível.
+- Ação aplicada: nenhuma alteração de código nem tentativa de mascarar o 503 foi feita, pois isso trataria a consequência. O restabelecimento exige verificar o estado da VPS no provedor/console e, assim que o host responder, consultar uptime, eventos de OOM e logs dos contêineres para identificar o gatilho operacional definitivo.
+
+## 2026-08-14 — Adequação da sandbox à VPS com 10 GiB de memória
+
+- Solicitação recebida: após o upgrade da VPS para 10 GiB, aumentar a memória da sandbox sem comprometer a segurança do host.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o limite padrão do `sandbox-orchestrator` continuava em 6 GiB, dimensionado para a capacidade anterior da VPS. Apenas remover o limite ou entregar os 10 GiB ao contêiner repetiria a causa das quedas anteriores: ferramentas, builds e o Codex App Server poderiam disputar toda a RAM com proxy, backend, MCP e sistema operacional.
+- Correção na causa: os limites padrão de RAM e de RAM mais swap passam juntos para 8 GiB. Na VPS de 10 GiB, a sandbox ganha 2 GiB adicionais para cargas legítimas e permanece contida, reservando aproximadamente 2 GiB para os serviços públicos e o host; manter `memswap_limit` igual a `mem_limit` impede que uma carga fugitiva migre para swap e deixe a máquina sem resposta.
+- Documentação e proteção contra regressão: o Compose, o `.env.example`, a referência do orquestrador e o teste automatizado foram alinhados ao novo padrão. Para aplicar o limite efetivo, o contêiner `sandbox-orchestrator` precisa ser recriado após a atualização.
