@@ -614,6 +614,7 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
     json: {
       day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 },
+      salesImpactDay: { muitoBaixo: 1, baixo: 1, medio: 1, alto: 1, muitoAlto: 2, total: 6 },
       recentSalesImpact: [
         ...Array.from({ length: 103 }, (_, index) => ({
           requestId: 500 + index,
@@ -644,11 +645,13 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
 
   await page.goto('/codex-chatgpt-mkt');
 
-  const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[1]');
+  const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[contains(@class, "fixed")][1]');
   await expect(operationalDayCard.getByText('Solicitações')).toBeVisible();
   await expect(operationalDayCard.getByText('Interações')).toBeVisible();
   await expect(operationalDayCard.locator('p').getByText('3', { exact: true })).toBeVisible();
   await expect(operationalDayCard.locator('p').getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByText('Média do dia')).toBeVisible();
+  await expect(operationalDayCard.getByText('3,33', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByRole('img', { name: 'Gráfico da média móvel de 6 pontos da nota de impacto em vendas' })).toBeVisible();
   await expect(operationalDayCard.getByText('Média móvel (6 pontos)')).toBeVisible();
   await expect(operationalDayCard.getByText('últimas 100/100')).toBeVisible();
@@ -659,7 +662,7 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
     const box = element.getBoundingClientRect();
     return { height: box.height, right: box.right, top: box.top };
   });
-  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(330);
+  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(345);
   await operationalDayCard.screenshot({ path: '/tmp/ai-hub-nota-vendas-ultimas-solicitacoes.png' });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
