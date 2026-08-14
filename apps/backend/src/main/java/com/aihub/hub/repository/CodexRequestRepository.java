@@ -127,6 +127,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);
     Optional<CodexRequest> findFirstByIdLessThanOrderByIdDesc(Long id);
     Optional<CodexRequest> findByExternalId(String externalId);
+    List<CodexRequest> findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(Collection<CodexRequestStatus> statuses);
     boolean existsByProfileAndStatusInAndExternalIdIsNotNull(CodexIntegrationProfile profile, Collection<CodexRequestStatus> statuses);
     Optional<CodexRequest> findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(CodexIntegrationProfile profile, CodexRequestStatus status);
 }

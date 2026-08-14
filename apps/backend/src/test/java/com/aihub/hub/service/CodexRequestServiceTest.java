@@ -664,6 +664,68 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void recoveryFailsJobLostAfterRestartAndDispatchesNextPendingRequest() {
+        CodexRequest interrupted = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "interrupted task"
+        );
+        interrupted.setExternalId("lost-after-vps-restart");
+        interrupted.setStatus(CodexRequestStatus.RUNNING);
+        interrupted.setStartedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        CodexRequest next = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "next queued task"
+        );
+        next.setStatus(CodexRequestStatus.PENDING);
+
+        when(codexRequestRepository.findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(interrupted));
+        when(sandboxOrchestratorClient.getJob("lost-after-vps-restart")).thenReturn(null);
+        when(codexRequestRepository.findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(
+            CodexIntegrationProfile.STANDARD,
+            CodexRequestStatus.PENDING
+        )).thenReturn(Optional.of(next), Optional.empty());
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        buildService().recoverQueueAfterRestart();
+
+        assertThat(interrupted.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(interrupted.getResponseText()).contains("interrompida pela reinicialização do servidor");
+        assertThat(interrupted.getFinishedAt()).isNotNull();
+        assertThat(next.getExternalId()).isNotBlank();
+        verify(sandboxOrchestratorClient).createJob(any());
+    }
+
+    @Test
+    void recoveryKeepsQueueBlockedWhileOrchestratorIsTemporarilyUnavailable() {
+        CodexRequest running = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "still unknown"
+        );
+        running.setExternalId("job-orchestrator-unavailable");
+        running.setStatus(CodexRequestStatus.RUNNING);
+
+        when(codexRequestRepository.findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(running));
+        when(sandboxOrchestratorClient.getJob("job-orchestrator-unavailable"))
+            .thenThrow(new IllegalStateException("connection refused"));
+
+        buildService().recoverQueueAfterRestart();
+
+        assertThat(running.getStatus()).isEqualTo(CodexRequestStatus.RUNNING);
+        verify(sandboxOrchestratorClient, never()).createJob(any());
+        verify(codexRequestRepository, never()).save(running);
+    }
+
+    @Test
     void handleSandboxCallbackKeepsSummaryForUserAndPersistsFullOutboundTranscript() {
         CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX, "verifique esse erro");
         request.setExternalId("job-transcript");

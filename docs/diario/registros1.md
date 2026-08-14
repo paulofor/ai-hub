@@ -3392,6 +3392,20 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: os limites padrão de RAM e de RAM mais swap passam juntos para 8 GiB. Na VPS de 10 GiB, a sandbox ganha 2 GiB adicionais para cargas legítimas e permanece contida, reservando aproximadamente 2 GiB para os serviços públicos e o host; manter `memswap_limit` igual a `mem_limit` impede que uma carga fugitiva migre para swap e deixe a máquina sem resposta.
 - Documentação e proteção contra regressão: o Compose, o `.env.example`, a referência do orquestrador e o teste automatizado foram alinhados ao novo padrão. Para aplicar o limite efetivo, o contêiner `sandbox-orchestrator` precisa ser recriado após a atualização.
 
+## 2026-08-14 — Revalidação da aparente trava do backend às 21:17 UTC
+
+- Solicitação recebida: confirmar se o backend do AI Hub estava travado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta observável neste momento: o proxy público aceita HTTPS imediatamente, mas expira ao tentar conectar-se à origem. Às 21:17 UTC, `/mcp`, `/api/health` e `/` responderam HTTP 503 em aproximadamente 5,2 segundos, todos com `upstream connect error or disconnect/reset before headers` e `reset reason: connection timeout`.
+- Conclusão: não há evidência de uma trava isolada do backend; frontend, backend e MCP estão simultaneamente inacessíveis atrás do proxy. Como o MCP de comandos reside na mesma origem indisponível, não foi possível consultar os contêineres para determinar se a causa raiz final é VPS desligada/reiniciando, falha de rede ou serviços parados.
+- Próximo diagnóstico necessário: acessar o console do provedor da VPS e validar energia/rede; após o host voltar, verificar `uptime`, pressão de memória/OOM e estado/logs dos contêineres antes de reiniciar serviços, para preservar a evidência do gatilho.
+
+## 2026-08-14 — Recuperação automática da fila após reinicialização da VPS
+
+- Solicitação recebida: impedir que uma execução interrompida pela reinicialização da VPS bloqueie indefinidamente todas as solicitações pendentes do mesmo perfil.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a fila durável fica no banco do backend, mas o registro de jobs do `sandbox-orchestrator` existe apenas em memória. Após a reinicialização completa, a solicitação interrompida continuava no banco como `RUNNING` e com `externalId`; a regra de exclusão por perfil interpretava esse registro órfão como execução ativa, enquanto nenhum callback poderia chegar de um job que já não existia, impedindo o despacho das pendentes.
+- Correção na causa: o backend agora reconcilia periodicamente as solicitações ativas duráveis com o registro do orquestrador. Se o job ainda existir, seu estado é sincronizado normalmente; se o orquestrador confirmar `404`, a execução interrompida é finalizada como `FAILED`, com mensagem explícita de reinicialização, e a próxima pendente do perfil é despachada automaticamente.
+- Segurança operacional: falha de conexão/indisponibilidade temporária do orquestrador não é confundida com job perdido. Nesse caso o registro permanece ativo e o perfil continua bloqueado até a tentativa seguinte, evitando execução duplicada durante a subida dos contêineres. A repetição automática começa após 15 segundos e ocorre a cada 30 segundos, com intervalos configuráveis.
+- Proteção contra regressão: os testes cobrem tanto a liberação e continuação da fila após um job perdido quanto a preservação do bloqueio quando o orquestrador está apenas temporariamente inacessível.
 ## 2026-08-14 — Média diária das notas no quadro operacional
 
 - Solicitação recebida: exibir no espaço livre superior esquerdo do quadro flutuante a média das notas do índice de venda do dia operacional, com duas casas decimais.
