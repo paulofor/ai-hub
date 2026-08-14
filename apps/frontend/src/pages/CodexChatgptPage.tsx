@@ -266,6 +266,17 @@ const formatMetricNumber = (value?: number) => {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('pt-BR') : '—';
 };
 
+const formatDailySalesImpactAverage = (scores?: CodexSalesImpactScore) => {
+  if (!scores) {
+    return '—';
+  }
+  const weightedTotal = scores.muitoBaixo + scores.baixo * 2 + scores.medio * 3 + scores.alto * 4 + scores.muitoAlto * 5;
+  const evaluatedTotal = scores.muitoBaixo + scores.baixo + scores.medio + scores.alto + scores.muitoAlto;
+  return evaluatedTotal > 0
+    ? (weightedTotal / evaluatedTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—';
+};
+
 const formatOperationalDayDate = (value?: string) => {
   if (!value) {
     return '—';
@@ -2801,13 +2812,25 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
         <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
-          <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
-            {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
-          </p>
-          <p className="text-base font-semibold leading-5 text-emerald-700 dark:text-emerald-300">
-            {formatDuration(dailyMetrics?.day?.durationMs)}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            {config.profile === 'CHATGPT_CODEX_MKT' ? (
+              <div className="min-w-[78px] rounded border border-slate-200 bg-slate-50 px-2 py-1 text-center dark:border-slate-700 dark:bg-slate-800/80" title="Média das notas de impacto estimado em vendas no dia operacional">
+                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média do dia</p>
+                <p className="text-lg font-bold leading-5 text-emerald-700 dark:text-emerald-300">
+                  {formatDailySalesImpactAverage(dailyMetrics?.salesImpactDay)}
+                </p>
+              </div>
+            ) : null}
+            <div className="ml-auto">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
+              <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
+                {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
+              </p>
+              <p className="text-base font-semibold leading-5 text-emerald-700 dark:text-emerald-300">
+                {formatDuration(dailyMetrics?.day?.durationMs)}
+              </p>
+            </div>
+          </div>
           <div className="mt-2 grid grid-cols-2 gap-1.5 text-center">
             <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800/80">
               <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Solicitações</p>
