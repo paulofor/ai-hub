@@ -62,6 +62,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -279,6 +280,59 @@ public class CodexRequestService {
                     );
                 }
             });
+    }
+
+    /**
+     * Reconciles the durable backend queue with the orchestrator's in-memory job registry.
+     * A full VPS restart erases that registry, so requests that still carry an external id
+     * must be finalized before the next durable pending request can be dispatched.
+     */
+    public void recoverQueueAfterRestart() {
+        Set<CodexIntegrationProfile> temporarilyUnavailableProfiles = new HashSet<>();
+        List<CodexRequest> activeRequests =
+            codexRequestRepository.findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(ACTIVE_QUEUE_STATUSES);
+
+        for (CodexRequest request : activeRequests) {
+            CodexIntegrationProfile profile = resolveProfile(request.getProfile());
+            try {
+                SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+                    sandboxOrchestratorClient.getJob(request.getExternalId());
+                if (response != null) {
+                    synchronizeRequestWithSandbox(request, response);
+                    continue;
+                }
+
+                log.warn(
+                    "CodexRequest {} interrompida por reinicialização: job {} não existe mais no sandbox; liberando fila do perfil {}",
+                    request.getId(),
+                    request.getExternalId(),
+                    profile
+                );
+                if (!StringUtils.hasText(request.getResponseText())) {
+                    request.setResponseText(
+                        "A execução foi interrompida pela reinicialização do servidor. "
+                            + "A solicitação não foi retomada automaticamente para evitar repetir efeitos externos; "
+                            + "as próximas solicitações da fila continuarão normalmente."
+                    );
+                }
+                applySandboxNotFoundFallback(request, true);
+                saveRequest(request);
+                dispatchNextQueuedRequest(profile);
+            } catch (Exception ex) {
+                temporarilyUnavailableProfiles.add(profile);
+                log.warn(
+                    "Não foi possível reconciliar a fila do perfil {} com o sandbox; mantendo a execução ativa para nova tentativa",
+                    profile,
+                    ex
+                );
+            }
+        }
+
+        for (CodexIntegrationProfile profile : CodexIntegrationProfile.values()) {
+            if (!temporarilyUnavailableProfiles.contains(profile)) {
+                dispatchNextQueuedRequest(profile);
+            }
+        }
     }
 
     public Optional<ResponseRecord> findLatestResponseForEnvironment(String environment) {
