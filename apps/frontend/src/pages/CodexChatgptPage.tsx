@@ -3071,7 +3071,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </p>
           {dismissedRequestCount > 0 ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-white/80 px-3 py-2 text-xs text-slate-600 dark:border-emerald-900 dark:bg-slate-900/70 dark:text-slate-300">
             <span>
-              {dismissedRequestCount.toLocaleString('pt-BR')} solicitação(ões) lida(s) retirada(s) da tela
+              {dismissedRequestCount.toLocaleString('pt-BR')} solicitação(ões) retirada(s) da tela
               {dismissedConversationMessageCount > 0 ? ` (${dismissedConversationMessageCount.toLocaleString('pt-BR')} mensagem(ns)).` : '.'}
             </span>
             <button
@@ -3086,6 +3086,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
             const messageEnvironment = message.environment ?? (message.requestId ? requestEnvironmentById.get(message.requestId) : undefined);
+            const structuredAssistantResponse = message.role === 'assistant' ? parseMarketingStructuredResponse(message.content) : null;
+            const canDismissTerminalFailure = config.profile === 'CHATGPT_CODEX_MKT'
+              && message.role === 'assistant'
+              && Boolean(message.requestId)
+              && (message.status === 'FAILED' || message.status === 'CANCELLED')
+              && !structuredAssistantResponse;
             return <article
               key={message.id}
               ref={(element) => {
@@ -3121,6 +3127,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
                   {message.requestId && isCancellableRequestStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+                  {canDismissTerminalFailure ? <button type="button" onClick={() => handleDismissConversationRequest(message.requestId!)} className="normal-case text-rose-600 hover:underline">Retirar da tela</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>

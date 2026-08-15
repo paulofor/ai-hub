@@ -3412,3 +3412,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend já entregava a distribuição diária completa das avaliações nas cinco notas, mas o frontend usava esses dados apenas para mostrar as quantidades por faixa; por isso o quadro não transformava a distribuição disponível em uma média nem ocupava a área reservada no cabeçalho.
 - Correção na causa: o quadro agora calcula a média ponderada diretamente sobre as contagens diárias das notas 1 a 5, usa a soma dessas contagens como denominador e apresenta o resultado com exatamente duas casas decimais no espaço indicado. Quando ainda não existem avaliações, apresenta um traço em vez de uma média enganosa.
 - Proteção contra regressão: o cenário E2E do quadro operacional recebeu uma distribuição conhecida e verifica o rótulo e o valor localizado `3,33`.
+
+## 2026-08-15 — Remoção de solicitações falhas ou canceladas do diálogo
+
+- Solicitação recebida: permitir retirar da tela de diálogo as solicitações que falharam ou foram canceladas e permaneciam presas no histórico visível.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o estado persistente de ocultação já existia, mas seu único controle visual ficava dentro do cartão de comentário estruturado e exigia que o comentário fosse marcado como lido. Respostas de falha e cancelamento são texto simples, não geram esse cartão e, portanto, nunca recebiam uma ação para sair da tela.
+- Correção na causa: mensagens terminais `FAILED` e `CANCELLED` sem resposta estruturada agora exibem a ação `Retirar da tela` no cabeçalho. A ação reutiliza a ocultação persistente existente, remove também a mensagem de usuário associada e continua permitindo restaurar tudo por `Mostrar novamente`.
+- Clareza da interface: o resumo de itens ocultos deixou de qualificá-los obrigatoriamente como “lidos”, pois agora também contabiliza falhas e cancelamentos.
+- Proteção contra regressão: foi adicionado um cenário E2E que carrega uma falha e um cancelamento em texto simples, retira ambos individualmente e valida a atualização do contador.
