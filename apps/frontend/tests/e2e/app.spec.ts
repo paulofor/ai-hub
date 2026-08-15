@@ -764,7 +764,7 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.getByRole('button', { name: 'Retirar solicitação da tela' }).click();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toHaveCount(0);
-  await expect(page.getByText('1 solicitação(ões) lida(s) retirada(s) da tela')).toBeVisible();
+  await expect(page.getByText('1 solicitação(ões) retirada(s) da tela')).toBeVisible();
 
   await page.reload();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
@@ -772,6 +772,39 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.getByRole('button', { name: 'Mostrar novamente' }).click();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+});
+
+test('dismisses failed and cancelled marketing requests without requiring a structured response', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-08-15T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      { id: 'user-failed', role: 'user', content: 'Solicitação que falhou.', createdAt: '2026-08-15T12:00:00Z' },
+      { id: 'assistant-failed', role: 'assistant', requestId: 992, status: 'FAILED', content: 'A execução falhou. Abra os detalhes para ver os logs.', createdAt: '2026-08-15T12:01:00Z' },
+      { id: 'user-cancelled', role: 'user', content: 'Solicitação cancelada.', createdAt: '2026-08-15T12:02:00Z' },
+      { id: 'assistant-cancelled', role: 'assistant', requestId: 993, status: 'CANCELLED', content: 'Solicitação #993 cancelada. Nenhuma nova resposta será gerada para esta mensagem.', createdAt: '2026-08-15T12:03:00Z' }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  const dismissButtons = page.getByRole('button', { name: 'Retirar da tela' });
+  await expect(dismissButtons).toHaveCount(2);
+  await page.screenshot({ path: '/tmp/ai-hub-retirar-falhas-cancelamentos.png', fullPage: true });
+  await dismissButtons.first().click();
+  await expect(page.getByText('Solicitação que falhou.')).toHaveCount(0);
+  await expect(page.getByText('1 solicitação(ões) retirada(s) da tela')).toBeVisible();
+  await page.getByRole('button', { name: 'Retirar da tela' }).click();
+  await expect(page.getByText('Solicitação cancelada.')).toHaveCount(0);
+  await expect(page.getByText('2 solicitação(ões) retirada(s) da tela')).toBeVisible();
 });
 
 test('scrolls from the marketing prompt editor to the first unread model response', async ({ page }) => {
