@@ -8,7 +8,12 @@ import request from 'supertest';
 
 import { createApp } from '../src/server.js';
 import { buildJobPayload } from '../src/jobPayload.js';
-import { DEFAULT_CODEX_TURN_TIMEOUT_MS, openAIClientConfigForTests, SandboxJobProcessor } from '../src/jobProcessor.js';
+import {
+  DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
+  DEFAULT_CODEX_TURN_TIMEOUT_MS,
+  openAIClientConfigForTests,
+  SandboxJobProcessor,
+} from '../src/jobProcessor.js';
 import { JobProcessor, SandboxJob } from '../src/types.js';
 
 class StubProcessor implements JobProcessor {
@@ -26,8 +31,15 @@ class StubProcessor implements JobProcessor {
   }
 }
 
-test('uses a six-hour default timeout for Codex requests', () => {
+test('uses six-hour total and two-hour inactivity defaults for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 21_600_000);
+  assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 7_200_000);
+  const [environmentExample, readme] = await Promise.all([
+    fs.readFile('.env.example', 'utf8'),
+    fs.readFile('README.md', 'utf8'),
+  ]);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=7200000$/m);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`7200000`/);
 });
 
 class SleepingProcessor implements JobProcessor {

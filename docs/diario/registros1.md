@@ -3420,3 +3420,18 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: mensagens terminais `FAILED` e `CANCELLED` sem resposta estruturada agora exibem a ação `Retirar da tela` no cabeçalho. A ação reutiliza a ocultação persistente existente, remove também a mensagem de usuário associada e continua permitindo restaurar tudo por `Mostrar novamente`.
 - Clareza da interface: o resumo de itens ocultos deixou de qualificá-los obrigatoriamente como “lidos”, pois agora também contabiliza falhas e cancelamentos.
 - Proteção contra regressão: foi adicionado um cenário E2E que carrega uma falha e um cancelamento em texto simples, retira ambos individualmente e valida a atualização do contador.
+
+## 2026-08-15 — Diagnóstico da interrupção da solicitação #2229 após uma hora
+
+- Solicitação recebida: explicar por que a última execução parou depois de aproximadamente uma hora e avaliar se o trabalho pode ser recuperado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a solicitação `#2229`, associada ao job `467ea4fb-4809-407e-af8e-b8c399349e88`, permaneceu ativa de 21:39:32 a 22:40:17 UTC e acumulou 34.504.940 tokens. O último evento produtivo do Codex ocorreu antes de uma janela de 15 minutos sem novos eventos; o watchdog configurado por `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` então encerrou o turno com `CODEX_TURN_STALLED`. Não houve queda da VPS, reinício ou OOM: o host tinha 7,3 GiB disponíveis, o orquestrador estava usando cerca de 179 MiB de 8 GiB e seu contêiner permanecia saudável.
+- Estado preservado: antes da interrupção, o agente já havia alterado pelo menos três arquivos no checkout temporário, executado builds e interagido com o ambiente externo. Porém, o fluxo de falha arquivou a thread e removeu o workspace temporário; o registro consultável do job não contém patch nem lista de arquivos alterados. Portanto, não existe retomada automática exata pelo cartão atual.
+- Possibilidade de recuperação: o histórico de interações e o rollout arquivado preservam evidências suficientes para orientar uma nova execução, mas as alterações locais não commitadas precisam ser reconstruídas. A repetição deve começar conferindo os efeitos já persistidos no ambiente externo para não duplicar tarefas, ciclos ou outros registros criados durante a tentativa interrompida.
+- Escopo desta atividade: somente diagnóstico e registro; nenhuma mudança operacional foi aplicada e nenhuma recuperação foi iniciada sem confirmação do usuário.
+
+## 2026-08-15 — Timeout de inatividade do Codex aumentado para duas horas
+
+- Solicitação recebida: mudar de 15 minutos para duas horas o intervalo sem eventos que encerra um turno do Codex App Server como paralisado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o fallback do orquestrador, o arquivo de ambiente de referência e a documentação ainda definiam `900000` ms; assim, uma operação legítima silenciosa por 15 minutos era indistinguível de um turno realmente paralisado e encerrava a solicitação com `CODEX_TURN_STALLED`.
+- Correção na causa: o limite padrão de inatividade passou para `7200000` ms em uma constante compartilhada pelo fallback do código, pelo `.env.example` e pela documentação. O timeout total de seis horas permanece independente, de modo que a execução ainda tem um limite absoluto.
+- Proteção contra regressão: o teste do orquestrador confere explicitamente que o novo padrão de inatividade equivale a duas horas.
