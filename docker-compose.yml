@@ -65,6 +65,38 @@ services:
         aliases:
           - sandbox-mail
 
+  # Engine exclusiva para as homologações executadas pelo modelo. O daemon de
+  # produção não é exposto ao sandbox-orchestrator por /var/run/docker.sock.
+  sandbox-docker:
+    image: ${SANDBOX_DOCKER_IMAGE:-docker:27-dind}
+    restart: unless-stopped
+    privileged: true
+    init: true
+    pids_limit: ${SANDBOX_DOCKER_PIDS_LIMIT:-1024}
+    mem_limit: ${SANDBOX_DOCKER_MEMORY_LIMIT:-6g}
+    memswap_limit: ${SANDBOX_DOCKER_MEMORY_SWAP_LIMIT:-6g}
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command:
+      - --host=unix:///var/run/docker.sock
+      - --host=tcp://0.0.0.0:2375
+      - --tls=false
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - sandbox-docker-data:/var/lib/docker
+      # Bind mounts dos Compose testados são resolvidos pelo daemon. O mesmo
+      # workspace precisa existir no cliente e na engine no caminho idêntico.
+      - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
+    networks:
+      sandbox-docker-net:
+        aliases:
+          - sandbox-docker
+
   sandbox-orchestrator:
     image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
     # O orquestrador executa ferramentas que podem criar netos. O init do
@@ -82,13 +114,18 @@ services:
       - apps/sandbox-orchestrator/.env.example
       - .env
     depends_on:
-      - sandbox-mail
+      sandbox-mail:
+        condition: service_started
+      sandbox-docker:
+        condition: service_healthy
     environment:
       CODEX_HOME: /var/lib/ai-hub/codex
       SANDBOX_SMTP_HOST: ${SANDBOX_SMTP_HOST:-sandbox-mail}
       SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}
       SANDBOX_MAIL_WEB_URL: ${SANDBOX_MAIL_WEB_URL:-http://sandbox-mail:8025}
       SANDBOX_MAIL_API_URL: ${SANDBOX_MAIL_API_URL:-http://sandbox-mail:8025/api/v1}
+      # Engine efêmera dedicada: nunca aponte o runner ao socket de produção.
+      DOCKER_HOST: tcp://sandbox-docker:2375
       # Evita tempestades de spans session_loop enter/exit; INFO fica restrito ao supervisor.
       CODEX_APP_SERVER_RUST_LOG: ${CODEX_APP_SERVER_RUST_LOG:-codex_core=warn,codex_tui=warn,codex_app_server=info,codex_api=warn,codex_client=warn,warn}
       CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES: ${CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES:-536870912}
@@ -161,6 +198,7 @@ services:
       default:
         aliases:
           - sandbox-orchestrator
+      sandbox-docker-net:
       public-net:
         aliases:
           - sandbox-orchestrator
@@ -187,6 +225,7 @@ services:
 
 networks:
   default:
+  sandbox-docker-net:
   public-net:
     external: true
 
@@ -194,3 +233,4 @@ volumes:
   caddy-data:
   caddy-config:
   codex-auth-data:
+  sandbox-docker-data:

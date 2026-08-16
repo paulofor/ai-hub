@@ -8,6 +8,7 @@ import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.domain.CodexReasoningEffort;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
 import com.aihub.hub.repository.CodexDocumentAccessRepository;
@@ -430,7 +431,7 @@ class CodexRequestServiceTest {
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
 
         CodexRequestSummary summary = new CodexRequestSummary(
-            123L, request.getEnvironment(), request.getModel(), request.getVersion(), request.getProfile(), request.getPrompt(),
+            123L, request.getEnvironment(), request.getModel(), request.getReasoningEffort(), request.getVersion(), request.getProfile(), request.getPrompt(),
             request.getStatus(), request.getRating(), request.getExternalId(), request.getPullRequestUrl(), request.getWorkBranch(),
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
@@ -466,7 +467,7 @@ class CodexRequestServiceTest {
         request.setResponseText("{\"titulo\":\"Histórico com títulos\",\"comentario\":\"ok\",\"orientacaoProximaAcao\":\"\",\"sugestaoMelhoriaAmbiente\":\"\"}");
 
         CodexRequestSummary summary = new CodexRequestSummary(
-            124L, request.getEnvironment(), request.getModel(), request.getVersion(), request.getProfile(), request.getPrompt(),
+            124L, request.getEnvironment(), request.getModel(), request.getReasoningEffort(), request.getVersion(), request.getProfile(), request.getPrompt(),
             request.getStatus(), request.getRating(), request.getExternalId(), request.getPullRequestUrl(), request.getWorkBranch(),
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
@@ -1141,6 +1142,7 @@ class CodexRequestServiceTest {
         payload.setEnvironment("owner/repo@main");
         payload.setPrompt("modo codex chatgpt via app server");
         payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX);
+        payload.setReasoningEffort(CodexReasoningEffort.LOW);
 
         CodexRequest created = service.create(payload);
 
@@ -1152,6 +1154,8 @@ class CodexRequestServiceTest {
         assertThat(requestCaptor.getValue().githubToken()).isNull();
         assertThat(requestCaptor.getValue().workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex");
         assertThat(requestCaptor.getValue().createPullRequest()).isFalse();
+        assertThat(requestCaptor.getValue().reasoningEffort()).isEqualTo("low");
+        assertThat(created.getReasoningEffort()).isEqualTo(CodexReasoningEffort.LOW);
     }
 
 

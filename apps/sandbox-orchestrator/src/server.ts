@@ -9,7 +9,7 @@ import { CodexAppServerClient } from './codexAppServerClient.js';
 import { cancelCodexLogin, logoutCodexAccount, readCodexAccount, startCodexLogin } from './codexAppServerAuth.js';
 import { SandboxJobProcessor } from './jobProcessor.js';
 import { buildJobPayload } from './jobPayload.js';
-import { JobProcessor, SandboxDatabaseConfig, SandboxImageAttachment, SandboxJob, SandboxProfile } from './types.js';
+import { CodexReasoningEffort, JobProcessor, SandboxDatabaseConfig, SandboxImageAttachment, SandboxJob, SandboxProfile } from './types.js';
 
 interface AppOptions {
   jobRegistry?: Map<string, SandboxJob>;
@@ -35,6 +35,13 @@ function validateString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeReasoningEffort(value?: string): CodexReasoningEffort | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && ['low', 'medium', 'high', 'xhigh'].includes(normalized)
+    ? normalized as CodexReasoningEffort
+    : undefined;
 }
 
 function normalizeCodexAppServerModels(response: unknown): Array<{ id: string; modelName: string; displayName?: string }> {
@@ -330,6 +337,7 @@ export function createApp(options: AppOptions = {}) {
     const commitHash = validateString(req.body?.commit);
     const testCommand = validateString(req.body?.testCommand);
     const model = validateString(req.body?.model);
+    const reasoningEffort = normalizeReasoningEffort(validateString(req.body?.reasoningEffort));
     const accessToken = validateString(req.body?.accessToken);
     const githubToken = validateString(req.body?.githubToken);
     const createPullRequest = validateBoolean(req.body?.createPullRequest);
@@ -340,6 +348,9 @@ export function createApp(options: AppOptions = {}) {
     const imageAttachments = normalizeImageAttachments(req.body?.imageAttachments);
 
     const sandboxOnly = profile === 'CHATGPT_CODEX_SANDBOX';
+    if (req.body?.reasoningEffort !== undefined && !reasoningEffort) {
+      return res.status(400).json({ error: 'reasoningEffort deve ser low, medium, high ou xhigh' });
+    }
     if (!jobId || !taskDescription || (!sandboxOnly && ((!repoUrl && !repoSlug) || !branch))) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
     }
@@ -368,6 +379,7 @@ export function createApp(options: AppOptions = {}) {
       testCommand,
       profile,
       model: model ?? undefined,
+      reasoningEffort,
       accessToken: (profile === 'CHATGPT_CODEX' || profile === 'CHATGPT_CODEX_MKT' || profile === 'CHATGPT_CODEX_SANDBOX') ? undefined : accessToken ?? undefined,
       githubToken: sandboxOnly ? undefined : githubToken ?? undefined,
       createPullRequest,

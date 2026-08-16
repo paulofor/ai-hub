@@ -149,6 +149,7 @@ public class CodexController {
         payload.put("requestId", request.getId());
         payload.put("environment", request.getEnvironment());
         payload.put("model", request.getModel());
+        payload.put("reasoningEffort", request.getReasoningEffort());
         payload.put("version", request.getVersion());
         payload.put("profile", request.getProfile());
         payload.put("createdAt", request.getCreatedAt());

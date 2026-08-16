@@ -20,7 +20,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
-            cr.id, cr.environment, cr.model, cr.version, cr.profile,
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.version, cr.profile,
             cr.prompt, cr.status, cr.rating, cr.externalId,
             cr.pullRequestUrl, cr.workBranch, cr.workBatchKey,
             cr.promptTokens, cr.cachedPromptTokens, cr.completionTokens, cr.totalTokens,
@@ -39,7 +39,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
 
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
-            cr.id, cr.environment, cr.model, cr.version, cr.profile,
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.version, cr.profile,
             cr.prompt, cr.status, cr.rating, cr.externalId,
             cr.pullRequestUrl, cr.workBranch, cr.workBatchKey,
             cr.promptTokens, cr.cachedPromptTokens, cr.completionTokens, cr.totalTokens,

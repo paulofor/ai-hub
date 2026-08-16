@@ -3546,3 +3546,25 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que o modelo poderia não usar `high` mesmo com esse padrão no código?”. Um valor antigo no `.env` operacional tem precedência sobre o fallback do Compose; como o workflow ainda não normalizava `CODEX_APP_SERVER_REASONING_EFFORT`, um futuro deploy poderia preservar silenciosamente `low` ou outro valor válido.
 - Confirmação atual: o contêiner de produção expõe `CODEX_APP_SERVER_REASONING_EFFORT=high`. No código, o valor é validado contra o contrato aceito e enviado como `effort` no payload de `turn/start`; portanto, as solicitações atuais do AI Hub pedem efetivamente raciocínio `high` ao modelo.
 - Proteção adicionada: o workflow de deploy agora remove qualquer valor operacional anterior e grava explicitamente `CODEX_APP_SERVER_REASONING_EFFORT=high`. O teste de configuração verifica o fallback, o exemplo de ambiente e a normalização do workflow para impedir regressão para `low` após novas publicações.
+
+## 2026-08-16 — Engine Docker dedicada e janela máxima de 12 horas
+
+- Solicitação recebida: oferecer ao modelo uma engine Docker real para homologar topologias de containers e ampliar o tempo máximo de execução para 12 horas.
+- Pergunta explícita de causa raiz: “por que o modelo não conseguia executar a topologia real se Docker era anunciado como disponível?”. A imagem do `sandbox-orchestrator` já continha Docker CLI e Compose v2 e o prompt anunciava essas ferramentas, mas o serviço não recebia `DOCKER_HOST` nem socket; apenas o MCP tinha acesso ao daemon do host. Assim, havia cliente sem engine, e montar diretamente o socket de produção concederia ao modelo controle administrativo indevido sobre os containers públicos.
+- Correção na causa: o Compose ganhou a engine isolada `sandbox-docker`, com armazenamento, limites, healthcheck e rede próprios. O orquestrador aguarda sua saúde e a acessa por `DOCKER_HOST=tcp://sandbox-docker:2375`, sem montar o socket Docker de produção. O workspace aparece no mesmo caminho nos dois serviços para que bind mounts dos projetos testados sejam resolvidos pelo daemon dedicado.
+- Orientação e segurança: o prompt agora afirma que a engine dedicada está disponível, exige nome Compose exclusivo, proíbe `host network`, containers privilegiados, sockets e mounts externos ao workspace e ordena a remoção de containers, redes e volumes temporários ao final.
+- Tempo máximo: o limite absoluto do Codex App Server foi alterado de 21.600.000 ms (6 horas) para 43.200.000 ms (12 horas) no código, exemplo de ambiente, documentação e normalização do `.env` no workflow de deploy. Os timeouts adaptativos de inatividade permanecem inalterados para não transformar ausência de progresso em espera de 12 horas.
+
+## 2026-08-16 — Escolha do nível de raciocínio por solicitação
+
+- Solicitação recebida: permitir que o usuário escolha `low`, `medium`, `high` ou `xhigh` na tela ao criar cada solicitação, pois nem todo trabalho exige raciocínio alto.
+- Pergunta explícita de causa raiz: “por que todas as solicitações usavam `high`?”. O frontend enviava somente modelo e perfil, o backend não possuía campo persistente para esforço e o orquestrador montava todo `turn/start` exclusivamente com `CODEX_APP_SERVER_REASONING_EFFORT`; portanto, uma configuração global de deploy era aplicada indistintamente a trabalhos simples e complexos.
+- Correção na causa: a solicitação agora persiste `reasoning_effort`, com migrações MySQL, PostgreSQL e H2, e propaga o valor escolhido pelo backend até o job do orquestrador. O `turn/start` do Codex App Server e a chamada da Responses API usam o valor do job; o valor global permanece apenas como fallback compatível para jobs antigos do App Server.
+- Interface: as telas Codex e Codex ChatGPT ganharam seletores com `low`, `medium`, `high` e `xhigh`, usando `high` como padrão. O detalhe da solicitação exibe o nível efetivamente persistido.
+- Proteção contra regressão: testes cobrem persistência e despacho no backend, aceitação/rejeição do contrato do job e o campo `effort` efetivamente enviado ao Codex App Server. O build de produção do frontend também passou.
+
+## 2026-08-16 — Nível de raciocínio visível nos cards de solicitações
+
+- Solicitação recebida: mostrar o tipo de raciocínio como atributo no registro visual de cada solicitação, especialmente nos cards de “Últimas execuções ChatGPT MKT”.
+- Pergunta explícita de causa raiz: “por que o esforço já persistido não aparecia no card?”. A implementação anterior propagava e persistia `reasoningEffort` e o detalhe individual o exibia, mas os componentes de histórico renderizavam somente modelo, perfil e métricas; o campo recebido no resumo era descartado na apresentação do card.
+- Correção na causa: os cards do histórico ChatGPT/Codex ChatGPT MKT agora exibem um badge `Raciocínio: LOW|MEDIUM|HIGH|XHIGH` ao lado do modelo. Os cards da tela Codex também mostram o mesmo atributo na seção de contexto, mantendo consistência entre as duas listagens.

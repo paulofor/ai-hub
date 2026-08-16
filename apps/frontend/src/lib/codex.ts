@@ -1,11 +1,13 @@
 export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'ECO_30' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
 
 export type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface CodexRequest {
   id: number;
   environment: string;
   model: string;
+  reasoningEffort: CodexReasoningEffort;
   version: string;
   profile: CodexProfile;
   prompt: string;
@@ -105,6 +107,16 @@ const parseStatus = (value: unknown): CodexStatus => {
     }
   }
   return 'PENDING';
+};
+
+const parseReasoningEffort = (value: unknown): CodexReasoningEffort => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['low', 'medium', 'high', 'xhigh'].includes(normalized)) {
+      return normalized as CodexReasoningEffort;
+    }
+  }
+  return 'high';
 };
 
 export const isTerminalStatus = (status: CodexStatus) =>
@@ -308,6 +320,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     id,
     environment: (item.environment as string) ?? '',
     model: (item.model as string) ?? '',
+    reasoningEffort: parseReasoningEffort(item.reasoningEffort ?? item.reasoning_effort),
     version,
     profile,
     prompt: (item.prompt as string) ?? '',

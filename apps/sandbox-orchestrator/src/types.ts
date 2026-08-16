@@ -1,4 +1,5 @@
 export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
 
 export type InteractionDirection = 'OUTBOUND' | 'INBOUND';
@@ -73,6 +74,7 @@ export interface SandboxJob {
   commitHash?: string;
   profile?: SandboxProfile;
   model?: string;
+  reasoningEffort?: CodexReasoningEffort;
   accessToken?: string;
   githubToken?: string;
   createPullRequest?: boolean;

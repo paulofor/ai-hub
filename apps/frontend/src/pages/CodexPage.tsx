@@ -4,6 +4,7 @@ import client from '../api/client';
 import { useToasts } from '../components/ToastContext';
 import {
   CodexProfile,
+  CodexReasoningEffort,
   CodexRequest,
   codexStatusStyles,
   formatCost,
@@ -64,6 +65,7 @@ export default function CodexPage() {
   const [selectedProblemId, setSelectedProblemId] = useState('');
   const [profile, setProfile] = useState<CodexProfile>('STANDARD');
   const [model, setModel] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState<CodexReasoningEffort>('high');
   const [requestsByPage, setRequestsByPage] = useState<Record<number, CodexRequest[]>>({});
   const [totalRequests, setTotalRequests] = useState(0);
   const [loadingRequests, setLoadingRequests] = useState(false);
@@ -446,6 +448,7 @@ export default function CodexPage() {
         environment: trimmedEnvironment,
         profile,
         model: trimmedModel,
+        reasoningEffort,
         problemId: selectedProblemId ? Number(selectedProblemId) : undefined
       });
       const parsed = parseCodexRequest(response.data);
@@ -564,6 +567,26 @@ export default function CodexPage() {
             {!loadingProblems && !problemsError && selectedEnvironmentId && activeProblems.length === 0 && (
               <span className="text-xs text-slate-500 dark:text-slate-400">Nenhum problema ativo para este ambiente.</span>
             )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="reasoning-effort" className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Nível de raciocínio
+            </label>
+            <select
+              id="reasoning-effort"
+              value={reasoningEffort}
+              onChange={(event) => setReasoningEffort(event.target.value as CodexReasoningEffort)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="low">Low — mais rápido e econômico</option>
+              <option value="medium">Medium — equilíbrio</option>
+              <option value="high">High — análise aprofundada</option>
+              <option value="xhigh">XHigh — esforço máximo</option>
+            </select>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Aplicado somente a esta solicitação. O padrão continua sendo high.
+            </span>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -883,6 +906,12 @@ export default function CodexPage() {
                     </span>
                   </div>
                   <div>Modelo: <span className="font-mono uppercase">{item.model || '—'}</span></div>
+                  <div>
+                    Raciocínio:{' '}
+                    <span className="inline-flex items-center rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-200">
+                      {item.reasoningEffort}
+                    </span>
+                  </div>
                   <div>Versão: <span className="font-mono">{item.version || '—'}</span></div>
                   <div>
                     Problema:{' '}
