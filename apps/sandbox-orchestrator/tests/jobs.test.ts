@@ -38,16 +38,22 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
   assert.equal(DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS, 7_200_000);
   assert.equal(DEFAULT_CODEX_REASONING_EFFORT, 'high');
-  const [environmentExample, readme] = await Promise.all([
+  const [environmentExample, readme, deploymentWorkflow] = await Promise.all([
     fs.readFile('.env.example', 'utf8'),
     fs.readFile('README.md', 'utf8'),
+    fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
   ]);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_REASONING_EFFORT=high$/m);
   assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`2700000`/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
   assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
+  assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_REASONING_EFFORT=high'/);
 });
 
 test('curl wrapper applies safe defaults and preserves explicit timeouts', async () => {
