@@ -80,7 +80,7 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 
 const exec = promisify(execCallback);
 
-export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 12 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
@@ -1390,7 +1390,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildDockerCliInstruction(): string {
-    return 'O Docker CLI e o plugin Docker Compose v2 estão disponíveis para o modelo pelos comandos docker e docker compose; use docker compose preferencialmente a docker-compose, e valide a engine com docker version/docker compose version antes de depender de containers.';
+    return 'O Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis para homologações locais pelos comandos docker e docker compose. Essa engine é isolada do daemon que executa os serviços de produção: use docker compose preferencialmente a docker-compose, valide a engine com docker version/docker compose version antes de depender de containers e use um nome de projeto Compose exclusivo. Não use host network, containers privilegiados, sockets Docker ou bind mounts fora do workspace. Ao terminar, remova a topologia de teste com docker compose down --volumes --remove-orphans.';
   }
 
   private buildLiquibaseMysql57RunnerInstruction(): string {

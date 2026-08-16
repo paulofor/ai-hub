@@ -34,7 +34,7 @@ class StubProcessor implements JobProcessor {
 }
 
 test('uses adaptive inactivity defaults for Codex requests', async () => {
-  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 21_600_000);
+  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 43_200_000);
   assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
   assert.equal(DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS, 7_200_000);
   assert.equal(DEFAULT_CODEX_REASONING_EFFORT, 'high');
@@ -43,14 +43,16 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
     fs.readFile('README.md', 'utf8'),
     fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
   ]);
-  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_REASONING_EFFORT=high$/m);
   assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`2700000`/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
   assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
-  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`43200000` \(12 horas\)/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
   assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_REASONING_EFFORT=high'/);
@@ -128,6 +130,20 @@ test('docker compose contém memória de ferramentas sem consumir a reserva do h
   assert.match(compose, /memswap_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-8g\}/);
 });
 
+test('docker compose oferece engine dedicada ao modelo sem expor o socket de produção', async () => {
+  const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
+  const orchestratorSection = compose.slice(
+    compose.indexOf('  sandbox-orchestrator:'),
+    compose.indexOf('  mcp-server:'),
+  );
+
+  assert.match(compose, /^  sandbox-docker:$/m);
+  assert.match(compose, /DOCKER_HOST: tcp:\/\/sandbox-docker:2375/);
+  assert.match(compose, /sandbox-docker-data:\/var\/lib\/docker/);
+  assert.match(compose, /sandbox-docker:\n\s+condition: service_healthy/);
+  assert.doesNotMatch(orchestratorSection, /\/var\/run\/docker\.sock/);
+});
+
 test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta e Meta para o sandbox-orchestrator', async () => {
   const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
 
@@ -175,6 +191,16 @@ test('informa ao modelo quando a Brave Search API esta disponivel', () => {
       process.env.BRAVE_API_KEY = originalBraveApiKey;
     }
   }
+});
+
+test('informa ao modelo a engine Docker dedicada e as regras de isolamento', () => {
+  const processor = new SandboxJobProcessor();
+  const instruction = (processor as any).buildDockerCliInstruction();
+
+  assert.match(instruction, /engine Docker dedicada/);
+  assert.match(instruction, /isolada do daemon.*produção/);
+  assert.match(instruction, /nome de projeto Compose exclusivo/);
+  assert.match(instruction, /docker compose down --volumes --remove-orphans/);
 });
 
 test('imagem da sandbox instala ferramentas de execução e validação do runner', async () => {
@@ -3018,7 +3044,7 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
-    assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
+    assert.match(promptText, /Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis/i);
     assert.match(promptText, /existe um runner efêmero dedicado no GitHub Actions/i);
     assert.match(promptText, /ausência de Docker daemon local na sandbox não significa que essa validação esteja indisponível/i);
     assert.match(promptText, /gh workflow run liquibase-mysql57\.yml --ref <branch>/i);
