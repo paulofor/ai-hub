@@ -1312,7 +1312,7 @@ export class SandboxJobProcessor implements JobProcessor {
       const turnParams = {
         threadId,
         input: this.buildCodexAppServerInput(job),
-        effort: this.codexReasoningEffort,
+        effort: job.reasoningEffort ?? this.codexReasoningEffort,
       };
       this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
       const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
@@ -1859,6 +1859,7 @@ ${profileInstruction}`,
         model,
         input: layeredMessages,
         tools,
+        ...(job.reasoningEffort ? { reasoning: { effort: job.reasoningEffort } } : {}),
         ...(this.promptCacheRetention ? { prompt_cache_retention: this.promptCacheRetention } : {}),
         ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
       };

@@ -2,7 +2,7 @@ import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffe
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import MarkdownFileReference, { isFileReferenceHref } from '../components/MarkdownFileReference';
-import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
+import { CodexProfile, CodexReasoningEffort, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -1512,6 +1512,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
   const [model, setModel] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState<CodexReasoningEffort>('high');
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
@@ -2311,6 +2312,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         prompt: requestPrompt,
         environment: selectedEnvironment,
         model,
+        reasoningEffort,
         profile: config.profile,
         imageAttachments: fileAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
@@ -2340,7 +2342,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, selectedEnvironment]);
 
 
   useEffect(() => {
@@ -3149,7 +3151,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </article>;
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           {sandboxOnly ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
               Ambiente temporário: sandbox
@@ -3162,6 +3164,20 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.displayName ?? item.modelName}</option>)}
           </select>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+            Nível de raciocínio
+            <select
+              aria-label="Nível de raciocínio"
+              value={reasoningEffort}
+              onChange={(event) => setReasoningEffort(event.target.value as CodexReasoningEffort)}
+              className="rounded-md border px-3 py-2 text-sm font-normal"
+            >
+              <option value="low">Low — econômico</option>
+              <option value="medium">Medium — equilibrado</option>
+              <option value="high">High — aprofundado</option>
+              <option value="xhigh">XHigh — máximo</option>
+            </select>
+          </label>
         </div>
         {showProductSelector ? <select value={selectedProductSlug} onChange={(e) => setSelectedProductSlug(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
@@ -3373,7 +3389,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
-              {item.model ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                {item.model ? <span>Modelo: {item.model}</span> : null}
+                <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-200">
+                  Raciocínio: {item.reasoningEffort}
+                </span>
+              </p>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}

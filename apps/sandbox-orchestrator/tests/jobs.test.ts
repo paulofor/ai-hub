@@ -238,6 +238,7 @@ test('accepts a job request and processes asynchronously', async () => {
     branch: 'main',
     taskDescription: 'fix failing tests',
     testCommand: 'npm test',
+    reasoningEffort: 'medium',
   };
 
   const creation = await request(app).post('/jobs').send(payload).expect(201);
@@ -250,6 +251,20 @@ test('accepts a job request and processes asynchronously', async () => {
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(stored!.status, 'COMPLETED');
   assert.deepEqual(stored!.changedFiles, ['README.md']);
+  assert.equal(stored!.reasoningEffort, 'medium');
+});
+
+test('rejects unsupported reasoning effort', async () => {
+  const app = createApp({ processor: new StubProcessor() });
+  const response = await request(app).post('/jobs').send({
+    jobId: 'job-invalid-effort',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'noop',
+    reasoningEffort: 'minimal',
+  }).expect(400);
+
+  assert.match(response.body.error, /low, medium, high ou xhigh/);
 });
 
 test('accepts non-image attachments in job request', async () => {
@@ -801,6 +816,7 @@ test('configura prompt cache retention e chave estável na Responses API', async
       repoSlug: 'ai-hub',
       branch: 'main',
       profile: 'STANDARD',
+      reasoningEffort: 'medium',
       taskDescription: 'noop',
       status: 'PENDING',
       logs: [],
@@ -816,6 +832,7 @@ test('configura prompt cache retention e chave estável na Responses API', async
     assert.equal(fakeOpenAI.calls.length, 1);
     assert.equal(fakeOpenAI.calls[0].prompt_cache_retention, '24h');
     assert.equal(fakeOpenAI.calls[0].prompt_cache_key, 'acme:ai-hub:main:STANDARD:gpt-5-codex');
+    assert.deepEqual(fakeOpenAI.calls[0].reasoning, { effort: 'medium' });
   } finally {
     if (originalRetention === undefined) {
       delete process.env.OPENAI_PROMPT_CACHE_RETENTION;
@@ -872,6 +889,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     branch: 'main',
     taskDescription: 'avalie campanhas',
     profile: 'CHATGPT_CODEX_MKT',
+    reasoningEffort: 'xhigh',
     status: 'PENDING',
     logs: [],
     interactions: [],
@@ -887,7 +905,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.equal(job.status, 'COMPLETED');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
-    assert.equal((turnStartCall.params as { effort?: string }).effort, 'high');
+    assert.equal((turnStartCall.params as { effort?: string }).effort, 'xhigh');
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));

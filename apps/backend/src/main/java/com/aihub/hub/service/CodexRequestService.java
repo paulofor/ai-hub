@@ -183,6 +183,7 @@ public class CodexRequestService {
         );
 
         codexRequest.setProfile(profile);
+        codexRequest.setReasoningEffort(request.getReasoningEffort());
         codexRequest.setVersion(CodexRequest.DEFAULT_VERSION);
         codexRequest.setStatus(CodexRequestStatus.PENDING);
         codexRequest.setPromptTokens(request.getPromptTokens());
@@ -1420,6 +1421,7 @@ public class CodexRequestService {
             null,
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
             request.getModel(),
+            request.getReasoningEffort().value(),
             accessToken,
             chatgptCodexProfile ? null : githubAppAuth.getInstallationToken(),
             sandboxOnlyProfile ? null : resolveDatabase(request.getEnvironment()),

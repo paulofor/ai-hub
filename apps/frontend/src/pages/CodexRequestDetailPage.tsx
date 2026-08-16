@@ -488,6 +488,7 @@ export default function CodexRequestDetailPage() {
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />
               <InfoItem label="Duração" value={formatDuration(request.durationMs)} />
+              <InfoItem label="Nível de raciocínio" value={request.reasoningEffort.toUpperCase()} />
               <InfoItem label="Timeouts" value={(request.timeoutCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem label="HTTP GETs (total)" value={(request.httpGetCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem
