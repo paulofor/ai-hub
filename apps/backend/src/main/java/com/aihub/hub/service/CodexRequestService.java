@@ -14,6 +14,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -385,6 +386,11 @@ public class CodexRequestService {
             ? codexRequestRepository.findSummariesByOrderByCreatedAtDesc(pageRequest)
             : codexRequestRepository.findSummariesByRatingOrderByCreatedAtDesc(rating, pageRequest);
         return summaries.map(this::prepareRequestSummary);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodexTokenRankingItem> tokenRanking() {
+        return codexRequestRepository.findTokenRanking(PageRequest.of(0, 20));
     }
 
     @Transactional(readOnly = true)

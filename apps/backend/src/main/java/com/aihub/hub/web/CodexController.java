@@ -7,6 +7,7 @@ import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
+import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
@@ -95,6 +96,11 @@ public class CodexController {
     @GetMapping("/metrics")
     public CodexDashboardMetrics metrics(@RequestParam(required = false) String profile) {
         return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
+    }
+
+    @GetMapping("/token-ranking")
+    public List<CodexTokenRankingItem> tokenRanking() {
+        return codexRequestService.tokenRanking();
     }
 
     @GetMapping("/sales-impact/{score}")

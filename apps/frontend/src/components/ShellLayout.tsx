@@ -18,6 +18,7 @@ const links = [
   { to: '/codex-chatgpt-mkt/nota-5-vendas', label: 'Nota 5 em Vendas' },
   { to: '/codex-chatgpt-sandbox', label: 'Codex ChatGPT Sandbox' },
   { to: '/codex/models', label: 'Modelos Codex' },
+  { to: '/codex/token-ranking', label: 'Ranking de Tokens' },
   { to: '/source-repository-config', label: 'Config. Repositório' },
   { to: '/audit', label: 'Audit Log' },
   { to: '/admin/system-health', label: 'Saúde do sistema' }
@@ -33,7 +34,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
         <NavLink
           key={link.to}
           to={link.to}
-          end={link.to === '/codex-chatgpt-mkt'}
+          end={link.to === '/codex-chatgpt-mkt' || link.to === '/codex'}
           onClick={onNavigate}
           className={({ isActive }) =>
             clsx(
