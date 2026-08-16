@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexTokenRankingItem;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -55,6 +56,18 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         order by cr.createdAt desc
         """)
     Page<CodexRequestSummary> findSummariesByRatingOrderByCreatedAtDesc(Integer rating, Pageable pageable);
+
+    @Query("""
+        select new com.aihub.hub.dto.CodexTokenRankingItem(
+            cr.id, cr.environment, cr.model, cr.profile, cr.status,
+            cr.promptTokens, cr.cachedPromptTokens, cr.completionTokens, cr.totalTokens,
+            cr.cost, cr.createdAt
+        )
+        from CodexRequest cr
+        where cr.totalTokens is not null
+        order by cr.totalTokens desc, cr.id desc
+        """)
+    List<CodexTokenRankingItem> findTokenRanking(Pageable pageable);
     @Query("""
         select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0)
         from CodexRequest cr

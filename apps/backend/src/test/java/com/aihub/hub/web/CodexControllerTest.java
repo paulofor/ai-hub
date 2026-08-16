@@ -3,6 +3,7 @@ package com.aihub.hub.web;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.zip.ZipInputStream;
+import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -33,6 +35,26 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 
 class CodexControllerTest {
+
+    @Test
+    void tokenRankingReturnsTopRequestsFromService() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        CodexController controller = new CodexController(
+            codexRequestService,
+            mock(PullRequestService.class),
+            new ObjectMapper()
+        );
+        CodexTokenRankingItem leader = new CodexTokenRankingItem(
+            99L, "owner/repo", "gpt-5.6-sol", null, CodexRequestStatus.COMPLETED,
+            900, 100, 200, 1200, null, Instant.parse("2026-08-16T00:00:00Z")
+        );
+        when(codexRequestService.tokenRanking()).thenReturn(List.of(leader));
+
+        List<CodexTokenRankingItem> result = controller.tokenRanking();
+
+        assertThat(result).containsExactly(leader);
+        verify(codexRequestService).tokenRanking();
+    }
 
     @Test
     void previousReturnsNearestLowerRequestId() {

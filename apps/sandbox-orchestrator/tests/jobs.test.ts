@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +9,8 @@ import request from 'supertest';
 import { createApp } from '../src/server.js';
 import { buildJobPayload } from '../src/jobPayload.js';
 import {
+  DEFAULT_CODEX_REASONING_EFFORT,
+  DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
   DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
   DEFAULT_CODEX_TURN_TIMEOUT_MS,
   openAIClientConfigForTests,
@@ -31,15 +33,44 @@ class StubProcessor implements JobProcessor {
   }
 }
 
-test('uses six-hour total and two-hour inactivity defaults for Codex requests', async () => {
+test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 21_600_000);
-  assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 7_200_000);
+  assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
+  assert.equal(DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS, 7_200_000);
+  assert.equal(DEFAULT_CODEX_REASONING_EFFORT, 'high');
   const [environmentExample, readme] = await Promise.all([
     fs.readFile('.env.example', 'utf8'),
     fs.readFile('README.md', 'utf8'),
   ]);
-  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=7200000$/m);
-  assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`7200000`/);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_REASONING_EFFORT=high$/m);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`2700000`/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
+  assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
+});
+
+test('curl wrapper applies safe defaults and preserves explicit timeouts', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'curl-timeout-test-'));
+  const fakeCurl = path.join(directory, 'curl-real');
+  await fs.writeFile(fakeCurl, '#!/bin/sh\nprintf "<%s>\\n" "$@"\n');
+  await fs.chmod(fakeCurl, 0o755);
+
+  const defaults = execFileSync('scripts/curl-with-timeout', ['https://example.com'], {
+    encoding: 'utf8',
+    env: { ...process.env, CURL_REAL_BIN: fakeCurl },
+  });
+  assert.match(defaults, /<--connect-timeout>\n<10>/);
+  assert.match(defaults, /<--max-time>\n<120>/);
+
+  const explicit = execFileSync(
+    'scripts/curl-with-timeout',
+    ['--connect-timeout', '3', '--max-time=900', 'https://example.com'],
+    { encoding: 'utf8', env: { ...process.env, CURL_REAL_BIN: fakeCurl } },
+  );
+  assert.doesNotMatch(explicit, /<10>|<120>/);
+  assert.match(explicit, /<--connect-timeout>\n<3>/);
+  assert.match(explicit, /<--max-time=900>/);
 });
 
 class SleepingProcessor implements JobProcessor {
@@ -824,6 +855,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.equal(job.status, 'COMPLETED');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
+    assert.equal((turnStartCall.params as { effort?: string }).effort, 'high');
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
