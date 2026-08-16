@@ -3473,3 +3473,61 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Implementação na causa: o backend ganhou uma projeção própria e o endpoint `GET /api/codex/requests/token-ranking`, cuja consulta exclui totais ausentes, ordena por `totalTokens DESC` e desempata pelo ID mais recente, limitando o resultado a 20 no serviço.
 - Interface: o novo menu `Ranking de Tokens` abre uma página responsiva com posição, link para a solicitação, ambiente, data, modelo, perfil, status, total e decomposição de tokens. Os três primeiros recebem destaque e foram tratados estados de carregamento, erro e ausência de dados.
 - Validação: compilação e teste direcionado do backend, lint e build de produção do frontend passaram. A página foi homologada visualmente com Playwright e 20 registros simulados em viewport desktop; a revisão revelou e corrigiu a ativação simultânea do menu `Codex` na rota filha.
+
+## 2026-08-16 — Causa da ausência de resposta da solicitação 2236
+
+- Solicitação recebida: determinar o que pode ter deixado o modelo sem resposta na execução anteriormente acompanhada.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O log persistente do Codex mostra que o modelo não parou simplesmente em raciocínio: às 01:14:10 UTC ele emitiu uma chamada `exec` cujo primeiro comando era `curl -sS` para o endpoint interno do GeraLanding, sem `--max-time` ou outro limite. Não existe evento posterior de início/conclusão de item ou resposta da ferramenta para a thread, tornando mais provável que a execução tenha ficado bloqueada esperando essa conexão/resposta indefinidamente.
+- Encerramento definitivo: a solicitação `2236` não terminou pelo watchdog (`timeoutCount=0`). Às 02:04 UTC, um deploy da imagem `0161a5a8da148f37527ca2ebda4d4a2b0a6ec516` recriou simultaneamente MCP, orquestrador, backend, frontend e Caddy. Como o registro de jobs do orquestrador era volátil, o backend recebeu `404` ao reconciliar o job às 02:05:11 UTC e marcou a solicitação como `FAILED` por reinicialização, após 6.224.028 ms e 32.354.153 tokens.
+- Conclusão: há alta confiança de que o silêncio começou por um `curl` sem timeout e certeza de que a ausência da resposta final ocorreu porque o deploy recriou o contêiner antes que o turno terminasse. O modelo não produziu resposta final recuperável; o timeout de duas horas não foi o gatilho desta falha.
+
+## 2026-08-16 — Timeout defensivo padrão para curl na sandbox
+
+- Solicitação recebida: impedir que uma chamada `curl` sem limite mantenha o modelo indefinidamente sem resposta.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O Codex executa comandos diretamente dentro do `sandbox-orchestrator`; portanto, depender de o modelo lembrar `--max-time` em toda chamada deixou o processo vulnerável a um endpoint que aceita a conexão e não termina a resposta. O watchdog do turno enxerga apenas um comando ativo e, corretamente para builds longos, concede a janela maior, de modo que não substitui um timeout do cliente HTTP.
+- Correção na causa: a imagem passa a instalar `/usr/local/bin/curl` como wrapper de `/usr/bin/curl`. Na ausência de limites explícitos, ele acrescenta `--connect-timeout 10` e `--max-time 120`; se o comando já declarar `--connect-timeout`, `--max-time` ou `-m`, o valor solicitado é preservado. Os padrões podem ser alterados por `CURL_CONNECT_TIMEOUT_SECONDS` e `CURL_MAX_TIME_SECONDS` no Compose.
+- Proteção contra regressão: um teste executa o wrapper contra um binário falso e comprova tanto a aplicação dos limites padrão quanto a preservação de limites explícitos. A suíte completa do orquestrador passou com 78 testes.
+
+## 2026-08-16 — Avaliação da estratégia local para projetos multiagentes
+
+- Solicitação recebida: avaliar a prática de executar agentes e workers localmente, corrigindo o fluxo completo antes de solicitar PR e deploy, em vez de descobrir um defeito por publicação.
+- Pergunta explícita de causa raiz: “por que o ciclo anterior impedia atingir o objetivo?”. O deploy estava sendo usado como ambiente de descoberta: cada módulo era validado isoladamente, o primeiro defeito encerrava a execução e a próxima incompatibilidade só aparecia depois de nova autorização, PR e publicação. Em um grafo multiagente, contratos, ordem, estado compartilhado e callbacks só são realmente validados quando a cadeia inteira roda, de modo que aprovações parciais acumulavam latência sem comprovar o resultado final.
+- Avaliação: executar localmente a cadeia ponta a ponta é a direção correta e já está refletida na instrução universal do runner. O pedido inicial autoriza correções locais causalmente relacionadas, módulos podem ser simulados sequencialmente com dependências/test doubles e PR/deploy não devem funcionar como mecanismo de teste.
+- Condições para não criar falsa confiança: a homologação deve começar com uma matriz explícita de caminho feliz, validações, falhas, integrações, observabilidade e segregação de dados; usar contratos e versões equivalentes à produção; substituir serviços externos apenas por doubles fiéis; e registrar separadamente qualquer verificação que só possa ocorrer depois do deploy. Após uma correção encontrada na rodada completa, duas rodadas consecutivas sem falhas protegem contra regressões encadeadas.
+- Conclusão: a melhoria percebida é consistente com engenharia de sistemas distribuídos. O deploy deve confirmar a solução já validada localmente, não revelar o próximo erro previsível; exceções legítimas são diferenças inevitáveis de infraestrutura, credenciais, rede ou serviços externos, que precisam de smoke test pós-deploy sem reabrir o desenvolvimento em ciclos parciais.
+
+## 2026-08-16 — Elementos essenciais de uma solicitação multiagente
+
+- Solicitação recebida: orientar quais informações do pedido humano mais ajudam o modelo a concluir uma correção multiagente sem cair em ciclos parciais de deploy.
+- Avaliação: o elemento mais importante é declarar o resultado observável final, não apenas o primeiro erro ou módulo. Em seguida, o pedido deve autorizar explicitamente a investigação e as correções locais causalmente relacionadas, nomear a cadeia de agentes/workers/callbacks a ser exercitada, definir critérios objetivos de aceite e proibir PR/deploy antes da homologação ponta a ponta.
+- Limites necessários: informar quais ações externas exigem nova autorização — gasto, publicação, alteração de preço, comunicação real, dados de produção ou decisão ambígua — e quais dependências podem ser simuladas com dados isolados. Isso dá autonomia técnica sem conceder autonomia de negócio irreversível.
+- Evidência de encerramento: pedir uma matriz com caminho feliz e falhas relevantes, registro das causas encontradas, contratos verificados entre etapas, testes executados e limitações que só podem ser confirmadas em produção. Se uma rodada encontrar defeito, exigir correção e duas rodadas completas consecutivas sem falha; se a primeira passar, não repetir artificialmente.
+- Conclusão: um bom pedido deve dizer “faça o fluxo chegar ao estado final X localmente” e não apenas “corrija o erro Y”. Um modelo pode escolher a ordem técnica das correções, mas não deve redefinir o objetivo, ultrapassar limites de negócio nem usar o deploy para descobrir o próximo defeito previsível.
+
+## 2026-08-16 — Nível de raciocínio efetivo do gpt-5.6-sol
+
+- Solicitação recebida: identificar o nível de raciocínio usado pelo modelo `gpt-5.6-sol` nas execuções do AI Hub.
+- Evidência: os logs persistentes mais recentes do Codex App Server, às 03:26:45 UTC, registram repetidamente `model=gpt-5.6-sol` com `codex.turn.reasoning_effort=low`. Não existe variável de ambiente de reasoning configurada no contêiner.
+- Explicação: o AI Hub envia modelo, diretório, política de aprovação, sandbox e identificação do serviço no `thread/start`, mas atualmente não envia um campo explícito de esforço; portanto o App Server aplica o padrão efetivo `low` observado na telemetria.
+- Conclusão: o nível atualmente usado é `low`. Alterá-lo exige propagar uma configuração explícita aceita pelo contrato do Codex App Server e validar o efeito em qualidade, latência e tokens; não basta mudar apenas um texto do prompt.
+
+## 2026-08-16 — Raciocínio do Codex App Server alterado para high
+
+- Solicitação recebida: alterar o esforço de raciocínio efetivo do `gpt-5.6-sol` de `low` para `high`.
+- Pergunta explícita de causa raiz: “por que o modelo usava low?”. O AI Hub selecionava o modelo no `thread/start`, mas não enviava o override `effort` aceito pelo contrato V2 no `turn/start`; por isso o Codex App Server aplicava o padrão baixo observado na telemetria.
+- Correção na causa: todo turno iniciado pelo fluxo Codex App Server agora envia `effort: high`. A configuração é centralizada em `CODEX_APP_SERVER_REASONING_EFFORT`, aceita os valores do contrato (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) e falha cedo diante de valor inválido.
+- Configuração e proteção contra regressão: `.env.example`, Compose e documentação usam `high` como padrão; os testes conferem a configuração e o payload real de `turn/start`. A suíte completa do orquestrador passou com 78 testes.
+
+## 2026-08-16 — Distinção entre o raciocínio desta conversa e o AI Hub
+
+- Solicitação recebida: identificar o nível de raciocínio do assistente que responde nesta conversa.
+- Esclarecimento: este assistente é o GPT-5.6 Sol, mas não recebe uma telemetria confiável ou um campo visível que permita declarar o `reasoning_effort` efetivo desta sessão. A configuração `CODEX_APP_SERVER_REASONING_EFFORT=high` adicionada ao projeto controla apenas os futuros turnos iniciados pelo `sandbox-orchestrator` no AI Hub depois de a mudança ser publicada; ela não reconfigura retroativamente nem controla esta conversa externa.
+- Conclusão: não é correto afirmar que esta sessão está em `high` sem evidência do runtime. O que pode ser afirmado pelo código é que as novas execuções do AI Hub solicitarão explicitamente `high` no `turn/start` após o deploy.
+
+## 2026-08-16 — Solicitação 2237 interrompida pelo limite absoluto de duas horas
+
+- Solicitação recebida: verificar se a execução mais recente foi perdida por um timeout de duas horas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A configuração efetiva do contêiner publicado ainda define `CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000`. Esse é o limite absoluto do turno e não é renovado por atividade; embora o repositório já tenha fallback de seis horas, o `.env` operacional prevaleceu com duas horas.
+- Evidência: a solicitação `2237`, job `c1f85c55-0926-458d-8b8f-111879b70897`, iniciou às 02:06:43 UTC e falhou às 04:07:54 UTC com `CODEX_TURN_INTERRUPTED`, após 7.271.774 ms. O job acumulou 83.516.188 tokens, `timeoutCount=0` e ainda concluiu ferramentas entre 04:03:41 e 04:04:02 UTC, comprovando atividade pouco antes do limite absoluto; portanto não foi o timeout adaptativo de inatividade.
+- Estado recuperável: o workspace temporário foi removido e não preserva alterações locais não commitadas. A thread `01a00853-0cce-7462-a6f4-154245d22b7b` foi arquivada em rollout persistente, preservando o histórico suficiente para orientar reconstrução, mas não para retomar automaticamente o processo e arquivos exatamente de onde pararam.
+- Conclusão: a suspeita foi confirmada. A execução foi interrompida pelo limite absoluto operacional de duas horas apesar de ainda estar produtiva; para novas execuções longas, o valor efetivo da VPS deve ser alinhado ao padrão versionado de seis horas e o contêiner recriado.

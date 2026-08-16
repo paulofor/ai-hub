@@ -45,6 +45,9 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `CODEX_APP_SERVER_SANDBOX_MODE` | Modo de sandbox enviado ao `thread/start` do Codex App Server. Aceita apenas `read-only`, `workspace-write` ou `danger-full-access`; o padrão evita o sandbox Linux interno (`bwrap`) porque o job já roda dentro do sandbox-orchestrator/container do AI Hub. | `danger-full-access` |
 | `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` | Tempo máximo sem evento útil quando não existe comando ativo conhecido. Encerra mais cedo turnos que perderam o fluxo sem sacrificar ferramentas longas identificadas. | `2700000` (45 minutos) |
 | `CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS` | Tempo máximo sem evento útil enquanto um item `commandExecution` permanece ativo. Reserva a janela longa somente para builds, testes e outras ferramentas acompanhadas. | `7200000` (2 horas) |
+| `CODEX_APP_SERVER_REASONING_EFFORT` | Esforço de raciocínio enviado como `effort` no `turn/start`. Aceita `none`, `minimal`, `low`, `medium`, `high` ou `xhigh`. | `high` |
+| `CURL_CONNECT_TIMEOUT_SECONDS` | Limite padrão para o `curl` estabelecer conexão. O wrapper da sandbox adiciona `--connect-timeout` quando o comando não informa um valor explícito. | `10` |
+| `CURL_MAX_TIME_SECONDS` | Duração total padrão de uma chamada `curl`. O wrapper adiciona `--max-time` quando o comando não informa `--max-time`/`-m`; chamadas legitimamente longas podem declarar outro valor. | `120` |
 | `SANDBOX_SLUG_PREFIX` | Prefixo aplicado antes do slug original | *(vazio)* |
 | `SANDBOX_SLUG_SUFFIX` | Sufixo aplicado após o slug original | `-sandbox` |
 | `SANDBOX_IMAGE` | Imagem base utilizada para provisionar o contêiner/VM efêmero | `ghcr.io/ai-hub-6/sandbox:latest` |

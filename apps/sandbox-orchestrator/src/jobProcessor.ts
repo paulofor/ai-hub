@@ -83,6 +83,7 @@ const exec = promisify(execCallback);
 export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
 const IMAGE_TOOL_ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -348,6 +349,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly codexTurnTimeoutMs: number;
   private readonly codexTurnNoActivityTimeoutMs: number;
   private readonly codexTurnActiveItemTimeoutMs: number;
+  private readonly codexReasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
 
   constructor(
@@ -374,6 +376,7 @@ export class SandboxJobProcessor implements JobProcessor {
       process.env.CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS,
       DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
     );
+    this.codexReasoningEffort = this.resolveCodexReasoningEffort(process.env.CODEX_APP_SERVER_REASONING_EFFORT);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
@@ -1309,6 +1312,7 @@ export class SandboxJobProcessor implements JobProcessor {
       const turnParams = {
         threadId,
         input: this.buildCodexAppServerInput(job),
+        effort: this.codexReasoningEffort,
       };
       this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
       const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
@@ -1522,6 +1526,14 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       id: typeof record.id === 'string' ? record.id : undefined,
       type: typeof record.type === 'string' ? record.type : undefined,
     };
+  }
+
+  private resolveCodexReasoningEffort(value?: string): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
+    const normalized = value?.trim().toLowerCase() || DEFAULT_CODEX_REASONING_EFFORT;
+    if (['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(normalized)) {
+      return normalized as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    }
+    throw new Error(`CODEX_APP_SERVER_REASONING_EFFORT inválido: ${value}`);
   }
 
   private extractCodexId(value: unknown, keys: string[], nestedKey?: string): string | undefined {

@@ -93,6 +93,9 @@ services:
       CODEX_APP_SERVER_RUST_LOG: ${CODEX_APP_SERVER_RUST_LOG:-codex_core=warn,codex_tui=warn,codex_app_server=info,codex_api=warn,codex_client=warn,warn}
       CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES: ${CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES:-536870912}
       CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED: ${CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED:-2}
+      CODEX_APP_SERVER_REASONING_EFFORT: ${CODEX_APP_SERVER_REASONING_EFFORT:-high}
+      CURL_CONNECT_TIMEOUT_SECONDS: ${CURL_CONNECT_TIMEOUT_SECONDS:-10}
+      CURL_MAX_TIME_SECONDS: ${CURL_MAX_TIME_SECONDS:-120}
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
       - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
