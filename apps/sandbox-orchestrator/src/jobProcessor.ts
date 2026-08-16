@@ -81,7 +81,8 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 const exec = promisify(execCallback);
 
 export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 6 * 60 * 60 * 1000;
-export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
+export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
 const IMAGE_TOOL_ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -346,6 +347,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly codexAppServerClient?: CodexAppServerClient;
   private readonly codexTurnTimeoutMs: number;
   private readonly codexTurnNoActivityTimeoutMs: number;
+  private readonly codexTurnActiveItemTimeoutMs: number;
   private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
 
   constructor(
@@ -367,6 +369,10 @@ export class SandboxJobProcessor implements JobProcessor {
     this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(
       process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS,
       DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
+    );
+    this.codexTurnActiveItemTimeoutMs = this.parsePositiveInteger(
+      process.env.CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS,
+      DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
     );
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
@@ -1232,6 +1238,7 @@ export class SandboxJobProcessor implements JobProcessor {
     let streamingAgentMessage = '';
     let firstEventAt: number | undefined;
     let lastActivityAt: number | undefined;
+    const activeCommandItemIds = new Set<string>();
     const recordedCodexDocumentAccessKeys = new Set<string>();
     const markActivity = (): void => {
       const now = Date.now();
@@ -1250,6 +1257,10 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       client.onNotification('item/completed', (params) => {
         markActivity();
+        const item = this.extractCodexItemIdentity(params);
+        if (item?.id) {
+          activeCommandItemIds.delete(item.id);
+        }
         this.addCodexAppServerUsageMetrics(job, params);
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         const text = this.extractCodexAgentMessageText(params);
@@ -1262,6 +1273,10 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       client.onNotification('item/started', (params) => {
         markActivity();
+        const item = this.extractCodexItemIdentity(params);
+        if (item?.id && ['commandExecution', 'command_execution'].includes(item.type ?? '')) {
+          activeCommandItemIds.add(item.id);
+        }
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
@@ -1308,7 +1323,13 @@ export class SandboxJobProcessor implements JobProcessor {
       if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) {
         completed = true;
       }
-      await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt);
+      await this.waitForCodexTurn(
+        job,
+        () => completed,
+        () => failedReason,
+        () => lastActivityAt,
+        () => activeCommandItemIds.size > 0,
+      );
       if (failedReason) {
         throw new Error(failedReason);
       }
@@ -1461,6 +1482,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     isCompleted: () => boolean,
     failureReason: () => string | undefined,
     lastActivityAt: () => number | undefined = () => undefined,
+    hasActiveCommandItem: () => boolean = () => false,
   ): Promise<void> {
     const startedAt = Date.now();
     while (!isCompleted()) {
@@ -1471,10 +1493,13 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       }
       const now = Date.now();
       const lastActivity = lastActivityAt();
-      if (!lastActivity && now - startedAt > this.codexTurnNoActivityTimeoutMs) {
+      const inactivityTimeoutMs = hasActiveCommandItem()
+        ? this.codexTurnActiveItemTimeoutMs
+        : this.codexTurnNoActivityTimeoutMs;
+      if (!lastActivity && now - startedAt > inactivityTimeoutMs) {
         throw new Error('CODEX_TURN_NO_ACTIVITY');
       }
-      if (lastActivity && now - lastActivity > this.codexTurnNoActivityTimeoutMs) {
+      if (lastActivity && now - lastActivity > inactivityTimeoutMs) {
         throw new Error('CODEX_TURN_STALLED');
       }
       if (now - startedAt > this.codexTurnTimeoutMs) {
@@ -1482,6 +1507,21 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+  }
+
+  private extractCodexItemIdentity(params: unknown): { id?: string; type?: string } | undefined {
+    if (!params || typeof params !== 'object') {
+      return undefined;
+    }
+    const item = (params as Record<string, unknown>).item;
+    if (!item || typeof item !== 'object') {
+      return undefined;
+    }
+    const record = item as Record<string, unknown>;
+    return {
+      id: typeof record.id === 'string' ? record.id : undefined,
+      type: typeof record.type === 'string' ? record.type : undefined,
+    };
   }
 
   private extractCodexId(value: unknown, keys: string[], nestedKey?: string): string | undefined {

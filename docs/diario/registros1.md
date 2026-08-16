@@ -3435,3 +3435,41 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o fallback do orquestrador, o arquivo de ambiente de referência e a documentação ainda definiam `900000` ms; assim, uma operação legítima silenciosa por 15 minutos era indistinguível de um turno realmente paralisado e encerrava a solicitação com `CODEX_TURN_STALLED`.
 - Correção na causa: o limite padrão de inatividade passou para `7200000` ms em uma constante compartilhada pelo fallback do código, pelo `.env.example` e pela documentação. O timeout total de seis horas permanece independente, de modo que a execução ainda tem um limite absoluto.
 - Proteção contra regressão: o teste do orquestrador confere explicitamente que o novo padrão de inatividade equivale a duas horas.
+
+## 2026-08-16 — Verificação da aparente trava durante execução de marketing
+
+- Solicitação recebida: verificar se o AI Hub havia travado ou se a execução em andamento ainda estava processando.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: não foi observado erro de infraestrutura. O healthcheck público respondeu `200` com `status=UP`, frontend e MCP responderam normalmente, todos os contêineres estavam ativos havia aproximadamente duas horas e o Codex App Server reportou `ready`, sem reinicializações nem timeouts.
+- Evidência da execução: o job `83e7b01a-4621-434c-bfb3-c5f9a0ee9e3d` permanecia `RUNNING`; a última ferramenta auditada havia sido executada às 01:11:44 UTC. Às 01:27:48 UTC, o App Server respondeu a requisições JSON-RPC `account/read`, que apenas consultam autenticação/conta e demonstram que o processo responde — não comprovam progresso do turno nem renovam seu marcador de atividade. O orquestrador consumia cerca de 1,3 GiB do limite de 8 GiB e 2,26% de CPU, sem sinal de OOM ou contêiner parado.
+- Conclusão: não havia evidência de queda da infraestrutura nem critério suficiente para declarar o turno travado; havia cerca de 16 minutos sem uma notificação produtiva auditada. O orquestrador só considera atividade do turno as notificações `item/agentMessage/delta`, `item/started`, `item/completed`, `thread/tokenUsage/updated`, `turn/completed` e `error`. Como o timeout de inatividade vigente é de duas horas, nenhuma intervenção ou reinicialização foi realizada para não interromper e perder o trabalho em andamento.
+
+## 2026-08-16 — Revalidação da execução às 01:39 UTC
+
+- Solicitação recebida: verificar novamente o estado da execução. O job `83e7b01a-4621-434c-bfb3-c5f9a0ee9e3d` continuava `RUNNING`, sem timeout, enquanto o Codex App Server permanecia `ready`, sem tentativa de reinicialização; não havia jobs pendentes.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A aparência de paralisação continuava decorrendo da ausência de atualização visível durante processamento silencioso, não de indisponibilidade: todos os contêineres estavam ativos, e o orquestrador usava 1,316 GiB de 8 GiB e 12,34% de CPU.
+- Evidência de progresso: depois da primeira verificação, foi auditada uma nova execução de ferramenta às 01:11:44 UTC, relacionada à composição e gravação do criativo do experimento 88. Às 01:39:18 UTC haviam transcorrido cerca de 27 minutos sem ferramenta ou mensagem produtiva posterior registrada, ainda abaixo do timeout de inatividade de duas horas.
+- Conclusão: infraestrutura saudável e turno ainda aberto, mas sem evidência direta de progresso nos 27 minutos anteriores à consulta. Nenhuma intervenção foi aplicada para não interromper o trabalho antes do critério configurado de paralisação.
+
+## 2026-08-16 — Avaliação do risco de o modelo ter perdido o fluxo
+
+- Solicitação recebida: avaliar se o modelo pode ter se perdido, se duas horas é um timeout de inatividade excessivo e quais hipóteses explicam o silêncio.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A causa mais provável da aparência de trava é uma lacuna de observabilidade: o watchdog conhece notificações do App Server, mas não distingue raciocínio legítimo, espera por serviço filho e perda do fluxo quando nenhuma notificação chega. Às 01:42:33 UTC, o job continuava `RUNNING`, sem timeout, porém a última ferramenta auditada permanecia em 01:11:44 UTC e a última mensagem incremental em 01:07:11 UTC.
+- Evidências adicionais: não havia comando curto preso nem chamada de geração de imagem visível na árvore de processos. Permaneciam dois serviços Spring Boot iniciados pelo próprio turno — `landing-generator-agent-worker` havia cerca de 44 minutos e `meta-ad-approver-worker` havia cerca de 29 minutos — enquanto o App Server estava `ready`. Isso torna plausíveis tanto raciocínio silencioso/perda de sequência após iniciar os workers quanto espera não instrumentada; CPU e estado `RUNNING`, isoladamente, não provam progresso.
+- Avaliação do limite: duas horas protege operações legitimamente longas, mas é grande como único detector de ausência absoluta de eventos e pode manter um perfil bloqueado por tempo excessivo. O ajuste robusto não é simplesmente voltar a 15 minutos: deve combinar alerta antecipado, estado do item/ferramenta corrente e heartbeat de subprocessos; aplicar tolerância longa somente quando houver uma operação longa identificada e usar uma janela menor para silêncio sem item ativo.
+- Conclusão operacional: naquele instante havia risco real de o modelo ter perdido o fluxo, mas evidência insuficiente para afirmar travamento definitivo. Nenhum cancelamento foi executado sem solicitação do usuário.
+
+## 2026-08-16 — Timeout adaptativo para turnos do Codex App Server
+
+- Solicitação recebida: alterar o timeout de inatividade para a estratégia operacional considerada ideal após o diagnóstico do silêncio prolongado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O orquestrador aplicava o mesmo limite de duas horas tanto a uma ferramenta longa identificada quanto a um turno sem item ativo. A regra única evitava falsos positivos em builds e testes demorados, mas permitia que um modelo que perdeu o fluxo bloqueasse o perfil por duas horas sem produzir qualquer evidência de progresso.
+- Correção na causa: o watchdog passou a acompanhar os IDs dos itens `commandExecution` entre `item/started` e `item/completed`. Sem comando ativo conhecido, a ausência de eventos encerra o turno após 45 minutos; com um comando ativo, a tolerância permanece em duas horas. O limite absoluto do turno continua em seis horas.
+- Configuração: `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` passa a `2700000` e a nova variável `CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS` usa `7200000`. Ambos continuam configuráveis por ambiente.
+- Proteção contra regressão: as constantes, o arquivo de ambiente e a tabela de configuração são verificados pelos testes do orquestrador; a suíte completa compilou e passou.
+
+## 2026-08-16 — Ranking das 20 solicitações com maior consumo de tokens
+
+- Solicitação recebida: criar um item de menu com o ranking das 20 solicitações que mais consumiram tokens, mantendo as maiores no topo.
+- Pergunta explícita de causa raiz: “por que esse recurso não existia?”. Embora cada solicitação já persistisse tokens de entrada, cache, saída e total, a API disponível ordenava solicitações por criação e as telas exibiam consumo apenas dentro dos fluxos existentes. Não havia uma consulta enxuta, limitada e ordenada pelo total, nem uma rota de navegação dedicada à comparação global.
+- Implementação na causa: o backend ganhou uma projeção própria e o endpoint `GET /api/codex/requests/token-ranking`, cuja consulta exclui totais ausentes, ordena por `totalTokens DESC` e desempata pelo ID mais recente, limitando o resultado a 20 no serviço.
+- Interface: o novo menu `Ranking de Tokens` abre uma página responsiva com posição, link para a solicitação, ambiente, data, modelo, perfil, status, total e decomposição de tokens. Os três primeiros recebem destaque e foram tratados estados de carregamento, erro e ausência de dados.
+- Validação: compilação e teste direcionado do backend, lint e build de produção do frontend passaram. A página foi homologada visualmente com Playwright e 20 registros simulados em viewport desktop; a revisão revelou e corrigiu a ativação simultânea do menu `Codex` na rota filha.
