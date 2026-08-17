@@ -39,7 +39,7 @@ function validateString(value: unknown): string | undefined {
 
 function normalizeReasoningEffort(value?: string): CodexReasoningEffort | undefined {
   const normalized = value?.trim().toLowerCase();
-  return normalized && ['low', 'medium', 'high', 'xhigh'].includes(normalized)
+  return normalized && ['low', 'medium', 'high', 'xhigh', 'pro'].includes(normalized)
     ? normalized as CodexReasoningEffort
     : undefined;
 }
@@ -77,7 +77,6 @@ function resolveRequestBodyLimit(): string {
   const configured = process.env.SANDBOX_REQUEST_BODY_LIMIT?.trim();
   return configured && configured.length > 0 ? configured : '50mb';
 }
-
 
 function normalizeImageAttachments(value: unknown): SandboxImageAttachment[] | undefined {
   if (!Array.isArray(value)) {
@@ -135,70 +134,37 @@ export function createApp(options: AppOptions = {}) {
     options.processor ?? new SandboxJobProcessor(process.env.OPENAI_API_KEY, process.env.CIFIX_MODEL, undefined, globalThis.fetch, codexAppServerClient);
 
   const normalizeProfile = (value?: string): SandboxProfile => {
-    if (!value) {
-      return 'STANDARD';
-    }
+    if (!value) return 'STANDARD';
     const normalized = value.trim().toUpperCase().replace('-', '_');
-    if (normalized === 'ECONOMY') {
-      return 'ECONOMY';
-    }
-    if (normalized === 'SMART_ECONOMY') {
-      return 'SMART_ECONOMY';
-    }
-    if (normalized === 'ECO_1') {
-      return 'ECO_1';
-    }
-    if (normalized === 'ECO_2') {
-      return 'ECO_2';
-    }
-    if (normalized === 'ECO_3') {
-      return 'ECO_3';
-    }
-    if (normalized === 'CHATGPT_CODEX' || normalized === 'CODEX_UI') {
-      return 'CHATGPT_CODEX';
-    }
-    if (normalized === 'CHATGPT_CODEX_MKT' || normalized === 'CODEX_UI_MKT') {
-      return 'CHATGPT_CODEX_MKT';
-    }
-    if (normalized === 'CHATGPT_CODEX_SANDBOX' || normalized === 'CODEX_UI_SANDBOX') {
-      return 'CHATGPT_CODEX_SANDBOX';
-    }
+    if (normalized === 'ECONOMY') return 'ECONOMY';
+    if (normalized === 'SMART_ECONOMY') return 'SMART_ECONOMY';
+    if (normalized === 'ECO_1') return 'ECO_1';
+    if (normalized === 'ECO_2') return 'ECO_2';
+    if (normalized === 'ECO_3') return 'ECO_3';
+    if (normalized === 'CHATGPT_CODEX' || normalized === 'CODEX_UI') return 'CHATGPT_CODEX';
+    if (normalized === 'CHATGPT_CODEX_MKT' || normalized === 'CODEX_UI_MKT') return 'CHATGPT_CODEX_MKT';
+    if (normalized === 'CHATGPT_CODEX_SANDBOX' || normalized === 'CODEX_UI_SANDBOX') return 'CHATGPT_CODEX_SANDBOX';
     return 'STANDARD';
   };
 
   const app = express();
-  if (process.env.NODE_ENV !== 'test') {
-    app.use(morgan('combined'));
-  }
+  if (process.env.NODE_ENV !== 'test') app.use(morgan('combined'));
   const requestBodyLimit = resolveRequestBodyLimit();
   app.use(express.json({ limit: requestBodyLimit }));
 
   const healthcheckPythonInfo = () => {
     const pythonPath = spawnSync('which', ['python3'], { encoding: 'utf-8' });
     const pipVersion = spawnSync('pip3', ['--version'], { encoding: 'utf-8' });
-
     const python = pythonPath.status === 0 ? pythonPath.stdout.trim() : undefined;
     const pip = pipVersion.status === 0 ? pipVersion.stdout.trim() : undefined;
-
-    if (python) {
-      console.log(`Sandbox orchestrator healthcheck: python3 disponível em ${python}`);
-    } else {
-      console.warn('Sandbox orchestrator healthcheck: python3 não encontrado');
-    }
-
-    if (pip) {
-      console.log(`Sandbox orchestrator healthcheck: pip3 detectado (${pip})`);
-    }
-
+    if (python) console.log(`Sandbox orchestrator healthcheck: python3 disponível em ${python}`);
+    else console.warn('Sandbox orchestrator healthcheck: python3 não encontrado');
+    if (pip) console.log(`Sandbox orchestrator healthcheck: pip3 detectado (${pip})`);
     return { python, pip };
   };
 
   app.get('/health', (_req: Request, res: Response) => {
-    const codexAppServer = codexAppServerClient?.health() ?? {
-      status: 'disabled',
-      ready: false,
-      restartAttempts: 0,
-    };
+    const codexAppServer = codexAppServerClient?.health() ?? { status: 'disabled', ready: false, restartAttempts: 0 };
     res.json({ status: codexAppServer.status === 'degraded' ? 'degraded' : 'ok', python: healthcheckPythonInfo(), codexAppServer });
   });
 
@@ -212,9 +178,7 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post('/maintenance/codex-app-server/restart', async (_req: Request, res: Response) => {
-    if (!codexAppServerClient) {
-      return res.status(503).json({ error: 'Codex App Server desabilitado' });
-    }
+    if (!codexAppServerClient) return res.status(503).json({ error: 'Codex App Server desabilitado' });
     await codexAppServerClient.stop();
     await codexAppServerClient.start();
     return res.json({ action: 'restart-codex-app-server', status: 'completed', codexAppServer: codexAppServerClient.health() });
@@ -222,12 +186,8 @@ export function createApp(options: AppOptions = {}) {
 
   app.post('/maintenance/jobs/:id/force-cancel', async (req: Request, res: Response) => {
     const job = jobRegistry.get(req.params.id);
-    if (!job) {
-      return res.status(404).json({ error: 'job not found' });
-    }
-    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') {
-      return res.json({ action: 'force-cancel', status: 'already-terminal', job: sanitizeJobForResponse(job) });
-    }
+    if (!job) return res.status(404).json({ error: 'job not found' });
+    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') return res.json({ action: 'force-cancel', status: 'already-terminal', job: sanitizeJobForResponse(job) });
     job.cancelRequested = true;
     job.status = 'CANCELLED';
     job.finishedAt = new Date().toISOString();
@@ -236,39 +196,24 @@ export function createApp(options: AppOptions = {}) {
       await codexAppServerClient.stop();
       await codexAppServerClient.start();
     }
-    if (job.sandboxPath) {
-      await fs.rm(job.sandboxPath, { recursive: true, force: true });
-    }
+    if (job.sandboxPath) await fs.rm(job.sandboxPath, { recursive: true, force: true });
     return res.json({ action: 'force-cancel', status: 'completed', job: sanitizeJobForResponse(job) });
   });
 
   app.get('/codex-app-server/account/read', async (_req: Request, res: Response) => {
-    if (!codexAppServerClient) {
-      return res.status(503).json({
-        connected: false,
-        status: 'unavailable',
-        executable: false,
-        blockReason: 'CODEX_APP_SERVER_DISABLED',
-      });
-    }
+    if (!codexAppServerClient) return res.status(503).json({ connected: false, status: 'unavailable', executable: false, blockReason: 'CODEX_APP_SERVER_DISABLED' });
     const state = await readCodexAccount(codexAppServerClient);
     const httpStatus = state.status === 'unavailable' ? 503 : 200;
     return res.status(httpStatus).json(state);
   });
 
   app.get('/codex-app-server/models', async (_req: Request, res: Response) => {
-    if (!codexAppServerClient) {
-      return res.status(503).json({ models: [], blockReason: 'CODEX_APP_SERVER_DISABLED' });
-    }
+    if (!codexAppServerClient) return res.status(503).json({ models: [], blockReason: 'CODEX_APP_SERVER_DISABLED' });
     try {
       const models: Array<{ id: string; modelName: string; displayName?: string }> = [];
       let cursor: string | undefined;
       do {
-        const response = await codexAppServerClient.request<CodexAppServerModelListResponse>('model/list', {
-          cursor,
-          limit: 100,
-          includeHidden: false,
-        });
+        const response = await codexAppServerClient.request<CodexAppServerModelListResponse>('model/list', { cursor, limit: 100, includeHidden: false });
         models.push(...normalizeCodexAppServerModels(response));
         cursor = validateString(response?.nextCursor);
       } while (cursor);
@@ -279,11 +224,8 @@ export function createApp(options: AppOptions = {}) {
     }
   });
 
-
   app.post('/codex-app-server/account/login/start', async (req: Request, res: Response) => {
-    if (!codexAppServerClient) {
-      return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
-    }
+    if (!codexAppServerClient) return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
     try {
       const requestedType = validateString(req.body?.type) ?? 'chatgptDeviceCode';
       const state = await startCodexLogin(codexAppServerClient, requestedType);
@@ -296,13 +238,9 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post('/codex-app-server/account/login/cancel', async (req: Request, res: Response) => {
-    if (!codexAppServerClient) {
-      return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
-    }
+    if (!codexAppServerClient) return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
     const loginId = validateString(req.body?.loginId);
-    if (!loginId) {
-      return res.status(400).json({ status: 'failed', blockReason: 'CODEX_LOGIN_ID_REQUIRED' });
-    }
+    if (!loginId) return res.status(400).json({ status: 'failed', blockReason: 'CODEX_LOGIN_ID_REQUIRED' });
     try {
       await cancelCodexLogin(codexAppServerClient, loginId);
       return res.json({ status: 'cancelled', loginId });
@@ -314,9 +252,7 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post('/codex-app-server/account/logout', async (_req: Request, res: Response) => {
-    if (!codexAppServerClient) {
-      return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
-    }
+    if (!codexAppServerClient) return res.status(503).json({ status: 'unavailable', blockReason: 'CODEX_APP_SERVER_DISABLED' });
     try {
       const state = await logoutCodexAccount(codexAppServerClient);
       return res.json(state);
@@ -349,7 +285,16 @@ export function createApp(options: AppOptions = {}) {
 
     const sandboxOnly = profile === 'CHATGPT_CODEX_SANDBOX';
     if (req.body?.reasoningEffort !== undefined && !reasoningEffort) {
-      return res.status(400).json({ error: 'reasoningEffort deve ser low, medium, high ou xhigh' });
+      return res.status(400).json({ error: 'reasoningEffort deve ser low, medium, high, xhigh ou pro' });
+    }
+    if (reasoningEffort === 'pro') {
+      const appServerProfile = profile === 'CHATGPT_CODEX' || profile === 'CHATGPT_CODEX_MKT' || profile === 'CHATGPT_CODEX_SANDBOX';
+      if (!model?.toLowerCase().startsWith('gpt-5.6')) {
+        return res.status(400).json({ error: 'reasoningEffort pro exige modelo GPT-5.6' });
+      }
+      if (appServerProfile) {
+        return res.status(400).json({ error: 'reasoningEffort pro não está disponível para perfis Codex App Server' });
+      }
     }
     if (!jobId || !taskDescription || (!sandboxOnly && ((!repoUrl && !repoSlug) || !branch))) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });
@@ -362,14 +307,12 @@ export function createApp(options: AppOptions = {}) {
     }
 
     const modelLabel = model ? `, modelo ${model}` : '';
-    console.log(
-      `Sandbox orchestrator: registrando job ${jobId} para ${sandboxOnly ? 'sandbox sem repositório' : `repo ${repoSlug ?? repoUrl} na branch ${branch}`} (perfil ${profile}${modelLabel})`,
-    );
+    console.log(`Sandbox orchestrator: registrando job ${jobId} para ${sandboxOnly ? 'sandbox sem repositório' : `repo ${repoSlug ?? repoUrl} na branch ${branch}`} (perfil ${profile}${modelLabel})`);
 
     const now = new Date().toISOString();
     const job: SandboxJob = {
       jobId,
-      repoSlug: repoSlug,
+      repoSlug,
       repoUrl: repoUrl ?? (repoSlug ? `https://github.com/${repoSlug}.git` : undefined),
       branch,
       workBranch,
@@ -403,17 +346,13 @@ export function createApp(options: AppOptions = {}) {
     };
 
     jobRegistry.set(jobId, job);
-
-    processor
-      .process(job)
-      .catch((err) => {
-        job.status = job.status === 'CANCELLED' ? 'CANCELLED' : 'FAILED';
-        job.error = err instanceof Error ? err.message : String(err);
-        job.updatedAt = new Date().toISOString();
-      })
-      .finally(() => {
-        jobRegistry.set(jobId, job);
-      });
+    processor.process(job).catch((err) => {
+      job.status = job.status === 'CANCELLED' ? 'CANCELLED' : 'FAILED';
+      job.error = err instanceof Error ? err.message : String(err);
+      job.updatedAt = new Date().toISOString();
+    }).finally(() => {
+      jobRegistry.set(jobId, job);
+    });
 
     res.status(201).json(sanitizeJobForResponse(job));
   });
@@ -421,20 +360,13 @@ export function createApp(options: AppOptions = {}) {
   const recoverOrphanJob = async (jobId: string): Promise<SandboxJob | undefined> => {
     const baseDir = path.resolve(process.env.SANDBOX_WORKDIR ?? os.tmpdir());
     const prefix = `ai-hub-${jobId}-`;
-
     try {
       const entries = await fs.readdir(baseDir, { withFileTypes: true });
       const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith(prefix));
-      if (!match) {
-        return undefined;
-      }
-
+      if (!match) return undefined;
       const sandboxPath = path.join(baseDir, match.name);
       const now = new Date().toISOString();
-      const error =
-        `job ${jobId} não está mais em memória; o processo do sandbox pode ter reiniciado. ` +
-        `Workspace preservado em ${sandboxPath}.`;
-
+      const error = `job ${jobId} não está mais em memória; o processo do sandbox pode ter reiniciado. Workspace preservado em ${sandboxPath}.`;
       return {
         jobId,
         repoUrl: 'desconhecido',
@@ -467,39 +399,27 @@ export function createApp(options: AppOptions = {}) {
   app.get('/jobs/:id', async (req: Request, res: Response) => {
     const jobId = req.params.id;
     const job = jobRegistry.get(jobId);
-    if (job) {
-      return res.json(sanitizeJobForResponse(job));
-    }
-
+    if (job) return res.json(sanitizeJobForResponse(job));
     const recovered = await recoverOrphanJob(jobId);
     if (recovered) {
       jobRegistry.set(jobId, recovered);
       return res.json(sanitizeJobForResponse(recovered));
     }
-
     res.status(404).json({ error: 'job not found' });
   });
 
   app.post('/jobs/:id/cancel', (req: Request, res: Response) => {
     const job = jobRegistry.get(req.params.id);
-    if (!job) {
-      return res.status(404).json({ error: 'job not found' });
-    }
-
-    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') {
-      return res.status(409).json({ error: `job already finished with status ${job.status}` });
-    }
-
+    if (!job) return res.status(404).json({ error: 'job not found' });
+    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELLED') return res.status(409).json({ error: `job already finished with status ${job.status}` });
     job.cancelRequested = true;
     const now = new Date().toISOString();
     job.updatedAt = now;
-
     if (job.status === 'PENDING') {
       job.status = 'CANCELLED';
       job.finishedAt = now;
       job.durationMs = 0;
     }
-
     jobRegistry.set(job.jobId, job);
     res.json(sanitizeJobForResponse(job));
   });
@@ -509,15 +429,9 @@ export function createApp(options: AppOptions = {}) {
     const status = httpError.status ?? httpError.statusCode;
     if (status === 413 || httpError.type === 'entity.too.large' || httpError.name === 'PayloadTooLargeError') {
       console.warn(`Request rejeitada por exceder limite de payload (${requestBodyLimit})`);
-      return res.status(413).json({
-        error: 'payload_too_large',
-        message: `Payload da request excede o limite do sandbox-orchestrator (${requestBodyLimit}). Reduza anexos ou aumente SANDBOX_REQUEST_BODY_LIMIT.`,
-        limit: requestBodyLimit,
-      });
+      return res.status(413).json({ error: 'payload_too_large', message: `Payload da request excede o limite do sandbox-orchestrator (${requestBodyLimit}). Reduza anexos ou aumente SANDBOX_REQUEST_BODY_LIMIT.`, limit: requestBodyLimit });
     }
-    if (status === 400 || httpError.type === 'entity.parse.failed') {
-      return res.status(400).json({ error: 'invalid_json' });
-    }
+    if (status === 400 || httpError.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });
     console.error('Unexpected error handling request', err);
     res.status(500).json({ error: 'internal_error' });
   });
