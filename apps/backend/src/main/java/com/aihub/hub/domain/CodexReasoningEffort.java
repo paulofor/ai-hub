@@ -9,7 +9,8 @@ public enum CodexReasoningEffort {
     LOW("low"),
     MEDIUM("medium"),
     HIGH("high"),
-    XHIGH("xhigh");
+    XHIGH("xhigh"),
+    PRO("pro");
 
     private final String value;
 
@@ -31,7 +32,7 @@ public enum CodexReasoningEffort {
             .filter(value -> value.value.equalsIgnoreCase(candidate.trim()))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException(
-                "reasoningEffort deve ser low, medium, high ou xhigh"
+                "reasoningEffort deve ser low, medium, high, xhigh ou pro"
             ));
     }
 }
