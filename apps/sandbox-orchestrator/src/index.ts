@@ -1,6 +1,9 @@
 import { CodexAppServerClient } from './codexAppServerClient.js';
 import { maintainCodexSqliteLogs } from './codexLogMaintenance.js';
+import { installOpenAIProReasoningFetchAdapter } from './openAIProReasoningFetch.js';
 import { createApp } from './server.js';
+
+installOpenAIProReasoningFetchAdapter();
 
 const port = Number.parseInt(process.env.PORT ?? '8083', 10);
 const codexAppServerEnabled = (process.env.CODEX_APP_SERVER_ENABLED ?? 'false').toLowerCase() === 'true';
