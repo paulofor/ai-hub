@@ -423,6 +423,18 @@ export default function CodexPage() {
       return;
     }
 
+    const usesCodexAppServer = profile === 'CHATGPT_CODEX'
+      || profile === 'CHATGPT_CODEX_MKT'
+      || profile === 'CHATGPT_CODEX_SANDBOX';
+    if (reasoningEffort === 'pro' && !trimmedModel.toLowerCase().startsWith('gpt-5.6')) {
+      setError('O modo Pro está disponível somente para modelos GPT-5.6.');
+      return;
+    }
+    if (reasoningEffort === 'pro' && usesCodexAppServer) {
+      setError('O modo Pro ainda não está disponível nos perfis que usam Codex App Server.');
+      return;
+    }
+
     const hintPhrases = selectedPromptHints
       .map((hint) => hint.phrase.trim())
       .filter((value) => value.length > 0);
@@ -583,9 +595,10 @@ export default function CodexPage() {
               <option value="medium">Medium — equilíbrio</option>
               <option value="high">High — análise aprofundada</option>
               <option value="xhigh">XHigh — esforço máximo</option>
+              <option value="pro">Pro — máxima qualidade (GPT-5.6)</option>
             </select>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              Aplicado somente a esta solicitação. O padrão continua sendo high.
+              Aplicado somente a esta solicitação. Pro requer GPT-5.6 e não está disponível nos perfis Codex App Server. O padrão continua sendo high.
             </span>
           </div>
 
@@ -628,203 +641,58 @@ export default function CodexPage() {
             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Perfil de integração</span>
             <div className="flex flex-wrap gap-3">
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="STANDARD"
-                  checked={profile === 'STANDARD'}
-                  onChange={() => setProfile('STANDARD')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  Padrão
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Máxima autonomia do modelo
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="STANDARD" checked={profile === 'STANDARD'} onChange={() => setProfile('STANDARD')} className="h-4 w-4" />
+                <span>Padrão <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Máxima autonomia do modelo</span></span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="CHATGPT_CODEX_MKT"
-                  checked={profile === 'CHATGPT_CODEX_MKT'}
-                  onChange={() => setProfile('CHATGPT_CODEX_MKT')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  Codex ChatGPT MKT
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Usa o Codex App Server para analisar relatórios Markdown de marketing digital e gerar orientações de melhoria.
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="CHATGPT_CODEX_MKT" checked={profile === 'CHATGPT_CODEX_MKT'} onChange={() => setProfile('CHATGPT_CODEX_MKT')} className="h-4 w-4" />
+                <span>Codex ChatGPT MKT <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Usa o Codex App Server para analisar relatórios Markdown de marketing digital e gerar orientações de melhoria.</span></span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="CHATGPT_CODEX"
-                  checked={profile === 'CHATGPT_CODEX'}
-                  onChange={() => setProfile('CHATGPT_CODEX')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  Codex (ChatGPT)
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Adiciona ao prompt inicial as orientações do perfil Codex. Use squads, worktrees e checkpoints quando a tarefa exigir coordenação paralela; para demandas simples, mantenha o fluxo objetivo.
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="CHATGPT_CODEX" checked={profile === 'CHATGPT_CODEX'} onChange={() => setProfile('CHATGPT_CODEX')} className="h-4 w-4" />
+                <span>Codex (ChatGPT) <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Adiciona ao prompt inicial as orientações do perfil Codex. Use squads, worktrees e checkpoints quando a tarefa exigir coordenação paralela; para demandas simples, mantenha o fluxo objetivo.</span></span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="CHATGPT_CODEX_SANDBOX"
-                  checked={profile === 'CHATGPT_CODEX_SANDBOX'}
-                  onChange={() => setProfile('CHATGPT_CODEX_SANDBOX')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  Codex ChatGPT Sandbox
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Executa solicitações dentro da sandbox do modelo sem Git, sem repositório, sem diff e sem Pull Request.
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="CHATGPT_CODEX_SANDBOX" checked={profile === 'CHATGPT_CODEX_SANDBOX'} onChange={() => setProfile('CHATGPT_CODEX_SANDBOX')} className="h-4 w-4" />
+                <span>Codex ChatGPT Sandbox <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Executa solicitações dentro da sandbox do modelo sem Git, sem repositório, sem diff e sem Pull Request.</span></span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="ECO_1"
-                  checked={profile === 'ECO_1'}
-                  onChange={() => setProfile('ECO_1')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  ECO-1
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Segue o guia docs/estrategia-token/modo-eco1.md: limita instruções fixas, trunca outputs das tools e troca automaticamente para modelos mais baratos.
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="ECO_1" checked={profile === 'ECO_1'} onChange={() => setProfile('ECO_1')} className="h-4 w-4" />
+                <span>ECO-1 <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Segue o guia docs/estrategia-token/modo-eco1.md: limita instruções fixas, trunca outputs das tools e troca automaticamente para modelos mais baratos.</span></span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="ECO_2"
-                  checked={profile === 'ECO_2'}
-                  onChange={() => setProfile('ECO_2')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  ECO-2
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Ativa as rotinas do docs/estrategia-token/modo-eco2.md: compactações automáticas, histórico de usuário limitado a 35k tokens e truncamento agressivo de outputs/remotes.
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="ECO_2" checked={profile === 'ECO_2'} onChange={() => setProfile('ECO_2')} className="h-4 w-4" />
+                <span>ECO-2 <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Ativa as rotinas do docs/estrategia-token/modo-eco2.md: compactações automáticas, histórico de usuário limitado a 35k tokens e truncamento agressivo de outputs/remotes.</span></span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="radio"
-                  name="codex-profile"
-                  value="ECO_3"
-                  checked={profile === 'ECO_3'}
-                  onChange={() => setProfile('ECO_3')}
-                  className="h-4 w-4"
-                />
-                <span>
-                  ECO-3
-                  <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Regras extras do docs/estrategia-token/modo-eco3.md: resuma logs longos antes de reenviá-los, respeite o teto de 600 iterações/1600k tokens e registre tudo que for descartado para manter rastreabilidade.
-                  </span>
-                </span>
+                <input type="radio" name="codex-profile" value="ECO_3" checked={profile === 'ECO_3'} onChange={() => setProfile('ECO_3')} className="h-4 w-4" />
+                <span>ECO-3 <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">Regras extras do docs/estrategia-token/modo-eco3.md: resuma logs longos antes de reenviá-los, respeite o teto de 600 iterações/1600k tokens e registre tudo que for descartado para manter rastreabilidade.</span></span>
               </label>
             </div>
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="prompt" className="text-sm font-medium text-slate-700 dark:text-slate-200">
-              Descreva uma tarefa
-            </label>
-            <textarea
-              id="prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              className="h-32 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed dark:border-slate-700 dark:bg-slate-900"
-              placeholder="Descreva o que o Codex deve fazer..."
-            />
+            <label htmlFor="prompt" className="text-sm font-medium text-slate-700 dark:text-slate-200">Descreva uma tarefa</label>
+            <textarea id="prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} className="h-32 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed dark:border-slate-700 dark:bg-slate-900" placeholder="Descreva o que o Codex deve fazer..." />
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/50">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="font-medium text-slate-700 dark:text-slate-200">Itens opcionais para complementar o prompt</p>
-                <Link
-                  to="/prompt-hints"
-                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-500"
-                >
-                  Gerenciar itens
-                </Link>
+                <Link to="/prompt-hints" className="text-xs font-semibold text-emerald-600 hover:text-emerald-500">Gerenciar itens</Link>
               </div>
-              {loadingPromptHints && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">Carregando itens disponíveis...</p>
-              )}
-              {promptHintsError && (
-                <p className="text-xs text-red-500">{promptHintsError}</p>
-              )}
-              {!loadingPromptHints && !promptHintsError && promptHints.length === 0 && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Nenhum item configurado para este ambiente.
-                </p>
-              )}
+              {loadingPromptHints && <p className="text-xs text-slate-500 dark:text-slate-400">Carregando itens disponíveis...</p>}
+              {promptHintsError && <p className="text-xs text-red-500">{promptHintsError}</p>}
+              {!loadingPromptHints && !promptHintsError && promptHints.length === 0 && <p className="text-xs text-slate-500 dark:text-slate-400">Nenhum item configurado para este ambiente.</p>}
               {(generalPromptHints.length > 0 || scopedPromptHints.length > 0) && (
                 <div className="space-y-4">
                   {generalPromptHints.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Itens gerais
-                      </p>
-                      <div className="space-y-2">
-                        {generalPromptHints.map((hint) => (
-                          <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
-                            <input
-                              type="checkbox"
-                              checked={selectedPromptHintIds.includes(hint.id)}
-                              onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
-                              className="mt-0.5 h-4 w-4"
-                            />
-                            <span>
-                              {hint.label}
-                              <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
-                                {hint.phrase}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                    <div><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Itens gerais</p><div className="space-y-2">{generalPromptHints.map((hint) => (
+                      <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200"><input type="checkbox" checked={selectedPromptHintIds.includes(hint.id)} onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)} className="mt-0.5 h-4 w-4" /><span>{hint.label}<span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">{hint.phrase}</span></span></label>
+                    ))}</div></div>
                   )}
                   {scopedPromptHints.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Itens para {environment || 'o ambiente selecionado'}
-                      </p>
-                      <div className="space-y-2">
-                        {scopedPromptHints.map((hint) => (
-                          <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
-                            <input
-                              type="checkbox"
-                              checked={selectedPromptHintIds.includes(hint.id)}
-                              onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)}
-                              className="mt-0.5 h-4 w-4"
-                            />
-                            <span>
-                              {hint.label}
-                              <span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
-                                {hint.phrase}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                    <div><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Itens para {environment || 'o ambiente selecionado'}</p><div className="space-y-2">{scopedPromptHints.map((hint) => (
+                      <label key={hint.id} className="flex items-start gap-2 text-slate-700 dark:text-slate-200"><input type="checkbox" checked={selectedPromptHintIds.includes(hint.id)} onChange={(event) => handlePromptHintToggle(hint.id, event.target.checked)} className="mt-0.5 h-4 w-4" /><span>{hint.label}<span className="block whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">{hint.phrase}</span></span></label>
+                    ))}</div></div>
                   )}
                 </div>
               )}
@@ -832,13 +700,7 @@ export default function CodexPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button
-              type="submit"
-              disabled={loading || environmentOptions.length === 0 || modelOptions.length === 0}
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading ? 'Enviando...' : 'Enviar para o Codex'}
-            </button>
+            <button type="submit" disabled={loading || environmentOptions.length === 0 || modelOptions.length === 0} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70">{loading ? 'Enviando...' : 'Enviar para o Codex'}</button>
             {error && <span className="text-sm text-red-500">{error}</span>}
             {successMessage && <span className="text-sm text-emerald-600">{successMessage}</span>}
           </div>
@@ -846,248 +708,30 @@ export default function CodexPage() {
       </div>
 
       <div className="space-y-3">
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold">Histórico de solicitações</h3>
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <span className="font-medium">Filtro por estrelas</span>
-              <select
-                value={ratingFilter}
-                onChange={(event) => setRatingFilter(event.target.value)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
-              >
-                <option value="">Todas</option>
-                <option value="1">1 estrela</option>
-                <option value="2">2 estrelas</option>
-                <option value="3">3 estrelas</option>
-                <option value="4">4 estrelas</option>
-                <option value="5">5 estrelas</option>
-              </select>
-            </label>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold">Histórico de solicitações</h3>
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><span className="font-medium">Filtro por estrelas</span><select value={ratingFilter} onChange={(event) => setRatingFilter(event.target.value)} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="">Todas</option><option value="1">1 estrela</option><option value="2">2 estrelas</option><option value="3">3 estrelas</option><option value="4">4 estrelas</option><option value="5">5 estrelas</option></select></label>
+        </div>
         <div className="space-y-3 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
           {paginatedRequests.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-            >
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <Link to={`/codex/requests/${item.id}`} className="text-sm font-semibold text-emerald-700 hover:underline">
-                    {formatDateTime(item.createdAt)}
-                  </Link>
-                  <p className="text-xs text-slate-500">ID #{item.id}</p>
-                </div>
-                <span
-                  className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${codexStatusStyles[item.status]}`}
-                >
-                  {formatStatus(item.status)}
-                </span>
-              </div>
-
+            <article key={item.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-2"><div><Link to={`/codex/requests/${item.id}`} className="text-sm font-semibold text-emerald-700 hover:underline">{formatDateTime(item.createdAt)}</Link><p className="text-xs text-slate-500">ID #{item.id}</p></div><span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span></div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Execução</p>
-                  <div>Início: {formatDateTime(item.startedAt ?? item.createdAt)}</div>
-                  <div>Fim: {formatDateTime(item.finishedAt)}</div>
-                  <div>Tempo total: {formatDuration(item.durationMs)}</div>
-                  <div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div>
-                  <div>HTTP GETs: {(item.httpGetCount ?? 0).toLocaleString('pt-BR')}</div>
-                  <div>Consultas ao banco: {(item.dbQueryCount ?? 0).toLocaleString('pt-BR')}</div>
-                </div>
-
-                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</p>
-                  <div>Ambiente: <span className="font-medium">{item.environment}</span></div>
-                  <div>
-                    Perfil:{' '}
-                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {formatProfile(item.profile)}
-                    </span>
-                  </div>
-                  <div>Modelo: <span className="font-mono uppercase">{item.model || '—'}</span></div>
-                  <div>
-                    Raciocínio:{' '}
-                    <span className="inline-flex items-center rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-200">
-                      {item.reasoningEffort}
-                    </span>
-                  </div>
-                  <div>Versão: <span className="font-mono">{item.version || '—'}</span></div>
-                  <div>
-                    Problema:{' '}
-                    {item.problemTitle ? (
-                      <span className="font-medium text-slate-700 dark:text-slate-100">#{item.problemId} — {item.problemTitle}</span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tokens</p>
-                    <div className="flex items-center justify-between"><span>Input</span><span>{formatTokens(item.promptTokens)}</span></div>
-                    <div className="flex items-center justify-between"><span>Input cacheado</span><span>{formatTokens(item.cachedPromptTokens)}</span></div>
-                    <div className="flex items-center justify-between"><span>Output</span><span>{formatTokens(item.completionTokens)}</span></div>
-                    <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100"><span>Total</span><span>{formatTokens(item.totalTokens)}</span></div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custos</p>
-                    <div className="flex items-center justify-between"><span>Input</span><span>{formatCost(item.promptCost, 4)}</span></div>
-                    <div className="flex items-center justify-between"><span>Input cacheado</span><span>{formatCost(item.cachedPromptCost, 4)}</span></div>
-                    <div className="flex items-center justify-between"><span>Output</span><span>{formatCost(item.completionCost, 4)}</span></div>
-                    <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100"><span>Total</span><span>{formatCost(item.cost)}</span></div>
-                  </div>
-                </div>
+                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Execução</p><div>Início: {formatDateTime(item.startedAt ?? item.createdAt)}</div><div>Fim: {formatDateTime(item.finishedAt)}</div><div>Tempo total: {formatDuration(item.durationMs)}</div><div>Timeouts: {(item.timeoutCount ?? 0).toLocaleString('pt-BR')}</div><div>HTTP GETs: {(item.httpGetCount ?? 0).toLocaleString('pt-BR')}</div><div>Consultas ao banco: {(item.dbQueryCount ?? 0).toLocaleString('pt-BR')}</div></div>
+                <div className="space-y-1 text-xs text-slate-600 dark:text-slate-300"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</p><div>Ambiente: <span className="font-medium">{item.environment}</span></div><div>Perfil: <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:bg-slate-800 dark:text-slate-200">{formatProfile(item.profile)}</span></div><div>Modelo: <span className="font-mono uppercase">{item.model || '—'}</span></div><div>Raciocínio: <span className="inline-flex items-center rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-200">{item.reasoningEffort}</span></div><div>Versão: <span className="font-mono">{item.version || '—'}</span></div><div>Problema: {item.problemTitle ? <span className="font-medium text-slate-700 dark:text-slate-100">#{item.problemId} — {item.problemTitle}</span> : <span className="text-slate-400">—</span>}</div></div>
+                <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300"><div className="space-y-1"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tokens</p><div className="flex items-center justify-between"><span>Input</span><span>{formatTokens(item.promptTokens)}</span></div><div className="flex items-center justify-between"><span>Input cacheado</span><span>{formatTokens(item.cachedPromptTokens)}</span></div><div className="flex items-center justify-between"><span>Output</span><span>{formatTokens(item.completionTokens)}</span></div><div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100"><span>Total</span><span>{formatTokens(item.totalTokens)}</span></div></div><div className="space-y-1"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custos</p><div className="flex items-center justify-between"><span>Input</span><span>{formatCost(item.promptCost, 4)}</span></div><div className="flex items-center justify-between"><span>Input cacheado</span><span>{formatCost(item.cachedPromptCost, 4)}</span></div><div className="flex items-center justify-between"><span>Output</span><span>{formatCost(item.completionCost, 4)}</span></div><div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-100"><span>Total</span><span>{formatCost(item.cost)}</span></div></div></div>
               </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <details>
-                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-600">Ver prompt</summary>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyPrompt(item.prompt)}
-                    className="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700"
-                  >
-                    Copiar prompt
-                  </button>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
-                    {item.prompt}
-                  </pre>
-                </details>
-                <div>
-                  {item.responseText ? (
-                    <details>
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-600">Ver resposta</summary>
-                      <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">
-                        {item.responseText}
-                      </pre>
-                    </details>
-                  ) : (
-                    <span className="text-xs text-slate-500">Sem resposta.</span>
-                  )}
-                </div>
-              </div>
-
+              <div className="mt-4 grid gap-4 md:grid-cols-2"><details><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-600">Ver prompt</summary><button type="button" onClick={() => handleCopyPrompt(item.prompt)} className="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700">Copiar prompt</button><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">{item.prompt}</pre></details><div>{item.responseText ? <details><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-600">Ver resposta</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-900/90 p-3 text-xs text-emerald-100">{item.responseText}</pre></details> : <span className="text-xs text-slate-500">Sem resposta.</span>}</div></div>
               <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4 dark:border-slate-700 md:grid-cols-[1fr_auto_auto] md:items-start">
-                <div className="text-xs text-slate-600 dark:text-slate-300">
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Comentário</p>
-                  {item.userComment ? (
-                    <div className="space-y-2">
-                      <p className="whitespace-pre-line">
-                        {item.userComment.length > 200 ? `${item.userComment.slice(0, 200)}…` : item.userComment}
-                      </p>
-                      <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
-                        Ver detalhes
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-slate-500">—</span>
-                      <Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">
-                        Adicionar comentário
-                      </Link>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Avaliação</p>
-                  {(() => {
-                    const currentRating = item.rating ?? 0;
-                    const isInteractive = item.status === 'COMPLETED';
-                    if (!isInteractive && currentRating === 0) {
-                      return <span className="text-slate-500">—</span>;
-                    }
-                    return (
-                      <div className="flex items-center gap-1">
-                        {[1, 2, 3, 4, 5].map((value) => {
-                          const filled = value <= currentRating;
-                          if (!isInteractive) {
-                            return (
-                              <span
-                                key={`static-${item.id}-${value}`}
-                                className={`text-lg ${filled ? 'text-amber-500' : 'text-slate-400'}`}
-                              >
-                                ★
-                              </span>
-                            );
-                          }
-                          return (
-                            <button
-                              key={`rate-${item.id}-${value}`}
-                              type="button"
-                              onClick={() => handleRating(item.id, value)}
-                              disabled={Boolean(loadingActions[item.id])}
-                              className="text-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                              title={`Avaliar como ${value}`}
-                            >
-                              <span className={filled ? 'text-amber-500' : 'text-slate-400'}>★</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div>
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ações</p>
-                  {item.status === 'PENDING' || item.status === 'RUNNING' ? (
-                    <button
-                      type="button"
-                      onClick={() => handleCancel(item.id)}
-                      disabled={Boolean(loadingActions[item.id])}
-                      className="rounded-md border border-red-500 px-3 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400 dark:text-red-300 dark:hover:bg-red-400/10"
-                    >
-                      {loadingActions[item.id] ? 'Cancelando...' : 'Cancelar'}
-                    </button>
-                  ) : (
-                    <span className="text-slate-500">—</span>
-                  )}
-                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-300"><p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Comentário</p>{item.userComment ? <div className="space-y-2"><p className="whitespace-pre-line">{item.userComment.length > 200 ? `${item.userComment.slice(0, 200)}…` : item.userComment}</p><Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">Ver detalhes</Link></div> : <div className="flex flex-col gap-1"><span className="text-slate-500">—</span><Link to={`/codex/requests/${item.id}`} className="text-emerald-600 hover:underline">Adicionar comentário</Link></div>}</div>
+                <div><p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Avaliação</p>{(() => { const currentRating = item.rating ?? 0; const isInteractive = item.status === 'COMPLETED'; if (!isInteractive && currentRating === 0) return <span className="text-slate-500">—</span>; return <div className="flex items-center gap-1">{[1,2,3,4,5].map((value) => { const filled = value <= currentRating; if (!isInteractive) return <span key={`static-${item.id}-${value}`} className={`text-lg ${filled ? 'text-amber-500' : 'text-slate-400'}`}>★</span>; return <button key={`rate-${item.id}-${value}`} type="button" onClick={() => handleRating(item.id, value)} disabled={Boolean(loadingActions[item.id])} className="text-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60" title={`Avaliar como ${value}`}><span className={filled ? 'text-amber-500' : 'text-slate-400'}>★</span></button>; })}</div>; })()}</div>
+                <div><p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ações</p>{item.status === 'PENDING' || item.status === 'RUNNING' ? <button type="button" onClick={() => handleCancel(item.id)} disabled={Boolean(loadingActions[item.id])} className="rounded-md border border-red-500 px-3 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400 dark:text-red-300 dark:hover:bg-red-400/10">{loadingActions[item.id] ? 'Cancelando...' : 'Cancelar'}</button> : <span className="text-slate-500">—</span>}</div>
               </div>
             </article>
           ))}
-
           {isPageLoading && <p className="py-6 text-center text-sm text-slate-500">Carregando solicitações...</p>}
-
-          {!isPageLoading && totalRequests === 0 && (
-            <p className="py-6 text-center text-sm text-slate-500">Nenhuma solicitação enviada até o momento.</p>
-          )}
-
-          {totalRequests > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
-              <span>
-                Mostrando {(currentPage - 1) * REQUESTS_PER_PAGE + 1}–
-                {Math.min(totalRequests, currentPage * REQUESTS_PER_PAGE)} de {totalRequests} solicitações
-              </span>
-
-              {totalRequests > REQUESTS_PER_PAGE && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                  >
-                    Anterior
-                  </button>
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Página {currentPage} de {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                  >
-                    Próxima
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          {!isPageLoading && totalRequests === 0 && <p className="py-6 text-center text-sm text-slate-500">Nenhuma solicitação enviada até o momento.</p>}
+          {totalRequests > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300"><span>Mostrando {(currentPage - 1) * REQUESTS_PER_PAGE + 1}–{Math.min(totalRequests, currentPage * REQUESTS_PER_PAGE)} de {totalRequests} solicitações</span>{totalRequests > REQUESTS_PER_PAGE && <div className="flex items-center gap-2"><button type="button" onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Anterior</button><span className="text-xs font-medium text-slate-500 dark:text-slate-400">Página {currentPage} de {totalPages}</span><button type="button" onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Próxima</button></div>}</div>}
         </div>
       </div>
     </section>
