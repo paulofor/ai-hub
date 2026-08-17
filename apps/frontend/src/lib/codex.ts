@@ -1,7 +1,7 @@
 export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'ECO_30' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
 
 export type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'pro';
 
 export interface CodexRequest {
   id: number;
@@ -112,7 +112,7 @@ const parseStatus = (value: unknown): CodexStatus => {
 const parseReasoningEffort = (value: unknown): CodexReasoningEffort => {
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
-    if (['low', 'medium', 'high', 'xhigh'].includes(normalized)) {
+    if (['low', 'medium', 'high', 'xhigh', 'pro'].includes(normalized)) {
       return normalized as CodexReasoningEffort;
     }
   }
@@ -247,7 +247,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
       const documentPathRaw = typeof documentAccess.documentPath === 'string'
         ? documentAccess.documentPath
         : typeof documentAccess.document_path === 'string'
-          ? documentAccess.document_path
+          ? documentAccess.document_path as string
           : '';
       const documentPath = documentPathRaw.trim();
       const accessCount = parseNumber(
