@@ -2,10 +2,13 @@ package com.aihub.hub.dto;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexReasoningEffort;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 
 public class CreateCodexRequest {
 
@@ -42,6 +45,20 @@ public class CreateCodexRequest {
     private List<ImageAttachment> imageAttachments;
 
     public CreateCodexRequest() {
+    }
+
+    @AssertTrue(message = "O modo Pro exige um modelo GPT-5.6 e não está disponível nos perfis que usam Codex App Server")
+    @JsonIgnore
+    public boolean isReasoningSelectionSupported() {
+        if (reasoningEffort != CodexReasoningEffort.PRO) {
+            return true;
+        }
+        if (model == null || !model.trim().toLowerCase(Locale.ROOT).startsWith("gpt-5.6")) {
+            return false;
+        }
+        return profile != CodexIntegrationProfile.CHATGPT_CODEX
+            && profile != CodexIntegrationProfile.CHATGPT_CODEX_MKT
+            && profile != CodexIntegrationProfile.CHATGPT_CODEX_SANDBOX;
     }
 
     public List<ImageAttachment> getImageAttachments() {
