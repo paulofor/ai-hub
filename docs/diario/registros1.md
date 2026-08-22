@@ -3587,3 +3587,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Segurança de concorrência: a limpeza global de volumes sem uso ocorre somente quando o contador de jobs ativos chega a zero; novas execuções aguardam a limpeza corrente, fechando a janela em que um volume recém-criado por outro job poderia ser removido. A engine é exclusiva das homologações e não compartilha o daemon de produção.
 - Operação e observabilidade: limpeza habilitada por padrão, timeout de dois minutos, falhas registradas sem converter um job já concluído em falha. As opções `DOCKER_HOMOLOGATION_CLEANUP_ENABLED` e `DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS` permitem controle operacional.
 - Validação: teste com Docker falso confirma filtros pelo label `com.docker.compose.project`, remoção segregada de containers/redes/volumes, prune quando o job é o último ativo e registro do espaço recuperado.
+
+## 2026-08-22 — Duração e raciocínio no ranking de tokens
+
+- Solicitação recebida: exibir, em cada solicitação do ranking de tokens, o tempo de duração e o nível de raciocínio usado.
+- Pergunta explícita de causa raiz: “por que essas informações não apareciam no ranking?”. Embora `durationMs` e `reasoningEffort` já fossem persistidos e exibidos no detalhe da solicitação, a projeção específica do endpoint de ranking não selecionava esses campos; consequentemente, o frontend não tinha os dados necessários para renderizá-los.
+- Correção na causa: o DTO e a consulta do ranking agora transportam `durationMs` e `reasoningEffort` desde a entidade. A tabela ganhou a coluna “Execução”, que apresenta a duração formatada e o nível de raciocínio efetivamente registrado em cada solicitação.
+- Proteção: o teste do controller passou a construir o item do ranking com duração e esforço de raciocínio, acompanhando o novo contrato do endpoint.

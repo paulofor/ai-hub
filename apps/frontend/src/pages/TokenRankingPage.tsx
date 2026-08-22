@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { CodexProfile, CodexStatus } from '../lib/codex';
+import { CodexProfile, CodexReasoningEffort, CodexStatus, formatDuration } from '../lib/codex';
 
 interface TokenRankingItem {
   id: number;
   environment: string;
   model: string;
+  reasoningEffort: CodexReasoningEffort;
   profile?: CodexProfile;
   status: CodexStatus;
   promptTokens?: number;
@@ -14,6 +15,7 @@ interface TokenRankingItem {
   completionTokens?: number;
   totalTokens: number;
   cost?: number;
+  durationMs?: number;
   createdAt: string;
 }
 
@@ -73,7 +75,7 @@ export default function TokenRankingPage() {
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-900">
-                <tr><th className="px-4 py-3">Posição</th><th className="px-4 py-3">Solicitação</th><th className="px-4 py-3">Modelo e perfil</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Tokens</th></tr>
+                <tr><th className="px-4 py-3">Posição</th><th className="px-4 py-3">Solicitação</th><th className="px-4 py-3">Modelo e perfil</th><th className="px-4 py-3">Execução</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Tokens</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-900">
                 {items.map((item, index) => (
@@ -81,6 +83,7 @@ export default function TokenRankingPage() {
                     <td className="px-4 py-4"><span className={`inline-flex h-9 w-9 items-center justify-center rounded-full font-bold ${index < 3 ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{index + 1}</span></td>
                     <td className="px-4 py-4"><Link to={`/codex/requests/${item.id}`} className="font-bold text-emerald-700 hover:underline dark:text-emerald-400">#{item.id}</Link><div className="mt-1 max-w-xs truncate text-sm text-slate-600 dark:text-slate-400" title={item.environment}>{item.environment}</div><div className="mt-1 text-xs text-slate-400">{dateFormatter.format(new Date(item.createdAt))}</div></td>
                     <td className="px-4 py-4 text-sm"><div className="font-medium text-slate-800 dark:text-slate-100">{item.model}</div><div className="mt-1 text-xs text-slate-500">{item.profile ?? 'Sem perfil'}</div></td>
+                    <td className="px-4 py-4 text-sm"><div className="font-medium text-slate-800 dark:text-slate-100">{formatDuration(item.durationMs)}</div><div className="mt-1 text-xs text-slate-500">Raciocínio: {item.reasoningEffort.toUpperCase()}</div></td>
                     <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle[item.status]}`}>{statusLabel[item.status]}</span></td>
                     <td className="px-4 py-4 text-right"><div className="text-lg font-bold tabular-nums text-slate-900 dark:text-white">{numberFormatter.format(item.totalTokens)}</div><div className="mt-1 text-xs tabular-nums text-slate-500">entrada {numberFormatter.format(item.promptTokens ?? 0)} · cache {numberFormatter.format(item.cachedPromptTokens ?? 0)} · saída {numberFormatter.format(item.completionTokens ?? 0)}</div></td>
                   </tr>
