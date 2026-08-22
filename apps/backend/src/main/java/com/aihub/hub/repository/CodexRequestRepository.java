@@ -59,9 +59,9 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
 
     @Query("""
         select new com.aihub.hub.dto.CodexTokenRankingItem(
-            cr.id, cr.environment, cr.model, cr.profile, cr.status,
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.profile, cr.status,
             cr.promptTokens, cr.cachedPromptTokens, cr.completionTokens, cr.totalTokens,
-            cr.cost, cr.createdAt
+            cr.cost, cr.durationMs, cr.createdAt
         )
         from CodexRequest cr
         where cr.totalTokens is not null

@@ -1,8 +1,9 @@
 package com.aihub.hub.web;
 
 import com.aihub.hub.domain.CodexRequest;
-import com.aihub.hub.domain.ResponseRecord;
+import com.aihub.hub.domain.CodexReasoningEffort;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
@@ -45,8 +46,8 @@ class CodexControllerTest {
             new ObjectMapper()
         );
         CodexTokenRankingItem leader = new CodexTokenRankingItem(
-            99L, "owner/repo", "gpt-5.6-sol", null, CodexRequestStatus.COMPLETED,
-            900, 100, 200, 1200, null, Instant.parse("2026-08-16T00:00:00Z")
+            99L, "owner/repo", "gpt-5.6-sol", CodexReasoningEffort.HIGH, null, CodexRequestStatus.COMPLETED,
+            900, 100, 200, 1200, null, 90_000L, Instant.parse("2026-08-16T00:00:00Z")
         );
         when(codexRequestService.tokenRanking()).thenReturn(List.of(leader));
 
