@@ -13,6 +13,7 @@ import {
   DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
   DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
   DEFAULT_CODEX_TURN_TIMEOUT_MS,
+  dockerHomologationProjectName,
   openAIClientConfigForTests,
   SandboxJobProcessor,
 } from '../src/jobProcessor.js';
@@ -142,6 +143,7 @@ test('docker compose oferece engine dedicada ao modelo sem expor o socket de pro
   assert.match(compose, /sandbox-docker-data:\/var\/lib\/docker/);
   assert.match(compose, /sandbox-docker:\n\s+condition: service_healthy/);
   assert.doesNotMatch(orchestratorSection, /\/var\/run\/docker\.sock/);
+  assert.match(orchestratorSection, /DOCKER_HOMOLOGATION_CLEANUP_ENABLED: \$\{DOCKER_HOMOLOGATION_CLEANUP_ENABLED:-true\}/);
 });
 
 test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta e Meta para o sandbox-orchestrator', async () => {
@@ -195,12 +197,52 @@ test('informa ao modelo quando a Brave Search API esta disponivel', () => {
 
 test('informa ao modelo a engine Docker dedicada e as regras de isolamento', () => {
   const processor = new SandboxJobProcessor();
-  const instruction = (processor as any).buildDockerCliInstruction();
+  const job = { jobId: 'Job com espaços/123' } as SandboxJob;
+  const project = dockerHomologationProjectName(job.jobId);
+  const instruction = (processor as any).buildDockerCliInstruction(job);
 
   assert.match(instruction, /engine Docker dedicada/);
   assert.match(instruction, /isolada do daemon.*produção/);
-  assert.match(instruction, /nome de projeto Compose exclusivo/);
-  assert.match(instruction, /docker compose down --volumes --remove-orphans/);
+  assert.match(project, /^aihub-job-com-espa-os-123-[a-f0-9]{10}$/);
+  assert.match(instruction, new RegExp(`docker compose -p ${project}`));
+  assert.match(instruction, new RegExp(`docker compose -p ${project} down --volumes --remove-orphans`));
+  assert.match(instruction, /quando não há outro job ativo, elimina volumes não utilizados/);
+});
+
+test('limpa somente o projeto encerrado e poda volumes quando não há outro job ativo', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'docker-cleanup-test-'));
+  const callsFile = path.join(directory, 'calls.log');
+  const fakeDocker = path.join(directory, 'docker');
+  const previous = {
+    path: process.env.PATH,
+    host: process.env.DOCKER_HOST,
+    enabled: process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED,
+  };
+  await fs.writeFile(fakeDocker, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${callsFile}'\nif [ "$1 $2" = "volume prune" ]; then echo 'Total reclaimed space: 600MB'; fi\n`);
+  await fs.chmod(fakeDocker, 0o755);
+  process.env.PATH = `${directory}:${previous.path ?? ''}`;
+  process.env.DOCKER_HOST = 'tcp://sandbox-docker:2375';
+  process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED = 'true';
+
+  try {
+    const processor = new SandboxJobProcessor();
+    const job = { jobId: 'cleanup-job-123', logs: [] } as unknown as SandboxJob;
+    await (processor as any).cleanupDockerHomologation(job, true);
+
+    const calls = await fs.readFile(callsFile, 'utf8');
+    const project = dockerHomologationProjectName(job.jobId);
+    assert.match(calls, new RegExp(`ps -aq --filter label=com.docker.compose.project=${project}`));
+    assert.match(calls, new RegExp(`network ls -q --filter label=com.docker.compose.project=${project}`));
+    assert.match(calls, new RegExp(`volume ls -q --filter label=com.docker.compose.project=${project}`));
+    assert.match(calls, /volume prune --force/);
+    assert.ok(job.logs.some((entry) => entry.includes('Total reclaimed space: 600MB')));
+  } finally {
+    if (previous.path === undefined) delete process.env.PATH; else process.env.PATH = previous.path;
+    if (previous.host === undefined) delete process.env.DOCKER_HOST; else process.env.DOCKER_HOST = previous.host;
+    if (previous.enabled === undefined) delete process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED;
+    else process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED = previous.enabled;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('imagem da sandbox instala ferramentas de execução e validação do runner', async () => {
@@ -4115,6 +4157,71 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails'));
   assert.ok(input?.[0]?.text?.includes('sandbox-media-player <arquivo-video-ou-audio> [saida.html]'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
+});
+
+test('retoma a mesma thread após falha transitória de conexão do Codex App Server', async () => {
+  const previousDelay = process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS;
+  process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS = '0';
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: any }> = [];
+  let turnAttempt = 0;
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') return { authMode: 'chatgpt', planType: 'plus' };
+      if (method === 'thread/start') return { id: 'thread-recoverable' };
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        const currentAttempt = turnAttempt;
+        setTimeout(() => {
+          if (currentAttempt === 1) {
+            for (const listener of listeners.get('turn/completed') ?? []) {
+              listener({ status: 'failed', error: { message: 'stream disconnected while reconnecting' }, turnId: 'turn-failed' });
+            }
+          } else {
+            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ delta: 'trabalho recuperado' });
+            for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-recovered' });
+          }
+        }, 5);
+        return { id: currentAttempt === 1 ? 'turn-failed' : 'turn-recovered' };
+      }
+      if (method === 'thread/archive') return {};
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+    const job: SandboxJob = {
+      jobId: 'job-chatgpt-codex-recover-connection',
+      taskDescription: 'continue mesmo se a conexão oscilar',
+      profile: 'CHATGPT_CODEX_SANDBOX',
+      status: 'PENDING', logs: [], interactions: [], interactionSequence: 0,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    assert.equal(job.status, 'COMPLETED');
+    assert.equal(job.summary, 'trabalho recuperado');
+    const turnCalls = calls.filter((call) => call.method === 'turn/start');
+    assert.equal(turnCalls.length, 2);
+    assert.equal(turnCalls[0].params.threadId, 'thread-recoverable');
+    assert.equal(turnCalls[1].params.threadId, 'thread-recoverable');
+    assert.match(turnCalls[1].params.input[0].text, /falha transitória de conexão/);
+    assert.ok(job.logs.some((entry) => entry.includes('retomando a mesma thread')));
+    assert.equal(calls.filter((call) => call.method === 'thread/archive').length, 1);
+  } finally {
+    if (previousDelay === undefined) delete process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS;
+    else process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS = previousDelay;
+  }
 });
 
 test('permite configurar sandbox mode do Codex App Server em kebab-case', async () => {
