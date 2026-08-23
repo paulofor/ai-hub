@@ -260,7 +260,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
-  assert.match(dockerfile, /CODEX_VERSION=0\.146\.0/);
+  assert.match(dockerfile, /CODEX_VERSION=0\.149\.0/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
@@ -296,6 +296,21 @@ test('accepts a job request and processes asynchronously', async () => {
   assert.equal(stored!.reasoningEffort, 'medium');
 });
 
+test('accepts max reasoning effort', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+
+  await request(app).post('/jobs').send({
+    jobId: 'job-max-effort',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'solve a complex task',
+    reasoningEffort: 'max',
+  }).expect(201);
+
+  assert.equal(registry.get('job-max-effort')?.reasoningEffort, 'max');
+});
+
 test('rejects unsupported reasoning effort', async () => {
   const app = createApp({ processor: new StubProcessor() });
   const response = await request(app).post('/jobs').send({
@@ -306,7 +321,7 @@ test('rejects unsupported reasoning effort', async () => {
     reasoningEffort: 'minimal',
   }).expect(400);
 
-  assert.match(response.body.error, /low, medium, high ou xhigh/);
+  assert.match(response.body.error, /low, medium, high, xhigh ou max/);
 });
 
 test('accepts non-image attachments in job request', async () => {
@@ -931,7 +946,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     branch: 'main',
     taskDescription: 'avalie campanhas',
     profile: 'CHATGPT_CODEX_MKT',
-    reasoningEffort: 'xhigh',
+    reasoningEffort: 'max',
     status: 'PENDING',
     logs: [],
     interactions: [],
@@ -947,7 +962,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.equal(job.status, 'COMPLETED');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
-    assert.equal((turnStartCall.params as { effort?: string }).effort, 'xhigh');
+    assert.equal((turnStartCall.params as { effort?: string }).effort, 'max');
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));

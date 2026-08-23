@@ -39,7 +39,7 @@ function validateString(value: unknown): string | undefined {
 
 function normalizeReasoningEffort(value?: string): CodexReasoningEffort | undefined {
   const normalized = value?.trim().toLowerCase();
-  return normalized && ['low', 'medium', 'high', 'xhigh'].includes(normalized)
+  return normalized && ['low', 'medium', 'high', 'xhigh', 'max'].includes(normalized)
     ? normalized as CodexReasoningEffort
     : undefined;
 }
@@ -349,7 +349,7 @@ export function createApp(options: AppOptions = {}) {
 
     const sandboxOnly = profile === 'CHATGPT_CODEX_SANDBOX';
     if (req.body?.reasoningEffort !== undefined && !reasoningEffort) {
-      return res.status(400).json({ error: 'reasoningEffort deve ser low, medium, high ou xhigh' });
+      return res.status(400).json({ error: 'reasoningEffort deve ser low, medium, high, xhigh ou max' });
     }
     if (!jobId || !taskDescription || (!sandboxOnly && ((!repoUrl && !repoSlug) || !branch))) {
       return res.status(400).json({ error: 'jobId, repoSlug/repoUrl, branch e taskDescription são obrigatórios' });

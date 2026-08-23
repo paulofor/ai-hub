@@ -9,7 +9,7 @@ RUN npm run build
 FROM node:20-bookworm-slim AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
-ARG CODEX_VERSION=0.146.0
+ARG CODEX_VERSION=0.149.0
 ARG PLAYWRIGHT_VERSION=1.54.2
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \

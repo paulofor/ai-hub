@@ -3175,7 +3175,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <option value="low">Low — econômico</option>
               <option value="medium">Medium — equilibrado</option>
               <option value="high">High — aprofundado</option>
-              <option value="xhigh">XHigh — máximo</option>
+              <option value="xhigh">XHigh — muito alto</option>
+              <option value="max">Max — raciocínio máximo</option>
             </select>
           </label>
         </div>
