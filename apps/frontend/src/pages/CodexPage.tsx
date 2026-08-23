@@ -582,7 +582,8 @@ export default function CodexPage() {
               <option value="low">Low — mais rápido e econômico</option>
               <option value="medium">Medium — equilíbrio</option>
               <option value="high">High — análise aprofundada</option>
-              <option value="xhigh">XHigh — esforço máximo</option>
+              <option value="xhigh">XHigh — esforço muito alto</option>
+              <option value="max">Max — raciocínio máximo</option>
             </select>
             <span className="text-xs text-slate-500 dark:text-slate-400">
               Aplicado somente a esta solicitação. O padrão continua sendo high.

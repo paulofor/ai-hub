@@ -3594,3 +3594,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que essas informações não apareciam no ranking?”. Embora `durationMs` e `reasoningEffort` já fossem persistidos e exibidos no detalhe da solicitação, a projeção específica do endpoint de ranking não selecionava esses campos; consequentemente, o frontend não tinha os dados necessários para renderizá-los.
 - Correção na causa: o DTO e a consulta do ranking agora transportam `durationMs` e `reasoningEffort` desde a entidade. A tabela ganhou a coluna “Execução”, que apresenta a duração formatada e o nível de raciocínio efetivamente registrado em cada solicitação.
 - Proteção: o teste do controller passou a construir o item do ranking com duração e esforço de raciocínio, acompanhando o novo contrato do endpoint.
+
+## 2026-08-23 — Atualização do Codex e raciocínio max
+
+- Solicitação recebida: atualizar a versão do Codex e oferecer o novo nível de raciocínio `max`.
+- Pergunta explícita de causa raiz: “por que a opção `max` não podia ser usada?”. A imagem ainda instalava o Codex `0.146.0` e os contratos fechados do frontend, backend e orquestrador aceitavam no máximo `xhigh`; assim, mesmo digitado manualmente, `max` era rejeitado antes de chegar ao App Server.
+- Correção na causa: o Codex CLI/App Server foi atualizado para `0.149.0`, versão `latest` confirmada no registro npm em 23/08/2026. O valor `max` passou a integrar o contrato persistido, a validação da API, os tipos do orquestrador e o payload `effort` de `turn/start`.
+- Interface e proteção: os dois formulários de criação de solicitação agora exibem “Max — raciocínio máximo”; testes cobrem a versão fixada, a aceitação/persistência do valor e seu envio ao App Server.

@@ -358,7 +358,7 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly codexTurnTimeoutMs: number;
   private readonly codexTurnNoActivityTimeoutMs: number;
   private readonly codexTurnActiveItemTimeoutMs: number;
-  private readonly codexReasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  private readonly codexReasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
   private readonly codexTransientTurnMaxAttempts: number;
   private readonly codexTransientTurnRetryDelayMs: number;
@@ -1615,10 +1615,10 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     };
   }
 
-  private resolveCodexReasoningEffort(value?: string): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
+  private resolveCodexReasoningEffort(value?: string): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' {
     const normalized = value?.trim().toLowerCase() || DEFAULT_CODEX_REASONING_EFFORT;
-    if (['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(normalized)) {
-      return normalized as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    if (['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(normalized)) {
+      return normalized as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     }
     throw new Error(`CODEX_APP_SERVER_REASONING_EFFORT inválido: ${value}`);
   }
