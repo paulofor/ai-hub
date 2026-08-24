@@ -2806,7 +2806,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const canRequestPr = Boolean(
     !sandboxOnly
     && selectedEnvironment
-    && model
     && activeBatchKey
     && (activeBatchRequests.length > 0 || activeBatchPrUrl)
   );

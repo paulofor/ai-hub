@@ -3607,6 +3607,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Corrigida a origem no fluxo da conversa: o botão agora aceita o pedido enquanto o lote está ativo, registra o PR como pendente e o dispara automaticamente assim que não houver solicitações pendentes ou em execução.
 - A interface passa a mostrar `PR pendente`, uma mensagem no histórico e uma explicação de que o pedido aguardará a conclusão do lote, além de impedir pedidos duplicados enquanto estiver enfileirado.
 
+## 2026-08-24 — Pedido de PR disponível com o lote ocioso
+- Solicitação recebida: verificar se o botão **Pedir PR** também permanece disponível quando nenhuma tarefa está em execução.
+- Pergunta de causa raiz: **por que esse erro aconteceu?** A habilitação do botão de PR reutilizava indevidamente a exigência de existir um modelo de execução selecionado. Criar o PR não inicia uma inferência nem envia o modelo ao backend; por isso, em um lote concluído e ocioso, uma lista de modelos vazia ou ainda indisponível bloqueava uma ação que dependia apenas do ambiente e do lote Git aberto.
+- Correção na causa: a disponibilidade do pedido de PR foi desacoplada do seletor de modelo. O botão continua protegido pela existência de ambiente e lote aberto, permanece enfileirável durante tarefas ativas e agora também pode publicar diretamente um lote ocioso mesmo sem modelo disponível.
+- Proteção contra regressão: o cenário E2E de lote de marketing concluído agora responde com lista de modelos vazia, confirma o botão habilitado e valida que o PR é solicitado para a tarefa do perfil/lote correto.
+
 ## 2026-08-24 — Título da solicitação no ranking de tokens
 - Pergunta de causa raiz: **por que o título não aparecia?** A consulta específica do ranking projetava somente identificadores, consumo e metadados técnicos; ela não transportava o prompt/resposta necessários para aplicar a mesma regra de título já usada nas demais listas.
 - Corrigida a origem no backend: a projeção interna agora leva prompt e resposta sem expô-los no JSON, e o serviço calcula `requestTitle` reutilizando a regra existente, inclusive o título estruturado das respostas de marketing.
