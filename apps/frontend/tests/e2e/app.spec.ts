@@ -337,7 +337,7 @@ test('renders structured model JSON as cards in the default ChatGPT dialog', asy
   await expect(page.getByRole('checkbox', { name: 'Lido' })).toHaveCount(0);
 });
 
-test('request PR button only uses the active dialog profile batch', async ({ page }) => {
+test('request PR stays available for an idle batch even when no execution model is available', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
@@ -347,7 +347,7 @@ test('request PR button only uses the active dialog profile batch', async ({ pag
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
   await page.route('**/api/account/models', async (route) => {
-    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+    await route.fulfill({ json: [] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
     await route.fulfill({ json: { day: { startsAt: '2026-07-24T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 2000 } } });
@@ -413,7 +413,9 @@ test('request PR button only uses the active dialog profile batch', async ({ pag
 
   await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt')).toBeVisible();
   await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: /Pedir PR Código pendente/ }).click();
+  const requestPrButton = page.getByRole('button', { name: /Pedir PR Código pendente/ });
+  await expect(requestPrButton).toBeEnabled();
+  await requestPrButton.click();
   await expect(page.getByText('PR solicitado:')).toBeVisible();
   const prFeedMarker = page.getByRole('article').filter({ hasText: 'Pedido de PR registrado no lote.' });
   await expect(prFeedMarker.getByText(/Sistema · \d{2}\/\d{2}\/\d{4}/)).toBeVisible();
