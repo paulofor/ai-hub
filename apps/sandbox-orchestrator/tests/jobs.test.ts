@@ -995,6 +995,13 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas'));
     assert.ok(input?.[0]?.text?.includes('reinicie a contagem das duas rodadas'));
     assert.ok(input?.[0]?.text?.includes('não peça PR, merge ou deploy enquanto algum critério estiver pendente'));
+    assert.ok(input?.[0]?.text?.includes('não inicie repetidamente a suíte monolítica nem aumente memória às cegas'));
+    assert.ok(input?.[0]?.text?.includes('divida a execução integral em grupos estáveis e sequenciais'));
+    assert.ok(input?.[0]?.text?.includes('mantendo uma única JVM de testes por vez'));
+    assert.ok(input?.[0]?.text?.includes('pico do cgroup quando disponível, os eventos de OOM e a árvore de processos'));
+    assert.ok(input?.[0]?.text?.includes('preserve a mesma cobertura total e não omita testes'));
+    assert.ok(input?.[0]?.text?.includes('estatísticas do cache de contextos'));
+    assert.ok(input?.[0]?.text?.includes('nunca publique heap dump porque ele pode conter segredos'));
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
     assert.ok(input?.[0]?.text?.includes('A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium'));
@@ -3137,6 +3144,13 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas/i);
     assert.match(promptText, /reinicie a contagem das duas rodadas/i);
     assert.match(promptText, /não peça PR, merge ou deploy enquanto algum critério estiver pendente/i);
+    assert.match(promptText, /não inicie repetidamente a suíte monolítica nem aumente memória às cegas/i);
+    assert.match(promptText, /divida a execução integral em grupos estáveis e sequenciais/i);
+    assert.match(promptText, /mantendo uma única JVM de testes por vez/i);
+    assert.match(promptText, /pico do cgroup quando disponível, os eventos de OOM e a árvore de processos/i);
+    assert.match(promptText, /preserve a mesma cobertura total e não omita testes/i);
+    assert.match(promptText, /estatísticas do cache de contextos/i);
+    assert.match(promptText, /nunca publique heap dump porque ele pode conter segredos/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
