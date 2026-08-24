@@ -47,7 +47,8 @@ class CodexControllerTest {
         );
         CodexTokenRankingItem leader = new CodexTokenRankingItem(
             99L, "owner/repo", "gpt-5.6-sol", CodexReasoningEffort.HIGH, null, CodexRequestStatus.COMPLETED,
-            900, 100, 200, 1200, null, 90_000L, Instant.parse("2026-08-16T00:00:00Z")
+            900, 100, 200, 1200, null, 90_000L, Instant.parse("2026-08-16T00:00:00Z"),
+            "Ajustar ranking", null, "Ajustar ranking"
         );
         when(codexRequestService.tokenRanking()).thenReturn(List.of(leader));
 

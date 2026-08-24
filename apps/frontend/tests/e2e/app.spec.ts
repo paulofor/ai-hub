@@ -164,6 +164,17 @@ test('warns on the request PR button when a batch has accumulated code', async (
             status: 'COMPLETED',
             createdAt: '2026-07-24T12:00:00Z',
             workBatchKey: 'aihub/codex-chatgpt-527'
+          },
+          {
+            id: 528,
+            environment: 'produção',
+            model: 'gpt-5',
+            version: 'aihub-6',
+            profile: 'CHATGPT_CODEX',
+            prompt: 'Executar a próxima alteração do lote',
+            status: 'PENDING',
+            createdAt: '2026-07-24T12:01:00Z',
+            workBatchKey: 'aihub/codex-chatgpt-527'
           }
         ]
       }
@@ -179,6 +190,31 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await expect(requestPrButton).toBeEnabled();
   await expect(requestPrButton).toHaveClass(/border-indigo-500/);
   await expect(requestPrButton.getByText('Código pendente')).toHaveClass(/bg-indigo-200/);
+  await requestPrButton.click();
+  await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
+  await expect(page.getByText('Pedido de PR pendente. Ele será executado automaticamente quando as solicitações deste lote terminarem.')).toBeVisible();
+});
+
+test('shows the request title in the token ranking', async ({ page }) => {
+  await page.route('**/api/codex/requests/token-ranking', (route) => route.fulfill({ json: [{
+    id: 2249,
+    environment: 'paulofor/marketing-hub',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'HIGH',
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'COMPLETED',
+    promptTokens: 1000,
+    cachedPromptTokens: 800,
+    completionTokens: 200,
+    totalTokens: 1200,
+    durationMs: 90_000,
+    createdAt: '2026-08-24T00:28:00Z',
+    requestTitle: 'Otimizar campanha de aquisição'
+  }] }));
+
+  await page.goto('/codex/token-ranking');
+
+  await expect(page.getByRole('cell', { name: /#2249 Otimizar campanha de aquisição/ })).toBeVisible();
 });
 
 test('explains why old history does not enable trimming the open batch', async ({ page }) => {

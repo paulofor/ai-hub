@@ -391,7 +391,9 @@ public class CodexRequestService {
 
     @Transactional(readOnly = true)
     public List<CodexTokenRankingItem> tokenRanking() {
-        return codexRequestRepository.findTokenRanking(PageRequest.of(0, 20));
+        return codexRequestRepository.findTokenRanking(PageRequest.of(0, 20)).stream()
+            .map(item -> item.withRequestTitle(buildRequestTitle(item.prompt(), item.responseText())))
+            .toList();
     }
 
     @Transactional(readOnly = true)

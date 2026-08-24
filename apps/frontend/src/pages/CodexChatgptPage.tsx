@@ -1537,6 +1537,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
+  const [pendingPrBatchKey, setPendingPrBatchKey] = useState<string | null>(null);
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
   const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
@@ -2410,8 +2411,19 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         || conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
 
       if (hasQueuedOrRunningRequest) {
-        setError('Aguarde as solicitações pendentes/em execução terminarem antes de pedir o PR do lote.');
-        registerTelemetry('pr_blocked', 'Pedido de PR bloqueado porque ainda há solicitação pendente ou em execução.');
+        if (!currentBatchKey) {
+          setError('Não foi possível identificar o lote para colocar o pedido de PR na fila.');
+          return;
+        }
+        setPendingPrBatchKey(currentBatchKey);
+        setConversation((current) => [...current, {
+          id: `${Date.now()}-pr-queued`,
+          role: 'system',
+          content: 'Pedido de PR pendente. Ele será executado automaticamente quando as solicitações deste lote terminarem.',
+          createdAt: new Date().toISOString()
+        }]);
+        setError(null);
+        registerTelemetry('pr_queued', 'Pedido de PR colocado na fila até as solicitações do lote terminarem.');
         return;
       }
 
@@ -2783,8 +2795,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? `${activeBatchPrRelevantCompleted} solicitação(ões) com alteração de código neste lote ainda precisam passar por PR antes do merge.`
       : `${activeBatchPrRelevantCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
     : null;
-  const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
-    ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'
+  const prIsQueued = Boolean(pendingPrBatchKey && pendingPrBatchKey === activeBatchKey);
+  const prBlockedReason = prIsQueued
+    ? 'Pedido de PR pendente; ele será executado automaticamente quando as solicitações do lote terminarem.'
+    : hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
+    ? 'Você pode pedir o PR agora; ele ficará pendente até todas as solicitações do lote terminarem.'
     : !hasCompletedConversationRequest && activeBatchCompleted === 0 && !activeBatchPrUrl
       ? 'Ainda não há solicitação concluída neste lote.'
       : accumulatedCodeWarning ?? 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
@@ -2792,10 +2807,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     !sandboxOnly
     && selectedEnvironment
     && model
-    && !hasQueuedConversationRequest
-    && !hasQueuedOrRunningBatchRequest
-    && (hasCompletedConversationRequest || activeBatchCompleted > 0 || activeBatchPrUrl)
+    && activeBatchKey
+    && (activeBatchRequests.length > 0 || activeBatchPrUrl)
   );
+  useEffect(() => {
+    if (!prIsQueued || hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest || prLoading) {
+      return;
+    }
+    setPendingPrBatchKey(null);
+    void handleCreatePr();
+  }, [handleCreatePr, hasQueuedConversationRequest, hasQueuedOrRunningBatchRequest, prIsQueued, prLoading]);
   const growthSalesProgress = growthMission
     ? Math.min(100, Math.round((growthMission.salesApproved / Math.max(growthMission.targetSales, 1)) * 100))
     : 0;
@@ -3332,7 +3353,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <button
               type="button"
               onClick={handleCreatePr}
-              disabled={prLoading || !canRequestPr}
+              disabled={prLoading || prIsQueued || !canRequestPr}
               title={prBlockedReason}
               className={`inline-flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50 ${
                 hasAccumulatedCodeAwaitingPr
@@ -3340,7 +3361,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   : 'border-emerald-600 text-emerald-700'
               }`}
             >
-              <span>{prLoading ? 'Pedindo PR...' : 'Pedir PR'}</span>
+              <span>{prLoading ? 'Pedindo PR...' : prIsQueued ? 'PR pendente' : 'Pedir PR'}</span>
               {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100">Código pendente</span> : null}
             </button>
           ) : null}
