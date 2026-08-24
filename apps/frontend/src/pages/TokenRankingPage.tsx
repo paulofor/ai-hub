@@ -17,6 +17,7 @@ interface TokenRankingItem {
   cost?: number;
   durationMs?: number;
   createdAt: string;
+  requestTitle?: string;
 }
 
 const numberFormatter = new Intl.NumberFormat('pt-BR');
@@ -81,7 +82,7 @@ export default function TokenRankingPage() {
                 {items.map((item, index) => (
                   <tr key={item.id} className="transition hover:bg-emerald-50/60 dark:hover:bg-emerald-950/20">
                     <td className="px-4 py-4"><span className={`inline-flex h-9 w-9 items-center justify-center rounded-full font-bold ${index < 3 ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{index + 1}</span></td>
-                    <td className="px-4 py-4"><Link to={`/codex/requests/${item.id}`} className="font-bold text-emerald-700 hover:underline dark:text-emerald-400">#{item.id}</Link><div className="mt-1 max-w-xs truncate text-sm text-slate-600 dark:text-slate-400" title={item.environment}>{item.environment}</div><div className="mt-1 text-xs text-slate-400">{dateFormatter.format(new Date(item.createdAt))}</div></td>
+                    <td className="px-4 py-4"><Link to={`/codex/requests/${item.id}`} className="font-bold text-emerald-700 hover:underline dark:text-emerald-400">#{item.id}</Link>{item.requestTitle ? <div className="mt-1 max-w-sm text-sm font-medium text-slate-800 dark:text-slate-100" title={item.requestTitle}>{item.requestTitle}</div> : null}<div className="mt-1 max-w-xs truncate text-sm text-slate-600 dark:text-slate-400" title={item.environment}>{item.environment}</div><div className="mt-1 text-xs text-slate-400">{dateFormatter.format(new Date(item.createdAt))}</div></td>
                     <td className="px-4 py-4 text-sm"><div className="font-medium text-slate-800 dark:text-slate-100">{item.model}</div><div className="mt-1 text-xs text-slate-500">{item.profile ?? 'Sem perfil'}</div></td>
                     <td className="px-4 py-4 text-sm"><div className="font-medium text-slate-800 dark:text-slate-100">{formatDuration(item.durationMs)}</div><div className="mt-1 text-xs text-slate-500">Raciocínio: {item.reasoningEffort.toUpperCase()}</div></td>
                     <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle[item.status]}`}>{statusLabel[item.status]}</span></td>

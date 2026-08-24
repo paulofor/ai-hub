@@ -3601,3 +3601,13 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que a opção `max` não podia ser usada?”. A imagem ainda instalava o Codex `0.146.0` e os contratos fechados do frontend, backend e orquestrador aceitavam no máximo `xhigh`; assim, mesmo digitado manualmente, `max` era rejeitado antes de chegar ao App Server.
 - Correção na causa: o Codex CLI/App Server foi atualizado para `0.149.0`, versão `latest` confirmada no registro npm em 23/08/2026. O valor `max` passou a integrar o contrato persistido, a validação da API, os tipos do orquestrador e o payload `effort` de `turn/start`.
 - Interface e proteção: os dois formulários de criação de solicitação agora exibem “Max — raciocínio máximo”; testes cobrem a versão fixada, a aceitação/persistência do valor e seu envio ao App Server.
+
+## 2026-08-24 — Pedido de PR na fila do lote
+- Pergunta de causa raiz: **por que esse erro aconteceu?** O frontend tratava solicitações `PENDING`/`RUNNING` como motivo para desabilitar integralmente o botão **Pedir PR**, embora a fila já mantivesse o lote e atualizasse seus estados; assim, a intenção do usuário não podia ser registrada antes do fim das execuções.
+- Corrigida a origem no fluxo da conversa: o botão agora aceita o pedido enquanto o lote está ativo, registra o PR como pendente e o dispara automaticamente assim que não houver solicitações pendentes ou em execução.
+- A interface passa a mostrar `PR pendente`, uma mensagem no histórico e uma explicação de que o pedido aguardará a conclusão do lote, além de impedir pedidos duplicados enquanto estiver enfileirado.
+
+## 2026-08-24 — Título da solicitação no ranking de tokens
+- Pergunta de causa raiz: **por que o título não aparecia?** A consulta específica do ranking projetava somente identificadores, consumo e metadados técnicos; ela não transportava o prompt/resposta necessários para aplicar a mesma regra de título já usada nas demais listas.
+- Corrigida a origem no backend: a projeção interna agora leva prompt e resposta sem expô-los no JSON, e o serviço calcula `requestTitle` reutilizando a regra existente, inclusive o título estruturado das respostas de marketing.
+- A coluna Solicitação do ranking agora mostra o título logo abaixo do número, com cobertura de backend e E2E do frontend.
