@@ -1372,6 +1372,24 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void listOpenBatchFindsTheBatchEvenWhenItsRequestsAreOutsideTheRecentPage() {
+        CodexRequestService service = buildService(true);
+        String workBatchKey = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest first = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "um");
+        first.setWorkBatchKey(workBatchKey);
+        CodexRequest latest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "dois");
+        latest.setWorkBatchKey(workBatchKey);
+
+        when(codexRequestRepository.findOpenBatchCandidates(
+            eq("owner/repo@main"), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any(Pageable.class)
+        )).thenReturn(List.of(latest));
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey)).thenReturn(List.of(first, latest));
+
+        assertThat(service.listOpenBatch("owner/repo@main", CodexIntegrationProfile.CHATGPT_CODEX_MKT))
+            .containsExactly(first, latest);
+    }
+
+    @Test
     void markPullRequestCreatedForBatchClosesOpenBatchRequests() {
         CodexRequestService service = buildService(true);
         String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";

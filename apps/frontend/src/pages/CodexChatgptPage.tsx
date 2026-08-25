@@ -190,6 +190,12 @@ const copyTextToClipboard = async (text: string) => {
 
 const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORAGE_PREFIX}${profile}`;
 const hiddenRequestsStorageKey = (profile: CodexProfile) => `${HIDDEN_REQUESTS_STORAGE_PREFIX}${profile}`;
+const pendingPrStorageKey = (profile: CodexProfile) => `aihub:codex:pending-pr:${profile}`;
+
+const loadPendingPrBatchKey = (profile: CodexProfile): string | null => {
+  const stored = window.localStorage.getItem(pendingPrStorageKey(profile));
+  return stored?.trim() || null;
+};
 
 const loadReadCommentIds = (profile: CodexProfile): Set<string> => {
   try {
@@ -1537,7 +1543,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
-  const [pendingPrBatchKey, setPendingPrBatchKey] = useState<string | null>(null);
+  const [pendingPrBatchKey, setPendingPrBatchKey] = useState<string | null>(() => loadPendingPrBatchKey(config.profile));
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
   const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
@@ -1558,6 +1564,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
   const [hiddenRequestIds, setHiddenRequestIds] = useState<Set<number>>(() => loadHiddenRequestIds(config.profile));
   const conversationPollInFlight = useRef(false);
+
+  useEffect(() => {
+    if (pendingPrBatchKey) {
+      window.localStorage.setItem(pendingPrStorageKey(config.profile), pendingPrBatchKey);
+    } else {
+      window.localStorage.removeItem(pendingPrStorageKey(config.profile));
+    }
+  }, [config.profile, pendingPrBatchKey]);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -1695,9 +1709,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
     try {
-      const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
+      const [response, openBatchResponse] = await Promise.all([
+        client.get('/codex/requests', { params: { page: 0, size: 20 } }),
+        selectedEnvironment
+          ? client.get('/codex/requests/open-batch', { params: { environment: selectedEnvironment, profile: config.profile } })
+              .catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] })
+      ]);
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
-      let nextRequests = parsed;
+      const openBatch = parseCodexRequests(openBatchResponse.data).filter((item) => item.profile === config.profile);
+      let nextRequests = mergeCodexRequestList(parsed, openBatch);
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
       if (activeRequests.length > 0) {
         const detailResponses = await Promise.allSettled(
@@ -1740,7 +1761,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setRequestsLoading(false);
     }
-  }, [config.profile]);
+  }, [config.profile, selectedEnvironment]);
 
   const loadDailyMetrics = useCallback(async () => {
     const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {

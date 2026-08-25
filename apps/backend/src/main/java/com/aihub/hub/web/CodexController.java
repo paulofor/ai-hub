@@ -98,6 +98,12 @@ public class CodexController {
         return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
     }
 
+    @GetMapping("/open-batch")
+    public List<CodexRequest> openBatch(@RequestParam String environment,
+                                        @RequestParam String profile) {
+        return codexRequestService.listOpenBatch(environment, resolveProfileParam(profile));
+    }
+
     @GetMapping("/token-ranking")
     public List<CodexTokenRankingItem> tokenRanking() {
         return codexRequestService.tokenRanking();

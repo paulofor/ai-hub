@@ -150,33 +150,38 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await page.route('**/api/prompt-hints?**', async (route) => {
     await route.fulfill({ json: [] });
   });
+  await page.route('**/api/codex/requests/open-batch?**', async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: 527,
+          environment: 'produção',
+          model: 'gpt-5',
+          version: 'aihub-6',
+          profile: 'CHATGPT_CODEX',
+          prompt: 'Ajustar aviso no botão de PR',
+          status: 'COMPLETED',
+          createdAt: '2026-07-24T12:00:00Z',
+          workBatchKey: 'aihub/codex-chatgpt-527'
+        },
+        {
+          id: 528,
+          environment: 'produção',
+          model: 'gpt-5',
+          version: 'aihub-6',
+          profile: 'CHATGPT_CODEX',
+          prompt: 'Executar a próxima alteração do lote',
+          status: 'PENDING',
+          createdAt: '2026-07-24T12:01:00Z',
+          workBatchKey: 'aihub/codex-chatgpt-527'
+        }
+      ]
+    });
+  });
   await page.route('**/api/codex/requests?**', async (route) => {
     await route.fulfill({
       json: {
-        content: [
-          {
-            id: 527,
-            environment: 'produção',
-            model: 'gpt-5',
-            version: 'aihub-6',
-            profile: 'CHATGPT_CODEX',
-            prompt: 'Ajustar aviso no botão de PR',
-            status: 'COMPLETED',
-            createdAt: '2026-07-24T12:00:00Z',
-            workBatchKey: 'aihub/codex-chatgpt-527'
-          },
-          {
-            id: 528,
-            environment: 'produção',
-            model: 'gpt-5',
-            version: 'aihub-6',
-            profile: 'CHATGPT_CODEX',
-            prompt: 'Executar a próxima alteração do lote',
-            status: 'PENDING',
-            createdAt: '2026-07-24T12:01:00Z',
-            workBatchKey: 'aihub/codex-chatgpt-527'
-          }
-        ]
+        content: []
       }
     });
   });
@@ -193,6 +198,9 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await requestPrButton.click();
   await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
   await expect(page.getByText('Pedido de PR pendente. Ele será executado automaticamente quando as solicitações deste lote terminarem.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
 });
 
 test('shows the request title in the token ranking', async ({ page }) => {

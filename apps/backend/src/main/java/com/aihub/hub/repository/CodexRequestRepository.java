@@ -138,6 +138,18 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     List<CodexRequest> findAllByRatingOrderByCreatedAtDesc(Integer rating);
     List<CodexRequest> findByProblemIdOrderByCreatedAtDesc(Long problemId);
     List<CodexRequest> findByWorkBatchKeyOrderByCreatedAtAsc(String workBatchKey);
+    @Query("""
+        select cr
+        from CodexRequest cr
+        where cr.environment = :environment
+          and cr.profile = :profile
+          and (cr.workBatchKey is not null or cr.workBranch is not null)
+          and (cr.pullRequestUrl is null or cr.pullRequestUrl = '')
+        order by cr.createdAt desc
+        """)
+    List<CodexRequest> findOpenBatchCandidates(@Param("environment") String environment,
+                                               @Param("profile") CodexIntegrationProfile profile,
+                                               Pageable pageable);
     Optional<CodexRequest> findFirstByIdLessThanOrderByIdDesc(Long id);
     Optional<CodexRequest> findByExternalId(String externalId);
     List<CodexRequest> findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(Collection<CodexRequestStatus> statuses);
