@@ -1709,9 +1709,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
     try {
-      const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
+      const [response, openBatchResponse] = await Promise.all([
+        client.get('/codex/requests', { params: { page: 0, size: 20 } }),
+        selectedEnvironment
+          ? client.get('/codex/requests/open-batch', { params: { environment: selectedEnvironment, profile: config.profile } })
+              .catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] })
+      ]);
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
-      let nextRequests = parsed;
+      const openBatch = parseCodexRequests(openBatchResponse.data).filter((item) => item.profile === config.profile);
+      let nextRequests = mergeCodexRequestList(parsed, openBatch);
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
       if (activeRequests.length > 0) {
         const detailResponses = await Promise.allSettled(
@@ -1754,7 +1761,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setRequestsLoading(false);
     }
-  }, [config.profile]);
+  }, [config.profile, selectedEnvironment]);
 
   const loadDailyMetrics = useCallback(async () => {
     const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {

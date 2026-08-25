@@ -857,6 +857,17 @@ public class CodexRequestService {
         return requests;
     }
 
+    @Transactional(readOnly = true)
+    public List<CodexRequest> listOpenBatch(String environment, CodexIntegrationProfile profile) {
+        if (!StringUtils.hasText(environment) || profile == null) {
+            return List.of();
+        }
+        return codexRequestRepository.findOpenBatchCandidates(environment.trim(), profile, PageRequest.of(0, 1)).stream()
+            .findFirst()
+            .map(this::listBatch)
+            .orElseGet(List::of);
+    }
+
     @Transactional
     public void markPullRequestCreatedForBatch(CodexRequest request, String pullRequestUrl) {
         if (request == null || !StringUtils.hasText(pullRequestUrl)) {
