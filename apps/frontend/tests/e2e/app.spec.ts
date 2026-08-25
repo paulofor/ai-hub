@@ -193,6 +193,9 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await requestPrButton.click();
   await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
   await expect(page.getByText('Pedido de PR pendente. Ele será executado automaticamente quando as solicitações deste lote terminarem.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
 });
 
 test('shows the request title in the token ranking', async ({ page }) => {

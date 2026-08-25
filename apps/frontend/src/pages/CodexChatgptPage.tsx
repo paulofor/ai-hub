@@ -190,6 +190,12 @@ const copyTextToClipboard = async (text: string) => {
 
 const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORAGE_PREFIX}${profile}`;
 const hiddenRequestsStorageKey = (profile: CodexProfile) => `${HIDDEN_REQUESTS_STORAGE_PREFIX}${profile}`;
+const pendingPrStorageKey = (profile: CodexProfile) => `aihub:codex:pending-pr:${profile}`;
+
+const loadPendingPrBatchKey = (profile: CodexProfile): string | null => {
+  const stored = window.localStorage.getItem(pendingPrStorageKey(profile));
+  return stored?.trim() || null;
+};
 
 const loadReadCommentIds = (profile: CodexProfile): Set<string> => {
   try {
@@ -1537,7 +1543,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
-  const [pendingPrBatchKey, setPendingPrBatchKey] = useState<string | null>(null);
+  const [pendingPrBatchKey, setPendingPrBatchKey] = useState<string | null>(() => loadPendingPrBatchKey(config.profile));
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
   const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
@@ -1558,6 +1564,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
   const [hiddenRequestIds, setHiddenRequestIds] = useState<Set<number>>(() => loadHiddenRequestIds(config.profile));
   const conversationPollInFlight = useRef(false);
+
+  useEffect(() => {
+    if (pendingPrBatchKey) {
+      window.localStorage.setItem(pendingPrStorageKey(config.profile), pendingPrBatchKey);
+    } else {
+      window.localStorage.removeItem(pendingPrStorageKey(config.profile));
+    }
+  }, [config.profile, pendingPrBatchKey]);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
