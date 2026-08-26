@@ -526,6 +526,10 @@ class CodexRequestServiceTest {
         CodexRequestService service = buildService(false);
 
         service.find(729L);
+        @SuppressWarnings("unchecked")
+        Map<Long, Instant> refreshAttempts = (Map<Long, Instant>) ReflectionTestUtils.getField(service, "detailRefreshAttempts");
+        assertThat(refreshAttempts).isNotNull();
+        refreshAttempts.put(729L, Instant.now().minusSeconds(10));
         service.find(729L);
 
         verify(sandboxOrchestratorClient, times(1)).getJob("job-detail-running");
