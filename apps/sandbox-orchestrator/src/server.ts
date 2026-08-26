@@ -128,6 +128,42 @@ function sanitizeJobForResponse(job: SandboxJob): SandboxJob {
   return buildJobPayload(job);
 }
 
+const STALLED_JOB_IDLE_MS = 10 * 60 * 1000;
+const LONG_RUNNING_JOB_MS = 2 * 60 * 60 * 1000;
+
+export function buildJobMonitoringSummary(job: SandboxJob, now = Date.now()) {
+  const startedAtMs = Date.parse(job.startedAt ?? job.createdAt);
+  const updatedAtMs = Date.parse(job.updatedAt ?? job.startedAt ?? job.createdAt);
+  const runningForMs = Number.isFinite(startedAtMs) ? Math.max(0, now - startedAtMs) : undefined;
+  const idleForMs = Number.isFinite(updatedAtMs) ? Math.max(0, now - updatedAtMs) : undefined;
+  const warnings = [
+    ...(idleForMs !== undefined && idleForMs >= STALLED_JOB_IDLE_MS ? ['NO_PROGRESS'] : []),
+    ...(runningForMs !== undefined && runningForMs >= LONG_RUNNING_JOB_MS ? ['LONG_RUNNING'] : []),
+  ];
+  const lastLog = job.logs.at(-1)?.slice(-500);
+
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    profile: job.profile,
+    model: job.model,
+    sandboxPath: job.sandboxPath,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    runningForMs,
+    idleForMs,
+    interactionCount: job.interactionCount ?? job.interactions.length,
+    promptTokens: job.promptTokens,
+    cachedPromptTokens: job.cachedPromptTokens,
+    completionTokens: job.completionTokens,
+    totalTokens: job.totalTokens,
+    timeoutCount: job.timeoutCount,
+    lastLog,
+    warnings,
+  };
+}
+
 export function createApp(options: AppOptions = {}) {
   const jobRegistry = options.jobRegistry ?? new Map<string, SandboxJob>();
   const codexAppServerClient = options.codexAppServerClient;
@@ -206,8 +242,8 @@ export function createApp(options: AppOptions = {}) {
     const jobs = [...jobRegistry.values()];
     res.json({
       codexAppServer: codexAppServerClient?.health() ?? { status: 'disabled', ready: false, restartAttempts: 0 },
-      activeJobs: jobs.filter((job) => job.status === 'RUNNING').map(sanitizeJobForResponse),
-      pendingJobs: jobs.filter((job) => job.status === 'PENDING').map(sanitizeJobForResponse),
+      activeJobs: jobs.filter((job) => job.status === 'RUNNING').map((job) => buildJobMonitoringSummary(job)),
+      pendingJobs: jobs.filter((job) => job.status === 'PENDING').map((job) => buildJobMonitoringSummary(job)),
     });
   });
 

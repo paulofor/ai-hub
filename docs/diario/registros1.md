@@ -3673,3 +3673,20 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: **“por que o desempenho ainda degrada?”** A página ChatGPT consultava a cada cinco segundos não apenas o estado das solicitações, que precisa de atualização rápida, mas também conta e métricas. Em produção, o endpoint de métricas MKT demorou aproximadamente 2,8–3,0 segundos, transferiu 114 KB e percorreu dados históricos; cada aba aberta repetia essa consulta 12 vezes por minuto. Os logs ainda mostravam timeouts de leitura do MySQL e respostas HTTP abandonadas, embora CPU e memória do backend estivessem baixas. Portanto, aumentar recursos trataria a consequência; a carga periódica desnecessária era uma causa controlável na aplicação.
 - Correção na causa: o estado das solicitações continua sendo atualizado a cada cinco segundos, mas conta e métricas passam a atualizar a cada 60 segundos. Ambos os ciclos agora aguardam a chamada anterior terminar antes de agendar a próxima e não fazem rede com a aba oculta.
 - Impacto esperado: por aba visível, as consultas de métricas e conta caem de 12 para uma por minuto (redução de aproximadamente 92%), sem aumentar o atraso de atualização do estado das execuções. A melhoria reduz concorrência no MySQL e tráfego, preservando a atualização inicial no bootstrap.
+## 2026-08-26 01:20 UTC — Correção do erro 500 em Saúde do sistema
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O endpoint de diagnóstico carregava todas as entidades de `codex_requests`, incluindo diversas colunas `LONGTEXT`, para só depois filtrar em memória as 25 solicitações pendentes. Com o crescimento da tabela, essa consulta ultrapassou o timeout JDBC e o backend respondeu `500 Internal Server Error`.
+- A consulta da fila foi substituída por uma projeção que seleciona apenas `id`, `profile` e `createdAt`, filtra `PENDING` e limita a 25 registros diretamente no banco.
+- Adicionado índice composto por `(status, created_at DESC)` nas migrações H2, MySQL e PostgreSQL para sustentar o filtro e a ordenação sem varrer toda a tabela.
+
+## 2026-08-26 03:10 UTC — Redução do polling recorrente de solicitações Codex
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A tela ChatGPT fazia polling do detalhe a cada 5 segundos e o backend aceitava nova sincronização com o sandbox no mesmo intervalo. Assim, cada ciclo atravessava frontend, backend e sandbox; solicitações antigas com resposta/metadados ausentes, como a 2408, continuavam nesse ritmo indefinidamente, e abas adicionais podiam amplificar as chamadas.
+- O polling de solicitações ativas passou de 5 para 15 segundos. Quando todas as solicitações pendentes da conversa têm mais de uma hora, o frontend reduz automaticamente para uma consulta por minuto.
+- O backend agora aplica a contenção central entre abas: sincronizações de detalhes recentes têm intervalo mínimo de 15 segundos, enquanto solicitações com mais de uma hora só podem provocar nova consulta ao sandbox uma vez por minuto.
+
+## 2026-08-26 03:25 UTC — Monitoramento de jobs sem progresso
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A tela de saúde mostrava apenas identificador, perfil e status do job; portanto, um job `RUNNING` sem avanço de tokens/interações era visualmente indistinguível de uma execução saudável.
+- O endpoint de manutenção do sandbox passou a retornar um resumo leve por job, sem o payload completo, com duração, tempo desde a última atualização, modelo, tokens de entrada/cache/saída/total, interações, timeouts e última linha de atividade.
+- Jobs sem atualização por dez minutos recebem o alerta `NO_PROGRESS`; jobs em execução por duas horas recebem `LONG_RUNNING`. A tela administrativa destaca esses alertas e apresenta os indicadores necessários para decidir entre aguardar, cancelar ou forçar encerramento.

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 
-import { createApp } from '../src/server.js';
+import { buildJobMonitoringSummary, createApp } from '../src/server.js';
 import { buildJobPayload } from '../src/jobPayload.js';
 import {
   DEFAULT_CODEX_REASONING_EFFORT,
@@ -33,6 +33,38 @@ class StubProcessor implements JobProcessor {
     job.updatedAt = job.finishedAt;
   }
 }
+
+test('summarizes stalled jobs without returning the full job payload', () => {
+  const now = Date.parse('2026-08-26T03:30:00Z');
+  const job = {
+    jobId: 'job-stalled',
+    taskDescription: 'large secret task that must not be exposed',
+    profile: 'CHATGPT_CODEX_MKT',
+    model: 'gpt-5.6-sol',
+    status: 'RUNNING',
+    logs: ['started', 'waiting for test process'],
+    interactions: Array.from({ length: 3 }, (_, index) => ({ sequence: index + 1 })),
+    interactionSequence: 3,
+    createdAt: '2026-08-26T00:00:00Z',
+    startedAt: '2026-08-26T00:05:00Z',
+    updatedAt: '2026-08-26T03:00:00Z',
+    promptTokens: 100,
+    cachedPromptTokens: 80,
+    completionTokens: 20,
+    totalTokens: 120,
+    timeoutCount: 2,
+  } as SandboxJob;
+
+  const summary = buildJobMonitoringSummary(job, now);
+
+  assert.equal(summary.runningForMs, 12_300_000);
+  assert.equal(summary.idleForMs, 1_800_000);
+  assert.equal(summary.interactionCount, 3);
+  assert.deepEqual(summary.warnings, ['NO_PROGRESS', 'LONG_RUNNING']);
+  assert.equal(summary.lastLog, 'waiting for test process');
+  assert.equal('taskDescription' in summary, false);
+  assert.equal('interactions' in summary, false);
+});
 
 test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 43_200_000);

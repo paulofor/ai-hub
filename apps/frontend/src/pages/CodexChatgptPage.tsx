@@ -122,7 +122,9 @@ interface SavedConversation {
   updatedAt: string;
 }
 
-const REQUEST_STATUS_POLL_INTERVAL_MS = 5000;
+const REQUEST_STATUS_POLL_INTERVAL_MS = 15_000;
+const STALE_REQUEST_STATUS_POLL_INTERVAL_MS = 60_000;
+const REQUEST_STATUS_ACTIVE_WINDOW_MS = 60 * 60 * 1000;
 const SUPPORTING_DATA_POLL_INTERVAL_MS = 60_000;
 const RUNNING_TOKEN_STALE_ALERT_MS = 5 * 60 * 1000;
 const SALES_IMPACT_MOVING_AVERAGE_SIZE = 6;
@@ -2411,6 +2413,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       .filter((message) => message.role === 'assistant' && message.requestId && message.status && !isTerminalStatus(message.status))
       .map((message) => message.requestId as number);
     if (pendingRequestIds.length === 0) return undefined;
+    const hasRecentlyCreatedRequest = conversation.some((message) =>
+      message.role === 'assistant'
+      && message.requestId
+      && message.status
+      && !isTerminalStatus(message.status)
+      && Date.now() - new Date(message.createdAt).getTime() < REQUEST_STATUS_ACTIVE_WINDOW_MS
+    );
+    const pollInterval = hasRecentlyCreatedRequest
+      ? REQUEST_STATUS_POLL_INTERVAL_MS
+      : STALE_REQUEST_STATUS_POLL_INTERVAL_MS;
 
     const refreshPendingRequests = () => {
       if (conversationPollInFlight.current) {
@@ -2433,7 +2445,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         });
     };
     refreshPendingRequests();
-    const intervalId = window.setInterval(refreshPendingRequests, REQUEST_STATUS_POLL_INTERVAL_MS);
+    const intervalId = window.setInterval(refreshPendingRequests, pollInterval);
     return () => window.clearInterval(intervalId);
   }, [conversation, registerTelemetry, updateAssistantFromRequest]);
 

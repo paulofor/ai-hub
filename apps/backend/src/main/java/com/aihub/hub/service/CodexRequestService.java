@@ -80,7 +80,9 @@ public class CodexRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
-    private static final Duration DETAIL_REFRESH_MIN_INTERVAL = Duration.ofSeconds(5);
+    private static final Duration DETAIL_REFRESH_ACTIVE_MIN_INTERVAL = Duration.ofSeconds(15);
+    private static final Duration DETAIL_REFRESH_STALE_MIN_INTERVAL = Duration.ofMinutes(1);
+    private static final Duration DETAIL_REFRESH_ACTIVE_WINDOW = Duration.ofHours(1);
     private static final Set<Long> SANDBOX_REFRESHES_IN_PROGRESS = ConcurrentHashMap.newKeySet();
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
     private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
@@ -1021,7 +1023,9 @@ public class CodexRequestService {
             return request;
         }
 
-        RefreshDecision decision = evaluateRefresh(request, Instant.now().minus(Duration.ofHours(1)));
+        Instant now = Instant.now();
+        Instant refreshCutoff = now.minus(DETAIL_REFRESH_ACTIVE_WINDOW);
+        RefreshDecision decision = evaluateRefresh(request, refreshCutoff);
         if (!decision.shouldRefresh()) {
             if (request.getId() != null) {
                 detailRefreshAttempts.remove(request.getId());
@@ -1029,15 +1033,17 @@ public class CodexRequestService {
             return request;
         }
 
-        Instant now = Instant.now();
+        Duration refreshInterval = request.getCreatedAt() != null && request.getCreatedAt().isBefore(refreshCutoff)
+            ? DETAIL_REFRESH_STALE_MIN_INTERVAL
+            : DETAIL_REFRESH_ACTIVE_MIN_INTERVAL;
         Long requestId = request.getId();
         Instant previousAttempt = requestId == null ? null : detailRefreshAttempts.putIfAbsent(requestId, now);
         if (requestId != null && previousAttempt != null) {
-            if (previousAttempt.plus(DETAIL_REFRESH_MIN_INTERVAL).isAfter(now)) {
+            if (previousAttempt.plus(refreshInterval).isAfter(now)) {
                 log.debug(
                     "Atualização do CodexRequest {} ignorada: detalhe consultado novamente dentro de {} segundos",
                     request.getId(),
-                    DETAIL_REFRESH_MIN_INTERVAL.toSeconds()
+                    refreshInterval.toSeconds()
                 );
                 return request;
             }

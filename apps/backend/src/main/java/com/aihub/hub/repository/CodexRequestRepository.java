@@ -17,7 +17,14 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long> {
+    interface QueuedRequestView {
+        Long getId();
+        CodexIntegrationProfile getProfile();
+        Instant getCreatedAt();
+    }
+
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
+    List<QueuedRequestView> findTop25ByStatusOrderByCreatedAtDesc(CodexRequestStatus status);
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
             cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.version, cr.profile,
