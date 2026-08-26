@@ -122,7 +122,8 @@ interface SavedConversation {
   updatedAt: string;
 }
 
-const POLL_INTERVAL_MS = 5000;
+const REQUEST_STATUS_POLL_INTERVAL_MS = 5000;
+const SUPPORTING_DATA_POLL_INTERVAL_MS = 60_000;
 const RUNNING_TOKEN_STALE_ALERT_MS = 5 * 60 * 1000;
 const SALES_IMPACT_MOVING_AVERAGE_SIZE = 6;
 const TELEMETRY_WINDOW_SIZE = 30;
@@ -326,6 +327,13 @@ const mergeCodexRequestItem = (current: CodexRequest | undefined, updated: Codex
 const mergeCodexRequestList = (current: CodexRequest[], updated: CodexRequest[]) => {
   const currentById = new Map(current.map((item) => [item.id, item]));
   return updated.map((item) => mergeCodexRequestItem(currentById.get(item.id), item));
+};
+
+const combineCodexRequestLists = (primary: CodexRequest[], additional: CodexRequest[]) => {
+  const additionalById = new Map(additional.map((item) => [item.id, item]));
+  const combined = primary.map((item) => mergeCodexRequestItem(item, additionalById.get(item.id) ?? item));
+  const primaryIds = new Set(primary.map((item) => item.id));
+  return [...combined, ...additional.filter((item) => !primaryIds.has(item.id))];
 };
 
 const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
@@ -1718,7 +1726,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ]);
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       const openBatch = parseCodexRequests(openBatchResponse.data).filter((item) => item.profile === config.profile);
-      let nextRequests = mergeCodexRequestList(parsed, openBatch);
+      let nextRequests = combineCodexRequestLists(parsed, openBatch);
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
       if (activeRequests.length > 0) {
         const detailResponses = await Promise.allSettled(
@@ -1729,7 +1737,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
         if (detailedRequests.length > 0) {
           const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
-          nextRequests = parsed.map((item) => mergeCodexRequestItem(item, detailedById.get(item.id) ?? item));
+          nextRequests = nextRequests.map((item) => mergeCodexRequestItem(item, detailedById.get(item.id) ?? item));
         }
       }
 
@@ -1852,13 +1860,44 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [loadBootstrap]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      Promise.all([loadRequests(), loadAccount(), loadDailyMetrics()])
-        .then(() => registerTelemetry('poll_success', 'Polling periódico concluído.'))
-        .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling periódico: ${err.message}`));
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [loadAccount, loadDailyMetrics, loadRequests, registerTelemetry]);
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const pollRequests = async () => {
+      if (document.visibilityState === 'visible') {
+        await loadRequests()
+          .then(() => registerTelemetry('poll_success', 'Polling de solicitações concluído.'))
+          .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling de solicitações: ${err.message}`));
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollRequests, REQUEST_STATUS_POLL_INTERVAL_MS);
+      }
+    };
+    timeoutId = window.setTimeout(pollRequests, REQUEST_STATUS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [loadRequests, registerTelemetry]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const pollSupportingData = async () => {
+      if (document.visibilityState === 'visible') {
+        await Promise.all([loadAccount(), loadDailyMetrics()])
+          .then(() => registerTelemetry('poll_success', 'Polling de conta e métricas concluído.'))
+          .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling de conta e métricas: ${err.message}`));
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollSupportingData, SUPPORTING_DATA_POLL_INTERVAL_MS);
+      }
+    };
+    timeoutId = window.setTimeout(pollSupportingData, SUPPORTING_DATA_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [loadAccount, loadDailyMetrics, registerTelemetry]);
 
   useEffect(() => {
     const trimmedEnvironment = selectedEnvironment.trim();
@@ -2394,7 +2433,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         });
     };
     refreshPendingRequests();
-    const intervalId = window.setInterval(refreshPendingRequests, POLL_INTERVAL_MS);
+    const intervalId = window.setInterval(refreshPendingRequests, REQUEST_STATUS_POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
   }, [conversation, registerTelemetry, updateAssistantFromRequest]);
 

@@ -181,13 +181,27 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await page.route('**/api/codex/requests?**', async (route) => {
     await route.fulfill({
       json: {
-        content: []
+        content: [
+          {
+            id: 526,
+            environment: 'produção',
+            model: 'gpt-5',
+            version: 'aihub-6',
+            profile: 'CHATGPT_CODEX',
+            prompt: 'Execução recente fora do lote aberto',
+            status: 'COMPLETED',
+            createdAt: '2026-07-24T11:59:00Z',
+            pullRequestUrl: 'https://github.com/example/repository/pull/526'
+          }
+        ]
       }
     });
   });
 
   await page.goto('/codex-chatgpt');
 
+  await expect(page.getByRole('link', { name: 'Abrir detalhes' })).toHaveCount(3);
+  await expect(page.locator('a[href="/codex/requests/526"]', { hasText: 'Abrir detalhes' })).toBeVisible();
   const accumulatedCodeNotice = page.getByText('Código acumulado para merge: 1 solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.');
   const requestPrButton = page.getByRole('button', { name: /Pedir PR Código pendente/ });
   await expect(accumulatedCodeNotice).toBeVisible();
