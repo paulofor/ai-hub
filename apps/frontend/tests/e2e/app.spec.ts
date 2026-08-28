@@ -215,6 +215,15 @@ test('warns on the request PR button when a batch has accumulated code', async (
 
   await page.reload();
   await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
+
+  await page.evaluate(() => {
+    window.localStorage.setItem('aihub:codex:pending-pr:CHATGPT_CODEX', JSON.stringify({
+      batchKey: 'aihub/codex-chatgpt-527',
+      anchorRequestId: 526
+    }));
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Pedir PR Código pendente/ })).toBeEnabled();
 });
 
 test('shows the request title in the token ranking', async ({ page }) => {

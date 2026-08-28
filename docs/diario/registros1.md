@@ -3690,3 +3690,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A tela de saúde mostrava apenas identificador, perfil e status do job; portanto, um job `RUNNING` sem avanço de tokens/interações era visualmente indistinguível de uma execução saudável.
 - O endpoint de manutenção do sandbox passou a retornar um resumo leve por job, sem o payload completo, com duração, tempo desde a última atualização, modelo, tokens de entrada/cache/saída/total, interações, timeouts e última linha de atividade.
 - Jobs sem atualização por dez minutos recebem o alerta `NO_PROGRESS`; jobs em execução por duas horas recebem `LONG_RUNNING`. A tela administrativa destaca esses alertas e apresenta os indicadores necessários para decidir entre aguardar, cancelar ou forçar encerramento.
+
+## 2026-08-28 — Desbloqueio de novo PR após publicação de lote anterior
+
+- Solicitação recebida: investigar por que o botão continuava em **PR pendente** depois de o PR anterior já ter sido executado e de novas alterações terem se acumulado.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A intenção pendente persistia somente o nome da branch usado como chave do lote. Essa branch é deliberadamente reutilizada em lotes posteriores; se o PR fosse concluído enquanto a página estava fechada, a chave antiga do `localStorage` coincidia com a chave do lote novo e o frontend atribuía incorretamente a intenção já consumida às novas solicitações, mantendo o botão bloqueado.
+- Correção na causa: a intenção persistida agora inclui uma solicitação âncora da geração concreta do lote. O estado só é considerado pendente se essa solicitação ainda fizer parte do lote aberto; registros legados sem identidade de geração são descartados, e a intenção também é removida ao encontrar ou criar o PR.
+- Proteção contra regressão: o E2E preserva o pedido após uma recarga enquanto a âncora ainda existe e confirma que uma intenção de geração anterior, embora tenha a mesma branch, não bloqueia o novo lote.
