@@ -195,9 +195,24 @@ const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORA
 const hiddenRequestsStorageKey = (profile: CodexProfile) => `${HIDDEN_REQUESTS_STORAGE_PREFIX}${profile}`;
 const pendingPrStorageKey = (profile: CodexProfile) => `aihub:codex:pending-pr:${profile}`;
 
-const loadPendingPrBatchKey = (profile: CodexProfile): string | null => {
-  const stored = window.localStorage.getItem(pendingPrStorageKey(profile));
-  return stored?.trim() || null;
+type PendingPrRequest = {
+  batchKey: string;
+  anchorRequestId: number;
+};
+
+const loadPendingPrRequest = (profile: CodexProfile): PendingPrRequest | null => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(pendingPrStorageKey(profile)) ?? 'null');
+    return stored
+      && typeof stored.batchKey === 'string'
+      && stored.batchKey.trim()
+      && Number.isFinite(stored.anchorRequestId)
+      ? { batchKey: stored.batchKey.trim(), anchorRequestId: Number(stored.anchorRequestId) }
+      : null;
+  } catch {
+    // The old format stored only the reusable branch name and cannot identify a batch generation.
+    return null;
+  }
 };
 
 const loadReadCommentIds = (profile: CodexProfile): Set<string> => {
@@ -1553,7 +1568,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
-  const [pendingPrBatchKey, setPendingPrBatchKey] = useState<string | null>(() => loadPendingPrBatchKey(config.profile));
+  const [pendingPrRequest, setPendingPrRequest] = useState<PendingPrRequest | null>(() => loadPendingPrRequest(config.profile));
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
   const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
@@ -1576,12 +1591,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const conversationPollInFlight = useRef(false);
 
   useEffect(() => {
-    if (pendingPrBatchKey) {
-      window.localStorage.setItem(pendingPrStorageKey(config.profile), pendingPrBatchKey);
+    if (pendingPrRequest) {
+      window.localStorage.setItem(pendingPrStorageKey(config.profile), JSON.stringify(pendingPrRequest));
     } else {
       window.localStorage.removeItem(pendingPrStorageKey(config.profile));
     }
-  }, [config.profile, pendingPrBatchKey]);
+  }, [config.profile, pendingPrRequest]);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -2467,6 +2482,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const existingPrUrl = currentBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
 
       if (existingPrUrl) {
+        setPendingPrRequest(null);
         setPrResult({ url: existingPrUrl, title: 'Abrir PR do lote' });
         setConversation((current) => [...current, {
           id: `${Date.now()}-pr-requested`,
@@ -2487,7 +2503,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           setError('Não foi possível identificar o lote para colocar o pedido de PR na fila.');
           return;
         }
-        setPendingPrBatchKey(currentBatchKey);
+        const anchorRequestId = currentBatchRequests.reduce((latestId, item) => Math.max(latestId, item.id), 0);
+        if (!anchorRequestId) {
+          setError('Não foi possível identificar uma solicitação do lote para colocar o pedido de PR na fila.');
+          return;
+        }
+        setPendingPrRequest({ batchKey: currentBatchKey, anchorRequestId });
         setConversation((current) => [...current, {
           id: `${Date.now()}-pr-queued`,
           role: 'system',
@@ -2518,6 +2539,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         }
       );
       const nextPrResult = { url: response.data?.url, title: response.data?.title };
+      setPendingPrRequest(null);
       setPrResult(nextPrResult);
       setConversation((current) => [...current, {
         id: `${Date.now()}-pr-requested`,
@@ -2867,7 +2889,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? `${activeBatchPrRelevantCompleted} solicitação(ões) com alteração de código neste lote ainda precisam passar por PR antes do merge.`
       : `${activeBatchPrRelevantCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
     : null;
-  const prIsQueued = Boolean(pendingPrBatchKey && pendingPrBatchKey === activeBatchKey);
+  const prIsQueued = Boolean(
+    pendingPrRequest
+    && pendingPrRequest.batchKey === activeBatchKey
+    && activeBatchRequests.some((item) => item.id === pendingPrRequest.anchorRequestId)
+  );
   const prBlockedReason = prIsQueued
     ? 'Pedido de PR pendente; ele será executado automaticamente quando as solicitações do lote terminarem.'
     : hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
@@ -2885,7 +2911,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     if (!prIsQueued || hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest || prLoading) {
       return;
     }
-    setPendingPrBatchKey(null);
+    setPendingPrRequest(null);
     void handleCreatePr();
   }, [handleCreatePr, hasQueuedConversationRequest, hasQueuedOrRunningBatchRequest, prIsQueued, prLoading]);
   const growthSalesProgress = growthMission
