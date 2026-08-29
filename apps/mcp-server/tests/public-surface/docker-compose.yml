@@ -1,0 +1,52 @@
+services:
+  caddy:
+    image: ${MCP_PUBLIC_SURFACE_CADDY_IMAGE:-aihub/mcp-public-surface-caddy:local}
+    build:
+      context: ../../../..
+      dockerfile: infra/caddy/Dockerfile
+    environment:
+      CADDY_DOMAIN: :8080
+    depends_on:
+      - backend
+      - frontend
+      - mcp-server
+      - sandbox-orchestrator
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/mcp | grep -q '\"status\":\"UP\"'"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
+  mcp-server:
+    image: ${MCP_PUBLIC_SURFACE_FIXTURE_IMAGE:-aihub/mcp-public-surface-fixture:local}
+    build:
+      context: ../../../..
+      dockerfile: apps/mcp-server/tests/public-surface/upstream.Dockerfile
+    environment:
+      UPSTREAM_KIND: mcp
+
+  frontend:
+    image: ${MCP_PUBLIC_SURFACE_FIXTURE_IMAGE:-aihub/mcp-public-surface-fixture:local}
+    pull_policy: never
+    environment:
+      UPSTREAM_KIND: frontend
+
+  backend:
+    image: ${MCP_PUBLIC_SURFACE_FIXTURE_IMAGE:-aihub/mcp-public-surface-fixture:local}
+    pull_policy: never
+    environment:
+      UPSTREAM_KIND: backend
+
+  sandbox-orchestrator:
+    image: ${MCP_PUBLIC_SURFACE_FIXTURE_IMAGE:-aihub/mcp-public-surface-fixture:local}
+    pull_policy: never
+    environment:
+      UPSTREAM_KIND: sandbox
+
+  probe:
+    image: alpine:3.20
+    command: ["sh", "-c", "sleep infinity"]
+    depends_on:
+      caddy:
+        condition: service_healthy

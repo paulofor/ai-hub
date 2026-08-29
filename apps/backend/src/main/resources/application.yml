@@ -90,6 +90,15 @@ hub:
   mcp:
     api-url: ${HUB_MCP_API_URL:http://mcp-server:8084/mcp}
     api-token: ${MCP_SERVER_API_TOKEN:}
+  public-proxy-recovery:
+    enabled: ${HUB_PUBLIC_PROXY_RECOVERY_ENABLED:false}
+    repository-owner: ${HUB_PUBLIC_PROXY_RECOVERY_REPOSITORY_OWNER:paulofor}
+    repository-name: ${HUB_PUBLIC_PROXY_RECOVERY_REPOSITORY_NAME:marketing-hub}
+    workflow-file: ${HUB_PUBLIC_PROXY_RECOVERY_WORKFLOW_FILE:recover-public-proxy.yml}
+    ref: ${HUB_PUBLIC_PROXY_RECOVERY_REF:main}
+    target-key: ${HUB_PUBLIC_PROXY_RECOVERY_TARGET_KEY:kit-whatsapp-pronto-public-proxy}
+    cooldown-seconds: ${HUB_PUBLIC_PROXY_RECOVERY_COOLDOWN_SECONDS:600}
+    status-lookup-limit: ${HUB_PUBLIC_PROXY_RECOVERY_STATUS_LOOKUP_LIMIT:25}
   maintenance:
     admin-token: ${HUB_MAINTENANCE_ADMIN_TOKEN:}
 

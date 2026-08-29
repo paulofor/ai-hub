@@ -1,5 +1,6 @@
 # Build artifacts
 apps/backend/target/
+apps/mcp-server/target/
 apps/frontend/node_modules/
 apps/sandbox-orchestrator/node_modules/
 apps/sandbox-orchestrator/dist/
@@ -97,4 +98,3 @@ exemplo-cliente/codex/CHANGELOG.ignore.md
 # nix related
 exemplo-cliente/codex/.direnv
 exemplo-cliente/codex/.envrc
-

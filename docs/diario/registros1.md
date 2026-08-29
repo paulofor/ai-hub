@@ -3260,440 +3260,55 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Alternativas avaliadas: (1) alterar apenas a variável de ambiente, com menor esforço, mas mantendo fallback e documentação incorretos; (2) remover o limite absoluto e depender somente do timeout de inatividade, aumentando o risco de execução indefinida; (3) elevar configuração, fallback e documentação para seis horas e proteger o valor com teste. Escolhida a terceira por manter segurança operacional e uma única expectativa explícita em todos os ambientes.
 - Ajuste aplicado: `CODEX_APP_SERVER_TURN_TIMEOUT_MS` e seu fallback passaram de `7.200.000` para `21.600.000` milissegundos; o timeout de inatividade continua em 15 minutos para detectar turnos parados.
 - Proteção contra regressão: teste automatizado confirma que o limite padrão corresponde exatamente a seis horas.
-
-## 2026-08-08 — Cinco rodadas de homologação somente após correção
-
-- Solicitação recebida: esclarecer ao modelo que repetir cinco vezes a homologação só é necessário quando algum defeito for encontrado e corrigido; se a primeira homologação não encontrar defeitos, não é necessário repeti-la.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a orientação anterior exigia incondicionalmente cinco rodadas para todo produto ou fluxo novo e só depois explicava o reinício da contagem após uma correção, levando o modelo a repetir homologações mesmo quando a primeira rodada completa já passava sem defeitos.
-- Correção na causa: a instrução universal agora separa os dois caminhos de forma explícita: uma rodada completa sem defeitos encerra a homologação; somente a descoberta e correção de um defeito ativa o gate de cinco rodadas consecutivas após a última correção.
-- Proteção contra regressão: os testes dos prompts do Codex App Server e do runner Responses API verificam tanto o encerramento após a primeira rodada limpa quanto a aplicação condicional das cinco rodadas depois de uma correção.
-
-## 2026-08-08 19:57:57 UTC-3 — Contenção e coleta de processos órfãos
-
-- Solicitação recebida: investigar como evitar a grande quantidade de processos do AI Hub no host, que chegou a exibir 918 processos zombies.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os dois contêineres que executam comandos e árvores de subprocessos ( e ) estavam sem processo init () e sem limite de PIDs. Quando uma ferramenta encerra deixando descendentes órfãos, o processo principal do contêiner passa a ser responsável por coletá-los; sem um init dedicado, esses descendentes encerrados podem permanecer como zombies e se acumular na tabela de processos do host.
-- Evidência operacional: após a recriação dos contêineres, a consulta pelo MCP não encontrou zombies no momento da análise, mas confirmou  e ausência de  em todos os contêineres. O  mantém uma árvore Node → Codex → code-mode-host e o MCP cria shells para comandos, portanto ambos são pontos reais de criação de descendentes.
-- Correção na causa: habilitado  nos serviços  e , fazendo o Docker inserir um init mínimo que adota e coleta órfãos.
-- Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
-- Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com  e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
-
-## 2026-08-08 19:58:13 UTC-3 — Retificação do registro de contenção de processos
-
-- Retificação: o registro imediatamente anterior perdeu trechos entre crases durante a escrita pelo shell; por respeito à política append-only, ele não foi apagado e os dados completos são registrados abaixo.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os dois contêineres que executam comandos e árvores de subprocessos (`sandbox-orchestrator` e `mcp-server`) estavam sem processo init (`HostConfig.Init=null`) e sem limite de PIDs. Quando uma ferramenta encerra deixando descendentes órfãos, o processo principal do contêiner passa a ser responsável por coletá-los; sem um init dedicado, esses descendentes encerrados podem permanecer como zombies e se acumular na tabela de processos do host.
-- Evidência operacional: após a recriação dos contêineres, a consulta pelo MCP não encontrou zombies no momento da análise, mas confirmou `init=null` e ausência de `PidsLimit` em todos os contêineres. O `sandbox-orchestrator` mantém uma árvore Node → Codex → code-mode-host e o MCP cria shells para comandos, portanto ambos são pontos reais de criação de descendentes.
-- Correção na causa: habilitado `init: true` nos serviços `sandbox-orchestrator` e `mcp-server`, fazendo o Docker inserir um init mínimo que adota e coleta órfãos.
-- Defesa em profundidade: definidos limites configuráveis de 512 PIDs para o orquestrador e 128 para o MCP. Os valores evitam que uma nova falha esgote a tabela global do host e podem ser ajustados por ambiente sem alterar o Compose.
-- Operação necessária: a mudança passa a valer somente após recriar os dois contêineres; zombies já existentes não podem ser eliminados com `kill` e desaparecem quando o processo pai os coleta ou quando o contêiner/pai é reiniciado.
-
-## 2026-08-09 — Gráficos diário e semanal das notas de venda
-
-- Solicitação recebida: substituir os contadores de distribuição de relevância em vendas por uma visão diária e semanal, com uma barra para cada nota e um tick para a média geral, respeitando o dia operacional.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o dashboard recebia apenas totais agregados por categoria para dia, semana e mês; essa agregação descartava a ordem, o horário e a relação de cada nota com seu dia operacional, tornando impossível desenhar tanto uma barra por avaliação quanto médias diárias corretas. Além disso, a semana começava à meia-noite civil, enquanto o dia operacional já começava às 03h.
-- Correção na causa: a API passou a entregar todas as notas válidas desde o início da semana operacional, em ordem cronológica e sem o limite arbitrário das 100 solicitações mais recentes; o início semanal agora também usa segunda-feira às 03h em `America/Sao_Paulo`.
-- Interface: o painel agora oferece seletores Diário e Semanal. A visão diária desenha uma barra por nota (escala de 1 a 5), enquanto a semanal agrupa as notas pelo dia operacional e apresenta um tick com a média de cada dia, além da média geral do período.
-- Proteção contra regressão: o teste de serviço valida a linha temporal e o corte semanal operacional, e o cenário E2E valida as duas visualizações, seus nomes acessíveis e a troca de período.
-
-## 2026-08-09 — Média diária operacional em 21 dias
-
-- Solicitação recebida: exibir no gráfico de notas de venda o valor médio diário operacional em um intervalo de 21 dias.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a linha temporal entregue pela API começava somente no início da semana operacional e a visão diária desenhava cada avaliação individual do dia atual; portanto, o frontend não recebia histórico suficiente nem agregava as notas por dia para representar 21 médias diárias.
-- Correção na causa: a API passou a carregar as notas desde o início do vigésimo primeiro dia operacional, incluindo o dia atual, e a visão diária agora agrupa as notas pela data operacional (03h–03h) e desenha um tick com a média de cada dia que possui avaliações.
-- Clareza da interface: título, descrição, rótulo acessível e datas do eixo informam que a visualização cobre as médias diárias operacionais dos últimos 21 dias; a visão semanal foi preservada.
-- Proteção contra regressão: o teste de serviço fixa o relógio e confere o instante exato do corte de 21 dias, enquanto o cenário E2E valida o novo título, a descrição e o nome acessível do gráfico.
-
-## 2026-08-09 — Limite de 100 pontos na média móvel do quadro operacional
-
-- Solicitação recebida: manter no gráfico compacto do quadro operacional somente as 100 notas válidas mais recentes, sem alterar a média móvel de seis pontos.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ampliação da linha temporal compartilhada para 21 dias fez o quadro operacional receber mais de 100 registros, mas o componente apenas mostrava o texto `/100`; ele não recortava a série e ainda dimensionava o eixo horizontal pela quantidade bruta, inclusive por registros sem nota válida.
-- Correção na causa: o gráfico agora filtra primeiro as notas válidas, conserva somente as 100 mais recentes e recalcula os índices do eixo sobre esse recorte. O cálculo da média móvel permanece com a constante de seis avaliações consecutivas.
-- Proteção contra regressão: o cenário E2E fornece mais de 100 notas válidas e um registro sem nota, confirma o indicador `últimas 100/100` e verifica os 95 pontos resultantes da média móvel de seis posições.
-
-## 2026-08-09 — Duas rodadas de validação após correção
-
-- Solicitação recebida: reduzir de cinco para duas as execuções exigidas nas validações repetidas.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a quantidade estava repetida literalmente em três trechos da mesma instrução universal — ativação do gate, execução após a última correção e reinício da contagem — e também nas asserções dos dois caminhos de execução, mantendo a exigência anterior de cinco rodadas em todos os perfis.
-- Correção na causa: os três trechos coerentes da instrução universal agora exigem duas rodadas locais completas e consecutivas somente depois de uma correção; uma primeira rodada sem defeitos continua encerrando a homologação sem repetição.
-- Proteção contra regressão: os testes dos fluxos Codex App Server e Responses API passaram a conferir a ativação condicional, a execução e o reinício da contagem em duas rodadas.
-
-## 2026-08-10 — Contenção de memória do orquestrador após quedas da VPS
-
-- Solicitação recebida: monitorar o servidor, que vinha caindo.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: processos de validação iniciados pelo modelo dentro do `sandbox-orchestrator` não tinham limite de memória no Compose e podiam consumir praticamente toda a RAM da VPS. Os registros do host confirmam um OOM global em 8 de agosto, quando o kernel matou um processo Java com aproximadamente 3,6 GiB de RSS; a inspeção após a queda de 10 de agosto encontrou novamente um teste Maven/Java com `-Xmx3g`, cerca de 3,8 GiB de RSS e o orquestrador sozinho usando mais de 50% dos 7,6 GiB do host. A tabela de PIDs já estava protegida, mas essa proteção não limitava RAM.
-- Evidência de disponibilidade: no início da análise, o healthcheck público respondeu HTTP 200, mas a VPS tinha somente seis minutos de uptime e todos os contêineres haviam iniciado após o boot. Os logs registram boots em 9 de agosto às 04:49 UTC e em 10 de agosto às 02:54 e 04:08 UTC, compatíveis com as quedas relatadas. Não havia pressão de disco (39% usado) nem zombies após o último boot.
-- Correção na causa: o `sandbox-orchestrator` passa a ter limite configurável de 5 GiB de RAM e limite agregado de RAM+swap também de 5 GiB. Isso contém builds, browsers e testes filhos no mesmo cgroup e mantém aproximadamente 2,6 GiB da VPS disponíveis ao proxy, backend, MCP e sistema operacional; igualar os limites impede que uma carga fugitiva apenas migre para swap e deixe todo o servidor sem resposta.
-- Proteção contra regressão: o teste automatizado do Compose exige os dois limites e o `.env.example`/README documentam como ajustá-los. A alteração requer recriação do `sandbox-orchestrator` para entrar em vigor na VPS.
-
-## 2026-08-11 — Diagnóstico do bloqueio `CODEX_APP_SERVER_UNAVAILABLE`
-
-- Solicitação recebida: explicar o bloqueio exibido no perfil ChatGPT MKT enquanto a solicitação `#1840` permanecia em execução.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o processo filho do Codex App Server foi encerrado pelo kernel com `SIGKILL` às 11:32:04 (horário de São Paulo). A inspeção do contêiner confirmou `OOMKilled=true`; portanto, o bloqueio foi consequência de pressão de memória dentro do limite de 5 GiB do `sandbox-orchestrator`, e não de indisponibilidade do site, falha de autenticação ou payload de sandbox inválido.
-- Evidência operacional: o MCP público respondeu `UP`, todos os contêineres continuavam em execução e o orquestrador não reiniciou. Antes da morte do processo, o job acumulava 4.277.426 tokens e respostas de consulta com cerca de 304 KiB; logo depois, o supervisor iniciou automaticamente um novo `codex app-server`, que voltou a responder às leituras de conta.
-- Impacto: a janela entre a morte e a recuperação fez a verificação de conta retornar temporariamente `CODEX_APP_SERVER_UNAVAILABLE`, mensagem refletida pela interface. O job `c598a1ce-8f3d-4a6b-abca-a42e837477b2` continuou registrado e consultável, razão pela qual o cartão permaneceu “Em execução”.
-- Escopo desta atividade: somente diagnóstico e registro; nenhuma correção de código ou alteração operacional foi aplicada sem antes definir uma estratégia para reduzir a pressão de memória na causa.
-
-## 2026-08-11 — Liberação das threads concluídas do Codex App Server
-
-- Solicitação recebida: definir como evitar novas mortes por memória do Codex App Server após o diagnóstico do bloqueio temporário.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: cada job criava uma thread exclusiva com `thread/start`, mas o fluxo apenas removia seus listeners ao terminar e nunca enviava `thread/archive`. Assim, o App Server de longa duração mantinha threads concluídas carregadas no `thread_manager`; o limite de 5 GiB protegia a VPS, porém sua única reação ao esgotamento era o kernel matar o processo filho com `SIGKILL`.
-- Correção na causa: o bloco de finalização agora sempre solicita `thread/archive` depois de remover os listeners, tanto no sucesso quanto na falha do turno. O próprio protocolo remove a thread ativa do gerenciador, envia `Shutdown` e move seu rollout para o diretório de sessões arquivadas, liberando o estado residente sem apagar o histórico persistido.
-- Resiliência: uma falha isolada ao arquivar é registrada com o `threadId`, mas não substitui o resultado já produzido pelo job; a próxima investigação terá evidência explícita da limpeza que falhou.
-- Proteção contra regressão: os testes dos perfis ChatGPT Codex com e sem Git verificam que `thread/archive` recebe o identificador exato criado por `thread/start`, e a suíte integral do orquestrador confirma que falhas de limpeza permanecem não fatais.
-
-## 2026-08-11 — Disponibilização do token da Brave Search ao modelo
-
-- Solicitação recebida: permitir que o modelo use o token da Brave armazenado no host em `/root/infra/brave-token/brave_api_key` e informá-lo dessa disponibilidade.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o arquivo já existia no host, mas o diretório não era montado no `sandbox-orchestrator`, seu conteúdo não era exportado para o processo e a instrução de credenciais externas não conhecia a Brave. Portanto, o modelo não tinha acesso nem contexto para utilizar o token.
-- Correção na causa: o Compose agora monta o diretório somente para leitura, exporta a chave como `BRAVE_API_KEY` e o prompt operacional informa ao modelo que pode usar a Brave Search API com o header `X-Subscription-Token`, sem revelar o segredo.
-- Operação e documentação: o caminho padrão e o override `BRAVE_TOKEN_HOST_DIR` foram documentados no README e no `.env.example`; é necessário recriar o `sandbox-orchestrator` para aplicar a montagem na VPS.
-- Proteção contra regressão: testes verificam a montagem/exportação no Compose e confirmam que a instrução menciona a API, a variável e o header sem incluir o valor secreto.
-
-## 2026-08-11 — Resiliência do CI ao limite HTTP 429 do Maven Central
-
-- Solicitação recebida: corrigir a falha do job `mcp-server`, que não conseguiu resolver o parent POM do Spring Boot porque o Maven Central respondeu `429 Too Many Requests`.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os jobs `backend` e `mcp-server` eram iniciados em runners independentes e em paralelo, ambos sem cache Maven, repetindo downloads do mesmo parent e das mesmas dependências. Além disso, uma resposta transitória 429 encerrava imediatamente o build, sem espera nem nova tentativa controlada.
-- Correção na causa: ambos os jobs passaram a usar a mesma chave de cache, calculada pelos dois POMs, e o `mcp-server` agora aguarda o `backend`, permitindo restaurar o repositório Maven aquecido em vez de repetir a rajada concorrente de downloads.
-- Resiliência transitória: as duas execuções Maven usam um script comum que repete exclusivamente falhas contendo HTTP 429, com espera exponencial e `-U` para reavaliar artefatos cuja tentativa anterior foi marcada como falha. Erros reais de compilação ou teste são devolvidos imediatamente, sem retries que ocultem defeitos.
-- Proteção contra regressão: o workflow foi validado com `actionlint`, e o script foi exercitado com comandos falsos para confirmar sucesso após um 429 e ausência de retry para erro não transitório.
-
-## 2026-08-11 — Execução local contínua antes do Pull Request
-
-- Solicitação recebida: analisar as dez solicitações mais recentes do ambiente `CHATGPT_CODEX_MKT` de `paulofor/marketing-hub` e reduzir o ciclo em que o modelo encontra um erro, pede autorização, corrige parcialmente, solicita PR/deploy e somente depois descobre o próximo erro.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: embora a instrução universal já proibisse usar PR/deploy como mecanismo de teste, ela não declarava que o pedido inicial do usuário autoriza as correções locais causalmente relacionadas nem delimitava quando uma nova decisão humana é realmente necessária. Nas solicitações 1852–1861, o modelo tratou defeitos sucessivos do mesmo fluxo (contrato Brave, edição do orçamento, estado obsoleto do monitor e ausência do executor de pareceres) como novos escopos, encerrando cada execução antes da homologação ponta a ponta e transferindo ao usuário a autorização da próxima investigação.
-- Correção na causa: a instrução universal agora determina que investigação/correção/implementação solicitada autoriza todo ajuste local relacionado ao escopo, proíbe pedir nova autorização para defeitos que a própria sandbox pode resolver e exige simular módulos, agentes ou workers localmente — sequencialmente quando útil — até o fluxo ponta a ponta funcionar.
-- Limites humanos preservados: o modelo deve interromper apenas diante de alternativa de produto realmente ambígua, credencial ou acesso ausente, ação externa irreversível, gasto ou publicação que exija consentimento. O PR e o deploy continuam sendo fronteiras explícitas, mas deixam de funcionar como rodadas de descoberta de erros.
-- Proteção contra regressão: os testes dos caminhos Codex App Server e Responses API passaram a exigir as novas cláusulas de autonomia local e fechamento integral do fluxo.
-
-## 2026-08-13 — Aumento do limite de memória da sandbox para 6 GiB
-
-- Solicitação recebida: aumentar de 5 GiB para 6 GiB a memória disponível ao `sandbox-orchestrator`.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o histórico operacional já confirmou que o Codex App Server foi encerrado pelo kernel com `OOMKilled=true` ao atingir o limite de 5 GiB; embora o arquivamento de threads concluídas trate a retenção de estado, cargas legítimas ainda precisam de uma margem adicional para o App Server, ferramentas e processos filhos compartilhados no mesmo contêiner.
-- Ajuste aplicado: os limites padrão de RAM e de RAM mais swap foram elevados juntos para 6 GiB, sem habilitar swap adicional e mantendo a contenção que protege os demais serviços e o host.
-- Documentação e proteção contra regressão: o `.env.example`, a referência do orquestrador e as asserções do Compose foram atualizados para refletir o novo padrão de 6 GiB.
-
-## 2026-08-13 — Corte do dia operacional às 02:00
-
-- Solicitação recebida: mudar o fim/início do dia operacional de 03:00 para 02:00 no fuso de São Paulo.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o horário de corte estava fixado em 03:00 na regra central do backend e repetido nos textos explicativos do frontend; portanto, alterar somente a apresentação manteria as agregações incorretas e alterar somente o backend deixaria a interface divergente.
-- Correção na causa: a constante usada para calcular a data operacional, as janelas diária e semanal e a série diária passou para 02:00; os textos do dashboard e do quadro operacional MKT foram alinhados ao novo horário.
-- Proteção contra regressão: as expectativas do teste de métricas foram atualizadas para validar 02:00 em `America/Sao_Paulo` (05:00 UTC no cenário testado).
-
-## 2026-08-14 — Diagnóstico de indisponibilidade pública do AI Hub
-
-- Solicitação recebida: verificar por que o ambiente parecia travado.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o proxy público continuava aceitando a conexão HTTPS, mas não conseguia estabelecer conexão com o servidor de origem; as rotas `/`, `/mcp` e `/api/health` responderam HTTP 503 após aproximadamente cinco segundos com `upstream connect error or disconnect/reset before headers` e `reset reason: connection timeout`.
-- Delimitação do diagnóstico: o problema ocorre antes de qualquer resposta da aplicação e afeta simultaneamente frontend, backend e MCP, o que descarta um travamento isolado de uma tela ou endpoint. A causa imediatamente observável é a indisponibilidade de rede do host/origem atrás do proxy; não foi possível distinguir remotamente entre VPS desligada, reinicialização ou bloqueio de rede porque o próprio MCP de diagnóstico está no mesmo host indisponível.
-- Ação aplicada: nenhuma alteração de código nem tentativa de mascarar o 503 foi feita, pois isso trataria a consequência. O restabelecimento exige verificar o estado da VPS no provedor/console e, assim que o host responder, consultar uptime, eventos de OOM e logs dos contêineres para identificar o gatilho operacional definitivo.
-
-## 2026-08-14 — Adequação da sandbox à VPS com 10 GiB de memória
-
-- Solicitação recebida: após o upgrade da VPS para 10 GiB, aumentar a memória da sandbox sem comprometer a segurança do host.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o limite padrão do `sandbox-orchestrator` continuava em 6 GiB, dimensionado para a capacidade anterior da VPS. Apenas remover o limite ou entregar os 10 GiB ao contêiner repetiria a causa das quedas anteriores: ferramentas, builds e o Codex App Server poderiam disputar toda a RAM com proxy, backend, MCP e sistema operacional.
-- Correção na causa: os limites padrão de RAM e de RAM mais swap passam juntos para 8 GiB. Na VPS de 10 GiB, a sandbox ganha 2 GiB adicionais para cargas legítimas e permanece contida, reservando aproximadamente 2 GiB para os serviços públicos e o host; manter `memswap_limit` igual a `mem_limit` impede que uma carga fugitiva migre para swap e deixe a máquina sem resposta.
-- Documentação e proteção contra regressão: o Compose, o `.env.example`, a referência do orquestrador e o teste automatizado foram alinhados ao novo padrão. Para aplicar o limite efetivo, o contêiner `sandbox-orchestrator` precisa ser recriado após a atualização.
-
-## 2026-08-14 — Revalidação da aparente trava do backend às 21:17 UTC
-
-- Solicitação recebida: confirmar se o backend do AI Hub estava travado.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta observável neste momento: o proxy público aceita HTTPS imediatamente, mas expira ao tentar conectar-se à origem. Às 21:17 UTC, `/mcp`, `/api/health` e `/` responderam HTTP 503 em aproximadamente 5,2 segundos, todos com `upstream connect error or disconnect/reset before headers` e `reset reason: connection timeout`.
-- Conclusão: não há evidência de uma trava isolada do backend; frontend, backend e MCP estão simultaneamente inacessíveis atrás do proxy. Como o MCP de comandos reside na mesma origem indisponível, não foi possível consultar os contêineres para determinar se a causa raiz final é VPS desligada/reiniciando, falha de rede ou serviços parados.
-- Próximo diagnóstico necessário: acessar o console do provedor da VPS e validar energia/rede; após o host voltar, verificar `uptime`, pressão de memória/OOM e estado/logs dos contêineres antes de reiniciar serviços, para preservar a evidência do gatilho.
-
-## 2026-08-14 — Recuperação automática da fila após reinicialização da VPS
-
-- Solicitação recebida: impedir que uma execução interrompida pela reinicialização da VPS bloqueie indefinidamente todas as solicitações pendentes do mesmo perfil.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a fila durável fica no banco do backend, mas o registro de jobs do `sandbox-orchestrator` existe apenas em memória. Após a reinicialização completa, a solicitação interrompida continuava no banco como `RUNNING` e com `externalId`; a regra de exclusão por perfil interpretava esse registro órfão como execução ativa, enquanto nenhum callback poderia chegar de um job que já não existia, impedindo o despacho das pendentes.
-- Correção na causa: o backend agora reconcilia periodicamente as solicitações ativas duráveis com o registro do orquestrador. Se o job ainda existir, seu estado é sincronizado normalmente; se o orquestrador confirmar `404`, a execução interrompida é finalizada como `FAILED`, com mensagem explícita de reinicialização, e a próxima pendente do perfil é despachada automaticamente.
-- Segurança operacional: falha de conexão/indisponibilidade temporária do orquestrador não é confundida com job perdido. Nesse caso o registro permanece ativo e o perfil continua bloqueado até a tentativa seguinte, evitando execução duplicada durante a subida dos contêineres. A repetição automática começa após 15 segundos e ocorre a cada 30 segundos, com intervalos configuráveis.
-- Proteção contra regressão: os testes cobrem tanto a liberação e continuação da fila após um job perdido quanto a preservação do bloqueio quando o orquestrador está apenas temporariamente inacessível.
-## 2026-08-14 — Média diária das notas no quadro operacional
-
-- Solicitação recebida: exibir no espaço livre superior esquerdo do quadro flutuante a média das notas do índice de venda do dia operacional, com duas casas decimais.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend já entregava a distribuição diária completa das avaliações nas cinco notas, mas o frontend usava esses dados apenas para mostrar as quantidades por faixa; por isso o quadro não transformava a distribuição disponível em uma média nem ocupava a área reservada no cabeçalho.
-- Correção na causa: o quadro agora calcula a média ponderada diretamente sobre as contagens diárias das notas 1 a 5, usa a soma dessas contagens como denominador e apresenta o resultado com exatamente duas casas decimais no espaço indicado. Quando ainda não existem avaliações, apresenta um traço em vez de uma média enganosa.
-- Proteção contra regressão: o cenário E2E do quadro operacional recebeu uma distribuição conhecida e verifica o rótulo e o valor localizado `3,33`.
-
-## 2026-08-15 — Remoção de solicitações falhas ou canceladas do diálogo
-
-- Solicitação recebida: permitir retirar da tela de diálogo as solicitações que falharam ou foram canceladas e permaneciam presas no histórico visível.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o estado persistente de ocultação já existia, mas seu único controle visual ficava dentro do cartão de comentário estruturado e exigia que o comentário fosse marcado como lido. Respostas de falha e cancelamento são texto simples, não geram esse cartão e, portanto, nunca recebiam uma ação para sair da tela.
-- Correção na causa: mensagens terminais `FAILED` e `CANCELLED` sem resposta estruturada agora exibem a ação `Retirar da tela` no cabeçalho. A ação reutiliza a ocultação persistente existente, remove também a mensagem de usuário associada e continua permitindo restaurar tudo por `Mostrar novamente`.
-- Clareza da interface: o resumo de itens ocultos deixou de qualificá-los obrigatoriamente como “lidos”, pois agora também contabiliza falhas e cancelamentos.
-- Proteção contra regressão: foi adicionado um cenário E2E que carrega uma falha e um cancelamento em texto simples, retira ambos individualmente e valida a atualização do contador.
-
-## 2026-08-15 — Diagnóstico da interrupção da solicitação #2229 após uma hora
-
-- Solicitação recebida: explicar por que a última execução parou depois de aproximadamente uma hora e avaliar se o trabalho pode ser recuperado.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a solicitação `#2229`, associada ao job `467ea4fb-4809-407e-af8e-b8c399349e88`, permaneceu ativa de 21:39:32 a 22:40:17 UTC e acumulou 34.504.940 tokens. O último evento produtivo do Codex ocorreu antes de uma janela de 15 minutos sem novos eventos; o watchdog configurado por `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` então encerrou o turno com `CODEX_TURN_STALLED`. Não houve queda da VPS, reinício ou OOM: o host tinha 7,3 GiB disponíveis, o orquestrador estava usando cerca de 179 MiB de 8 GiB e seu contêiner permanecia saudável.
-- Estado preservado: antes da interrupção, o agente já havia alterado pelo menos três arquivos no checkout temporário, executado builds e interagido com o ambiente externo. Porém, o fluxo de falha arquivou a thread e removeu o workspace temporário; o registro consultável do job não contém patch nem lista de arquivos alterados. Portanto, não existe retomada automática exata pelo cartão atual.
-- Possibilidade de recuperação: o histórico de interações e o rollout arquivado preservam evidências suficientes para orientar uma nova execução, mas as alterações locais não commitadas precisam ser reconstruídas. A repetição deve começar conferindo os efeitos já persistidos no ambiente externo para não duplicar tarefas, ciclos ou outros registros criados durante a tentativa interrompida.
-- Escopo desta atividade: somente diagnóstico e registro; nenhuma mudança operacional foi aplicada e nenhuma recuperação foi iniciada sem confirmação do usuário.
-
-## 2026-08-15 — Timeout de inatividade do Codex aumentado para duas horas
-
-- Solicitação recebida: mudar de 15 minutos para duas horas o intervalo sem eventos que encerra um turno do Codex App Server como paralisado.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o fallback do orquestrador, o arquivo de ambiente de referência e a documentação ainda definiam `900000` ms; assim, uma operação legítima silenciosa por 15 minutos era indistinguível de um turno realmente paralisado e encerrava a solicitação com `CODEX_TURN_STALLED`.
-- Correção na causa: o limite padrão de inatividade passou para `7200000` ms em uma constante compartilhada pelo fallback do código, pelo `.env.example` e pela documentação. O timeout total de seis horas permanece independente, de modo que a execução ainda tem um limite absoluto.
-- Proteção contra regressão: o teste do orquestrador confere explicitamente que o novo padrão de inatividade equivale a duas horas.
-
-## 2026-08-16 — Verificação da aparente trava durante execução de marketing
-
-- Solicitação recebida: verificar se o AI Hub havia travado ou se a execução em andamento ainda estava processando.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: não foi observado erro de infraestrutura. O healthcheck público respondeu `200` com `status=UP`, frontend e MCP responderam normalmente, todos os contêineres estavam ativos havia aproximadamente duas horas e o Codex App Server reportou `ready`, sem reinicializações nem timeouts.
-- Evidência da execução: o job `83e7b01a-4621-434c-bfb3-c5f9a0ee9e3d` permanecia `RUNNING`; a última ferramenta auditada havia sido executada às 01:11:44 UTC. Às 01:27:48 UTC, o App Server respondeu a requisições JSON-RPC `account/read`, que apenas consultam autenticação/conta e demonstram que o processo responde — não comprovam progresso do turno nem renovam seu marcador de atividade. O orquestrador consumia cerca de 1,3 GiB do limite de 8 GiB e 2,26% de CPU, sem sinal de OOM ou contêiner parado.
-- Conclusão: não havia evidência de queda da infraestrutura nem critério suficiente para declarar o turno travado; havia cerca de 16 minutos sem uma notificação produtiva auditada. O orquestrador só considera atividade do turno as notificações `item/agentMessage/delta`, `item/started`, `item/completed`, `thread/tokenUsage/updated`, `turn/completed` e `error`. Como o timeout de inatividade vigente é de duas horas, nenhuma intervenção ou reinicialização foi realizada para não interromper e perder o trabalho em andamento.
-
-## 2026-08-16 — Revalidação da execução às 01:39 UTC
-
-- Solicitação recebida: verificar novamente o estado da execução. O job `83e7b01a-4621-434c-bfb3-c5f9a0ee9e3d` continuava `RUNNING`, sem timeout, enquanto o Codex App Server permanecia `ready`, sem tentativa de reinicialização; não havia jobs pendentes.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A aparência de paralisação continuava decorrendo da ausência de atualização visível durante processamento silencioso, não de indisponibilidade: todos os contêineres estavam ativos, e o orquestrador usava 1,316 GiB de 8 GiB e 12,34% de CPU.
-- Evidência de progresso: depois da primeira verificação, foi auditada uma nova execução de ferramenta às 01:11:44 UTC, relacionada à composição e gravação do criativo do experimento 88. Às 01:39:18 UTC haviam transcorrido cerca de 27 minutos sem ferramenta ou mensagem produtiva posterior registrada, ainda abaixo do timeout de inatividade de duas horas.
-- Conclusão: infraestrutura saudável e turno ainda aberto, mas sem evidência direta de progresso nos 27 minutos anteriores à consulta. Nenhuma intervenção foi aplicada para não interromper o trabalho antes do critério configurado de paralisação.
-
-## 2026-08-16 — Avaliação do risco de o modelo ter perdido o fluxo
-
-- Solicitação recebida: avaliar se o modelo pode ter se perdido, se duas horas é um timeout de inatividade excessivo e quais hipóteses explicam o silêncio.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A causa mais provável da aparência de trava é uma lacuna de observabilidade: o watchdog conhece notificações do App Server, mas não distingue raciocínio legítimo, espera por serviço filho e perda do fluxo quando nenhuma notificação chega. Às 01:42:33 UTC, o job continuava `RUNNING`, sem timeout, porém a última ferramenta auditada permanecia em 01:11:44 UTC e a última mensagem incremental em 01:07:11 UTC.
-- Evidências adicionais: não havia comando curto preso nem chamada de geração de imagem visível na árvore de processos. Permaneciam dois serviços Spring Boot iniciados pelo próprio turno — `landing-generator-agent-worker` havia cerca de 44 minutos e `meta-ad-approver-worker` havia cerca de 29 minutos — enquanto o App Server estava `ready`. Isso torna plausíveis tanto raciocínio silencioso/perda de sequência após iniciar os workers quanto espera não instrumentada; CPU e estado `RUNNING`, isoladamente, não provam progresso.
-- Avaliação do limite: duas horas protege operações legitimamente longas, mas é grande como único detector de ausência absoluta de eventos e pode manter um perfil bloqueado por tempo excessivo. O ajuste robusto não é simplesmente voltar a 15 minutos: deve combinar alerta antecipado, estado do item/ferramenta corrente e heartbeat de subprocessos; aplicar tolerância longa somente quando houver uma operação longa identificada e usar uma janela menor para silêncio sem item ativo.
-- Conclusão operacional: naquele instante havia risco real de o modelo ter perdido o fluxo, mas evidência insuficiente para afirmar travamento definitivo. Nenhum cancelamento foi executado sem solicitação do usuário.
-
-## 2026-08-16 — Timeout adaptativo para turnos do Codex App Server
-
-- Solicitação recebida: alterar o timeout de inatividade para a estratégia operacional considerada ideal após o diagnóstico do silêncio prolongado.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O orquestrador aplicava o mesmo limite de duas horas tanto a uma ferramenta longa identificada quanto a um turno sem item ativo. A regra única evitava falsos positivos em builds e testes demorados, mas permitia que um modelo que perdeu o fluxo bloqueasse o perfil por duas horas sem produzir qualquer evidência de progresso.
-- Correção na causa: o watchdog passou a acompanhar os IDs dos itens `commandExecution` entre `item/started` e `item/completed`. Sem comando ativo conhecido, a ausência de eventos encerra o turno após 45 minutos; com um comando ativo, a tolerância permanece em duas horas. O limite absoluto do turno continua em seis horas.
-- Configuração: `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` passa a `2700000` e a nova variável `CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS` usa `7200000`. Ambos continuam configuráveis por ambiente.
-- Proteção contra regressão: as constantes, o arquivo de ambiente e a tabela de configuração são verificados pelos testes do orquestrador; a suíte completa compilou e passou.
-
-## 2026-08-16 — Ranking das 20 solicitações com maior consumo de tokens
-
-- Solicitação recebida: criar um item de menu com o ranking das 20 solicitações que mais consumiram tokens, mantendo as maiores no topo.
-- Pergunta explícita de causa raiz: “por que esse recurso não existia?”. Embora cada solicitação já persistisse tokens de entrada, cache, saída e total, a API disponível ordenava solicitações por criação e as telas exibiam consumo apenas dentro dos fluxos existentes. Não havia uma consulta enxuta, limitada e ordenada pelo total, nem uma rota de navegação dedicada à comparação global.
-- Implementação na causa: o backend ganhou uma projeção própria e o endpoint `GET /api/codex/requests/token-ranking`, cuja consulta exclui totais ausentes, ordena por `totalTokens DESC` e desempata pelo ID mais recente, limitando o resultado a 20 no serviço.
-- Interface: o novo menu `Ranking de Tokens` abre uma página responsiva com posição, link para a solicitação, ambiente, data, modelo, perfil, status, total e decomposição de tokens. Os três primeiros recebem destaque e foram tratados estados de carregamento, erro e ausência de dados.
-- Validação: compilação e teste direcionado do backend, lint e build de produção do frontend passaram. A página foi homologada visualmente com Playwright e 20 registros simulados em viewport desktop; a revisão revelou e corrigiu a ativação simultânea do menu `Codex` na rota filha.
-
-## 2026-08-16 — Causa da ausência de resposta da solicitação 2236
-
-- Solicitação recebida: determinar o que pode ter deixado o modelo sem resposta na execução anteriormente acompanhada.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O log persistente do Codex mostra que o modelo não parou simplesmente em raciocínio: às 01:14:10 UTC ele emitiu uma chamada `exec` cujo primeiro comando era `curl -sS` para o endpoint interno do GeraLanding, sem `--max-time` ou outro limite. Não existe evento posterior de início/conclusão de item ou resposta da ferramenta para a thread, tornando mais provável que a execução tenha ficado bloqueada esperando essa conexão/resposta indefinidamente.
-- Encerramento definitivo: a solicitação `2236` não terminou pelo watchdog (`timeoutCount=0`). Às 02:04 UTC, um deploy da imagem `0161a5a8da148f37527ca2ebda4d4a2b0a6ec516` recriou simultaneamente MCP, orquestrador, backend, frontend e Caddy. Como o registro de jobs do orquestrador era volátil, o backend recebeu `404` ao reconciliar o job às 02:05:11 UTC e marcou a solicitação como `FAILED` por reinicialização, após 6.224.028 ms e 32.354.153 tokens.
-- Conclusão: há alta confiança de que o silêncio começou por um `curl` sem timeout e certeza de que a ausência da resposta final ocorreu porque o deploy recriou o contêiner antes que o turno terminasse. O modelo não produziu resposta final recuperável; o timeout de duas horas não foi o gatilho desta falha.
-
-## 2026-08-16 — Timeout defensivo padrão para curl na sandbox
-
-- Solicitação recebida: impedir que uma chamada `curl` sem limite mantenha o modelo indefinidamente sem resposta.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O Codex executa comandos diretamente dentro do `sandbox-orchestrator`; portanto, depender de o modelo lembrar `--max-time` em toda chamada deixou o processo vulnerável a um endpoint que aceita a conexão e não termina a resposta. O watchdog do turno enxerga apenas um comando ativo e, corretamente para builds longos, concede a janela maior, de modo que não substitui um timeout do cliente HTTP.
-- Correção na causa: a imagem passa a instalar `/usr/local/bin/curl` como wrapper de `/usr/bin/curl`. Na ausência de limites explícitos, ele acrescenta `--connect-timeout 10` e `--max-time 120`; se o comando já declarar `--connect-timeout`, `--max-time` ou `-m`, o valor solicitado é preservado. Os padrões podem ser alterados por `CURL_CONNECT_TIMEOUT_SECONDS` e `CURL_MAX_TIME_SECONDS` no Compose.
-- Proteção contra regressão: um teste executa o wrapper contra um binário falso e comprova tanto a aplicação dos limites padrão quanto a preservação de limites explícitos. A suíte completa do orquestrador passou com 78 testes.
-
-## 2026-08-16 — Avaliação da estratégia local para projetos multiagentes
-
-- Solicitação recebida: avaliar a prática de executar agentes e workers localmente, corrigindo o fluxo completo antes de solicitar PR e deploy, em vez de descobrir um defeito por publicação.
-- Pergunta explícita de causa raiz: “por que o ciclo anterior impedia atingir o objetivo?”. O deploy estava sendo usado como ambiente de descoberta: cada módulo era validado isoladamente, o primeiro defeito encerrava a execução e a próxima incompatibilidade só aparecia depois de nova autorização, PR e publicação. Em um grafo multiagente, contratos, ordem, estado compartilhado e callbacks só são realmente validados quando a cadeia inteira roda, de modo que aprovações parciais acumulavam latência sem comprovar o resultado final.
-- Avaliação: executar localmente a cadeia ponta a ponta é a direção correta e já está refletida na instrução universal do runner. O pedido inicial autoriza correções locais causalmente relacionadas, módulos podem ser simulados sequencialmente com dependências/test doubles e PR/deploy não devem funcionar como mecanismo de teste.
-- Condições para não criar falsa confiança: a homologação deve começar com uma matriz explícita de caminho feliz, validações, falhas, integrações, observabilidade e segregação de dados; usar contratos e versões equivalentes à produção; substituir serviços externos apenas por doubles fiéis; e registrar separadamente qualquer verificação que só possa ocorrer depois do deploy. Após uma correção encontrada na rodada completa, duas rodadas consecutivas sem falhas protegem contra regressões encadeadas.
-- Conclusão: a melhoria percebida é consistente com engenharia de sistemas distribuídos. O deploy deve confirmar a solução já validada localmente, não revelar o próximo erro previsível; exceções legítimas são diferenças inevitáveis de infraestrutura, credenciais, rede ou serviços externos, que precisam de smoke test pós-deploy sem reabrir o desenvolvimento em ciclos parciais.
-
-## 2026-08-16 — Elementos essenciais de uma solicitação multiagente
-
-- Solicitação recebida: orientar quais informações do pedido humano mais ajudam o modelo a concluir uma correção multiagente sem cair em ciclos parciais de deploy.
-- Avaliação: o elemento mais importante é declarar o resultado observável final, não apenas o primeiro erro ou módulo. Em seguida, o pedido deve autorizar explicitamente a investigação e as correções locais causalmente relacionadas, nomear a cadeia de agentes/workers/callbacks a ser exercitada, definir critérios objetivos de aceite e proibir PR/deploy antes da homologação ponta a ponta.
-- Limites necessários: informar quais ações externas exigem nova autorização — gasto, publicação, alteração de preço, comunicação real, dados de produção ou decisão ambígua — e quais dependências podem ser simuladas com dados isolados. Isso dá autonomia técnica sem conceder autonomia de negócio irreversível.
-- Evidência de encerramento: pedir uma matriz com caminho feliz e falhas relevantes, registro das causas encontradas, contratos verificados entre etapas, testes executados e limitações que só podem ser confirmadas em produção. Se uma rodada encontrar defeito, exigir correção e duas rodadas completas consecutivas sem falha; se a primeira passar, não repetir artificialmente.
-- Conclusão: um bom pedido deve dizer “faça o fluxo chegar ao estado final X localmente” e não apenas “corrija o erro Y”. Um modelo pode escolher a ordem técnica das correções, mas não deve redefinir o objetivo, ultrapassar limites de negócio nem usar o deploy para descobrir o próximo defeito previsível.
-
-## 2026-08-16 — Nível de raciocínio efetivo do gpt-5.6-sol
-
-- Solicitação recebida: identificar o nível de raciocínio usado pelo modelo `gpt-5.6-sol` nas execuções do AI Hub.
-- Evidência: os logs persistentes mais recentes do Codex App Server, às 03:26:45 UTC, registram repetidamente `model=gpt-5.6-sol` com `codex.turn.reasoning_effort=low`. Não existe variável de ambiente de reasoning configurada no contêiner.
-- Explicação: o AI Hub envia modelo, diretório, política de aprovação, sandbox e identificação do serviço no `thread/start`, mas atualmente não envia um campo explícito de esforço; portanto o App Server aplica o padrão efetivo `low` observado na telemetria.
-- Conclusão: o nível atualmente usado é `low`. Alterá-lo exige propagar uma configuração explícita aceita pelo contrato do Codex App Server e validar o efeito em qualidade, latência e tokens; não basta mudar apenas um texto do prompt.
-
-## 2026-08-16 — Raciocínio do Codex App Server alterado para high
-
-- Solicitação recebida: alterar o esforço de raciocínio efetivo do `gpt-5.6-sol` de `low` para `high`.
-- Pergunta explícita de causa raiz: “por que o modelo usava low?”. O AI Hub selecionava o modelo no `thread/start`, mas não enviava o override `effort` aceito pelo contrato V2 no `turn/start`; por isso o Codex App Server aplicava o padrão baixo observado na telemetria.
-- Correção na causa: todo turno iniciado pelo fluxo Codex App Server agora envia `effort: high`. A configuração é centralizada em `CODEX_APP_SERVER_REASONING_EFFORT`, aceita os valores do contrato (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) e falha cedo diante de valor inválido.
-- Configuração e proteção contra regressão: `.env.example`, Compose e documentação usam `high` como padrão; os testes conferem a configuração e o payload real de `turn/start`. A suíte completa do orquestrador passou com 78 testes.
-
-## 2026-08-16 — Distinção entre o raciocínio desta conversa e o AI Hub
-
-- Solicitação recebida: identificar o nível de raciocínio do assistente que responde nesta conversa.
-- Esclarecimento: este assistente é o GPT-5.6 Sol, mas não recebe uma telemetria confiável ou um campo visível que permita declarar o `reasoning_effort` efetivo desta sessão. A configuração `CODEX_APP_SERVER_REASONING_EFFORT=high` adicionada ao projeto controla apenas os futuros turnos iniciados pelo `sandbox-orchestrator` no AI Hub depois de a mudança ser publicada; ela não reconfigura retroativamente nem controla esta conversa externa.
-- Conclusão: não é correto afirmar que esta sessão está em `high` sem evidência do runtime. O que pode ser afirmado pelo código é que as novas execuções do AI Hub solicitarão explicitamente `high` no `turn/start` após o deploy.
-
-## 2026-08-16 — Solicitação 2237 interrompida pelo limite absoluto de duas horas
-
-- Solicitação recebida: verificar se a execução mais recente foi perdida por um timeout de duas horas.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A configuração efetiva do contêiner publicado ainda define `CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000`. Esse é o limite absoluto do turno e não é renovado por atividade; embora o repositório já tenha fallback de seis horas, o `.env` operacional prevaleceu com duas horas.
-- Evidência: a solicitação `2237`, job `c1f85c55-0926-458d-8b8f-111879b70897`, iniciou às 02:06:43 UTC e falhou às 04:07:54 UTC com `CODEX_TURN_INTERRUPTED`, após 7.271.774 ms. O job acumulou 83.516.188 tokens, `timeoutCount=0` e ainda concluiu ferramentas entre 04:03:41 e 04:04:02 UTC, comprovando atividade pouco antes do limite absoluto; portanto não foi o timeout adaptativo de inatividade.
-- Estado recuperável: o workspace temporário foi removido e não preserva alterações locais não commitadas. A thread `01a00853-0cce-7462-a6f4-154245d22b7b` foi arquivada em rollout persistente, preservando o histórico suficiente para orientar reconstrução, mas não para retomar automaticamente o processo e arquivos exatamente de onde pararam.
-- Conclusão: a suspeita foi confirmada. A execução foi interrompida pelo limite absoluto operacional de duas horas apesar de ainda estar produtiva; para novas execuções longas, o valor efetivo da VPS deve ser alinhado ao padrão versionado de seis horas e o contêiner recriado.
-
-## 2026-08-16 — Causa raiz da reincidência do timeout de duas horas
-
-- Solicitação recebida: verificar por que uma nova solicitação voltou a parar com exatamente duas horas, mesmo depois de o padrão do orquestrador ter sido ampliado para seis horas.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O workflow de deploy ainda gravava explicitamente `CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000` no `.env` da VPS. Esse valor operacional tinha precedência sobre o fallback de seis horas do código e sobre o `.env.example`; portanto, cada publicação recriava o contêiner com o limite absoluto antigo e reintroduzia o defeito.
-- Evidência de produção: o job `be4c9fdc-945b-4c11-8ac7-f5502990990a` iniciou em `2026-08-16T04:22:50.225Z` e falhou em `2026-08-16T06:23:12.021Z`, após `7.221.796 ms`, com `CODEX_TURN_INTERRUPTED`, `timeoutCount=0` e 62.023.598 tokens. O contêiner efetivamente expunha `CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000`; havia atividade do App Server e alterações em arquivos poucos minutos antes do encerramento, descartando o watchdog de inatividade como causa.
-- Correção na causa: a normalização do `.env` no workflow agora grava `21600000` (seis horas), alinhada ao fallback, ao exemplo de ambiente e à documentação. O teste do orquestrador passou a verificar também o workflow de deploy e a rejeitar explicitamente a reintrodução do valor absoluto de duas horas nesse ponto.
-- Impacto operacional: a correção passa a valer no próximo deploy, que remove a entrada anterior, grava seis horas e recria o serviço. O job encerrado não pode ser retomado automaticamente porque seu workspace efêmero já foi finalizado.
-
-## 2026-08-16 — Verificação do raciocínio high no modelo
-
-- Solicitação recebida: verificar se o esforço de raciocínio `high` também está configurado para o modelo.
-- Pergunta explícita de causa raiz: “por que o modelo poderia não usar `high` mesmo com esse padrão no código?”. Um valor antigo no `.env` operacional tem precedência sobre o fallback do Compose; como o workflow ainda não normalizava `CODEX_APP_SERVER_REASONING_EFFORT`, um futuro deploy poderia preservar silenciosamente `low` ou outro valor válido.
-- Confirmação atual: o contêiner de produção expõe `CODEX_APP_SERVER_REASONING_EFFORT=high`. No código, o valor é validado contra o contrato aceito e enviado como `effort` no payload de `turn/start`; portanto, as solicitações atuais do AI Hub pedem efetivamente raciocínio `high` ao modelo.
-- Proteção adicionada: o workflow de deploy agora remove qualquer valor operacional anterior e grava explicitamente `CODEX_APP_SERVER_REASONING_EFFORT=high`. O teste de configuração verifica o fallback, o exemplo de ambiente e a normalização do workflow para impedir regressão para `low` após novas publicações.
-
-## 2026-08-16 — Engine Docker dedicada e janela máxima de 12 horas
-
-- Solicitação recebida: oferecer ao modelo uma engine Docker real para homologar topologias de containers e ampliar o tempo máximo de execução para 12 horas.
-- Pergunta explícita de causa raiz: “por que o modelo não conseguia executar a topologia real se Docker era anunciado como disponível?”. A imagem do `sandbox-orchestrator` já continha Docker CLI e Compose v2 e o prompt anunciava essas ferramentas, mas o serviço não recebia `DOCKER_HOST` nem socket; apenas o MCP tinha acesso ao daemon do host. Assim, havia cliente sem engine, e montar diretamente o socket de produção concederia ao modelo controle administrativo indevido sobre os containers públicos.
-- Correção na causa: o Compose ganhou a engine isolada `sandbox-docker`, com armazenamento, limites, healthcheck e rede próprios. O orquestrador aguarda sua saúde e a acessa por `DOCKER_HOST=tcp://sandbox-docker:2375`, sem montar o socket Docker de produção. O workspace aparece no mesmo caminho nos dois serviços para que bind mounts dos projetos testados sejam resolvidos pelo daemon dedicado.
-- Orientação e segurança: o prompt agora afirma que a engine dedicada está disponível, exige nome Compose exclusivo, proíbe `host network`, containers privilegiados, sockets e mounts externos ao workspace e ordena a remoção de containers, redes e volumes temporários ao final.
-- Tempo máximo: o limite absoluto do Codex App Server foi alterado de 21.600.000 ms (6 horas) para 43.200.000 ms (12 horas) no código, exemplo de ambiente, documentação e normalização do `.env` no workflow de deploy. Os timeouts adaptativos de inatividade permanecem inalterados para não transformar ausência de progresso em espera de 12 horas.
-
-## 2026-08-16 — Escolha do nível de raciocínio por solicitação
-
-- Solicitação recebida: permitir que o usuário escolha `low`, `medium`, `high` ou `xhigh` na tela ao criar cada solicitação, pois nem todo trabalho exige raciocínio alto.
-- Pergunta explícita de causa raiz: “por que todas as solicitações usavam `high`?”. O frontend enviava somente modelo e perfil, o backend não possuía campo persistente para esforço e o orquestrador montava todo `turn/start` exclusivamente com `CODEX_APP_SERVER_REASONING_EFFORT`; portanto, uma configuração global de deploy era aplicada indistintamente a trabalhos simples e complexos.
-- Correção na causa: a solicitação agora persiste `reasoning_effort`, com migrações MySQL, PostgreSQL e H2, e propaga o valor escolhido pelo backend até o job do orquestrador. O `turn/start` do Codex App Server e a chamada da Responses API usam o valor do job; o valor global permanece apenas como fallback compatível para jobs antigos do App Server.
-- Interface: as telas Codex e Codex ChatGPT ganharam seletores com `low`, `medium`, `high` e `xhigh`, usando `high` como padrão. O detalhe da solicitação exibe o nível efetivamente persistido.
-- Proteção contra regressão: testes cobrem persistência e despacho no backend, aceitação/rejeição do contrato do job e o campo `effort` efetivamente enviado ao Codex App Server. O build de produção do frontend também passou.
-
-## 2026-08-16 — Nível de raciocínio visível nos cards de solicitações
-
-- Solicitação recebida: mostrar o tipo de raciocínio como atributo no registro visual de cada solicitação, especialmente nos cards de “Últimas execuções ChatGPT MKT”.
-- Pergunta explícita de causa raiz: “por que o esforço já persistido não aparecia no card?”. A implementação anterior propagava e persistia `reasoningEffort` e o detalhe individual o exibia, mas os componentes de histórico renderizavam somente modelo, perfil e métricas; o campo recebido no resumo era descartado na apresentação do card.
-- Correção na causa: os cards do histórico ChatGPT/Codex ChatGPT MKT agora exibem um badge `Raciocínio: LOW|MEDIUM|HIGH|XHIGH` ao lado do modelo. Os cards da tela Codex também mostram o mesmo atributo na seção de contexto, mantendo consistência entre as duas listagens.
-
-## 2026-08-21 — Recuperação de falha de conexão da solicitação 2308
-
-- Solicitação recebida: investigar por que a execução 2308 sofreu falha de conexão e não se recuperou, e impedir recorrência.
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A solicitação 2308 terminou `FAILED` após 2.345.736 ms, sem timeout (`timeoutCount=0`), e o último registro persistido do modelo foi `Reconnecting... 2/5`. O Codex CLI tentou recompor seu próprio stream, mas, quando o turno foi encerrado como falho, o orquestrador tratava o terminal como definitivo: arquivava a thread e finalizava o job, sem nova tentativa na thread que ainda preservava histórico e arquivos.
-- Evidência operacional: `GET /api/codex/requests/2308` confirmou status `FAILED`, 36.226.728 tokens e thread `01a02654-7621-73f1-8458-a7a5b37344e8`; o transcript termina durante a reconexão, sem mensagem final. O healthcheck `/mcp` também oscilou temporariamente entre 503 por timeout de origem e `UP`, corroborando uma indisponibilidade transitória na janela de investigação, não um timeout absoluto do job.
-- Correção na causa: o fluxo do Codex App Server agora identifica falhas transitórias de conexão/rede, mantém a mesma thread, aguarda um backoff configurável e abre um segundo turno curto orientado a continuar do estado e dos arquivos existentes, sem reenviar todo o prompt nem repetir ações cegamente. Falhas funcionais não classificadas continuam terminais.
-- Proteções: padrão de duas tentativas totais e espera de cinco segundos, configuráveis por `CODEX_APP_SERVER_TRANSIENT_TURN_MAX_ATTEMPTS` e `CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS`; logs registram tentativa e retomada; a thread é arquivada somente ao final do conjunto de tentativas.
-- Teste de regressão: uma simulação encerra o primeiro turno com `stream disconnected while reconnecting`, confirma o segundo `turn/start` na mesma thread, valida a instrução de continuação, a resposta recuperada e um único arquivamento final.
-
-## 2026-08-22 — Limpeza segura automática da engine Docker de homologação
-
-- Solicitação recebida: atender a recomendação do modelo para automatizar a limpeza segura de volumes Docker deixados por homologações encerradas, diante de aproximadamente 474 MB livres.
-- Pergunta explícita de causa raiz: “por que esse problema aconteceu?”. A engine `sandbox-docker` era persistida no volume `sandbox-docker-data`, mas a remoção dependia de o modelo lembrar `docker compose down --volumes`; interrupções, falhas ou comandos que não executavam a etapa final deixavam volumes órfãos acumulados. A instrução textual não constituía uma garantia de ciclo de vida.
-- Evidência de produção: a engine dedicada estava com 99% do filesystem usado e 832,7 MB livres na inspeção, 34 volumes locais sem vínculo ativo e nenhum container em execução. Após a limpeza operacional segura de volumes sem uso, a engine ficou com zero volume local e 5,9 GB livres (89% de uso), sem tocar no daemon Docker de produção.
-- Correção na causa: cada job passa a receber um nome de projeto Compose determinístico derivado do `jobId`; o prompt exige `docker compose -p <projeto>`. No `finally`, inclusive em falha ou cancelamento, o orquestrador remove containers, redes e volumes rotulados para o projeto encerrado.
-- Segurança de concorrência: a limpeza global de volumes sem uso ocorre somente quando o contador de jobs ativos chega a zero; novas execuções aguardam a limpeza corrente, fechando a janela em que um volume recém-criado por outro job poderia ser removido. A engine é exclusiva das homologações e não compartilha o daemon de produção.
-- Operação e observabilidade: limpeza habilitada por padrão, timeout de dois minutos, falhas registradas sem converter um job já concluído em falha. As opções `DOCKER_HOMOLOGATION_CLEANUP_ENABLED` e `DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS` permitem controle operacional.
-- Validação: teste com Docker falso confirma filtros pelo label `com.docker.compose.project`, remoção segregada de containers/redes/volumes, prune quando o job é o último ativo e registro do espaço recuperado.
-
-## 2026-08-22 — Duração e raciocínio no ranking de tokens
-
-- Solicitação recebida: exibir, em cada solicitação do ranking de tokens, o tempo de duração e o nível de raciocínio usado.
-- Pergunta explícita de causa raiz: “por que essas informações não apareciam no ranking?”. Embora `durationMs` e `reasoningEffort` já fossem persistidos e exibidos no detalhe da solicitação, a projeção específica do endpoint de ranking não selecionava esses campos; consequentemente, o frontend não tinha os dados necessários para renderizá-los.
-- Correção na causa: o DTO e a consulta do ranking agora transportam `durationMs` e `reasoningEffort` desde a entidade. A tabela ganhou a coluna “Execução”, que apresenta a duração formatada e o nível de raciocínio efetivamente registrado em cada solicitação.
-- Proteção: o teste do controller passou a construir o item do ranking com duração e esforço de raciocínio, acompanhando o novo contrato do endpoint.
-
-## 2026-08-23 — Atualização do Codex e raciocínio max
-
-- Solicitação recebida: atualizar a versão do Codex e oferecer o novo nível de raciocínio `max`.
-- Pergunta explícita de causa raiz: “por que a opção `max` não podia ser usada?”. A imagem ainda instalava o Codex `0.146.0` e os contratos fechados do frontend, backend e orquestrador aceitavam no máximo `xhigh`; assim, mesmo digitado manualmente, `max` era rejeitado antes de chegar ao App Server.
-- Correção na causa: o Codex CLI/App Server foi atualizado para `0.149.0`, versão `latest` confirmada no registro npm em 23/08/2026. O valor `max` passou a integrar o contrato persistido, a validação da API, os tipos do orquestrador e o payload `effort` de `turn/start`.
-- Interface e proteção: os dois formulários de criação de solicitação agora exibem “Max — raciocínio máximo”; testes cobrem a versão fixada, a aceitação/persistência do valor e seu envio ao App Server.
-
-## 2026-08-24 — Pedido de PR na fila do lote
-- Pergunta de causa raiz: **por que esse erro aconteceu?** O frontend tratava solicitações `PENDING`/`RUNNING` como motivo para desabilitar integralmente o botão **Pedir PR**, embora a fila já mantivesse o lote e atualizasse seus estados; assim, a intenção do usuário não podia ser registrada antes do fim das execuções.
-- Corrigida a origem no fluxo da conversa: o botão agora aceita o pedido enquanto o lote está ativo, registra o PR como pendente e o dispara automaticamente assim que não houver solicitações pendentes ou em execução.
-- A interface passa a mostrar `PR pendente`, uma mensagem no histórico e uma explicação de que o pedido aguardará a conclusão do lote, além de impedir pedidos duplicados enquanto estiver enfileirado.
-
-## 2026-08-24 — Pedido de PR disponível com o lote ocioso
-- Solicitação recebida: verificar se o botão **Pedir PR** também permanece disponível quando nenhuma tarefa está em execução.
-- Pergunta de causa raiz: **por que esse erro aconteceu?** A habilitação do botão de PR reutilizava indevidamente a exigência de existir um modelo de execução selecionado. Criar o PR não inicia uma inferência nem envia o modelo ao backend; por isso, em um lote concluído e ocioso, uma lista de modelos vazia ou ainda indisponível bloqueava uma ação que dependia apenas do ambiente e do lote Git aberto.
-- Correção na causa: a disponibilidade do pedido de PR foi desacoplada do seletor de modelo. O botão continua protegido pela existência de ambiente e lote aberto, permanece enfileirável durante tarefas ativas e agora também pode publicar diretamente um lote ocioso mesmo sem modelo disponível.
-- Proteção contra regressão: o cenário E2E de lote de marketing concluído agora responde com lista de modelos vazia, confirma o botão habilitado e valida que o PR é solicitado para a tarefa do perfil/lote correto.
-
-## 2026-08-24 — Título da solicitação no ranking de tokens
-- Pergunta de causa raiz: **por que o título não aparecia?** A consulta específica do ranking projetava somente identificadores, consumo e metadados técnicos; ela não transportava o prompt/resposta necessários para aplicar a mesma regra de título já usada nas demais listas.
-- Corrigida a origem no backend: a projeção interna agora leva prompt e resposta sem expô-los no JSON, e o serviço calcula `requestTitle` reutilizando a regra existente, inclusive o título estruturado das respostas de marketing.
-- A coluna Solicitação do ranking agora mostra o título logo abaixo do número, com cobertura de backend e E2E do frontend.
-
-## 2026-08-25 — Retomada do pedido de PR pendente após recarregar a tela
-- Solicitação recebida: investigar por que o botão permanecia em **PR pendente** e se o pedido seria executado ao terminar o lote.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** O pedido era guardado exclusivamente em um `useState` do frontend. O efeito que dispara o PR ao terminar o lote existia, mas qualquer recarga, fechamento da aba ou remontagem da página apagava a intenção antes do disparo; a mensagem prometia automação sem que a fila sobrevivesse ao ciclo de vida da tela.
-- Evidência operacional: na captura e na consulta direta ao backend, a solicitação 2383 ainda estava `PENDING`, portanto naquele instante o PR corretamente continuava aguardando o lote. Os logs também mostraram saturação temporária do pool JDBC (`total=10`, `active=10`, dezenas de esperas), o que atrasava consultas e a reconciliação da fila, mas não era a causa do desaparecimento do pedido de PR.
-- Correção na causa observável: a chave do lote com PR pendente agora é persistida no `localStorage`, separada por perfil, restaurada ao montar a página e removida quando a intenção é consumida. Assim, recarregar a tela não converte silenciosamente o pedido pendente em estado inexistente.
-- Proteção: o cenário E2E do PR enfileirado agora recarrega a página e confirma que o botão continua exibindo `PR pendente`. Lint e build de produção passaram; a execução local do Playwright ficou limitada pela ausência do binário Chromium instalado no ambiente.
-
-## 2026-08-25 — Botão Pedir PR habilitado independentemente da paginação do histórico
-- Solicitação recebida: corrigir os momentos em que **Pedir PR** ainda aparecia desabilitado mesmo existindo um lote de trabalho aberto.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A disponibilidade do botão era calculada apenas com as 20 solicitações da primeira página do histórico. Em conversas maiores, a solicitação que carregava a chave do lote podia sair dessa janela; o frontend então concluía incorretamente que não havia lote aberto e desabilitava o botão. Persistir a intenção pendente corrigiu recargas, mas não corrigia essa descoberta incompleta do lote.
-- Correção na causa: o backend ganhou uma consulta específica e limitada para localizar o lote aberto mais recente por ambiente e perfil e devolver todas as solicitações desse lote. O frontend combina esse resultado com a página recente antes de calcular a disponibilidade do PR, sem ampliar a consulta geral nem reintroduzir pressão desnecessária no banco.
-- Resiliência e proteção: se o endpoint dedicado ainda não estiver disponível durante um deploy gradual, o histórico recente continua funcionando. O teste do serviço cobre um lote fora da página recente e o E2E passa a fornecer o lote exclusivamente pelo novo endpoint, com a página de histórico vazia.
-
-## 2026-08-25 — Diagnóstico de indisponibilidade parcial do AI Hub
-- Solicitação recebida: verificar se o AI Hub estava travado.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A página estática e o MCP continuavam respondendo, mas o backend esgotou integralmente o pool JDBC: `total=10`, `active=10`, `idle=0`, com aproximadamente 45–51 requisições aguardando e timeouts de 60 segundos. Por isso, chamadas da API ficavam sem resposta embora todos os containers aparecessem como `Up`.
-- Evidência operacional: `https://iahub.xyz/` respondeu HTTP 200 em 0,43 s e `https://iahub.xyz/mcp` respondeu HTTP 200 em 0,29 s; já `GET /api/codex/models` não recebeu byte algum e expirou em 30 s. Os logs do backend registraram repetidamente `SQLTransientConnectionException` e o reconciliador da fila também não conseguiu adquirir conexão.
-- Conclusão: indisponibilidade parcial confirmada no backend/API, causada imediatamente por saturação do pool de conexões, não por parada dos containers nem por falta de CPU ou memória. Nenhum restart ou alteração de produção foi executado durante o diagnóstico; é necessária investigação adicional das dez operações que retêm as conexões antes de definir uma correção permanente.
-
-## 2026-08-25 — Proteção do backend contra conexões MySQL sem resposta
-- Solicitação recebida: melhorar a correção após o diagnóstico inicial de indisponibilidade parcial.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** Um thread dump capturado durante a pane mostrou as conexões ativas bloqueadas em leitura do socket do MySQL (`NativeProtocol.sendCommand`), em consultas comuns do histórico, métricas, lote e detalhe. O primeiro erro havia sido `Connection reset`; como o driver não possuía `socketTimeout`, as substituições também podiam ficar esperando indefinidamente. As dez conexões eram então consumidas e as dezenas de chamadas seguintes apenas aguardavam o pool por 60 segundos. Aumentar o pool ou reiniciar o container trataria somente a consequência.
-- Correção na causa: o driver passa a limitar conexão a 5 segundos e leitura de socket/consulta a 30 segundos; a espera pelo pool cai para 10 segundos. Assim, uma conexão remota que deixa de responder é descartada em tempo finito e não consegue capturar permanentemente toda a API.
-- Contenção e observabilidade: `open-in-view` foi desabilitado para restringir conexões ao escopo transacional, conexões ocupadas por mais de 60 segundos passam a gerar diagnóstico de leak, e todos os limites podem ser ajustados por variáveis de ambiente sem nova imagem.
-
-## 2026-08-25 — Verificação do estado atual do AI Hub
-- Solicitação recebida: confirmar se o AI Hub estava travado.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** Nesta verificação não houve indisponibilidade total: site, MCP e API responderam HTTP 200, e todos os containers estavam `Up`. A lentidão percebida é compatível com atividade repetitiva no backend: o detalhe da solicitação 2402 estava sendo consultado aproximadamente a cada 5–6 segundos e repetia a sincronização com o sandbox enquanto ainda havia dados ausentes.
-- Evidência operacional às 22:28 UTC: a página respondeu em 0,49 s, o MCP em 4,99 s e `GET /api/codex/models` em 4,04 s. Os logs dos dez minutos anteriores não mostraram nova exceção de pool, mas mostraram várias threads atendendo a mesma atualização da solicitação 2402.
-- Conclusão: o serviço estava disponível no instante do teste, porém lento e sob polling/sincronização repetitiva. Nenhum restart ou ajuste de produção foi executado.
-- Esclarecimento posterior sobre o frontend: **sim, a atividade parte do frontend, mas não de deploy, hot reload ou atualização do código da aplicação**. Enquanto a tela de detalhe permanece aberta e o status não é terminal, `CodexRequestDetailPage` executa `GET /codex/requests/2402` a cada 5 segundos. Cada leitura entra em `CodexRequestService.find`; como a solicitação continua sem resposta e sem metadados de uso, o backend decide consultar novamente o sandbox. O limitador do backend também é de 5 segundos, portanto ele não reduz esse ciclo específico. Se uma leitura durar mais que o intervalo, o `setInterval` atual ainda pode iniciar outra chamada antes da anterior terminar. Assim, uma aba aberta explica diretamente a cadência observada; várias abas ou usuários multiplicam a carga. Esta rodada apenas confirmou a causa no código, sem implementar mudança de comportamento não solicitada.
-
-## 2026-08-25 — Redução do polling na tela de detalhe
-- Solicitação recebida: aumentar o intervalo de atualização do detalhe para obter mais performance.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** O custo não vinha apenas do valor de 5 segundos: o `setInterval` iniciava chamadas pelo relógio, mesmo se a anterior ainda estivesse em andamento, e continuava consultando com a aba oculta. Como a leitura do detalhe pode sincronizar o sandbox, chamadas concorrentes e abas inativas amplificavam desnecessariamente a carga.
-- Correção na causa: o intervalo passou de 5 para 15 segundos e agora a próxima leitura só é agendada depois que a anterior termina. O polling não faz chamada de rede enquanto o documento estiver oculto e continua sendo encerrado quando a solicitação atinge estado terminal ou a tela é desmontada.
-- Impacto esperado: cada aba visível reduz em aproximadamente 67% a frequência máxima de consultas do detalhe, sem sobreposição, aceitando até 15 segundos para refletir automaticamente uma mudança de estado. A atualização manual permanece disponível para quem precisar de resposta imediata.
-
-## 2026-08-25 — Restauração da lista de últimas execuções do ChatGPT
-- Solicitação recebida: investigar por que a lista de solicitações passou a exibir somente a execução pertencente ao lote aberto.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** Ao adicionar a consulta dedicada do lote aberto, o frontend reutilizou uma função que atualiza uma lista existente somente pelos itens da lista nova. Essa função possui semântica de substituição, não de união; portanto, ao receber a página recente e depois o lote aberto, descartava todas as execuções recentes que não faziam parte do lote. Uma segunda atualização com detalhes também reconstruía a lista apenas a partir da página recente e podia descartar itens adicionais do lote.
-- Correção na causa: as duas fontes agora são combinadas explicitamente, preservando a ordem da página recente, mesclando registros repetidos pelo identificador e acrescentando apenas os itens exclusivos do lote aberto. A atualização de detalhes passa a operar sobre o resultado combinado.
-- Proteção contra regressão: o cenário E2E do lote aberto agora fornece simultaneamente uma execução recente fora do lote e duas execuções do lote, e exige que as três permaneçam visíveis.
-
-## 2026-08-25 — Verificação de nova suspeita de queda do AI Hub
-- Solicitação recebida: confirmar se o AI Hub havia caído.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** No momento da verificação o serviço não estava caído, mas havia evidência de degradação recente: o backend registrou `Connection reset` durante consulta ao MySQL às 23:42 UTC, falha também no rollback JDBC e, nos minutos seguintes, dezenas de `SocketTimeoutException` ao escrever respostas HTTP. Isso explica telas ou chamadas que aparentaram queda mesmo com os containers ativos.
-- Evidência atual às 23:49 UTC: página, MCP, catálogo de modelos e histórico responderam HTTP 200; três amostras consecutivas do histórico responderam em 1,71 s, 1,77 s e 2,03 s. Todos os containers estavam `Up`, e backend, frontend e Caddy tinham zero reinicializações desde o início às 23:22 UTC.
-- Conclusão: não havia queda total no instante do diagnóstico. Houve indisponibilidade/lentidão transitória associada à conexão remota com o MySQL e respostas que expiraram no cliente. Nenhum restart, deploy ou alteração operacional foi executado; o serviço se recuperou, mas os timeouts recentes indicam que a estabilidade do banco ainda deve ser acompanhada.
-
-## 2026-08-26 — Redução da carga periódica do ChatGPT sobre o backend
-- Solicitação recebida: medir o desempenho atual do AI Hub e identificar melhoria possível.
-- Pergunta explícita de causa raiz: **“por que o desempenho ainda degrada?”** A página ChatGPT consultava a cada cinco segundos não apenas o estado das solicitações, que precisa de atualização rápida, mas também conta e métricas. Em produção, o endpoint de métricas MKT demorou aproximadamente 2,8–3,0 segundos, transferiu 114 KB e percorreu dados históricos; cada aba aberta repetia essa consulta 12 vezes por minuto. Os logs ainda mostravam timeouts de leitura do MySQL e respostas HTTP abandonadas, embora CPU e memória do backend estivessem baixas. Portanto, aumentar recursos trataria a consequência; a carga periódica desnecessária era uma causa controlável na aplicação.
-- Correção na causa: o estado das solicitações continua sendo atualizado a cada cinco segundos, mas conta e métricas passam a atualizar a cada 60 segundos. Ambos os ciclos agora aguardam a chamada anterior terminar antes de agendar a próxima e não fazem rede com a aba oculta.
-- Impacto esperado: por aba visível, as consultas de métricas e conta caem de 12 para uma por minuto (redução de aproximadamente 92%), sem aumentar o atraso de atualização do estado das execuções. A melhoria reduz concorrência no MySQL e tráfego, preservando a atualização inicial no bootstrap.
-## 2026-08-26 01:20 UTC — Correção do erro 500 em Saúde do sistema
-
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O endpoint de diagnóstico carregava todas as entidades de `codex_requests`, incluindo diversas colunas `LONGTEXT`, para só depois filtrar em memória as 25 solicitações pendentes. Com o crescimento da tabela, essa consulta ultrapassou o timeout JDBC e o backend respondeu `500 Internal Server Error`.
-- A consulta da fila foi substituída por uma projeção que seleciona apenas `id`, `profile` e `createdAt`, filtra `PENDING` e limita a 25 registros diretamente no banco.
-- Adicionado índice composto por `(status, created_at DESC)` nas migrações H2, MySQL e PostgreSQL para sustentar o filtro e a ordenação sem varrer toda a tabela.
-
-## 2026-08-26 03:10 UTC — Redução do polling recorrente de solicitações Codex
-
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A tela ChatGPT fazia polling do detalhe a cada 5 segundos e o backend aceitava nova sincronização com o sandbox no mesmo intervalo. Assim, cada ciclo atravessava frontend, backend e sandbox; solicitações antigas com resposta/metadados ausentes, como a 2408, continuavam nesse ritmo indefinidamente, e abas adicionais podiam amplificar as chamadas.
-- O polling de solicitações ativas passou de 5 para 15 segundos. Quando todas as solicitações pendentes da conversa têm mais de uma hora, o frontend reduz automaticamente para uma consulta por minuto.
-- O backend agora aplica a contenção central entre abas: sincronizações de detalhes recentes têm intervalo mínimo de 15 segundos, enquanto solicitações com mais de uma hora só podem provocar nova consulta ao sandbox uma vez por minuto.
-
-## 2026-08-26 03:25 UTC — Monitoramento de jobs sem progresso
-
-- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A tela de saúde mostrava apenas identificador, perfil e status do job; portanto, um job `RUNNING` sem avanço de tokens/interações era visualmente indistinguível de uma execução saudável.
-- O endpoint de manutenção do sandbox passou a retornar um resumo leve por job, sem o payload completo, com duração, tempo desde a última atualização, modelo, tokens de entrada/cache/saída/total, interações, timeouts e última linha de atividade.
-- Jobs sem atualização por dez minutos recebem o alerta `NO_PROGRESS`; jobs em execução por duas horas recebem `LONG_RUNNING`. A tela administrativa destaca esses alertas e apresenta os indicadores necessários para decidir entre aguardar, cancelar ou forçar encerramento.
-
-## 2026-08-28 — Desbloqueio de novo PR após publicação de lote anterior
-
-- Solicitação recebida: investigar por que o botão continuava em **PR pendente** depois de o PR anterior já ter sido executado e de novas alterações terem se acumulado.
-- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A intenção pendente persistia somente o nome da branch usado como chave do lote. Essa branch é deliberadamente reutilizada em lotes posteriores; se o PR fosse concluído enquanto a página estava fechada, a chave antiga do `localStorage` coincidia com a chave do lote novo e o frontend atribuía incorretamente a intenção já consumida às novas solicitações, mantendo o botão bloqueado.
-- Correção na causa: a intenção persistida agora inclui uma solicitação âncora da geração concreta do lote. O estado só é considerado pendente se essa solicitação ainda fizer parte do lote aberto; registros legados sem identidade de geração são descartados, e a intenção também é removida ao encontrar ou criar o PR.
-- Proteção contra regressão: o E2E preserva o pedido após uma recarga enquanto a âncora ainda existe e confirma que uma intenção de geração anterior, embora tenha a mesma branch, não bloqueia o novo lote.
+## 2026-08-08 — Homologação produtiva do Orquestrador de Agentes do Marketing Hub
+
+- Confirmado no GitHub que o Orquestrador v1 está no `main` do `paulofor/marketing-hub`, incorporado pelo merge do PR 4792, com workflows de backend e deploy concluídos com sucesso.
+- Identificado que `iahub.xyz` é o AI Hub e não a origem da API do Marketing Hub; a API produtiva correta foi validada em `http://191.252.181.168`.
+- Sincronizado pela API o primeiro caso real do plano comercial 2: caso 1, experimento 85, Estrategista 4 e Operador 85 reconhecidos como `COMPLETED`.
+- O estado consolidado ficou `WAITING_FOR_AGENTS`, com o gate factual `adSpecialistState=REQUIRED` para o criativo 261 e exigência de aprovação humana preservada.
+- Uma segunda sincronização reutilizou o caso 1, comprovando idempotência e ausência de duplicidade; nenhuma campanha, gasto ou publicação foi acionada.
+
+## 2026-08-08 — Homologação produtiva do parecer do Agente Aprovador nos criativos
+
+- Solicitação: após o deploy do complemento, validar pela tela um criativo aprovado e outro reprovado antes de qualquer retomada da mídia.
+- Gargalo declarado: visibilidade confiável do gate técnico; critério esperado de 100% de correspondência entre o parecer persistido e o estado exibido, mantendo publicação bloqueada para reprovação.
+- Pergunta explícita de causa raiz: “por que os estados aprovado e reprovado ainda não podem ser homologados com dados reais?” Resposta: o complemento está publicado e o contrato da API expõe os campos de parecer, mas os criativos existentes são legados e nenhum parecer do agente foi persistido em produção; uma varredura dos 79 experimentos encontrou zero criativos com `agentReviewStatus` preenchido.
+- Evidência do experimento 85: os criativos 259, 260 e 261 retornam `agentReviewStatus=null`; a interface mostra os três como `Agente: legado sem análise` em desktop e emulação de iPhone 15 Pro, sem erro visual.
+- Proteção comercial preservada: experimento 85 permanece `PAUSED`; nenhuma campanha, orçamento, criativo ou parecer foi alterado. Não foi injetado resultado artificial no endpoint interno do worker.
+- Pendência factual: submeter criativos reais ao Agente Aprovador e aguardar decisões auditáveis para então repetir a homologação dos estados `APPROVED` e `REJECTED` pela tela.
+
+## 2026-08-12 — Análise das 20 solicitações mais recentes e recorrência sem conclusão
+
+- Solicitação recebida: analisar as 20 solicitações MKT mais recentes e explicar por que alguns pedidos se repetem sem alcançar o objetivo.
+- Fonte analisada: listagem pública `GET /api/codex/requests?page=0&size=20&profile=CHATGPT_CODEX_MKT` e detalhes das solicitações 1882 a 1900; a solicitação 1901 era a análise corrente e ainda estava em execução.
+- Evidência: 10 das 19 solicitações anteriores (1888 a 1897) permaneceram concentradas na tentativa de deixar o experimento 88 pronto, alternando correção local, espera de PR/deploy, nova homologação e descoberta do bloqueio seguinte. Três respostas foram explicitamente etapas de espera/retomada de deploy (1890, 1892 e 1894), e a solicitação 1900 repetiu o comando da 1896 embora o PR 4881 ainda estivesse aberto.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o sistema trata cada mensagem como uma execução autônoma e mede conclusão da execução, não conclusão do objetivo. Não há um caso persistente com critério de aceite, estado factual, dependências, próximo responsável e bloqueio externo; por isso “corrigido localmente”, “mergeado”, “deployado” e “homologado” são confundidos como conclusões intercambiáveis. A ausência de eventos comerciais reforça o problema: o plano Agenda Cheia continua com `receivedEvents=0`, então atividade técnica não comprova avanço de vendas.
+- Alternativas avaliadas: (1) reforçar apenas o prompt para o modelo não repetir, baixo esforço, mas sem memória transacional e sujeito a regressão; (2) impedir textos semelhantes por deduplicação semântica, reduz ruído, mas pode bloquear uma retomada legítima depois de mudança externa; (3) criar um objetivo/caso operacional persistente, associar solicitações ao mesmo caso e permitir nova execução somente quando houver mudança factual, ação executável ou intervenção humana necessária. Escolhida a alternativa 3, usando deduplicação como proteção complementar.
+- Recomendação: manter uma única ficha do objetivo com definição de pronto, checklist ponta a ponta, evidências, estado `EXECUTABLE`, `WAITING_EXTERNAL`, `NEEDS_HUMAN`, `ACHIEVED` ou `STOPPED`, fingerprint do bloqueio e próxima verificação. Pedidos repetidos sem mudança factual devem atualizar a ficha, não abrir novo trabalho; correções causalmente relacionadas permanecem no mesmo lote e só geram um PR após validação local completa.
+- Métricas propostas: taxa de objetivos concluídos, número de solicitações por objetivo, reaberturas sem mudança factual, tempo parado por dependência, defeitos descobertos após deploy e conversão/eventos reais. Meta inicial: zero execução duplicada sobre o mesmo fingerprint de bloqueio e redução de pelo menos 50% nas solicitações por objetivo, sem reduzir a cobertura da homologação.
+- Nenhum PR, deploy, gasto ou publicação foi realizado.
+
+## 2026-08-29 — Viabilidade da operação auditada sugerida na solicitação 2499
+
+- Solicitação recebida: ler a solicitação 2499 e avaliar se é possível atender à sugestão de disponibilizar uma operação MCP auditada para recuperar temporariamente o proxy HTTPS público sem acesso SSH direto do modelo.
+- Gargalo comercial preservado: `INSTRUMENTACAO`, ainda com zero eventos reais na fonte de verdade recebida. A avaliação não tratou solicitação, PR ou disponibilidade estimada como venda.
+- Evidência da solicitação: a execução 2499 concluiu que a tarefa Psique 259 falhou com `ERR_CONNECTION_REFUSED`, registrou a correção permanente no PR `paulofor/marketing-hub#5055` e sugeriu uma operação MCP de recuperação temporária enquanto a correção aguarda publicação. O PR estava aberto, com os checks retornados pelo GitHub concluídos com sucesso, no momento desta leitura.
+- Evidência operacional atual: `https://kit-whatsapp-pronto.digicomdigital.com.br/` e `/healthz` continuavam sem aceitar conexão na porta 443. O DNS do Kit resolvia para `163.245.200.7`, enquanto `iahub.xyz` e seu MCP resolviam para `163.245.203.201`; o Docker consultado pelo MCP continha somente a topologia do AI Hub, portanto o executor atual não alcança o daemon que possui o proxy do Kit.
+- Pergunta explícita de causa raiz: “por que a sugestão da 2499 não pode ser atendida com segurança pelo MCP atual?”. Resposta: o MCP foi construído como executor Linux genérico e local, não como plano de controle semântico multi-host. `LinuxCommandService` executa texto livre com `/bin/bash -lc`, o bearer é opcional e falha aberto quando `MCP_SERVER_API_TOKEN` está vazio, não existe allowlist de operação/serviço, nem idempotência, confirmação, rate limit ou auditoria estruturada. Uma chamada remota de leitura sem bearer foi aceita em produção, confirmando que usar diretamente `/mcp/tools/linux-command` ampliaria o risco em vez de resolver a causa.
+- Alternativas avaliadas: (1) reutilizar diretamente `linux-command`, com esforço mínimo, porém risco crítico e sem alcance ao host-alvo; descartada; (2) instalar um novo agente/MCP no VPS do Kit, com execução direta, porém maior superfície exposta, novas credenciais e manutenção; mantida como opção futura; (3) criar uma operação semântica e autenticada no AI Hub que despache um workflow GitHub dedicado no `marketing-hub`, usando as credenciais de deploy já protegidas no Actions e registrando solicitação, aprovação, execução e resultado; escolhida por menor privilégio e melhor rastreabilidade.
+- Desenho recomendado: primeiro tornar as tools MCP fail-closed e retirar o shell genérico do caminho público de produção; depois expor somente `recover-public-proxy` com projeto/serviço fixos, `requestId`, motivo, confirmação explícita, chave de idempotência, concorrência unitária e cooldown. O workflow dedicado deve apenas localizar o proxy por labels Compose, iniciar/recriar somente esse serviço sem build, pull, rsync, prune ou publicação de código, coletar estado/logs limitados e exigir sucesso das sondas HTTPS, `/healthz` e contrato PDE. O `GithubApiClient` existente já possui `dispatchWorkflow`, reduzindo o esforço da integração.
+- Critério proposto: continuar quando a operação for autenticada, auditada e recuperar as três sondas sem tocar outros serviços; ajustar diante de falha de correlação, healthcheck ou idempotência; interromper automaticamente diante de alvo fora da allowlist, ausência de confirmação, conflito de execução, risco de segredo ou falha pós-recuperação.
+- Validação local: `mvn -q -f apps/mcp-server/pom.xml test` passou e confirmou também, pelo teste atual, que o endpoint sem token foi projetado para aceitar comandos. Nenhuma recuperação, workflow, PR, deploy, publicação ou gasto foi executado nesta análise.
+
+## 2026-08-29 — Implementação coordenada da recuperação semântica do proxy público
+
+- Solicitação recebida: executar localmente a orientação da solicitação 2499 nos repositórios AI Hub e Marketing Hub, deixando a solução integralmente testada nas worktrees e sem criar PR ou publicar.
+- Gargalo real declarado antes da execução: operação segura da borda pública, subordinada ao gargalo comercial vigente `INSTRUMENTACAO`, cuja fonte de verdade continuava com zero eventos. Evidência: tarefa Psique 259 bloqueada por `ERR_CONNECTION_REFUSED`, hosts distintos para AI Hub e proxy do Kit e shell MCP sem identidade semântica. Métrica esperada: um único despacho autenticado e auditável, com estado final positivo somente depois de HTTPS, `/healthz` e contrato PDE. Critério: continuar com idempotência e duas rodadas completas; ajustar diante de ambiguidade ou sonda parcial; parar diante de shell público, alvo livre ou publicação de código.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: uma recuperação multi-host estava sendo tratada como comando Linux local e genérico. O executor roda no host do AI Hub, não no daemon do proxy, e não oferecia alvo fechado, idempotência, cooldown, auditoria nem prova de resultado. Além disso, o proxy havia preservado o estado parado após reboot por causa da política histórica `unless-stopped`.
+- Alternativas avaliadas: (1) reutilizar `linux-command`, simples porém sem alcance e com autoridade crítica; descartada; (2) conceder GitHub ou instalar outro MCP diretamente na borda, reduzindo saltos porém duplicando credenciais e superfície; descartada nesta fase; (3) MCP semântico no AI Hub, persistência/auditoria no backend e workflow restrito no Marketing Hub; escolhida por menor privilégio, alvo versionado e rastreabilidade ponta a ponta.
+- AI Hub implementado: bearer obrigatório e fail-closed para todas as tools; shell bloqueado no Caddy público por prefixo e preservado somente na rede interna autenticada; remoção do bind mount que poderia sobrepor o `Caddyfile` versionado; DTO fechado que rejeita campos extras; operação `recover-public-proxy`; idempotência por UUID, conflito de motivo, cooldown, auditoria, estados persistidos e acompanhamento da execução GitHub; migrations Flyway H2/MySQL/PostgreSQL; configuração desabilitada por padrão e habilitação explícita no deploy oficial; testes de controllers, GitHub, migrations, superfície Caddy e falhas fechadas.
+- Marketing Hub implementado: cânone v1; workflow manual de nome correlacionável, concorrência unitária e ambiente `production`; host, usuário, diretório, projeto, serviço, rede, imagem e probes fixos; SSH com `known_hosts`; preflight; script que só inicia/reinicia o proxy conhecido ou o recria da imagem local com `--no-build --pull never`; validação do image ID; política `restart=always`; bloqueio de múltiplos alvos, imagem divergente e health inválido; logs limitados e sanitizados; três probes públicos obrigatórios; contratos e E2E adicionados ao CI do módulo.
+- Correções iterativas guiadas pela causa: propriedades de configuração deixaram de ser registradas como componente duplicado; dependência de MockWebServer e configuração de teste foram completadas; fixtures Docker deixaram de usar bind incompatível com o daemon isolado; probes passaram a rodar dentro da topologia quando a porta publicada não era acessível pelo host; a sobreposição remota do `Caddyfile` foi eliminada; o teste Flyway foi alinhado à API efetiva; campos desconhecidos passaram a ser rejeitados; o coletor de `404` deixou de depender de arquivo de corpo inexistente; a asserção de falha de health passou a medir `!= healthy`; sanitização passou a cobrir header, JSON e query string. `shellcheck` não estava instalado, então a sintaxe foi validada com `bash -n`, contratos estáticos e execução real dos scripts.
+- Homologação final: depois da última correção foram executadas duas rodadas locais completas e consecutivas, ambas sem falhas. Em cada rodada passaram 125 testes do backend AI Hub, 9 do MCP Server, 39 do Lead Portal Payments, `actionlint`, `bash -n`, contratos de arquitetura, Compose config, `git diff --check`, migrations H2/MySQL 5.7/PostgreSQL, borda Caddy real, crash/restart do proxy e recuperação com proxy parado, imagem divergente, health inválido, container ausente e três probes.
+- Segregação e limpeza: todos os cenários Docker usaram exclusivamente o projeto `aihub-f3beba86-6e86-438e-9f49-8366727ec8a4-3960973722`; ao final restaram zero containers, zero volumes e zero redes com essa identidade.
+- Estado externo preservado: nenhum workflow remoto foi disparado, nenhuma recuperação produtiva foi executada, nenhum PR, commit, push, deploy, publicação, gasto, evento comercial ou venda foi criado.
