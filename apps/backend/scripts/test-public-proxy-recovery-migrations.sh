@@ -3,8 +3,8 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 compose_file="${repo_dir}/apps/backend/tests/public-proxy-recovery-migrations/docker-compose.yml"
-mysql_migration="${repo_dir}/apps/backend/src/main/resources/db/migration/mysql/V44__create_public_proxy_recoveries.sql"
-postgres_migration="${repo_dir}/apps/backend/src/main/resources/db/migration/postgresql/V44__create_public_proxy_recoveries.sql"
+mysql_migration="${repo_dir}/apps/backend/src/main/resources/db/migration/mysql/V46__create_public_proxy_recoveries.sql"
+postgres_migration="${repo_dir}/apps/backend/src/main/resources/db/migration/postgresql/V46__create_public_proxy_recoveries.sql"
 project="${PUBLIC_PROXY_MIGRATIONS_COMPOSE_PROJECT:-ai-hub-public-proxy-migrations-test}"
 
 compose() {
