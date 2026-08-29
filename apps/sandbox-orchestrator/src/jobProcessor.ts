@@ -80,7 +80,19 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 
 const exec = promisify(execCallback);
 
-export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
+export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
+export const DEFAULT_CODEX_TRANSIENT_TURN_MAX_ATTEMPTS = 2;
+export const DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS = 5_000;
+export const DEFAULT_DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS = 120_000;
+
+export function dockerHomologationProjectName(jobId: string): string {
+  const normalized = jobId.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'job';
+  const suffix = createHash('sha256').update(jobId).digest('hex').slice(0, 10);
+  return `aihub-${normalized.slice(0, 40)}-${suffix}`;
+}
 
 const ECO_TWO_LOOP_GUARDED_TOOLS = new Set(['run_shell', 'http_get', 'WebSearch', 'db_query']);
 const IMAGE_TOOL_ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -345,7 +357,15 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly codexAppServerClient?: CodexAppServerClient;
   private readonly codexTurnTimeoutMs: number;
   private readonly codexTurnNoActivityTimeoutMs: number;
+  private readonly codexTurnActiveItemTimeoutMs: number;
+  private readonly codexReasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
+  private readonly codexTransientTurnMaxAttempts: number;
+  private readonly codexTransientTurnRetryDelayMs: number;
+  private readonly dockerHomologationCleanupEnabled: boolean;
+  private readonly dockerHomologationCleanupTimeoutMs: number;
+  private activeJobs = 0;
+  private dockerCleanupPromise?: Promise<void>;
 
   constructor(
     apiKey?: string,
@@ -363,8 +383,29 @@ export class SandboxJobProcessor implements JobProcessor {
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
     this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, DEFAULT_CODEX_TURN_TIMEOUT_MS);
-    this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS, 15 * 60 * 1000);
+    this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(
+      process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS,
+      DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
+    );
+    this.codexTurnActiveItemTimeoutMs = this.parsePositiveInteger(
+      process.env.CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS,
+      DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
+    );
+    this.codexReasoningEffort = this.resolveCodexReasoningEffort(process.env.CODEX_APP_SERVER_REASONING_EFFORT);
     this.codexAppServerSandboxMode = this.resolveCodexAppServerSandboxMode(process.env.CODEX_APP_SERVER_SANDBOX_MODE);
+    this.codexTransientTurnMaxAttempts = this.parsePositiveInteger(
+      process.env.CODEX_APP_SERVER_TRANSIENT_TURN_MAX_ATTEMPTS,
+      DEFAULT_CODEX_TRANSIENT_TURN_MAX_ATTEMPTS,
+    );
+    this.codexTransientTurnRetryDelayMs = this.parseNonNegativeInteger(
+      process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS,
+      DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS,
+    );
+    this.dockerHomologationCleanupEnabled = (process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED ?? 'true').toLowerCase() === 'true';
+    this.dockerHomologationCleanupTimeoutMs = this.parsePositiveInteger(
+      process.env.DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS,
+      DEFAULT_DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS,
+    );
     this.githubApiBase = process.env.GITHUB_API_URL ?? 'https://api.github.com';
     this.maxTaskDescriptionChars = this.parsePositiveInteger(process.env.TASK_DESCRIPTION_MAX_CHARS, 12_000);
     this.toolOutputStringLimit = this.parsePositiveInteger(process.env.TOOL_OUTPUT_STRING_LIMIT, 12_000);
@@ -692,6 +733,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   async process(job: SandboxJob): Promise<void> {
+    if (this.dockerCleanupPromise) await this.dockerCleanupPromise;
     if (job.cancelRequested) {
       const now = new Date().toISOString();
       job.status = 'CANCELLED';
@@ -723,6 +765,7 @@ export class SandboxJobProcessor implements JobProcessor {
     let workspace: string | undefined;
     let repoPath: string | undefined;
 
+    this.activeJobs += 1;
     try {
       this.ensureNotCancelled(job);
       workspace = await this.prepareWorkspace(job);
@@ -833,6 +876,14 @@ export class SandboxJobProcessor implements JobProcessor {
       }
     } finally {
       this.logContextKpis(job);
+      this.activeJobs = Math.max(0, this.activeJobs - 1);
+      const dockerCleanup = this.cleanupDockerHomologation(job, this.activeJobs === 0);
+      this.dockerCleanupPromise = dockerCleanup;
+      try {
+        await dockerCleanup;
+      } finally {
+        if (this.dockerCleanupPromise === dockerCleanup) this.dockerCleanupPromise = undefined;
+      }
       if (workspace) {
         this.log(job, `limpando workspace ${workspace}`);
         await this.cleanup(workspace);
@@ -989,6 +1040,32 @@ export class SandboxJobProcessor implements JobProcessor {
       await fs.rm(workspace, { recursive: true, force: true });
     } catch (err) {
       // noop
+    }
+  }
+
+  private async cleanupDockerHomologation(job: SandboxJob, pruneUnusedVolumes: boolean): Promise<void> {
+    if (!this.dockerHomologationCleanupEnabled || !process.env.DOCKER_HOST?.trim()) return;
+
+    const project = dockerHomologationProjectName(job.jobId);
+    const projectFilter = `label=com.docker.compose.project=${project}`;
+    const commands = [
+      `ids=$(docker ps -aq --filter ${projectFilter}); [ -z "$ids" ] || docker rm -f $ids`,
+      `ids=$(docker network ls -q --filter ${projectFilter}); [ -z "$ids" ] || docker network rm $ids`,
+      `ids=$(docker volume ls -q --filter ${projectFilter}); [ -z "$ids" ] || docker volume rm -f $ids`,
+    ];
+    if (pruneUnusedVolumes) commands.push('docker volume prune --force');
+
+    try {
+      const { stdout } = await exec(commands.join(' && '), {
+        env: process.env,
+        timeout: this.dockerHomologationCleanupTimeoutMs,
+        maxBuffer: 1024 * 1024,
+      });
+      const summary = stdout.trim().replace(/\s+/g, ' ');
+      this.log(job, `limpeza Docker da homologação concluída project=${project}${summary ? ` (${this.truncate(summary, 300)})` : ''}`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.log(job, `limpeza Docker da homologação não concluída project=${project}: ${this.truncate(reason, 300)}`);
     }
   }
 
@@ -1228,6 +1305,7 @@ export class SandboxJobProcessor implements JobProcessor {
     let streamingAgentMessage = '';
     let firstEventAt: number | undefined;
     let lastActivityAt: number | undefined;
+    const activeCommandItemIds = new Set<string>();
     const recordedCodexDocumentAccessKeys = new Set<string>();
     const markActivity = (): void => {
       const now = Date.now();
@@ -1246,6 +1324,10 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       client.onNotification('item/completed', (params) => {
         markActivity();
+        const item = this.extractCodexItemIdentity(params);
+        if (item?.id) {
+          activeCommandItemIds.delete(item.id);
+        }
         this.addCodexAppServerUsageMetrics(job, params);
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         const text = this.extractCodexAgentMessageText(params);
@@ -1258,6 +1340,10 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       client.onNotification('item/started', (params) => {
         markActivity();
+        const item = this.extractCodexItemIdentity(params);
+        if (item?.id && ['commandExecution', 'command_execution'].includes(item.type ?? '')) {
+          activeCommandItemIds.add(item.id);
+        }
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
@@ -1275,7 +1361,8 @@ export class SandboxJobProcessor implements JobProcessor {
           this.recordInteraction(job, 'INBOUND', text);
         }
         if (status && !['completed', 'succeeded', 'success', 'ok'].includes(status)) {
-          failedReason = `CODEX_TURN_FAILED: ${status}`;
+          const detail = this.extractCodexErrorMessage(params);
+          failedReason = `CODEX_TURN_FAILED: ${status}${detail ? `: ${detail}` : ''}`;
         }
         completed = true;
       }),
@@ -1287,33 +1374,68 @@ export class SandboxJobProcessor implements JobProcessor {
     ];
 
     try {
-      const turnParams = {
-        threadId,
-        input: this.buildCodexAppServerInput(job),
-      };
-      this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
-      const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
-      const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
-      this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId}`);
-      const immediateStatus = this.extractCodexStatus(turn);
-      const immediateText = this.extractCodexText(turn);
-      this.addCodexAppServerUsageMetrics(job, turn);
-      if (immediateText) {
-        summary = immediateText;
+      for (let attempt = 1; attempt <= this.codexTransientTurnMaxAttempts; attempt += 1) {
+        completed = false;
+        failedReason = undefined;
+        activeCommandItemIds.clear();
+        if (attempt > 1) {
+          finalAgentMessage = '';
+          summary = '';
+          streamingAgentMessage = '';
+        }
+        const turnParams = {
+          threadId,
+          input: attempt === 1
+            ? this.buildCodexAppServerInput(job)
+            : [{
+                type: 'text',
+                text: 'A tentativa anterior foi encerrada por uma falha transitória de conexão. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.',
+              }],
+          effort: job.reasoningEffort ?? this.codexReasoningEffort,
+        };
+        this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
+        const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
+        const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
+        this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}/${this.codexTransientTurnMaxAttempts}`);
+        const immediateStatus = this.extractCodexStatus(turn);
+        const immediateText = this.extractCodexText(turn);
+        this.addCodexAppServerUsageMetrics(job, turn);
+        if (immediateText) summary = immediateText;
+        if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) completed = true;
+
+        try {
+          await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt, () => activeCommandItemIds.size > 0);
+          if (failedReason) throw new Error(failedReason);
+          const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
+          this.log(job, `Codex App Server turn/completed recebido threadId=${threadId} turnId=${turnId}${firstEventMs !== undefined ? ` firstEventMs=${firstEventMs}` : ''}`);
+          return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          if (attempt >= this.codexTransientTurnMaxAttempts || !this.isRetryableCodexTurnFailure(reason)) throw err;
+          this.log(job, `falha transitória no turno Codex (${reason}); retomando a mesma thread em ${this.codexTransientTurnRetryDelayMs}ms`);
+          await this.sleep(this.codexTransientTurnRetryDelayMs);
+        }
       }
-      if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) {
-        completed = true;
-      }
-      await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt);
-      if (failedReason) {
-        throw new Error(failedReason);
-      }
-      const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
-      this.log(job, `Codex App Server turn/completed recebido threadId=${threadId} turnId=${turnId}${firstEventMs !== undefined ? ` firstEventMs=${firstEventMs}` : ''}`);
-      return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
+      throw new Error('CODEX_TURN_FAILED: tentativas transitórias esgotadas');
     } finally {
       unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
+      try {
+        await client.request('thread/archive', { threadId });
+        this.log(job, `Codex App Server thread/archive concluído threadId=${threadId}`);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.log(job, `Codex App Server thread/archive falhou threadId=${threadId}: ${reason}`);
+      }
     }
+  }
+
+  private isRetryableCodexTurnFailure(reason: string): boolean {
+    const normalized = reason.toLowerCase();
+    if (normalized === 'codex_turn_failed: failed') return true;
+    return [
+      'connection', 'conexão', 'connect', 'reconnect', 'network', 'socket', 'stream disconnected',
+      'transport', 'econnreset', 'etimedout', 'eai_again', 'temporarily unavailable',
+    ].some((fragment) => normalized.includes(fragment));
   }
 
 
@@ -1338,19 +1460,24 @@ export class SandboxJobProcessor implements JobProcessor {
 
   private buildExternalApiKeysInstruction(): string {
     const availableKeys = [
+      process.env.BRAVE_API_KEY?.trim() ? 'BRAVE_API_KEY' : undefined,
       process.env.LUMA_API_KEY?.trim() ? 'LUMA_API_KEY' : undefined,
       process.env.KLING_API_KEY?.trim() ? 'KLING_API_KEY' : undefined,
       process.env.HEYGEN_API_KEY?.trim() ? 'HEYGEN_API_KEY' : undefined,
       process.env.RADAR_META_TOKEN?.trim() ? 'RADAR_META_TOKEN' : undefined,
       process.env.META_TOKEN?.trim() ? 'META_TOKEN' : undefined,
     ].filter(Boolean);
+    const braveInstruction = process.env.BRAVE_API_KEY?.trim()
+      ? 'Para pesquisas na web, voce pode usar a Brave Search API com BRAVE_API_KEY no header X-Subscription-Token; nunca exponha o token na linha de comando, em logs, respostas ou arquivos.'
+      : 'A Brave Search API pode ser disponibilizada via BRAVE_API_KEY.';
     return availableKeys.length > 0
-      ? `As seguintes credenciais de APIs externas estao exportadas no ambiente para uso por comandos do modelo: ${availableKeys.join(', ')}. Nunca imprima esses valores em logs, respostas ou arquivos.`
-      : 'Credenciais Luma/Kling/HeyGen/Radar Meta/Meta podem ser disponibilizadas via LUMA_API_KEY, KLING_API_KEY, HEYGEN_API_KEY, RADAR_META_TOKEN e META_TOKEN; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.';
+      ? `As seguintes credenciais de APIs externas estao exportadas no ambiente para uso por comandos do modelo: ${availableKeys.join(', ')}. ${braveInstruction} Nunca imprima esses valores em logs, respostas ou arquivos.`
+      : `${braveInstruction} Credenciais Luma/Kling/HeyGen/Radar Meta/Meta podem ser disponibilizadas via LUMA_API_KEY, KLING_API_KEY, HEYGEN_API_KEY, RADAR_META_TOKEN e META_TOKEN; se precisar dessas APIs e as variaveis nao estiverem presentes, pare e relate a ausencia sem inventar valores.`;
   }
 
-  private buildDockerCliInstruction(): string {
-    return 'O Docker CLI e o plugin Docker Compose v2 estão disponíveis para o modelo pelos comandos docker e docker compose; use docker compose preferencialmente a docker-compose, e valide a engine com docker version/docker compose version antes de depender de containers.';
+  private buildDockerCliInstruction(job: SandboxJob): string {
+    const project = dockerHomologationProjectName(job.jobId);
+    return `O Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis para homologações locais pelos comandos docker e docker compose. Essa engine é isolada do daemon que executa os serviços de produção: use docker compose preferencialmente a docker-compose, valide a engine com docker version/docker compose version antes de depender de containers e use obrigatoriamente o projeto Compose exclusivo ${project} (docker compose -p ${project} ...). Não use host network, containers privilegiados, sockets Docker ou bind mounts fora do workspace. Ao terminar, remova a topologia temporária com docker compose -p ${project} down --volumes --remove-orphans. O orquestrador também remove recursos com esse rótulo quando o job termina e, quando não há outro job ativo, elimina volumes não utilizados da engine efêmera.`;
   }
 
   private buildLiquibaseMysql57RunnerInstruction(): string {
@@ -1378,7 +1505,7 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildLocalValidationBeforePublicationInstruction(): string {
-    return 'Regra obrigatória para todos os perfis: quando a tarefa envolver código, faça toda a investigação, implementação, execução de testes e ajustes iterativos primeiro no ambiente local da sandbox. Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste e não envie uma correção parcial ao repositório para descobrir o próximo erro no ambiente publicado. Antes de qualquer commit ou publicação, valide localmente a solução completa com os testes relevantes, revise o diff e confirme que os critérios da solicitação foram atendidos; somente então consolide a entrega em uma única publicação. Para produto ou fluxo novo, defina antes de testar uma matriz de homologação ponta a ponta que cubra caminho feliz, validações e falhas, integrações e observabilidade, métricas e segregação de dados de teste, além dos navegadores e dispositivos relevantes; execute pelo menos cinco rodadas locais completas e consecutivas sem falhas. Se qualquer rodada revelar um defeito, investigue a causa raiz, corrija e reinicie a contagem das cinco rodadas; não peça PR, merge ou deploy enquanto algum critério estiver pendente. Se uma validação essencial não puder ser executada localmente por limitação real do ambiente, declare a limitação e a evidência disponível em vez de publicar apenas para testar.';
+    return 'Regra obrigatória para todos os perfis: quando a tarefa envolver código, faça toda a investigação, implementação, execução de testes e ajustes iterativos primeiro no ambiente local da sandbox. O pedido do usuário para investigar, corrigir, implementar ou fazer um fluxo funcionar já autoriza todas as correções locais causalmente relacionadas necessárias para concluir esse escopo: não interrompa a execução para pedir nova autorização a cada defeito descoberto, não devolva ao usuário como próxima ação uma investigação ou correção que você pode realizar na própria sandbox e não transforme cada defeito em um ciclo separado de PR e deploy. Se houver vários módulos, agentes ou workers envolvidos, simule-os com dependências locais ou test doubles e resolva um por vez quando isso facilitar o diagnóstico, continuando até o fluxo ponta a ponta funcionar; só peça uma decisão quando existirem alternativas de produto realmente ambíguas, credencial/acesso ausente, ação externa irreversível, gasto ou publicação que exija consentimento. Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste e não envie uma correção parcial ao repositório para descobrir o próximo erro no ambiente publicado. Antes de qualquer commit ou publicação, valide localmente a solução completa com os testes relevantes, revise o diff e confirme que os critérios da solicitação foram atendidos; somente então consolide a entrega em uma única publicação. Para produto ou fluxo novo, defina antes de testar uma matriz de homologação ponta a ponta que cubra caminho feliz, validações e falhas, integrações e observabilidade, métricas e segregação de dados de teste, além dos navegadores e dispositivos relevantes. Execute primeiro uma rodada local completa da matriz: se ela terminar sem revelar defeitos, considere a homologação concluída e não repita a rodada apenas para atingir uma quantidade mínima. A exigência de duas rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção: nesse caso, investigue a causa raiz, corrija e, depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas; se surgir outro defeito, corrija-o e reinicie a contagem das duas rodadas; não peça PR, merge ou deploy enquanto algum critério estiver pendente. Se uma validação essencial não puder ser executada localmente por limitação real do ambiente, declare a limitação e a evidência disponível em vez de publicar apenas para testar.';
   }
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
@@ -1393,7 +1520,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const emailTestingInstruction = this.buildSandboxEmailInstruction();
     const awsCliInstruction = this.buildAwsCliInstruction();
     const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
-    const dockerCliInstruction = this.buildDockerCliInstruction();
+    const dockerCliInstruction = this.buildDockerCliInstruction(job);
     const liquibaseMysql57RunnerInstruction = this.buildLiquibaseMysql57RunnerInstruction();
     const sshClientInstruction = this.buildSshClientInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
@@ -1446,6 +1573,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     isCompleted: () => boolean,
     failureReason: () => string | undefined,
     lastActivityAt: () => number | undefined = () => undefined,
+    hasActiveCommandItem: () => boolean = () => false,
   ): Promise<void> {
     const startedAt = Date.now();
     while (!isCompleted()) {
@@ -1456,10 +1584,13 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       }
       const now = Date.now();
       const lastActivity = lastActivityAt();
-      if (!lastActivity && now - startedAt > this.codexTurnNoActivityTimeoutMs) {
+      const inactivityTimeoutMs = hasActiveCommandItem()
+        ? this.codexTurnActiveItemTimeoutMs
+        : this.codexTurnNoActivityTimeoutMs;
+      if (!lastActivity && now - startedAt > inactivityTimeoutMs) {
         throw new Error('CODEX_TURN_NO_ACTIVITY');
       }
-      if (lastActivity && now - lastActivity > this.codexTurnNoActivityTimeoutMs) {
+      if (lastActivity && now - lastActivity > inactivityTimeoutMs) {
         throw new Error('CODEX_TURN_STALLED');
       }
       if (now - startedAt > this.codexTurnTimeoutMs) {
@@ -1467,6 +1598,29 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+  }
+
+  private extractCodexItemIdentity(params: unknown): { id?: string; type?: string } | undefined {
+    if (!params || typeof params !== 'object') {
+      return undefined;
+    }
+    const item = (params as Record<string, unknown>).item;
+    if (!item || typeof item !== 'object') {
+      return undefined;
+    }
+    const record = item as Record<string, unknown>;
+    return {
+      id: typeof record.id === 'string' ? record.id : undefined,
+      type: typeof record.type === 'string' ? record.type : undefined,
+    };
+  }
+
+  private resolveCodexReasoningEffort(value?: string): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' {
+    const normalized = value?.trim().toLowerCase() || DEFAULT_CODEX_REASONING_EFFORT;
+    if (['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(normalized)) {
+      return normalized as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    }
+    throw new Error(`CODEX_APP_SERVER_REASONING_EFFORT inválido: ${value}`);
   }
 
   private extractCodexId(value: unknown, keys: string[], nestedKey?: string): string | undefined {
@@ -1673,7 +1827,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const checklist = this.buildEnvironmentChecklist(environmentState);
     const awsCliInstruction = this.buildAwsCliInstruction();
     const externalApiKeysInstruction = this.buildExternalApiKeysInstruction();
-    const dockerCliInstruction = this.buildDockerCliInstruction();
+    const dockerCliInstruction = this.buildDockerCliInstruction(job);
     const liquibaseMysql57RunnerInstruction = this.buildLiquibaseMysql57RunnerInstruction();
     const githubCiInstruction = this.buildGithubCiInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
@@ -1792,6 +1946,7 @@ ${profileInstruction}`,
         model,
         input: layeredMessages,
         tools,
+        ...(job.reasoningEffort ? { reasoning: { effort: job.reasoningEffort } } : {}),
         ...(this.promptCacheRetention ? { prompt_cache_retention: this.promptCacheRetention } : {}),
         ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
       };
@@ -6199,6 +6354,10 @@ grep -R -n -- "$@"
   private parsePositiveInteger(raw: string | undefined, defaultValue: number): number {
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
+  }
+  private parseNonNegativeInteger(raw: string | undefined, defaultValue: number): number {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
   }
   private parsePercentage(raw: string | undefined, fallback: number): number {
     const parsed = typeof raw === 'string' ? Number(raw) : Number.NaN;

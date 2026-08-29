@@ -2,7 +2,7 @@ import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffe
 import { Link } from 'react-router-dom';
 import client from '../api/client';
 import MarkdownFileReference, { isFileReferenceHref } from '../components/MarkdownFileReference';
-import { CodexProfile, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
+import { CodexProfile, CodexReasoningEffort, CodexRequest, codexStatusStyles, formatCost, formatDateTime, formatDuration, formatProfile, formatStatus, formatTokens, isTerminalStatus, parseCodexRequest, parseCodexRequests } from '../lib/codex';
 
 interface ChatgptAccountStatus {
   connected: boolean;
@@ -122,7 +122,10 @@ interface SavedConversation {
   updatedAt: string;
 }
 
-const POLL_INTERVAL_MS = 5000;
+const REQUEST_STATUS_POLL_INTERVAL_MS = 15_000;
+const STALE_REQUEST_STATUS_POLL_INTERVAL_MS = 60_000;
+const REQUEST_STATUS_ACTIVE_WINDOW_MS = 60 * 60 * 1000;
+const SUPPORTING_DATA_POLL_INTERVAL_MS = 60_000;
 const RUNNING_TOKEN_STALE_ALERT_MS = 5 * 60 * 1000;
 const SALES_IMPACT_MOVING_AVERAGE_SIZE = 6;
 const TELEMETRY_WINDOW_SIZE = 30;
@@ -190,6 +193,27 @@ const copyTextToClipboard = async (text: string) => {
 
 const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORAGE_PREFIX}${profile}`;
 const hiddenRequestsStorageKey = (profile: CodexProfile) => `${HIDDEN_REQUESTS_STORAGE_PREFIX}${profile}`;
+const pendingPrStorageKey = (profile: CodexProfile) => `aihub:codex:pending-pr:${profile}`;
+
+type PendingPrRequest = {
+  batchKey: string;
+  anchorRequestId: number;
+};
+
+const loadPendingPrRequest = (profile: CodexProfile): PendingPrRequest | null => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(pendingPrStorageKey(profile)) ?? 'null');
+    return stored
+      && typeof stored.batchKey === 'string'
+      && stored.batchKey.trim()
+      && Number.isFinite(stored.anchorRequestId)
+      ? { batchKey: stored.batchKey.trim(), anchorRequestId: Number(stored.anchorRequestId) }
+      : null;
+  } catch {
+    // The old format stored only the reusable branch name and cannot identify a batch generation.
+    return null;
+  }
+};
 
 const loadReadCommentIds = (profile: CodexProfile): Set<string> => {
   try {
@@ -266,6 +290,17 @@ const formatMetricNumber = (value?: number) => {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('pt-BR') : '—';
 };
 
+const formatDailySalesImpactAverage = (scores?: CodexSalesImpactScore) => {
+  if (!scores) {
+    return '—';
+  }
+  const weightedTotal = scores.muitoBaixo + scores.baixo * 2 + scores.medio * 3 + scores.alto * 4 + scores.muitoAlto * 5;
+  const evaluatedTotal = scores.muitoBaixo + scores.baixo + scores.medio + scores.alto + scores.muitoAlto;
+  return evaluatedTotal > 0
+    ? (weightedTotal / evaluatedTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—';
+};
+
 const formatOperationalDayDate = (value?: string) => {
   if (!value) {
     return '—';
@@ -309,6 +344,13 @@ const mergeCodexRequestItem = (current: CodexRequest | undefined, updated: Codex
 const mergeCodexRequestList = (current: CodexRequest[], updated: CodexRequest[]) => {
   const currentById = new Map(current.map((item) => [item.id, item]));
   return updated.map((item) => mergeCodexRequestItem(currentById.get(item.id), item));
+};
+
+const combineCodexRequestLists = (primary: CodexRequest[], additional: CodexRequest[]) => {
+  const additionalById = new Map(additional.map((item) => [item.id, item]));
+  const combined = primary.map((item) => mergeCodexRequestItem(item, additionalById.get(item.id) ?? item));
+  const primaryIds = new Set(primary.map((item) => item.id));
+  return [...combined, ...additional.filter((item) => !primaryIds.has(item.id))];
 };
 
 const mergeCodexRequest = (current: CodexRequest[], updated: CodexRequest) =>
@@ -824,6 +866,7 @@ const SalesImpactIcon = ({ level }: { level: SalesImpactLevel }) => {
 };
 
 const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoint[] }) => {
+  const maximumPoints = 100;
   const width = 210;
   const height = 62;
   const left = 16;
@@ -833,10 +876,11 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const evaluated = points
-    .map((point, index) => ({ ...point, index }))
-    .filter((point): point is CodexSalesImpactPoint & { score: number; index: number } =>
+    .filter((point): point is CodexSalesImpactPoint & { score: number } =>
       typeof point.score === 'number' && point.score >= 1 && point.score <= 5
-    );
+    )
+    .slice(-maximumPoints)
+    .map((point, index) => ({ ...point, index }));
   const movingAverage = evaluated.slice(SALES_IMPACT_MOVING_AVERAGE_SIZE - 1).map((point, index) => {
     const window = evaluated.slice(index, index + SALES_IMPACT_MOVING_AVERAGE_SIZE);
     return {
@@ -844,7 +888,7 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
       score: window.reduce((sum, item) => sum + item.score, 0) / SALES_IMPACT_MOVING_AVERAGE_SIZE
     };
   });
-  const xFor = (index: number) => left + (points.length <= 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
+  const xFor = (index: number) => left + (evaluated.length <= 1 ? plotWidth : (index / (evaluated.length - 1)) * plotWidth);
   const yFor = (score: number) => top + ((5 - score) / 4) * plotHeight;
   const linePoints = movingAverage.map((point) => `${xFor(point.index)},${yFor(point.score)}`).join(' ');
 
@@ -852,7 +896,7 @@ const RecentSalesImpactChart = ({ points = [] }: { points?: CodexSalesImpactPoin
     <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média móvel ({SALES_IMPACT_MOVING_AVERAGE_SIZE} pontos)</p>
-        <p className="text-[9px] text-slate-500">últimas {points.length}/100</p>
+        <p className="text-[9px] text-slate-500">últimas {evaluated.length}/{maximumPoints}</p>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-[62px] w-full" role="img" aria-label={`Gráfico da média móvel de ${SALES_IMPACT_MOVING_AVERAGE_SIZE} pontos da nota de impacto em vendas`}>
         {[1, 3, 5].map((score) => (
@@ -1499,6 +1543,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
   const [model, setModel] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState<CodexReasoningEffort>('high');
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
@@ -1523,6 +1568,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
   const [prLoading, setPrLoading] = useState(false);
+  const [pendingPrRequest, setPendingPrRequest] = useState<PendingPrRequest | null>(() => loadPendingPrRequest(config.profile));
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
   const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
@@ -1543,6 +1589,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
   const [hiddenRequestIds, setHiddenRequestIds] = useState<Set<number>>(() => loadHiddenRequestIds(config.profile));
   const conversationPollInFlight = useRef(false);
+
+  useEffect(() => {
+    if (pendingPrRequest) {
+      window.localStorage.setItem(pendingPrStorageKey(config.profile), JSON.stringify(pendingPrRequest));
+    } else {
+      window.localStorage.removeItem(pendingPrStorageKey(config.profile));
+    }
+  }, [config.profile, pendingPrRequest]);
   const copiedMessageTimeoutRef = useRef<number | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const conversationMessageRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -1680,9 +1734,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
     try {
-      const response = await client.get('/codex/requests', { params: { page: 0, size: 20 } });
+      const [response, openBatchResponse] = await Promise.all([
+        client.get('/codex/requests', { params: { page: 0, size: 20 } }),
+        selectedEnvironment
+          ? client.get('/codex/requests/open-batch', { params: { environment: selectedEnvironment, profile: config.profile } })
+              .catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] })
+      ]);
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
-      let nextRequests = parsed;
+      const openBatch = parseCodexRequests(openBatchResponse.data).filter((item) => item.profile === config.profile);
+      let nextRequests = combineCodexRequestLists(parsed, openBatch);
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
       if (activeRequests.length > 0) {
         const detailResponses = await Promise.allSettled(
@@ -1693,7 +1754,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           .filter((item): item is CodexRequest => item !== null && item.profile === config.profile);
         if (detailedRequests.length > 0) {
           const detailedById = new Map(detailedRequests.map((item) => [item.id, item]));
-          nextRequests = parsed.map((item) => mergeCodexRequestItem(item, detailedById.get(item.id) ?? item));
+          nextRequests = nextRequests.map((item) => mergeCodexRequestItem(item, detailedById.get(item.id) ?? item));
         }
       }
 
@@ -1725,7 +1786,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setRequestsLoading(false);
     }
-  }, [config.profile]);
+  }, [config.profile, selectedEnvironment]);
 
   const loadDailyMetrics = useCallback(async () => {
     const response = await client.get<CodexDashboardMetrics>('/codex/requests/metrics', {
@@ -1816,13 +1877,44 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [loadBootstrap]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      Promise.all([loadRequests(), loadAccount(), loadDailyMetrics()])
-        .then(() => registerTelemetry('poll_success', 'Polling periódico concluído.'))
-        .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling periódico: ${err.message}`));
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [loadAccount, loadDailyMetrics, loadRequests, registerTelemetry]);
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const pollRequests = async () => {
+      if (document.visibilityState === 'visible') {
+        await loadRequests()
+          .then(() => registerTelemetry('poll_success', 'Polling de solicitações concluído.'))
+          .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling de solicitações: ${err.message}`));
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollRequests, REQUEST_STATUS_POLL_INTERVAL_MS);
+      }
+    };
+    timeoutId = window.setTimeout(pollRequests, REQUEST_STATUS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [loadRequests, registerTelemetry]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const pollSupportingData = async () => {
+      if (document.visibilityState === 'visible') {
+        await Promise.all([loadAccount(), loadDailyMetrics()])
+          .then(() => registerTelemetry('poll_success', 'Polling de conta e métricas concluído.'))
+          .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling de conta e métricas: ${err.message}`));
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollSupportingData, SUPPORTING_DATA_POLL_INTERVAL_MS);
+      }
+    };
+    timeoutId = window.setTimeout(pollSupportingData, SUPPORTING_DATA_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [loadAccount, loadDailyMetrics, registerTelemetry]);
 
   useEffect(() => {
     const trimmedEnvironment = selectedEnvironment.trim();
@@ -2298,6 +2390,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         prompt: requestPrompt,
         environment: selectedEnvironment,
         model,
+        reasoningEffort,
         profile: config.profile,
         imageAttachments: fileAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
@@ -2327,7 +2420,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, registerTelemetry, selectedEnvironment]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, selectedEnvironment]);
 
 
   useEffect(() => {
@@ -2335,6 +2428,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       .filter((message) => message.role === 'assistant' && message.requestId && message.status && !isTerminalStatus(message.status))
       .map((message) => message.requestId as number);
     if (pendingRequestIds.length === 0) return undefined;
+    const hasRecentlyCreatedRequest = conversation.some((message) =>
+      message.role === 'assistant'
+      && message.requestId
+      && message.status
+      && !isTerminalStatus(message.status)
+      && Date.now() - new Date(message.createdAt).getTime() < REQUEST_STATUS_ACTIVE_WINDOW_MS
+    );
+    const pollInterval = hasRecentlyCreatedRequest
+      ? REQUEST_STATUS_POLL_INTERVAL_MS
+      : STALE_REQUEST_STATUS_POLL_INTERVAL_MS;
 
     const refreshPendingRequests = () => {
       if (conversationPollInFlight.current) {
@@ -2357,7 +2460,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         });
     };
     refreshPendingRequests();
-    const intervalId = window.setInterval(refreshPendingRequests, POLL_INTERVAL_MS);
+    const intervalId = window.setInterval(refreshPendingRequests, pollInterval);
     return () => window.clearInterval(intervalId);
   }, [conversation, registerTelemetry, updateAssistantFromRequest]);
 
@@ -2379,6 +2482,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const existingPrUrl = currentBatchRequests.find((item) => item.pullRequestUrl)?.pullRequestUrl;
 
       if (existingPrUrl) {
+        setPendingPrRequest(null);
         setPrResult({ url: existingPrUrl, title: 'Abrir PR do lote' });
         setConversation((current) => [...current, {
           id: `${Date.now()}-pr-requested`,
@@ -2395,8 +2499,24 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         || conversation.some((message) => message.role === 'assistant' && message.status && !isTerminalStatus(message.status));
 
       if (hasQueuedOrRunningRequest) {
-        setError('Aguarde as solicitações pendentes/em execução terminarem antes de pedir o PR do lote.');
-        registerTelemetry('pr_blocked', 'Pedido de PR bloqueado porque ainda há solicitação pendente ou em execução.');
+        if (!currentBatchKey) {
+          setError('Não foi possível identificar o lote para colocar o pedido de PR na fila.');
+          return;
+        }
+        const anchorRequestId = currentBatchRequests.reduce((latestId, item) => Math.max(latestId, item.id), 0);
+        if (!anchorRequestId) {
+          setError('Não foi possível identificar uma solicitação do lote para colocar o pedido de PR na fila.');
+          return;
+        }
+        setPendingPrRequest({ batchKey: currentBatchKey, anchorRequestId });
+        setConversation((current) => [...current, {
+          id: `${Date.now()}-pr-queued`,
+          role: 'system',
+          content: 'Pedido de PR pendente. Ele será executado automaticamente quando as solicitações deste lote terminarem.',
+          createdAt: new Date().toISOString()
+        }]);
+        setError(null);
+        registerTelemetry('pr_queued', 'Pedido de PR colocado na fila até as solicitações do lote terminarem.');
         return;
       }
 
@@ -2419,6 +2539,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         }
       );
       const nextPrResult = { url: response.data?.url, title: response.data?.title };
+      setPendingPrRequest(null);
       setPrResult(nextPrResult);
       setConversation((current) => [...current, {
         id: `${Date.now()}-pr-requested`,
@@ -2768,19 +2889,31 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       ? `${activeBatchPrRelevantCompleted} solicitação(ões) com alteração de código neste lote ainda precisam passar por PR antes do merge.`
       : `${activeBatchPrRelevantCompleted} solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.`
     : null;
-  const prBlockedReason = hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
-    ? 'Aguarde todas as solicitações do lote terminarem antes de pedir PR.'
+  const prIsQueued = Boolean(
+    pendingPrRequest
+    && pendingPrRequest.batchKey === activeBatchKey
+    && activeBatchRequests.some((item) => item.id === pendingPrRequest.anchorRequestId)
+  );
+  const prBlockedReason = prIsQueued
+    ? 'Pedido de PR pendente; ele será executado automaticamente quando as solicitações do lote terminarem.'
+    : hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest
+    ? 'Você pode pedir o PR agora; ele ficará pendente até todas as solicitações do lote terminarem.'
     : !hasCompletedConversationRequest && activeBatchCompleted === 0 && !activeBatchPrUrl
       ? 'Ainda não há solicitação concluída neste lote.'
       : accumulatedCodeWarning ?? 'O backend vai validar o diff funcional acumulado antes de criar o PR.';
   const canRequestPr = Boolean(
     !sandboxOnly
     && selectedEnvironment
-    && model
-    && !hasQueuedConversationRequest
-    && !hasQueuedOrRunningBatchRequest
-    && (hasCompletedConversationRequest || activeBatchCompleted > 0 || activeBatchPrUrl)
+    && activeBatchKey
+    && (activeBatchRequests.length > 0 || activeBatchPrUrl)
   );
+  useEffect(() => {
+    if (!prIsQueued || hasQueuedConversationRequest || hasQueuedOrRunningBatchRequest || prLoading) {
+      return;
+    }
+    setPendingPrRequest(null);
+    void handleCreatePr();
+  }, [handleCreatePr, hasQueuedConversationRequest, hasQueuedOrRunningBatchRequest, prIsQueued, prLoading]);
   const growthSalesProgress = growthMission
     ? Math.min(100, Math.round((growthMission.salesApproved / Math.max(growthMission.targetSales, 1)) * 100))
     : 0;
@@ -2799,13 +2932,25 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
         <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
-          <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
-            {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
-          </p>
-          <p className="text-base font-semibold leading-5 text-emerald-700 dark:text-emerald-300">
-            {formatDuration(dailyMetrics?.day?.durationMs)}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            {config.profile === 'CHATGPT_CODEX_MKT' ? (
+              <div className="min-w-[78px] rounded border border-slate-200 bg-slate-50 px-2 py-1 text-center dark:border-slate-700 dark:bg-slate-800/80" title="Média das notas de impacto estimado em vendas no dia operacional">
+                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Média do dia</p>
+                <p className="text-lg font-bold leading-5 text-emerald-700 dark:text-emerald-300">
+                  {formatDailySalesImpactAverage(dailyMetrics?.salesImpactDay)}
+                </p>
+              </div>
+            ) : null}
+            <div className="ml-auto">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dia operacional</p>
+              <p className="text-sm font-medium leading-5 text-slate-700 dark:text-slate-200">
+                {formatOperationalDayDate(dailyMetrics?.day?.startsAt)}
+              </p>
+              <p className="text-base font-semibold leading-5 text-emerald-700 dark:text-emerald-300">
+                {formatDuration(dailyMetrics?.day?.durationMs)}
+              </p>
+            </div>
+          </div>
           <div className="mt-2 grid grid-cols-2 gap-1.5 text-center">
             <div className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800/80">
               <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Solicitações</p>
@@ -2847,7 +2992,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <RecentSalesImpactChart points={dailyMetrics?.recentSalesImpact} />
             </div>
           ) : null}
-          <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 03:00 · São Paulo</p>
+          <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 02:00 · São Paulo</p>
         </div>
       </div>
       {config.profile === 'CHATGPT_CODEX_MKT' ? (
@@ -3046,7 +3191,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </p>
           {dismissedRequestCount > 0 ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-white/80 px-3 py-2 text-xs text-slate-600 dark:border-emerald-900 dark:bg-slate-900/70 dark:text-slate-300">
             <span>
-              {dismissedRequestCount.toLocaleString('pt-BR')} solicitação(ões) lida(s) retirada(s) da tela
+              {dismissedRequestCount.toLocaleString('pt-BR')} solicitação(ões) retirada(s) da tela
               {dismissedConversationMessageCount > 0 ? ` (${dismissedConversationMessageCount.toLocaleString('pt-BR')} mensagem(ns)).` : '.'}
             </span>
             <button
@@ -3061,6 +3206,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
             const messageEnvironment = message.environment ?? (message.requestId ? requestEnvironmentById.get(message.requestId) : undefined);
+            const structuredAssistantResponse = message.role === 'assistant' ? parseMarketingStructuredResponse(message.content) : null;
+            const canDismissTerminalFailure = config.profile === 'CHATGPT_CODEX_MKT'
+              && message.role === 'assistant'
+              && Boolean(message.requestId)
+              && (message.status === 'FAILED' || message.status === 'CANCELLED')
+              && !structuredAssistantResponse;
             return <article
               key={message.id}
               ref={(element) => {
@@ -3096,6 +3247,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
                   {message.requestId && isCancellableRequestStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
+                  {canDismissTerminalFailure ? <button type="button" onClick={() => handleDismissConversationRequest(message.requestId!)} className="normal-case text-rose-600 hover:underline">Retirar da tela</button> : null}
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
@@ -3117,7 +3269,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </article>;
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           {sandboxOnly ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
               Ambiente temporário: sandbox
@@ -3130,6 +3282,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <select value={model} onChange={(e) => setModel(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
             {models.map((item) => <option key={item.id} value={item.modelName}>{item.displayName ?? item.modelName}</option>)}
           </select>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+            Nível de raciocínio
+            <select
+              aria-label="Nível de raciocínio"
+              value={reasoningEffort}
+              onChange={(event) => setReasoningEffort(event.target.value as CodexReasoningEffort)}
+              className="rounded-md border px-3 py-2 text-sm font-normal"
+            >
+              <option value="low">Low — econômico</option>
+              <option value="medium">Medium — equilibrado</option>
+              <option value="high">High — aprofundado</option>
+              <option value="xhigh">XHigh — muito alto</option>
+              <option value="max">Max — raciocínio máximo</option>
+            </select>
+          </label>
         </div>
         {showProductSelector ? <select value={selectedProductSlug} onChange={(e) => setSelectedProductSlug(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
@@ -3283,7 +3450,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <button
               type="button"
               onClick={handleCreatePr}
-              disabled={prLoading || !canRequestPr}
+              disabled={prLoading || prIsQueued || !canRequestPr}
               title={prBlockedReason}
               className={`inline-flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50 ${
                 hasAccumulatedCodeAwaitingPr
@@ -3291,7 +3458,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   : 'border-emerald-600 text-emerald-700'
               }`}
             >
-              <span>{prLoading ? 'Pedindo PR...' : 'Pedir PR'}</span>
+              <span>{prLoading ? 'Pedindo PR...' : prIsQueued ? 'PR pendente' : 'Pedir PR'}</span>
               {hasAccumulatedCodeAwaitingPr ? <span className="rounded-full bg-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100">Código pendente</span> : null}
             </button>
           ) : null}
@@ -3341,7 +3508,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 </span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${codexStatusStyles[item.status]}`}>{formatStatus(item.status)}</span>
               </div>
-              {item.model ? <p className="mt-1 truncate text-xs text-slate-500">Modelo: {item.model}</p> : null}
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                {item.model ? <span>Modelo: {item.model}</span> : null}
+                <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/60 dark:text-violet-200">
+                  Raciocínio: {item.reasoningEffort}
+                </span>
+              </p>
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}

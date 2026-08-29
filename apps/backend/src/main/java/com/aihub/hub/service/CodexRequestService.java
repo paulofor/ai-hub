@@ -14,6 +14,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -62,6 +63,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -78,12 +80,14 @@ public class CodexRequestService {
 
     private static final Logger log = LoggerFactory.getLogger(CodexRequestService.class);
     private static final Duration SANDBOX_NOT_FOUND_GRACE_PERIOD = Duration.ofMinutes(15);
-    private static final Duration DETAIL_REFRESH_MIN_INTERVAL = Duration.ofSeconds(5);
+    private static final Duration DETAIL_REFRESH_ACTIVE_MIN_INTERVAL = Duration.ofSeconds(15);
+    private static final Duration DETAIL_REFRESH_STALE_MIN_INTERVAL = Duration.ofMinutes(1);
+    private static final Duration DETAIL_REFRESH_ACTIVE_WINDOW = Duration.ofHours(1);
     private static final Set<Long> SANDBOX_REFRESHES_IN_PROGRESS = ConcurrentHashMap.newKeySet();
     private static final List<CodexRequestStatus> ACTIVE_QUEUE_STATUSES = List.of(CodexRequestStatus.PENDING, CodexRequestStatus.RUNNING);
     private static final int SUMMARY_PROMPT_PREVIEW_LIMIT = 2000;
     private static final int REQUEST_TITLE_LIMIT = 140;
-    private static final LocalTime DASHBOARD_DAY_CUTOFF = LocalTime.of(3, 0);
+    private static final LocalTime DASHBOARD_DAY_CUTOFF = LocalTime.of(2, 0);
     private static final Pattern JSON_FENCE_PATTERN = Pattern.compile("(?is)```(?:json)?\\s*([\\s\\S]*?)\\s*```");
     private static final Pattern LAST_USER_MESSAGE_PATTERN = Pattern.compile(
         "(?s)(?:^|\\R)Última mensagem do usuário:\\s*\\R?(.+?)\\s*$"
@@ -181,6 +185,7 @@ public class CodexRequestService {
         );
 
         codexRequest.setProfile(profile);
+        codexRequest.setReasoningEffort(request.getReasoningEffort());
         codexRequest.setVersion(CodexRequest.DEFAULT_VERSION);
         codexRequest.setStatus(CodexRequestStatus.PENDING);
         codexRequest.setPromptTokens(request.getPromptTokens());
@@ -281,6 +286,59 @@ public class CodexRequestService {
             });
     }
 
+    /**
+     * Reconciles the durable backend queue with the orchestrator's in-memory job registry.
+     * A full VPS restart erases that registry, so requests that still carry an external id
+     * must be finalized before the next durable pending request can be dispatched.
+     */
+    public void recoverQueueAfterRestart() {
+        Set<CodexIntegrationProfile> temporarilyUnavailableProfiles = new HashSet<>();
+        List<CodexRequest> activeRequests =
+            codexRequestRepository.findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(ACTIVE_QUEUE_STATUSES);
+
+        for (CodexRequest request : activeRequests) {
+            CodexIntegrationProfile profile = resolveProfile(request.getProfile());
+            try {
+                SandboxOrchestratorClient.SandboxOrchestratorJobResponse response =
+                    sandboxOrchestratorClient.getJob(request.getExternalId());
+                if (response != null) {
+                    synchronizeRequestWithSandbox(request, response);
+                    continue;
+                }
+
+                log.warn(
+                    "CodexRequest {} interrompida por reinicialização: job {} não existe mais no sandbox; liberando fila do perfil {}",
+                    request.getId(),
+                    request.getExternalId(),
+                    profile
+                );
+                if (!StringUtils.hasText(request.getResponseText())) {
+                    request.setResponseText(
+                        "A execução foi interrompida pela reinicialização do servidor. "
+                            + "A solicitação não foi retomada automaticamente para evitar repetir efeitos externos; "
+                            + "as próximas solicitações da fila continuarão normalmente."
+                    );
+                }
+                applySandboxNotFoundFallback(request, true);
+                saveRequest(request);
+                dispatchNextQueuedRequest(profile);
+            } catch (Exception ex) {
+                temporarilyUnavailableProfiles.add(profile);
+                log.warn(
+                    "Não foi possível reconciliar a fila do perfil {} com o sandbox; mantendo a execução ativa para nova tentativa",
+                    profile,
+                    ex
+                );
+            }
+        }
+
+        for (CodexIntegrationProfile profile : CodexIntegrationProfile.values()) {
+            if (!temporarilyUnavailableProfiles.contains(profile)) {
+                dispatchNextQueuedRequest(profile);
+            }
+        }
+    }
+
     public Optional<ResponseRecord> findLatestResponseForEnvironment(String environment) {
         PromptMetadata metadata = extractMetadata(environment);
         if (metadata == null || metadata.repo() == null) {
@@ -334,6 +392,13 @@ public class CodexRequestService {
     }
 
     @Transactional(readOnly = true)
+    public List<CodexTokenRankingItem> tokenRanking() {
+        return codexRequestRepository.findTokenRanking(PageRequest.of(0, 20)).stream()
+            .map(item -> item.withRequestTitle(buildRequestTitle(item.prompt(), item.responseText())))
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
     public Page<CodexSalesImpactRequest> listSalesImpactRequests(int score, int page, int size) {
         if (score < 1 || score > 5) {
             throw new IllegalArgumentException("score deve estar entre 1 e 5");
@@ -351,6 +416,24 @@ public class CodexRequestService {
         int from = Math.min(page * size, matches.size());
         int to = Math.min(from + size, matches.size());
         return new PageImpl<>(matches.subList(from, to), PageRequest.of(page, size), matches.size());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Long> previousSalesImpactRequestId(int score, long requestId) {
+        if (score < 1 || score > 5) {
+            throw new IllegalArgumentException("score deve estar entre 1 e 5");
+        }
+        List<Object[]> rows = codexRequestRepository
+            .findSalesImpactRowsByProfile(CodexIntegrationProfile.CHATGPT_CODEX_MKT)
+            .stream()
+            .filter(row -> salesImpactScore(row[2] instanceof String response ? response : "") == score)
+            .toList();
+        for (int index = 0; index < rows.size() - 1; index++) {
+            if (((Number) rows.get(index)[0]).longValue() == requestId) {
+                return Optional.of(((Number) rows.get(index + 1)[0]).longValue());
+            }
+        }
+        return Optional.empty();
     }
 
     private int salesImpactScore(String response) {
@@ -405,10 +488,10 @@ public class CodexRequestService {
         LocalDate today = now.toLocalDate();
         LocalDate operationalToday = operationalDate(now);
         Instant dayStart = operationalDayStart(operationalToday, zone);
-        Instant weekStart = today
-            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-            .atStartOfDay(zone)
-            .toInstant();
+        LocalDate operationalWeekStart = operationalToday
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        Instant weekStart = operationalDayStart(operationalWeekStart, zone);
+        Instant salesImpactTimelineStart = operationalDayStart(operationalToday.minusDays(20), zone);
         Instant monthStart = today
             .withDayOfMonth(1)
             .atStartOfDay(zone)
@@ -427,21 +510,23 @@ public class CodexRequestService {
             buildSalesImpactScore(dayStart, profile),
             buildSalesImpactScore(weekStart, profile),
             buildSalesImpactScore(monthStart, profile),
-            buildRecentSalesImpact(profile)
+            buildSalesImpactTimeline(salesImpactTimelineStart, profile)
         );
     }
 
-    private List<CodexDashboardMetrics.CodexSalesImpactPoint> buildRecentSalesImpact(CodexIntegrationProfile profile) {
+    private List<CodexDashboardMetrics.CodexSalesImpactPoint> buildSalesImpactTimeline(
+        Instant timelineStart,
+        CodexIntegrationProfile profile
+    ) {
         if (profile == null) {
             return List.of();
         }
-        List<Object[]> rows = codexRequestRepository.findRecentSalesImpactRowsByProfile(profile, PageRequest.of(0, 100));
+        List<Object[]> rows = codexRequestRepository.findSalesImpactRowsSinceAndProfile(timelineStart, profile);
         if (rows == null || rows.isEmpty()) {
             return List.of();
         }
         List<CodexDashboardMetrics.CodexSalesImpactPoint> points = new ArrayList<>(rows.size());
-        for (int index = rows.size() - 1; index >= 0; index--) {
-            Object[] row = rows.get(index);
+        for (Object[] row : rows) {
             String level = extractSalesImpactLevel(row[2] instanceof String response ? response : "");
             int resolvedScore = salesImpactScore(row[2] instanceof String response ? response : "");
             Integer score = resolvedScore == 0 ? null : resolvedScore;
@@ -774,6 +859,17 @@ public class CodexRequestService {
         return requests;
     }
 
+    @Transactional(readOnly = true)
+    public List<CodexRequest> listOpenBatch(String environment, CodexIntegrationProfile profile) {
+        if (!StringUtils.hasText(environment) || profile == null) {
+            return List.of();
+        }
+        return codexRequestRepository.findOpenBatchCandidates(environment.trim(), profile, PageRequest.of(0, 1)).stream()
+            .findFirst()
+            .map(this::listBatch)
+            .orElseGet(List::of);
+    }
+
     @Transactional
     public void markPullRequestCreatedForBatch(CodexRequest request, String pullRequestUrl) {
         if (request == null || !StringUtils.hasText(pullRequestUrl)) {
@@ -927,7 +1023,9 @@ public class CodexRequestService {
             return request;
         }
 
-        RefreshDecision decision = evaluateRefresh(request, Instant.now().minus(Duration.ofHours(1)));
+        Instant now = Instant.now();
+        Instant refreshCutoff = now.minus(DETAIL_REFRESH_ACTIVE_WINDOW);
+        RefreshDecision decision = evaluateRefresh(request, refreshCutoff);
         if (!decision.shouldRefresh()) {
             if (request.getId() != null) {
                 detailRefreshAttempts.remove(request.getId());
@@ -935,15 +1033,17 @@ public class CodexRequestService {
             return request;
         }
 
-        Instant now = Instant.now();
+        Duration refreshInterval = request.getCreatedAt() != null && request.getCreatedAt().isBefore(refreshCutoff)
+            ? DETAIL_REFRESH_STALE_MIN_INTERVAL
+            : DETAIL_REFRESH_ACTIVE_MIN_INTERVAL;
         Long requestId = request.getId();
         Instant previousAttempt = requestId == null ? null : detailRefreshAttempts.putIfAbsent(requestId, now);
         if (requestId != null && previousAttempt != null) {
-            if (previousAttempt.plus(DETAIL_REFRESH_MIN_INTERVAL).isAfter(now)) {
+            if (previousAttempt.plus(refreshInterval).isAfter(now)) {
                 log.debug(
                     "Atualização do CodexRequest {} ignorada: detalhe consultado novamente dentro de {} segundos",
                     request.getId(),
-                    DETAIL_REFRESH_MIN_INTERVAL.toSeconds()
+                    refreshInterval.toSeconds()
                 );
                 return request;
             }
@@ -1340,6 +1440,7 @@ public class CodexRequestService {
             null,
             Optional.ofNullable(request.getProfile()).map(Enum::name).orElse(null),
             request.getModel(),
+            request.getReasoningEffort().value(),
             accessToken,
             chatgptCodexProfile ? null : githubAppAuth.getInstallationToken(),
             sandboxOnlyProfile ? null : resolveDatabase(request.getEnvironment()),

@@ -66,29 +66,83 @@ services:
         aliases:
           - sandbox-mail
 
+  # Engine exclusiva para as homologações executadas pelo modelo. O daemon de
+  # produção não é exposto ao sandbox-orchestrator por /var/run/docker.sock.
+  sandbox-docker:
+    image: ${SANDBOX_DOCKER_IMAGE:-docker:27-dind}
+    restart: unless-stopped
+    privileged: true
+    init: true
+    pids_limit: ${SANDBOX_DOCKER_PIDS_LIMIT:-1024}
+    mem_limit: ${SANDBOX_DOCKER_MEMORY_LIMIT:-6g}
+    memswap_limit: ${SANDBOX_DOCKER_MEMORY_SWAP_LIMIT:-6g}
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command:
+      - --host=unix:///var/run/docker.sock
+      - --host=tcp://0.0.0.0:2375
+      - --tls=false
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - sandbox-docker-data:/var/lib/docker
+      # Bind mounts dos Compose testados são resolvidos pelo daemon. O mesmo
+      # workspace precisa existir no cliente e na engine no caminho idêntico.
+      - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
+    networks:
+      sandbox-docker-net:
+        aliases:
+          - sandbox-docker
+
   sandbox-orchestrator:
     image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
+    # O orquestrador executa ferramentas que podem criar netos. O init do
+    # Docker adota e coleta processos órfãos para que eles não virem zombies.
+    init: true
+    # Limite de contenção: uma falha não pode esgotar a tabela de PIDs do host.
+    pids_limit: ${SANDBOX_ORCHESTRATOR_PIDS_LIMIT:-512}
+    # Ferramentas executadas pelo modelo não podem disputar toda a RAM com os
+    # serviços públicos. Sem swap adicional, uma carga fugitiva fica contida.
+    mem_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-8g}
+    memswap_limit: ${SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-8g}
     build:
       context: ./apps/sandbox-orchestrator
     env_file:
       - apps/sandbox-orchestrator/.env.example
       - .env
     depends_on:
-      - sandbox-mail
+      sandbox-mail:
+        condition: service_started
+      sandbox-docker:
+        condition: service_healthy
     environment:
       CODEX_HOME: /var/lib/ai-hub/codex
       SANDBOX_SMTP_HOST: ${SANDBOX_SMTP_HOST:-sandbox-mail}
       SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}
       SANDBOX_MAIL_WEB_URL: ${SANDBOX_MAIL_WEB_URL:-http://sandbox-mail:8025}
       SANDBOX_MAIL_API_URL: ${SANDBOX_MAIL_API_URL:-http://sandbox-mail:8025/api/v1}
+      # Engine efêmera dedicada: nunca aponte o runner ao socket de produção.
+      DOCKER_HOST: tcp://sandbox-docker:2375
       # Evita tempestades de spans session_loop enter/exit; INFO fica restrito ao supervisor.
       CODEX_APP_SERVER_RUST_LOG: ${CODEX_APP_SERVER_RUST_LOG:-codex_core=warn,codex_tui=warn,codex_app_server=info,codex_api=warn,codex_client=warn,warn}
       CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES: ${CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES:-536870912}
       CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED: ${CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED:-2}
+      CODEX_APP_SERVER_REASONING_EFFORT: ${CODEX_APP_SERVER_REASONING_EFFORT:-high}
+      CODEX_APP_SERVER_TRANSIENT_TURN_MAX_ATTEMPTS: ${CODEX_APP_SERVER_TRANSIENT_TURN_MAX_ATTEMPTS:-2}
+      CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS: ${CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS:-5000}
+      DOCKER_HOMOLOGATION_CLEANUP_ENABLED: ${DOCKER_HOMOLOGATION_CLEANUP_ENABLED:-true}
+      DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS: ${DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS:-120000}
+      CURL_CONNECT_TIMEOUT_SECONDS: ${CURL_CONNECT_TIMEOUT_SECONDS:-10}
+      CURL_MAX_TIME_SECONDS: ${CURL_MAX_TIME_SECONDS:-120}
     volumes:
       - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
       - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
       - ${GEMINI_TOKEN_HOST_DIR:-/root/infra/gemini-token}:/run/secrets/gemini-token:ro
+      - ${BRAVE_TOKEN_HOST_DIR:-/root/infra/brave-token}:/run/secrets/brave-token:ro
       - ${PEPPER_TOKEN_HOST_DIR:-/root/infra/pepper-token}:/run/secrets/pepper-token:ro
       - ${LUMA_TOKEN_HOST_DIR:-/root/infra/luma-token}:/run/secrets/luma-token:ro
       - ${KLING_TOKEN_HOST_DIR:-/root/infra/kling-token}:/run/secrets/kling-token:ro
@@ -111,6 +165,9 @@ services:
       fi;
       if [ -f /run/secrets/gemini-token/gemini_api_key ]; then
         export GEMINI_API_KEY=$(cat /run/secrets/gemini-token/gemini_api_key);
+      fi;
+      if [ -f /run/secrets/brave-token/brave_api_key ]; then
+        export BRAVE_API_KEY=$(cat /run/secrets/brave-token/brave_api_key);
       fi;
       if [ -f /run/secrets/pepper-token/pepper_api_token ]; then
         export PEPPER_API_TOKEN=$(cat /run/secrets/pepper-token/pepper_api_token);
@@ -146,11 +203,15 @@ services:
       default:
         aliases:
           - sandbox-orchestrator
+      sandbox-docker-net:
       public-net:
         aliases:
           - sandbox-orchestrator
   mcp-server:
     image: ${MCP_SERVER_IMAGE:-ghcr.io/paulofor/ai-hub-6-mcp-server:latest}
+    # Comandos Linux também podem deixar subprocessos órfãos; tini os coleta.
+    init: true
+    pids_limit: ${MCP_SERVER_PIDS_LIMIT:-128}
     build:
       context: ./apps/mcp-server
     env_file:
@@ -170,6 +231,7 @@ services:
 
 networks:
   default:
+  sandbox-docker-net:
   public-net:
     external: true
 
@@ -177,3 +239,4 @@ volumes:
   caddy-data:
   caddy-config:
   codex-auth-data:
+  sandbox-docker-data:

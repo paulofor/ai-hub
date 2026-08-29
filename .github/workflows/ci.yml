@@ -27,12 +27,19 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            apps/backend/pom.xml
+            apps/mcp-server/pom.xml
       - name: Build backend
         run: |
           ./apps/backend/scripts/test-public-proxy-recovery-migrations.sh
           mvn -f apps/backend -B test
 
   mcp-server:
+    # Serializa os dois consumidores do Maven Central: o backend aquece o cache
+    # compartilhado antes de o MCP server tentar resolver as mesmas dependências.
+    needs: backend
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -42,6 +49,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            apps/backend/pom.xml
+            apps/mcp-server/pom.xml
       - name: Build MCP server
         run: |
           ./apps/mcp-server/scripts/test-public-surface-contract.sh
@@ -245,10 +256,12 @@ jobs:
             sed -i '/^HUB_ACCOUNT_OAUTH_/d' .env && \
             sed -i '/^CODEX_APP_SERVER_ENABLED=/d' .env && \
             sed -i '/^CODEX_APP_SERVER_TURN_TIMEOUT_MS=/d' .env && \
+            sed -i '/^CODEX_APP_SERVER_REASONING_EFFORT=/d' .env && \
             sed -i '/^BACKEND_IMAGE=/d; /^FRONTEND_IMAGE=/d; /^SANDBOX_ORCHESTRATOR_IMAGE=/d; /^CADDY_IMAGE=/d; /^MCP_SERVER_IMAGE=/d' .env && \
             printf '%s\n' \
               'CODEX_APP_SERVER_ENABLED=true' \
-              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000' \
+              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000' \
+              'CODEX_APP_SERVER_REASONING_EFFORT=high' \
               'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:${IMAGE_TAG}' \
               'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG}' \
               'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG}' \

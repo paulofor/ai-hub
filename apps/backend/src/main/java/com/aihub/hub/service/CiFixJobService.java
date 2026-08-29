@@ -70,6 +70,7 @@ public class CiFixJobService {
             null,
             null,
             null,
+            null,
             githubAppAuth.getInstallationToken(),
             null,
             null,

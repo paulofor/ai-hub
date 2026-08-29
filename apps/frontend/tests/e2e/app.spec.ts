@@ -10,7 +10,12 @@ test('renders the dashboard shell', async ({ page }) => {
         day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries,
         salesImpactDay: { muitoBaixo: 1, baixo: 2, medio: 3, alto: 4, muitoAlto: 5, total: 15 },
         salesImpactWeek: { muitoBaixo: 2, baixo: 3, medio: 5, alto: 8, muitoAlto: 7, total: 25 },
-        salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 }
+        salesImpactMonth: { muitoBaixo: 4, baixo: 6, medio: 10, alto: 16, muitoAlto: 14, total: 50 },
+        recentSalesImpact: [
+          { requestId: 0, createdAt: '2026-07-20T07:00:00Z', score: 5 },
+          { requestId: 1, createdAt: '2026-08-04T07:00:00Z', score: 2 },
+          { requestId: 2, createdAt: '2026-08-04T08:00:00Z', score: 4 }
+        ]
       } });
     }
     return route.fulfill({ json: { day: emptyWindow, week: emptyWindow, month: emptyWindow, series: emptySeries } });
@@ -20,10 +25,15 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'AI Hub 6' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Relevância estimada em vendas' })).toBeVisible();
-  await expect(page.getByText('50', { exact: true })).toBeVisible();
-  await expect(page.getByText('Estes contadores representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
-  await page.screenshot({ path: '/tmp/ai-hub-dashboard-relevancia-vendas.png', fullPage: true });
+  await expect(page.getByRole('heading', { name: 'Notas de venda' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Gráfico com a média diária operacional dos últimos 21 dias' })).toBeVisible();
+  await expect(page.getByText('Média diária operacional · últimos 21 dias')).toBeVisible();
+  await expect(page.getByText('Cada tick é a média das notas daquele dia operacional.')).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-dashboard-media-diaria-21-dias.png', fullPage: true });
+  await page.getByRole('button', { name: 'Semanal' }).click();
+  await expect(page.getByRole('img', { name: 'Gráfico semanal com um tick de média por dia operacional' })).toBeVisible();
+  await expect(page.getByText('Cada tick é a média das notas daquele dia operacional.')).toBeVisible();
+  await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
 });
 
 test('offers GPT-5.6 and sends the selected model with the request', async ({ page }) => {
@@ -140,20 +150,48 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await page.route('**/api/prompt-hints?**', async (route) => {
     await route.fulfill({ json: [] });
   });
+  await page.route('**/api/codex/requests/open-batch?**', async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: 527,
+          environment: 'produção',
+          model: 'gpt-5',
+          version: 'aihub-6',
+          profile: 'CHATGPT_CODEX',
+          prompt: 'Ajustar aviso no botão de PR',
+          status: 'COMPLETED',
+          createdAt: '2026-07-24T12:00:00Z',
+          workBatchKey: 'aihub/codex-chatgpt-527'
+        },
+        {
+          id: 528,
+          environment: 'produção',
+          model: 'gpt-5',
+          version: 'aihub-6',
+          profile: 'CHATGPT_CODEX',
+          prompt: 'Executar a próxima alteração do lote',
+          status: 'PENDING',
+          createdAt: '2026-07-24T12:01:00Z',
+          workBatchKey: 'aihub/codex-chatgpt-527'
+        }
+      ]
+    });
+  });
   await page.route('**/api/codex/requests?**', async (route) => {
     await route.fulfill({
       json: {
         content: [
           {
-            id: 527,
+            id: 526,
             environment: 'produção',
             model: 'gpt-5',
             version: 'aihub-6',
             profile: 'CHATGPT_CODEX',
-            prompt: 'Ajustar aviso no botão de PR',
+            prompt: 'Execução recente fora do lote aberto',
             status: 'COMPLETED',
-            createdAt: '2026-07-24T12:00:00Z',
-            workBatchKey: 'aihub/codex-chatgpt-527'
+            createdAt: '2026-07-24T11:59:00Z',
+            pullRequestUrl: 'https://github.com/example/repository/pull/526'
           }
         ]
       }
@@ -162,6 +200,8 @@ test('warns on the request PR button when a batch has accumulated code', async (
 
   await page.goto('/codex-chatgpt');
 
+  await expect(page.getByRole('link', { name: 'Abrir detalhes' })).toHaveCount(3);
+  await expect(page.locator('a[href="/codex/requests/526"]', { hasText: 'Abrir detalhes' })).toBeVisible();
   const accumulatedCodeNotice = page.getByText('Código acumulado para merge: 1 solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.');
   const requestPrButton = page.getByRole('button', { name: /Pedir PR Código pendente/ });
   await expect(accumulatedCodeNotice).toBeVisible();
@@ -169,6 +209,43 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await expect(requestPrButton).toBeEnabled();
   await expect(requestPrButton).toHaveClass(/border-indigo-500/);
   await expect(requestPrButton.getByText('Código pendente')).toHaveClass(/bg-indigo-200/);
+  await requestPrButton.click();
+  await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
+  await expect(page.getByText('Pedido de PR pendente. Ele será executado automaticamente quando as solicitações deste lote terminarem.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: /PR pendente Código pendente/ })).toBeDisabled();
+
+  await page.evaluate(() => {
+    window.localStorage.setItem('aihub:codex:pending-pr:CHATGPT_CODEX', JSON.stringify({
+      batchKey: 'aihub/codex-chatgpt-527',
+      anchorRequestId: 526
+    }));
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Pedir PR Código pendente/ })).toBeEnabled();
+});
+
+test('shows the request title in the token ranking', async ({ page }) => {
+  await page.route('**/api/codex/requests/token-ranking', (route) => route.fulfill({ json: [{
+    id: 2249,
+    environment: 'paulofor/marketing-hub',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'HIGH',
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'COMPLETED',
+    promptTokens: 1000,
+    cachedPromptTokens: 800,
+    completionTokens: 200,
+    totalTokens: 1200,
+    durationMs: 90_000,
+    createdAt: '2026-08-24T00:28:00Z',
+    requestTitle: 'Otimizar campanha de aquisição'
+  }] }));
+
+  await page.goto('/codex/token-ranking');
+
+  await expect(page.getByRole('cell', { name: /#2249 Otimizar campanha de aquisição/ })).toBeVisible();
 });
 
 test('explains why old history does not enable trimming the open batch', async ({ page }) => {
@@ -291,7 +368,7 @@ test('renders structured model JSON as cards in the default ChatGPT dialog', asy
   await expect(page.getByRole('checkbox', { name: 'Lido' })).toHaveCount(0);
 });
 
-test('request PR button only uses the active dialog profile batch', async ({ page }) => {
+test('request PR stays available for an idle batch even when no execution model is available', async ({ page }) => {
   await page.route('**/api/account/read', async (route) => {
     await route.fulfill({
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
@@ -301,7 +378,7 @@ test('request PR button only uses the active dialog profile batch', async ({ pag
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
   await page.route('**/api/account/models', async (route) => {
-    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+    await route.fulfill({ json: [] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
     await route.fulfill({ json: { day: { startsAt: '2026-07-24T00:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 2000 } } });
@@ -367,7 +444,9 @@ test('request PR button only uses the active dialog profile batch', async ({ pag
 
   await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt')).toBeVisible();
   await expect(page.getByText('ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: /Pedir PR Código pendente/ }).click();
+  const requestPrButton = page.getByRole('button', { name: /Pedir PR Código pendente/ });
+  await expect(requestPrButton).toBeEnabled();
+  await requestPrButton.click();
   await expect(page.getByText('PR solicitado:')).toBeVisible();
   const prFeedMarker = page.getByRole('article').filter({ hasText: 'Pedido de PR registrado no lote.' });
   await expect(prFeedMarker.getByText(/Sistema · \d{2}\/\d{2}\/\d{4}/)).toBeVisible();
@@ -604,7 +683,14 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
     json: {
       day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 },
+      salesImpactDay: { muitoBaixo: 1, baixo: 1, medio: 1, alto: 1, muitoAlto: 2, total: 6 },
       recentSalesImpact: [
+        ...Array.from({ length: 103 }, (_, index) => ({
+          requestId: 500 + index,
+          createdAt: `2026-07-25T${String(index % 24).padStart(2, '0')}:00:00Z`,
+          score: (index % 5) + 1
+        })),
+        { requestId: 699, createdAt: '2026-07-26T09:00:00Z', score: null },
         { requestId: 701, createdAt: '2026-07-26T10:00:00Z', score: 2 },
         { requestId: 702, createdAt: '2026-07-26T11:00:00Z', score: 4 },
         { requestId: 703, createdAt: '2026-07-26T12:00:00Z', score: 5 }
@@ -628,21 +714,24 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
 
   await page.goto('/codex-chatgpt-mkt');
 
-  const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[1]');
+  const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[contains(@class, "fixed")][1]');
   await expect(operationalDayCard.getByText('Solicitações')).toBeVisible();
   await expect(operationalDayCard.getByText('Interações')).toBeVisible();
   await expect(operationalDayCard.locator('p').getByText('3', { exact: true })).toBeVisible();
   await expect(operationalDayCard.locator('p').getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByText('Média do dia')).toBeVisible();
+  await expect(operationalDayCard.getByText('3,33', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByRole('img', { name: 'Gráfico da média móvel de 6 pontos da nota de impacto em vendas' })).toBeVisible();
   await expect(operationalDayCard.getByText('Média móvel (6 pontos)')).toBeVisible();
-  await expect(operationalDayCard.getByText('São necessárias 6 notas')).toBeVisible();
+  await expect(operationalDayCard.getByText('últimas 100/100')).toBeVisible();
+  await expect(operationalDayCard.locator('svg circle')).toHaveCount(95);
   await expect(operationalDayCard).toHaveCSS('position', 'fixed');
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
     return { height: box.height, right: box.right, top: box.top };
   });
-  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(330);
+  expect(cardBoxBeforeScroll.height).toBeLessThanOrEqual(345);
   await operationalDayCard.screenshot({ path: '/tmp/ai-hub-nota-vendas-ultimas-solicitacoes.png' });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const cardBoxAfterScroll = await operationalDayCard.evaluate((element) => {
@@ -744,7 +833,7 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.getByRole('button', { name: 'Retirar solicitação da tela' }).click();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toHaveCount(0);
-  await expect(page.getByText('1 solicitação(ões) lida(s) retirada(s) da tela')).toBeVisible();
+  await expect(page.getByText('1 solicitação(ões) retirada(s) da tela')).toBeVisible();
 
   await page.reload();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toHaveCount(0);
@@ -752,6 +841,39 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.getByRole('button', { name: 'Mostrar novamente' }).click();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+});
+
+test('dismisses failed and cancelled marketing requests without requiring a structured response', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-08-15T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX_MKT', JSON.stringify([
+      { id: 'user-failed', role: 'user', content: 'Solicitação que falhou.', createdAt: '2026-08-15T12:00:00Z' },
+      { id: 'assistant-failed', role: 'assistant', requestId: 992, status: 'FAILED', content: 'A execução falhou. Abra os detalhes para ver os logs.', createdAt: '2026-08-15T12:01:00Z' },
+      { id: 'user-cancelled', role: 'user', content: 'Solicitação cancelada.', createdAt: '2026-08-15T12:02:00Z' },
+      { id: 'assistant-cancelled', role: 'assistant', requestId: 993, status: 'CANCELLED', content: 'Solicitação #993 cancelada. Nenhuma nova resposta será gerada para esta mensagem.', createdAt: '2026-08-15T12:03:00Z' }
+    ]));
+  });
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  const dismissButtons = page.getByRole('button', { name: 'Retirar da tela' });
+  await expect(dismissButtons).toHaveCount(2);
+  await page.screenshot({ path: '/tmp/ai-hub-retirar-falhas-cancelamentos.png', fullPage: true });
+  await dismissButtons.first().click();
+  await expect(page.getByText('Solicitação que falhou.')).toHaveCount(0);
+  await expect(page.getByText('1 solicitação(ões) retirada(s) da tela')).toBeVisible();
+  await page.getByRole('button', { name: 'Retirar da tela' }).click();
+  await expect(page.getByText('Solicitação cancelada.')).toHaveCount(0);
+  await expect(page.getByText('2 solicitação(ões) retirada(s) da tela')).toBeVisible();
 });
 
 test('scrolls from the marketing prompt editor to the first unread model response', async ({ page }) => {
@@ -1085,6 +1207,23 @@ test('lists score-five sales requests in pages of 25 and opens request details',
       last: false
     } });
   });
+  await page.route('**/api/codex/requests/sales-impact/5/901/previous', (route) => route.fulfill({ json: { id: 900 } }));
+  await page.route('**/api/codex/requests/901', (route) => route.fulfill({ json: {
+    id: 901,
+    environment: 'marketing',
+    model: 'gpt-5',
+    version: 'aihub-6',
+    profile: 'CHATGPT_CODEX_MKT',
+    prompt: 'Como melhorar a conversão do checkout?',
+    responseText: 'Priorize uma proposta de valor clara e reduza os campos.',
+    status: 'COMPLETED',
+    createdAt: '2026-08-06T11:59:00Z',
+    startedAt: '2026-08-06T12:00:00Z',
+    finishedAt: '2026-08-06T12:02:00Z',
+    durationMs: 120000,
+    promptTokens: 1200,
+    completionTokens: 450
+  } }));
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Nota 5 em Vendas' }).click();
@@ -1096,5 +1235,9 @@ test('lists score-five sales requests in pages of 25 and opens request details',
   await page.screenshot({ path: '/tmp/ai-hub-solicitacoes-nota-5-vendas.png', fullPage: true });
 
   await page.getByRole('link', { name: /Checkout com maior conversão/ }).click();
-  await expect(page).toHaveURL(/\/codex\/requests\/901$/);
+  await expect(page).toHaveURL(/\/codex-chatgpt-mkt\/nota-5-vendas\/901$/);
+  await expect(page.getByText('Diálogo')).toBeVisible();
+  await expect(page.getByText('1.200')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Próxima (mais antiga) →' })).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-detalhe-nota-5-vendas.png', fullPage: true });
 });

@@ -1,6 +1,7 @@
 package com.aihub.hub.dto;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
+import com.aihub.hub.domain.CodexReasoningEffort;
 import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
@@ -15,6 +16,8 @@ public class CreateCodexRequest {
     private String prompt;
 
     private String model;
+
+    private CodexReasoningEffort reasoningEffort = CodexReasoningEffort.HIGH;
 
     private CodexIntegrationProfile profile;
 
@@ -74,6 +77,14 @@ public class CreateCodexRequest {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public CodexReasoningEffort getReasoningEffort() {
+        return reasoningEffort;
+    }
+
+    public void setReasoningEffort(CodexReasoningEffort reasoningEffort) {
+        this.reasoningEffort = reasoningEffort == null ? CodexReasoningEffort.HIGH : reasoningEffort;
     }
 
     public CodexIntegrationProfile getProfile() {

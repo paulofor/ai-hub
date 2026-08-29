@@ -8,6 +8,7 @@ import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.domain.CodexReasoningEffort;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
 import com.aihub.hub.repository.CodexDocumentAccessRepository;
@@ -232,8 +233,8 @@ class CodexRequestServiceTest {
     void dashboardMetricsIncludesDayWindowAndBucketedSeries() {
         ZoneId zone = ZoneId.of("America/Sao_Paulo");
         LocalDate today = LocalDate.now(zone);
-        Instant todayStart = today.atTime(3, 0).atZone(zone).toInstant();
-        Instant previousMonthStart = today.minusMonths(1).withDayOfMonth(1).atTime(3, 0).atZone(zone).toInstant();
+        Instant todayStart = today.atTime(2, 0).atZone(zone).toInstant();
+        Instant previousMonthStart = today.minusMonths(1).withDayOfMonth(1).atTime(2, 0).atZone(zone).toInstant();
 
         when(codexRequestRepository.summarizeMetricsSince(any(Instant.class)))
             .thenReturn(new Object[] {1L, 3L, 1_000L})
@@ -294,14 +295,18 @@ class CodexRequestServiceTest {
             ));
         Instant older = Instant.parse("2026-07-20T12:00:00Z");
         Instant newer = Instant.parse("2026-07-21T12:00:00Z");
-        when(codexRequestRepository.findRecentSalesImpactRowsByProfile(
-            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any()))
+        when(codexRequestRepository.findSalesImpactRowsSinceAndProfile(
+            any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)))
             .thenReturn(List.of(
-                new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"},
-                new Object[] {21L, older, "{\"impactoAumentoVendas\":\"baixo\"}"}
+                new Object[] {21L, older, "{\"impactoAumentoVendas\":\"baixo\"}"},
+                new Object[] {22L, newer, "{\"impactoAumentoVendas\":\"muito_alto\"}"}
             ));
 
-        var metrics = buildService().dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
+        CodexRequestService service = buildService();
+        ZoneId zone = ZoneId.of("America/Sao_Paulo");
+        ReflectionTestUtils.setField(service, "dashboardClock", Clock.fixed(Instant.parse("2026-08-09T12:00:00Z"), zone));
+
+        var metrics = service.dashboardMetrics(CodexIntegrationProfile.CHATGPT_CODEX_MKT);
         var score = metrics.salesImpactDay();
 
         assertThat(score.muitoBaixo()).isEqualTo(1);
@@ -321,6 +326,10 @@ class CodexRequestServiceTest {
                 org.assertj.core.groups.Tuple.tuple(22L, 5));
         verify(codexRequestRepository, times(3))
             .findResponseTextsSinceAndProfile(any(Instant.class), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT));
+        verify(codexRequestRepository).findSalesImpactRowsSinceAndProfile(
+            eq(Instant.parse("2026-07-20T05:00:00Z")),
+            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT)
+        );
     }
 
     @Test
@@ -341,10 +350,13 @@ class CodexRequestServiceTest {
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(33L, "Oferta campeã"),
                 org.assertj.core.groups.Tuple.tuple(31L, "Checkout otimizado"));
+
+        assertThat(buildService().previousSalesImpactRequestId(5, 33L)).contains(31L);
+        assertThat(buildService().previousSalesImpactRequestId(5, 31L)).isEmpty();
     }
 
     @Test
-    void dashboardMetricsUsesSaoPauloOperationalDayBoundaryAtThreeAm() {
+    void dashboardMetricsUsesSaoPauloOperationalDayBoundaryAtTwoAm() {
         ZoneId zone = ZoneId.of("America/Sao_Paulo");
         Instant localMidnight = Instant.parse("2026-07-23T03:14:00Z");
         CodexRequestService service = buildService();
@@ -355,10 +367,10 @@ class CodexRequestServiceTest {
 
         var metrics = service.dashboardMetrics();
 
-        assertThat(metrics.day().startsAt()).isEqualTo(Instant.parse("2026-07-22T06:00:00Z"));
-        assertThat(metrics.week().startsAt()).isEqualTo(Instant.parse("2026-07-20T03:00:00Z"));
+        assertThat(metrics.day().startsAt()).isEqualTo(Instant.parse("2026-07-22T05:00:00Z"));
+        assertThat(metrics.week().startsAt()).isEqualTo(Instant.parse("2026-07-20T05:00:00Z"));
         assertThat(metrics.month().startsAt()).isEqualTo(Instant.parse("2026-07-01T03:00:00Z"));
-        assertThat(metrics.series().daily().getLast().startsAt()).isEqualTo(Instant.parse("2026-07-22T06:00:00Z"));
+        assertThat(metrics.series().daily().getLast().startsAt()).isEqualTo(Instant.parse("2026-07-22T05:00:00Z"));
 
         verify(codexRequestRepository, times(3)).summarizeMetricsSince(any(Instant.class));
         verify(codexRequestRepository).findMetricRowsSince(Instant.parse("2025-08-01T03:00:00Z"));
@@ -419,7 +431,7 @@ class CodexRequestServiceTest {
         request.setCreatedAt(Instant.now().minus(Duration.ofMinutes(5)));
 
         CodexRequestSummary summary = new CodexRequestSummary(
-            123L, request.getEnvironment(), request.getModel(), request.getVersion(), request.getProfile(), request.getPrompt(),
+            123L, request.getEnvironment(), request.getModel(), request.getReasoningEffort(), request.getVersion(), request.getProfile(), request.getPrompt(),
             request.getStatus(), request.getRating(), request.getExternalId(), request.getPullRequestUrl(), request.getWorkBranch(),
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
@@ -455,7 +467,7 @@ class CodexRequestServiceTest {
         request.setResponseText("{\"titulo\":\"Histórico com títulos\",\"comentario\":\"ok\",\"orientacaoProximaAcao\":\"\",\"sugestaoMelhoriaAmbiente\":\"\"}");
 
         CodexRequestSummary summary = new CodexRequestSummary(
-            124L, request.getEnvironment(), request.getModel(), request.getVersion(), request.getProfile(), request.getPrompt(),
+            124L, request.getEnvironment(), request.getModel(), request.getReasoningEffort(), request.getVersion(), request.getProfile(), request.getPrompt(),
             request.getStatus(), request.getRating(), request.getExternalId(), request.getPullRequestUrl(), request.getWorkBranch(),
             request.getWorkBatchKey(), request.getPromptTokens(), request.getCachedPromptTokens(), request.getCompletionTokens(),
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
@@ -514,6 +526,10 @@ class CodexRequestServiceTest {
         CodexRequestService service = buildService(false);
 
         service.find(729L);
+        @SuppressWarnings("unchecked")
+        Map<Long, Instant> refreshAttempts = (Map<Long, Instant>) ReflectionTestUtils.getField(service, "detailRefreshAttempts");
+        assertThat(refreshAttempts).isNotNull();
+        refreshAttempts.put(729L, Instant.now().minusSeconds(10));
         service.find(729L);
 
         verify(sandboxOrchestratorClient, times(1)).getJob("job-detail-running");
@@ -650,6 +666,68 @@ class CodexRequestServiceTest {
         assertThat(nextRequest.getStatus()).isEqualTo(CodexRequestStatus.PENDING);
         assertThat(nextRequest.getExternalId()).isNull();
         verify(codexRequestRepository).save(completedRequest);
+    }
+
+    @Test
+    void recoveryFailsJobLostAfterRestartAndDispatchesNextPendingRequest() {
+        CodexRequest interrupted = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "interrupted task"
+        );
+        interrupted.setExternalId("lost-after-vps-restart");
+        interrupted.setStatus(CodexRequestStatus.RUNNING);
+        interrupted.setStartedAt(Instant.parse("2024-01-01T00:00:00Z"));
+
+        CodexRequest next = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "next queued task"
+        );
+        next.setStatus(CodexRequestStatus.PENDING);
+
+        when(codexRequestRepository.findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(interrupted));
+        when(sandboxOrchestratorClient.getJob("lost-after-vps-restart")).thenReturn(null);
+        when(codexRequestRepository.findFirstByProfileAndStatusAndExternalIdIsNullOrderByCreatedAtAsc(
+            CodexIntegrationProfile.STANDARD,
+            CodexRequestStatus.PENDING
+        )).thenReturn(Optional.of(next), Optional.empty());
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sandboxOrchestratorClient.createJob(any())).thenReturn(null);
+
+        buildService().recoverQueueAfterRestart();
+
+        assertThat(interrupted.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(interrupted.getResponseText()).contains("interrompida pela reinicialização do servidor");
+        assertThat(interrupted.getFinishedAt()).isNotNull();
+        assertThat(next.getExternalId()).isNotBlank();
+        verify(sandboxOrchestratorClient).createJob(any());
+    }
+
+    @Test
+    void recoveryKeepsQueueBlockedWhileOrchestratorIsTemporarilyUnavailable() {
+        CodexRequest running = new CodexRequest(
+            "owner/repo@main",
+            "gpt-5",
+            CodexIntegrationProfile.STANDARD,
+            "still unknown"
+        );
+        running.setExternalId("job-orchestrator-unavailable");
+        running.setStatus(CodexRequestStatus.RUNNING);
+
+        when(codexRequestRepository.findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(running));
+        when(sandboxOrchestratorClient.getJob("job-orchestrator-unavailable"))
+            .thenThrow(new IllegalStateException("connection refused"));
+
+        buildService().recoverQueueAfterRestart();
+
+        assertThat(running.getStatus()).isEqualTo(CodexRequestStatus.RUNNING);
+        verify(sandboxOrchestratorClient, never()).createJob(any());
+        verify(codexRequestRepository, never()).save(running);
     }
 
     @Test
@@ -1068,6 +1146,7 @@ class CodexRequestServiceTest {
         payload.setEnvironment("owner/repo@main");
         payload.setPrompt("modo codex chatgpt via app server");
         payload.setProfile(CodexIntegrationProfile.CHATGPT_CODEX);
+        payload.setReasoningEffort(CodexReasoningEffort.LOW);
 
         CodexRequest created = service.create(payload);
 
@@ -1079,6 +1158,8 @@ class CodexRequestServiceTest {
         assertThat(requestCaptor.getValue().githubToken()).isNull();
         assertThat(requestCaptor.getValue().workBranch()).isEqualTo("ai-hub/codex-owner-repo-main-chatgpt_codex");
         assertThat(requestCaptor.getValue().createPullRequest()).isFalse();
+        assertThat(requestCaptor.getValue().reasoningEffort()).isEqualTo("low");
+        assertThat(created.getReasoningEffort()).isEqualTo(CodexReasoningEffort.LOW);
     }
 
 
@@ -1292,6 +1373,24 @@ class CodexRequestServiceTest {
         when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBranch)).thenReturn(List.of(closed, current));
 
         assertThat(service.listBatch(current)).containsExactly(current);
+    }
+
+    @Test
+    void listOpenBatchFindsTheBatchEvenWhenItsRequestsAreOutsideTheRecentPage() {
+        CodexRequestService service = buildService(true);
+        String workBatchKey = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";
+        CodexRequest first = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "um");
+        first.setWorkBatchKey(workBatchKey);
+        CodexRequest latest = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "dois");
+        latest.setWorkBatchKey(workBatchKey);
+
+        when(codexRequestRepository.findOpenBatchCandidates(
+            eq("owner/repo@main"), eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any(Pageable.class)
+        )).thenReturn(List.of(latest));
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(workBatchKey)).thenReturn(List.of(first, latest));
+
+        assertThat(service.listOpenBatch("owner/repo@main", CodexIntegrationProfile.CHATGPT_CODEX_MKT))
+            .containsExactly(first, latest);
     }
 
     @Test

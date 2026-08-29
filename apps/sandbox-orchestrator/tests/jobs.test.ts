@@ -1,14 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 
-import { createApp } from '../src/server.js';
+import { buildJobMonitoringSummary, createApp } from '../src/server.js';
 import { buildJobPayload } from '../src/jobPayload.js';
-import { DEFAULT_CODEX_TURN_TIMEOUT_MS, openAIClientConfigForTests, SandboxJobProcessor } from '../src/jobProcessor.js';
+import {
+  DEFAULT_CODEX_REASONING_EFFORT,
+  DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
+  DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
+  DEFAULT_CODEX_TURN_TIMEOUT_MS,
+  dockerHomologationProjectName,
+  openAIClientConfigForTests,
+  SandboxJobProcessor,
+} from '../src/jobProcessor.js';
 import { JobProcessor, SandboxJob } from '../src/types.js';
 
 class StubProcessor implements JobProcessor {
@@ -26,8 +34,84 @@ class StubProcessor implements JobProcessor {
   }
 }
 
-test('uses a six-hour default timeout for Codex requests', () => {
-  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 21_600_000);
+test('summarizes stalled jobs without returning the full job payload', () => {
+  const now = Date.parse('2026-08-26T03:30:00Z');
+  const job = {
+    jobId: 'job-stalled',
+    taskDescription: 'large secret task that must not be exposed',
+    profile: 'CHATGPT_CODEX_MKT',
+    model: 'gpt-5.6-sol',
+    status: 'RUNNING',
+    logs: ['started', 'waiting for test process'],
+    interactions: Array.from({ length: 3 }, (_, index) => ({ sequence: index + 1 })),
+    interactionSequence: 3,
+    createdAt: '2026-08-26T00:00:00Z',
+    startedAt: '2026-08-26T00:05:00Z',
+    updatedAt: '2026-08-26T03:00:00Z',
+    promptTokens: 100,
+    cachedPromptTokens: 80,
+    completionTokens: 20,
+    totalTokens: 120,
+    timeoutCount: 2,
+  } as SandboxJob;
+
+  const summary = buildJobMonitoringSummary(job, now);
+
+  assert.equal(summary.runningForMs, 12_300_000);
+  assert.equal(summary.idleForMs, 1_800_000);
+  assert.equal(summary.interactionCount, 3);
+  assert.deepEqual(summary.warnings, ['NO_PROGRESS', 'LONG_RUNNING']);
+  assert.equal(summary.lastLog, 'waiting for test process');
+  assert.equal('taskDescription' in summary, false);
+  assert.equal('interactions' in summary, false);
+});
+
+test('uses adaptive inactivity defaults for Codex requests', async () => {
+  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 43_200_000);
+  assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
+  assert.equal(DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS, 7_200_000);
+  assert.equal(DEFAULT_CODEX_REASONING_EFFORT, 'high');
+  const [environmentExample, readme, deploymentWorkflow] = await Promise.all([
+    fs.readFile('.env.example', 'utf8'),
+    fs.readFile('README.md', 'utf8'),
+    fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
+  ]);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_REASONING_EFFORT=high$/m);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`2700000`/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
+  assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`43200000` \(12 horas\)/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
+  assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_REASONING_EFFORT=high'/);
+});
+
+test('curl wrapper applies safe defaults and preserves explicit timeouts', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'curl-timeout-test-'));
+  const fakeCurl = path.join(directory, 'curl-real');
+  await fs.writeFile(fakeCurl, '#!/bin/sh\nprintf "<%s>\\n" "$@"\n');
+  await fs.chmod(fakeCurl, 0o755);
+
+  const defaults = execFileSync('scripts/curl-with-timeout', ['https://example.com'], {
+    encoding: 'utf8',
+    env: { ...process.env, CURL_REAL_BIN: fakeCurl },
+  });
+  assert.match(defaults, /<--connect-timeout>\n<10>/);
+  assert.match(defaults, /<--max-time>\n<120>/);
+
+  const explicit = execFileSync(
+    'scripts/curl-with-timeout',
+    ['--connect-timeout', '3', '--max-time=900', 'https://example.com'],
+    { encoding: 'utf8', env: { ...process.env, CURL_REAL_BIN: fakeCurl } },
+  );
+  assert.doesNotMatch(explicit, /<10>|<120>/);
+  assert.match(explicit, /<--connect-timeout>\n<3>/);
+  assert.match(explicit, /<--max-time=900>/);
 });
 
 class SleepingProcessor implements JobProcessor {
@@ -72,6 +156,28 @@ test('docker compose monta e exporta credenciais AWS para o sandbox-orchestrator
   assert.match(compose, /AWS_SESSION_TOKEN=/);
 });
 
+test('docker compose contém memória de ferramentas sem consumir a reserva do host', async () => {
+  const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
+
+  assert.match(compose, /mem_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_LIMIT:-8g\}/);
+  assert.match(compose, /memswap_limit: \$\{SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT:-8g\}/);
+});
+
+test('docker compose oferece engine dedicada ao modelo sem expor o socket de produção', async () => {
+  const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
+  const orchestratorSection = compose.slice(
+    compose.indexOf('  sandbox-orchestrator:'),
+    compose.indexOf('  mcp-server:'),
+  );
+
+  assert.match(compose, /^  sandbox-docker:$/m);
+  assert.match(compose, /DOCKER_HOST: tcp:\/\/sandbox-docker:2375/);
+  assert.match(compose, /sandbox-docker-data:\/var\/lib\/docker/);
+  assert.match(compose, /sandbox-docker:\n\s+condition: service_healthy/);
+  assert.doesNotMatch(orchestratorSection, /\/var\/run\/docker\.sock/);
+  assert.match(orchestratorSection, /DOCKER_HOMOLOGATION_CLEANUP_ENABLED: \$\{DOCKER_HOMOLOGATION_CLEANUP_ENABLED:-true\}/);
+});
+
 test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta e Meta para o sandbox-orchestrator', async () => {
   const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
 
@@ -92,6 +198,85 @@ test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta
   assert.match(compose, /export META_TOKEN=\$\(cat \/run\/secrets\/meta-token\/meta_token\)/);
 });
 
+test('docker compose monta e exporta a credencial Brave para o sandbox-orchestrator', async () => {
+  const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
+
+  assert.match(compose, /\$\{BRAVE_TOKEN_HOST_DIR:-\/root\/infra\/brave-token\}:\/run\/secrets\/brave-token:ro/);
+  assert.match(compose, /\/run\/secrets\/brave-token\/brave_api_key/);
+  assert.match(compose, /export BRAVE_API_KEY=\$\(cat \/run\/secrets\/brave-token\/brave_api_key\)/);
+});
+
+test('informa ao modelo quando a Brave Search API esta disponivel', () => {
+  const originalBraveApiKey = process.env.BRAVE_API_KEY;
+  process.env.BRAVE_API_KEY = 'segredo-de-teste';
+
+  try {
+    const processor = new SandboxJobProcessor();
+    const instruction = (processor as any).buildExternalApiKeysInstruction();
+
+    assert.match(instruction, /BRAVE_API_KEY/);
+    assert.match(instruction, /Brave Search API/);
+    assert.match(instruction, /X-Subscription-Token/);
+    assert.doesNotMatch(instruction, /segredo-de-teste/);
+  } finally {
+    if (originalBraveApiKey === undefined) {
+      delete process.env.BRAVE_API_KEY;
+    } else {
+      process.env.BRAVE_API_KEY = originalBraveApiKey;
+    }
+  }
+});
+
+test('informa ao modelo a engine Docker dedicada e as regras de isolamento', () => {
+  const processor = new SandboxJobProcessor();
+  const job = { jobId: 'Job com espaços/123' } as SandboxJob;
+  const project = dockerHomologationProjectName(job.jobId);
+  const instruction = (processor as any).buildDockerCliInstruction(job);
+
+  assert.match(instruction, /engine Docker dedicada/);
+  assert.match(instruction, /isolada do daemon.*produção/);
+  assert.match(project, /^aihub-job-com-espa-os-123-[a-f0-9]{10}$/);
+  assert.match(instruction, new RegExp(`docker compose -p ${project}`));
+  assert.match(instruction, new RegExp(`docker compose -p ${project} down --volumes --remove-orphans`));
+  assert.match(instruction, /quando não há outro job ativo, elimina volumes não utilizados/);
+});
+
+test('limpa somente o projeto encerrado e poda volumes quando não há outro job ativo', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'docker-cleanup-test-'));
+  const callsFile = path.join(directory, 'calls.log');
+  const fakeDocker = path.join(directory, 'docker');
+  const previous = {
+    path: process.env.PATH,
+    host: process.env.DOCKER_HOST,
+    enabled: process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED,
+  };
+  await fs.writeFile(fakeDocker, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${callsFile}'\nif [ "$1 $2" = "volume prune" ]; then echo 'Total reclaimed space: 600MB'; fi\n`);
+  await fs.chmod(fakeDocker, 0o755);
+  process.env.PATH = `${directory}:${previous.path ?? ''}`;
+  process.env.DOCKER_HOST = 'tcp://sandbox-docker:2375';
+  process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED = 'true';
+
+  try {
+    const processor = new SandboxJobProcessor();
+    const job = { jobId: 'cleanup-job-123', logs: [] } as unknown as SandboxJob;
+    await (processor as any).cleanupDockerHomologation(job, true);
+
+    const calls = await fs.readFile(callsFile, 'utf8');
+    const project = dockerHomologationProjectName(job.jobId);
+    assert.match(calls, new RegExp(`ps -aq --filter label=com.docker.compose.project=${project}`));
+    assert.match(calls, new RegExp(`network ls -q --filter label=com.docker.compose.project=${project}`));
+    assert.match(calls, new RegExp(`volume ls -q --filter label=com.docker.compose.project=${project}`));
+    assert.match(calls, /volume prune --force/);
+    assert.ok(job.logs.some((entry) => entry.includes('Total reclaimed space: 600MB')));
+  } finally {
+    if (previous.path === undefined) delete process.env.PATH; else process.env.PATH = previous.path;
+    if (previous.host === undefined) delete process.env.DOCKER_HOST; else process.env.DOCKER_HOST = previous.host;
+    if (previous.enabled === undefined) delete process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED;
+    else process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED = previous.enabled;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('imagem da sandbox instala ferramentas de execução e validação do runner', async () => {
   const dockerfile = await fs.readFile(path.resolve('Dockerfile'), 'utf8');
 
@@ -107,7 +292,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
-  assert.match(dockerfile, /CODEX_VERSION=0\.146\.0/);
+  assert.match(dockerfile, /CODEX_VERSION=0\.149\.0/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
@@ -127,6 +312,7 @@ test('accepts a job request and processes asynchronously', async () => {
     branch: 'main',
     taskDescription: 'fix failing tests',
     testCommand: 'npm test',
+    reasoningEffort: 'medium',
   };
 
   const creation = await request(app).post('/jobs').send(payload).expect(201);
@@ -139,6 +325,35 @@ test('accepts a job request and processes asynchronously', async () => {
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(stored!.status, 'COMPLETED');
   assert.deepEqual(stored!.changedFiles, ['README.md']);
+  assert.equal(stored!.reasoningEffort, 'medium');
+});
+
+test('accepts max reasoning effort', async () => {
+  const registry = new Map<string, SandboxJob>();
+  const app = createApp({ jobRegistry: registry, processor: new StubProcessor() });
+
+  await request(app).post('/jobs').send({
+    jobId: 'job-max-effort',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'solve a complex task',
+    reasoningEffort: 'max',
+  }).expect(201);
+
+  assert.equal(registry.get('job-max-effort')?.reasoningEffort, 'max');
+});
+
+test('rejects unsupported reasoning effort', async () => {
+  const app = createApp({ processor: new StubProcessor() });
+  const response = await request(app).post('/jobs').send({
+    jobId: 'job-invalid-effort',
+    repoUrl: 'https://github.com/example/repo.git',
+    branch: 'main',
+    taskDescription: 'noop',
+    reasoningEffort: 'minimal',
+  }).expect(400);
+
+  assert.match(response.body.error, /low, medium, high, xhigh ou max/);
 });
 
 test('accepts non-image attachments in job request', async () => {
@@ -690,6 +905,7 @@ test('configura prompt cache retention e chave estável na Responses API', async
       repoSlug: 'ai-hub',
       branch: 'main',
       profile: 'STANDARD',
+      reasoningEffort: 'medium',
       taskDescription: 'noop',
       status: 'PENDING',
       logs: [],
@@ -705,6 +921,7 @@ test('configura prompt cache retention e chave estável na Responses API', async
     assert.equal(fakeOpenAI.calls.length, 1);
     assert.equal(fakeOpenAI.calls[0].prompt_cache_retention, '24h');
     assert.equal(fakeOpenAI.calls[0].prompt_cache_key, 'acme:ai-hub:main:STANDARD:gpt-5-codex');
+    assert.deepEqual(fakeOpenAI.calls[0].reasoning, { effort: 'medium' });
   } finally {
     if (originalRetention === undefined) {
       delete process.env.OPENAI_PROMPT_CACHE_RETENTION;
@@ -761,6 +978,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     branch: 'main',
     taskDescription: 'avalie campanhas',
     profile: 'CHATGPT_CODEX_MKT',
+    reasoningEffort: 'max',
     status: 'PENDING',
     logs: [],
     interactions: [],
@@ -776,6 +994,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.equal(job.status, 'COMPLETED');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
+    assert.equal((turnStartCall.params as { effort?: string }).effort, 'max');
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
@@ -797,10 +1016,16 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
+    assert.ok(input?.[0]?.text?.includes('já autoriza todas as correções locais causalmente relacionadas'));
+    assert.ok(input?.[0]?.text?.includes('não interrompa a execução para pedir nova autorização a cada defeito descoberto'));
+    assert.ok(input?.[0]?.text?.includes('simule-os com dependências locais ou test doubles e resolva um por vez'));
+    assert.ok(input?.[0]?.text?.includes('só peça uma decisão quando existirem alternativas de produto realmente ambíguas'));
     assert.ok(input?.[0]?.text?.includes('Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste'));
     assert.ok(input?.[0]?.text?.includes('somente então consolide a entrega em uma única publicação'));
-    assert.ok(input?.[0]?.text?.includes('execute pelo menos cinco rodadas locais completas e consecutivas sem falhas'));
-    assert.ok(input?.[0]?.text?.includes('reinicie a contagem das cinco rodadas'));
+    assert.ok(input?.[0]?.text?.includes('se ela terminar sem revelar defeitos, considere a homologação concluída'));
+    assert.ok(input?.[0]?.text?.includes('A exigência de duas rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção'));
+    assert.ok(input?.[0]?.text?.includes('depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas'));
+    assert.ok(input?.[0]?.text?.includes('reinicie a contagem das duas rodadas'));
     assert.ok(input?.[0]?.text?.includes('não peça PR, merge ou deploy enquanto algum critério estiver pendente'));
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
@@ -2926,17 +3151,23 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
-    assert.match(promptText, /Docker CLI e o plugin Docker Compose v2 estão disponíveis/i);
+    assert.match(promptText, /Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis/i);
     assert.match(promptText, /existe um runner efêmero dedicado no GitHub Actions/i);
     assert.match(promptText, /ausência de Docker daemon local na sandbox não significa que essa validação esteja indisponível/i);
     assert.match(promptText, /gh workflow run liquibase-mysql57\.yml --ref <branch>/i);
     assert.match(promptText, /não apresente a ativação de Docker local como melhoria necessária/i);
     assert.match(promptText, /Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução/i);
     assert.match(promptText, /Regra obrigatória para todos os perfis/i);
+    assert.match(promptText, /já autoriza todas as correções locais causalmente relacionadas/i);
+    assert.match(promptText, /não interrompa a execução para pedir nova autorização a cada defeito descoberto/i);
+    assert.match(promptText, /simule-os com dependências locais ou test doubles e resolva um por vez/i);
+    assert.match(promptText, /só peça uma decisão quando existirem alternativas de produto realmente ambíguas/i);
     assert.match(promptText, /Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste/i);
     assert.match(promptText, /somente então consolide a entrega em uma única publicação/i);
-    assert.match(promptText, /execute pelo menos cinco rodadas locais completas e consecutivas sem falhas/i);
-    assert.match(promptText, /reinicie a contagem das cinco rodadas/i);
+    assert.match(promptText, /se ela terminar sem revelar defeitos, considere a homologação concluída/i);
+    assert.match(promptText, /A exigência de duas rodadas aplica-se somente quando uma rodada revelar um defeito e houver correção/i);
+    assert.match(promptText, /depois da última correção, execute duas rodadas locais completas e consecutivas sem falhas/i);
+    assert.match(promptText, /reinicie a contagem das duas rodadas/i);
     assert.match(promptText, /não peça PR, merge ou deploy enquanto algum critério estiver pendente/i);
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
@@ -3799,6 +4030,9 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
         }, 5);
         return { id: 'turn-123' };
       }
+      if (method === 'thread/archive') {
+        return {};
+      }
       throw new Error(`unexpected method ${method}`);
     },
     onNotification: (method: string, listener: (params: unknown) => void) => {
@@ -3850,6 +4084,7 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');
     const turnStartCall = calls.find((call) => call.method === 'turn/start');
     assert.ok(turnStartCall);
+    assert.deepEqual(calls.find((call) => call.method === 'thread/archive')?.params, { threadId: 'thread-123' });
     const input = (turnStartCall.params as { input?: Array<{ text?: string; type?: string; url?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT ativo'));
     assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
@@ -3907,6 +4142,9 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
         }, 5);
         return { id: 'turn-sandbox' };
       }
+      if (method === 'thread/archive') {
+        return {};
+      }
       throw new Error(`unexpected method ${method}`);
     },
     onNotification: (method: string, listener: (params: unknown) => void) => {
@@ -3946,6 +4184,7 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.equal(await fs.stat(path.join(cwd!, '.git')).then(() => true).catch(() => false), false);
   const turnStartCall = calls.find((call) => call.method === 'turn/start');
   assert.ok(turnStartCall);
+  assert.deepEqual(calls.find((call) => call.method === 'thread/archive')?.params, { threadId: 'thread-sandbox' });
   const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
   assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT Sandbox ativo'));
   assert.ok(input?.[0]?.text?.includes('sem integração com Git'));
@@ -3965,6 +4204,71 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
   assert.ok(input?.[0]?.text?.includes('use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails'));
   assert.ok(input?.[0]?.text?.includes('sandbox-media-player <arquivo-video-ou-audio> [saida.html]'));
   assert.ok(input?.[0]?.text?.includes('rode uma solicitação avulsa'));
+});
+
+test('retoma a mesma thread após falha transitória de conexão do Codex App Server', async () => {
+  const previousDelay = process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS;
+  process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS = '0';
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: any }> = [];
+  let turnAttempt = 0;
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') return { authMode: 'chatgpt', planType: 'plus' };
+      if (method === 'thread/start') return { id: 'thread-recoverable' };
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        const currentAttempt = turnAttempt;
+        setTimeout(() => {
+          if (currentAttempt === 1) {
+            for (const listener of listeners.get('turn/completed') ?? []) {
+              listener({ status: 'failed', error: { message: 'stream disconnected while reconnecting' }, turnId: 'turn-failed' });
+            }
+          } else {
+            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ delta: 'trabalho recuperado' });
+            for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-recovered' });
+          }
+        }, 5);
+        return { id: currentAttempt === 1 ? 'turn-failed' : 'turn-recovered' };
+      }
+      if (method === 'thread/archive') return {};
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+    const job: SandboxJob = {
+      jobId: 'job-chatgpt-codex-recover-connection',
+      taskDescription: 'continue mesmo se a conexão oscilar',
+      profile: 'CHATGPT_CODEX_SANDBOX',
+      status: 'PENDING', logs: [], interactions: [], interactionSequence: 0,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    assert.equal(job.status, 'COMPLETED');
+    assert.equal(job.summary, 'trabalho recuperado');
+    const turnCalls = calls.filter((call) => call.method === 'turn/start');
+    assert.equal(turnCalls.length, 2);
+    assert.equal(turnCalls[0].params.threadId, 'thread-recoverable');
+    assert.equal(turnCalls[1].params.threadId, 'thread-recoverable');
+    assert.match(turnCalls[1].params.input[0].text, /falha transitória de conexão/);
+    assert.ok(job.logs.some((entry) => entry.includes('retomando a mesma thread')));
+    assert.equal(calls.filter((call) => call.method === 'thread/archive').length, 1);
+  } finally {
+    if (previousDelay === undefined) delete process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS;
+    else process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS = previousDelay;
+  }
 });
 
 test('permite configurar sandbox mode do Codex App Server em kebab-case', async () => {

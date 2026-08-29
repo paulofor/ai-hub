@@ -16,6 +16,8 @@ import {
   parseCodexRequest
 } from '../lib/codex';
 
+const DETAIL_POLL_INTERVAL_MS = 15_000;
+
 export default function CodexRequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [request, setRequest] = useState<CodexRequest | null>(null);
@@ -127,15 +129,35 @@ export default function CodexRequestDetailPage() {
     fetchPreviousRequestId();
   }, [fetchPreviousRequestId]);
 
+  const shouldPollRequest = Boolean(request && !isTerminalStatus(request.status));
+
   useEffect(() => {
-    if (!request || isTerminalStatus(request.status)) {
+    if (!shouldPollRequest) {
       return undefined;
     }
-    const interval = setInterval(() => {
-      fetchRequest(true).catch(() => undefined);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [fetchRequest, request]);
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleNextRefresh = () => {
+      timeoutId = setTimeout(async () => {
+        if (document.visibilityState === 'visible') {
+          await fetchRequest(true).catch(() => undefined);
+        }
+        if (!cancelled) {
+          scheduleNextRefresh();
+        }
+      }, DETAIL_POLL_INTERVAL_MS);
+    };
+
+    scheduleNextRefresh();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [fetchRequest, shouldPollRequest]);
 
   const statusBadge = useMemo(() => {
     if (!request) return null;
@@ -488,6 +510,7 @@ export default function CodexRequestDetailPage() {
               <InfoItem label="Início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
               <InfoItem label="Fim" value={formatDateTime(request.finishedAt)} />
               <InfoItem label="Duração" value={formatDuration(request.durationMs)} />
+              <InfoItem label="Nível de raciocínio" value={request.reasoningEffort.toUpperCase()} />
               <InfoItem label="Timeouts" value={(request.timeoutCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem label="HTTP GETs (total)" value={(request.httpGetCount ?? 0).toLocaleString('pt-BR')} />
               <InfoItem

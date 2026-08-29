@@ -37,11 +37,21 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | --- | --- | --- |
 | `PORT` | Porta HTTP exposta pelo serviço | `8083` |
 | `SANDBOX_REQUEST_BODY_LIMIT` | Limite do JSON aceito nas chamadas HTTP do sandbox-orchestrator. Deve comportar o prompt e anexos enviados pelo frontend. | `50mb` |
+| `SANDBOX_ORCHESTRATOR_MEMORY_LIMIT` | Limite total de RAM do contêiner orquestrador, incluindo ferramentas e processos filhos; em uma VPS de 10 GiB, preserva aproximadamente 2 GiB para os serviços públicos e o host. | `8g` |
+| `SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT` | Soma máxima de RAM e swap do orquestrador. Igual ao limite de RAM por padrão para impedir degradação global por swap. | `8g` |
 | `CODEX_APP_SERVER_ENABLED` | Quando `true`, inicia o supervisor local do `codex app-server --listen stdio://` e inclui seu estado no healthcheck. | `false` |
 | `CODEX_HOME` | Diretório persistente do Codex App Server para cache de autenticação gerenciado pelo próprio Codex. Deve ser tratado como segredo quando usar storage em arquivo. | `/var/lib/ai-hub/codex` na imagem |
-| `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX`/`CHATGPT_CODEX_MKT` via App Server. | `21600000` (6 horas) |
+| `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX`/`CHATGPT_CODEX_MKT` via App Server. | `43200000` (12 horas) |
 | `CODEX_APP_SERVER_SANDBOX_MODE` | Modo de sandbox enviado ao `thread/start` do Codex App Server. Aceita apenas `read-only`, `workspace-write` ou `danger-full-access`; o padrão evita o sandbox Linux interno (`bwrap`) porque o job já roda dentro do sandbox-orchestrator/container do AI Hub. | `danger-full-access` |
-| `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` | Tempo máximo sem nenhum evento/notificação útil do Codex App Server durante `turn/start`; tolera operações longas e ainda evita que execuções fiquem indefinidamente em `Em execução` quando o app-server deixa de responder. | `900000` |
+| `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` | Tempo máximo sem evento útil quando não existe comando ativo conhecido. Encerra mais cedo turnos que perderam o fluxo sem sacrificar ferramentas longas identificadas. | `2700000` (45 minutos) |
+| `CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS` | Tempo máximo sem evento útil enquanto um item `commandExecution` permanece ativo. Reserva a janela longa somente para builds, testes e outras ferramentas acompanhadas. | `7200000` (2 horas) |
+| `CODEX_APP_SERVER_REASONING_EFFORT` | Esforço de raciocínio enviado como `effort` no `turn/start`. Aceita `none`, `minimal`, `low`, `medium`, `high`, `xhigh` ou `max`. | `high` |
+| `CODEX_APP_SERVER_TRANSIENT_TURN_MAX_ATTEMPTS` | Total de tentativas do turno na mesma thread quando o App Server encerra por falha transitória de rede/conexão. | `2` |
+| `CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS` | Espera antes de retomar, na mesma thread, um turno encerrado por falha transitória. | `5000` (5 segundos) |
+| `DOCKER_HOMOLOGATION_CLEANUP_ENABLED` | Remove containers, redes e volumes do projeto Compose exclusivo do job ao encerrá-lo; quando não há outro job ativo, também elimina volumes sem uso da engine efêmera. | `true` |
+| `DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS` | Limite de tempo para a limpeza automática da engine Docker dedicada. Falhas são registradas, mas não alteram o resultado já concluído do job. | `120000` (2 minutos) |
+| `CURL_CONNECT_TIMEOUT_SECONDS` | Limite padrão para o `curl` estabelecer conexão. O wrapper da sandbox adiciona `--connect-timeout` quando o comando não informa um valor explícito. | `10` |
+| `CURL_MAX_TIME_SECONDS` | Duração total padrão de uma chamada `curl`. O wrapper adiciona `--max-time` quando o comando não informa `--max-time`/`-m`; chamadas legitimamente longas podem declarar outro valor. | `120` |
 | `SANDBOX_SLUG_PREFIX` | Prefixo aplicado antes do slug original | *(vazio)* |
 | `SANDBOX_SLUG_SUFFIX` | Sufixo aplicado após o slug original | `-sandbox` |
 | `SANDBOX_IMAGE` | Imagem base utilizada para provisionar o contêiner/VM efêmero | `ghcr.io/ai-hub-6/sandbox:latest` |
@@ -81,7 +91,7 @@ O runner informa ao modelo que o comando `aws` está disponível e se as credenc
 
 Os tokens Luma, Kling, HeyGen, Radar Meta e Meta devem ficar fora do repositório nos arquivos `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key`, `/root/infra/heygen-token/heygen_api_key`, `/root/infra/radarmeta-token/radar_meta_token` e `/root/infra/meta-token/meta_token`. Quando os arquivos existem, o `sandbox-orchestrator` exporta `LUMA_API_KEY`, `KLING_API_KEY`, `HEYGEN_API_KEY`, `RADAR_META_TOKEN` e `META_TOKEN` para os comandos do modelo e para o Codex App Server; nunca registre os valores dessas variáveis em logs, respostas ou arquivos.
 
-O runner também informa ao modelo que o Docker CLI e o plugin Docker Compose v2 estão disponíveis pelos comandos `docker` e `docker compose`. Prefira `docker compose` ao binário legado `docker-compose`; antes de depender de containers, valide a engine/socket com `docker version` e o plugin com `docker compose version`.
+O runner também informa ao modelo que o Docker CLI, o plugin Docker Compose v2 e a engine dedicada `sandbox-docker` estão disponíveis pelos comandos `docker` e `docker compose`. A engine é isolada do daemon de produção, recebe o workspace no mesmo caminho do orquestrador e mantém dados próprios no volume `sandbox-docker-data`. Prefira `docker compose` ao binário legado `docker-compose`; antes de depender de containers, valide a engine com `docker version` e o plugin com `docker compose version`. Cada job recebe um nome de projeto determinístico e deve usá-lo com `docker compose -p <projeto>`; o encerramento remove containers, redes e volumes rotulados para esse projeto e, somente quando não existe outro job ativo, executa `docker volume prune` na engine exclusivamente efêmera. Recursos ativos ou pertencentes a outra homologação em execução não são removidos.
 
 Para Liquibase no MySQL 5.7, o modelo recebe uma orientação específica sobre o runner efêmero de `.github/workflows/liquibase-mysql57.yml`. Mesmo sem daemon Docker local, ele deve considerar a validação completa disponível pelo workflow do pull request ou acioná-la e acompanhá-la com `gh` quando a branch já estiver publicada; não deve sugerir Docker local como infraestrutura ausente para esse teste.
 

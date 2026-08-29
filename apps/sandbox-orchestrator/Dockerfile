@@ -9,7 +9,7 @@ RUN npm run build
 FROM node:20-bookworm-slim AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
-ARG CODEX_VERSION=0.146.0
+ARG CODEX_VERSION=0.149.0
 ARG PLAYWRIGHT_VERSION=1.54.2
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
@@ -195,6 +195,9 @@ function escapeHtml(value) {
 }
 EOF
 RUN chmod +x /usr/local/bin/sandbox-media-player
+COPY scripts/curl-with-timeout /usr/local/bin/curl
+RUN chmod +x /usr/local/bin/curl \
+  && /usr/local/bin/curl --version
 RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g typescript @openai/codex@${CODEX_VERSION} playwright@${PLAYWRIGHT_VERSION} @playwright/test@${PLAYWRIGHT_VERSION} \
   && codex --version \
   && playwright --version \
@@ -212,5 +215,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV NODE_PATH=/usr/local/lib/node_modules
+ENV CURL_CONNECT_TIMEOUT_SECONDS=10
+ENV CURL_MAX_TIME_SECONDS=120
 EXPOSE 8083
 CMD ["node", "dist/src/index.js"]
