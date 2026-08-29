@@ -28,7 +28,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Build backend
-        run: mvn -f apps/backend -B test
+        run: |
+          ./apps/backend/scripts/test-public-proxy-recovery-migrations.sh
+          mvn -f apps/backend -B test
 
   mcp-server:
     runs-on: ubuntu-latest
@@ -41,7 +43,10 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Build MCP server
-        run: mvn -f apps/mcp-server -B test
+        run: |
+          ./apps/mcp-server/scripts/test-public-surface-contract.sh
+          ./apps/mcp-server/scripts/test-public-surface-e2e.sh
+          mvn -f apps/mcp-server -B test
 
   frontend:
     runs-on: ubuntu-latest
@@ -250,6 +255,25 @@ jobs:
               'CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:${IMAGE_TAG}' \
               'MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG}' \
               >> .env"
+      - name: Ensure fail-closed MCP configuration on VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE_MCP_CONFIG'
+          set -euo pipefail
+          cd /root/ai-hub-6
+          current_token="$(grep -E '^MCP_SERVER_API_TOKEN=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' || true)"
+          if [ "${#current_token}" -lt 32 ]; then
+            if command -v openssl >/dev/null 2>&1; then
+              current_token="$(openssl rand -hex 32)"
+            else
+              current_token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+            fi
+            sed -i '/^MCP_SERVER_API_TOKEN=/d' .env
+            printf 'MCP_SERVER_API_TOKEN=%s\n' "${current_token}" >> .env
+          fi
+          sed -i '/^HUB_PUBLIC_PROXY_RECOVERY_ENABLED=/d' .env
+          printf '%s\n' 'HUB_PUBLIC_PROXY_RECOVERY_ENABLED=true' >> .env
+          unset current_token
+          REMOTE_MCP_CONFIG
       - name: Publish services
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
@@ -294,18 +318,27 @@ jobs:
           cat /tmp/mcp-health.json
           echo "== checking MCP linux-command tool =="
           mcp_token="$(grep -E '^MCP_SERVER_API_TOKEN=' .env | tail -n 1 | cut -d= -f2-)"
-          if [ -n "${mcp_token}" ]; then
-            docker compose exec -T caddy wget -q -O - \
-              --header="Content-Type: application/json" \
-              --header="Authorization: Bearer ${mcp_token}" \
-              --post-data='{"command":"printf mcp-ok"}' \
-              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
-          else
-            docker compose exec -T caddy wget -q -O - \
-              --header="Content-Type: application/json" \
-              --post-data='{"command":"printf mcp-ok"}' \
-              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          test "${#mcp_token}" -ge 32
+          if docker compose exec -T caddy wget -q -O /dev/null \
+            --header="Content-Type: application/json" \
+            --post-data='{"command":"printf should-not-run"}' \
+            http://mcp-server:8084/mcp/tools/linux-command; then
+            echo "MCP tool aceitou chamada interna sem bearer" >&2
+            exit 1
           fi
+          docker compose exec -T caddy wget -q -O - \
+            --header="Content-Type: application/json" \
+            --header="Authorization: Bearer ${mcp_token}" \
+            --post-data='{"command":"printf mcp-ok"}' \
+            http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          shell_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"command":"printf public-should-not-run"}' \
+            https://iahub.xyz/mcp/tools/linux-command)"
+          test "${shell_status}" = "404"
+          semantic_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            https://iahub.xyz/mcp/tools/recover-public-proxy/00000000-0000-4000-8000-000000000000)"
+          test "${semantic_status}" = "401"
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/ >/dev/null
           REMOTE_CHECK
       - name: Remove stale Docker artifacts from VPS

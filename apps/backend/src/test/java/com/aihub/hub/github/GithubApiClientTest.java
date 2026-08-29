@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -88,5 +89,64 @@ class GithubApiClientTest {
         assertThat(recorded.getMethod()).isEqualTo("GET");
         assertThat(recorded.getPath()).isEqualTo("/repos/owner/repo/compare/main...ai-hub%2Fcodex-owner-repo-main-chatgpt_codex_mkt");
         assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer token");
+    }
+
+    @Test
+    void dispatchesWorkflowWithClosedInputs() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(204));
+        RestClient restClient = RestClient.builder().baseUrl(server.url("/").toString()).build();
+        GithubAppAuth auth = new GithubAppAuth(restClient, Clock.systemUTC(), "1", GithubAppAuthTest.TEST_KEY, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "token";
+            }
+        };
+        client = new GithubApiClient(restClient, auth);
+
+        client.dispatchWorkflow(
+            "owner",
+            "repo",
+            "recover-public-proxy.yml",
+            "main",
+            Map.of("request_id", "request-1", "confirmation", "RECOVER_PUBLIC_PROXY")
+        );
+
+        var recorded = server.takeRequest();
+        assertThat(recorded.getMethod()).isEqualTo("POST");
+        assertThat(recorded.getPath())
+            .isEqualTo("/repos/owner/repo/actions/workflows/recover-public-proxy.yml/dispatches");
+        assertThat(recorded.getBody().readUtf8())
+            .contains("\"ref\":\"main\"", "\"request_id\":\"request-1\"")
+            .doesNotContain("host", "service", "command");
+    }
+
+    @Test
+    void listsManualWorkflowRunsForFixedBranch() throws Exception {
+        server.enqueue(new MockResponse()
+            .setBody("{\"workflow_runs\":[{\"id\":123}]}" )
+            .addHeader("Content-Type", "application/json"));
+        RestClient restClient = RestClient.builder().baseUrl(server.url("/").toString()).build();
+        GithubAppAuth auth = new GithubAppAuth(restClient, Clock.systemUTC(), "1", GithubAppAuthTest.TEST_KEY, "", "1") {
+            @Override
+            public String getInstallationToken() {
+                return "token";
+            }
+        };
+        client = new GithubApiClient(restClient, auth);
+
+        JsonNode response = client.listWorkflowRuns(
+            "owner",
+            "repo",
+            "recover-public-proxy.yml",
+            "main",
+            25
+        );
+
+        assertThat(response.at("/workflow_runs/0/id").asLong()).isEqualTo(123L);
+        var recorded = server.takeRequest();
+        assertThat(recorded.getMethod()).isEqualTo("GET");
+        assertThat(recorded.getPath()).isEqualTo(
+            "/repos/owner/repo/actions/workflows/recover-public-proxy.yml/runs?event=workflow_dispatch&branch=main&per_page=25"
+        );
     }
 }

@@ -9,7 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -39,13 +38,10 @@ class McpServerControllerTest {
     }
 
     @Test
-    void linuxCommandExecutesWithoutBearerTokenWhenApiTokenIsNotConfigured() throws Exception {
-        MvcResult result = mockMvc.perform(post("/mcp/tools/linux-command")
+    void toolsFailClosedWhenApiTokenIsNotConfigured() throws Exception {
+        mockMvc.perform(post("/mcp/tools/linux-command")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"command\":\"printf open\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-
-        assertThat(result.getResponse().getContentAsString()).contains("\"stdout\":\"open\\n\"");
+                .andExpect(status().isServiceUnavailable());
     }
 }

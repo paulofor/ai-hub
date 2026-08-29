@@ -64,12 +64,14 @@ infra/
 - O `sandbox-orchestrator` monta esses diretórios como somente leitura em `/run/secrets/luma-token`, `/run/secrets/kling-token`, `/run/secrets/heygen-token`, `/run/secrets/radarmeta-token` e `/run/secrets/meta-token`; se os arquivos existirem, exporta `LUMA_API_KEY`, `KLING_API_KEY`, `HEYGEN_API_KEY`, `RADAR_META_TOKEN` e `META_TOKEN` antes de iniciar o runner e o Codex App Server.
 - Caso prefira outros caminhos no host, defina `LUMA_TOKEN_HOST_DIR`, `KLING_TOKEN_HOST_DIR`, `HEYGEN_TOKEN_HOST_DIR`, `RADAR_META_TOKEN_HOST_DIR` e `META_TOKEN_HOST_DIR` no `.env` operacional apontando para as pastas que contêm os arquivos `luma_api_key`, `kling_api_key`, `heygen_api_key`, `radar_meta_token` e `meta_token`.
 
-### MCP Server para comandos no host
+### MCP Server para operações controladas
 
 - O serviço Java `mcp-server` publica o healthcheck em `GET /mcp`, exposto pelo Caddy em `https://iahub.xyz/mcp`.
-- A tool `POST /mcp/tools/linux-command` aceita body `{ "command": "<comando>" }`.
-- Quando `MCP_SERVER_API_TOKEN` estiver definido no `.env` operacional, a tool exige `Authorization: Bearer <MCP_SERVER_API_TOKEN>`. Sem essa variável, mantém compatibilidade com o contrato operacional simples usado pelo Tihub.
-- O container monta `/var/run/docker.sock` e a raiz do host em `/host:ro`, permitindo validar arquivos e consultar logs com comandos como `docker logs --tail 200 ai-hub-6-backend-1`.
+- Todas as tools exigem `Authorization: Bearer <MCP_SERVER_API_TOKEN>`; sem token configurado, falham fechadas com `503`.
+- A operação pública `POST /mcp/tools/recover-public-proxy` recebe somente `requestId`, `reason` e a confirmação `RECOVER_PUBLIC_PROXY`; alvo e workflow são fixos no backend.
+- `GET /mcp/tools/recover-public-proxy/{requestId}` consulta o estado auditável e só retorna `RECOVERED` depois do workflow GitHub concluir as sondas públicas.
+- A tool genérica `linux-command` permanece somente na rede interna para rotinas legadas autenticadas. O Caddy bloqueia seu caminho público com `404`.
+- O container ainda monta `/var/run/docker.sock` e `/host:ro` para essas rotinas internas; nenhuma entrada da recuperação semântica é convertida em shell.
 - Os limites operacionais são controlados por `MCP_SERVER_COMMAND_TIMEOUT_SECONDS` e `MCP_SERVER_MAX_OUTPUT_CHARS`.
 
 ## Testes

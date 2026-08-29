@@ -1,0 +1,25 @@
+services:
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: test-only-root
+      MYSQL_DATABASE: recovery_test
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=test-only-root mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: recovery
+      POSTGRES_PASSWORD: test-only-postgres
+      POSTGRES_DB: recovery_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recovery -d recovery_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 3s

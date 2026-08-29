@@ -13,7 +13,6 @@ services:
       - "${CADDY_HTTP_PORT:-80}:80"
       - "${CADDY_HTTPS_PORT:-443}:443"
     volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
@@ -33,6 +32,8 @@ services:
     env_file:
       - apps/backend/.env.example
       - .env
+    environment:
+      HUB_PUBLIC_PROXY_RECOVERY_ENABLED: ${HUB_PUBLIC_PROXY_RECOVERY_ENABLED:-false}
     depends_on:
       - sandbox-orchestrator
       - mcp-server
@@ -156,6 +157,7 @@ services:
       - .env
     environment:
       MCP_SERVER_API_TOKEN: ${MCP_SERVER_API_TOKEN:-}
+      MCP_SERVER_BACKEND_BASE_URL: ${MCP_SERVER_BACKEND_BASE_URL:-http://backend:8081}
       MCP_SERVER_COMMAND_TIMEOUT_SECONDS: ${MCP_SERVER_COMMAND_TIMEOUT_SECONDS:-30}
       MCP_SERVER_MAX_OUTPUT_CHARS: ${MCP_SERVER_MAX_OUTPUT_CHARS:-20000}
     volumes:
