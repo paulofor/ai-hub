@@ -33,6 +33,7 @@ jobs:
             apps/mcp-server/pom.xml
       - name: Build backend
         run: |
+          ./apps/backend/scripts/validate-migration-versions.sh
           ./apps/backend/scripts/test-public-proxy-recovery-migrations.sh
           mvn -f apps/backend -B test
 
@@ -93,6 +94,13 @@ jobs:
 
   docker:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # Never publish mutable image tags from a revision that has not passed the
+    # complete local-equivalent CI matrix.
+    needs:
+      - backend
+      - frontend
+      - sandbox
+      - mcp-server
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
