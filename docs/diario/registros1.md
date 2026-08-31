@@ -3324,3 +3324,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Homologação final: após a correção, duas rodadas locais completas e consecutivas passaram sem ajuste intermediário. Em cada rodada foram aprovados catálogo Flyway, workflow, sintaxe shell, diff, MySQL 5.7, PostgreSQL, 130 testes backend, contrato e E2E Docker da borda MCP, 9 testes MCP, lint do frontend e 85 testes do sandbox orchestrator.
 - Segregação e limpeza: todas as topologias usaram exclusivamente o projeto Compose `aihub-043a2fe0-64ac-4b9c-a17b-52255877ccd9-c564fc79d5`; ao final restaram zero containers, volumes ou redes associados.
 - Estado externo preservado: nenhum commit, PR, push, rerun, workflow, imagem, deploy ou recuperação foi disparado por esta correção. As mudanças permanecem somente na worktree local; a tag `latest` publicada automaticamente pelo run falho permanece associada à revisão quebrada até uma publicação versionada e verde substituí-la. O gargalo comercial informado continua `INSTRUMENTACAO`, sem eventos ou vendas reais.
+
+## 2026-08-31 — Apuração das solicitações Codex 2544 e 2547
+
+- Solicitação recebida: explicar o que ocorreu com as solicitações MKT 2544 e 2547 do ambiente `paulofor/marketing-hub`.
+- Evidência consultada: detalhes públicos das duas solicitações no AI Hub, transcritos de auditoria, estado dos PRs 5067/5069 e runs do GitHub Actions associados.
+- Pergunta explícita de causa raiz: “por que essas solicitações falharam?”. Resposta: ambas alcançaram o Codex App Server com o modelo `gpt-5.6-sol`, mas o provedor respondeu `Selected model is at capacity. Please try a different model.`. O orquestrador preserva essa resposta e marca o job como `FAILED`; não houve timeout, cancelamento, correção de Action nem execução da validação final pretendida.
+- Solicitação 2544: iniciada às 06:15:37Z e encerrada como `FAILED` às 06:32:05Z, com 887 interações; o vínculo com o PR 5067 não prova uma ação realizada por ela. O PR 5067 já estava mergeado antes da execução.
+- Solicitação 2547: iniciada às 07:47:56Z e encerrada como `FAILED` às 07:50:45Z, com 254 interações; ela não chegou a verificar a publicação do PR 5069, embora esse PR já estivesse mergeado.
+- Estado externo preservado nesta apuração: nenhuma tentativa foi repetida, nenhum workflow foi disparado, nenhum deploy, PR, alteração comercial, gasto ou venda foi criado.
