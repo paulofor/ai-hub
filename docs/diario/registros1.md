@@ -3353,3 +3353,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Proteção contra regressão: o fake App Server passou a simular confirmação lenta de `turn/start`; o teste comprova que ela conclui dentro da janela dedicada e que um request comum sem resposta continua falhando no limite curto. Os contratos também validam documentação, `.env.example` e configuração do deploy.
 - Validação final: `npm test` em `apps/sandbox-orchestrator` aprovou os 86 testes. `git diff --check` passou.
 - Limite da correção: ampliar a espera não mantém uma conexão de rede fisicamente ativa nem garante conclusão de sessões ilimitadas; evita especificamente o falso timeout ao reconhecer a retomada. Os limites adaptativos de inatividade e o timeout total de 12 horas continuam protegendo contra execuções realmente paradas.
+## 2026-09-02 — Verificação de disponibilidade atual do AI Hub
+
+- Solicitação recebida: verificar se o AI Hub estava travado naquele momento.
+- Pergunta explícita de causa raiz: “por que pareceu que o AI Hub estava travado?”. Resposta: não foi encontrada indisponibilidade no período observado; havia uma execução recente ainda marcada como `RUNNING`, o que pode transmitir aparência de espera, mas ela concluiu normalmente cerca de um minuto após iniciar.
+- Evidências públicas: a página principal respondeu HTTP 200; o healthcheck oficial `GET https://iahub.xyz/mcp` respondeu HTTP 200 com `{"status":"UP"}` em quatro verificações, entre 105 e 494 ms; a listagem de solicitações, as métricas e o estado da conta responderam HTTP 200; e a conta informou `connected=true` e `executable=true`.
+- Evidência da execução corrente: a solicitação 2603 foi criada às `20:17:41Z`, iniciou às `20:17:42Z` e concluiu com `COMPLETED` às `20:18:45Z`, sem motivo de falha ou mensagem de erro.
+- Conclusão limitada às sondas disponíveis: o AI Hub e seus caminhos públicos principais estavam responsivos e a execução corrente não estava travada. Não foi realizada recuperação, reinício, deploy ou alteração operacional.
