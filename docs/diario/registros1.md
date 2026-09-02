@@ -3324,3 +3324,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Homologação final: após a correção, duas rodadas locais completas e consecutivas passaram sem ajuste intermediário. Em cada rodada foram aprovados catálogo Flyway, workflow, sintaxe shell, diff, MySQL 5.7, PostgreSQL, 130 testes backend, contrato e E2E Docker da borda MCP, 9 testes MCP, lint do frontend e 85 testes do sandbox orchestrator.
 - Segregação e limpeza: todas as topologias usaram exclusivamente o projeto Compose `aihub-043a2fe0-64ac-4b9c-a17b-52255877ccd9-c564fc79d5`; ao final restaram zero containers, volumes ou redes associados.
 - Estado externo preservado: nenhum commit, PR, push, rerun, workflow, imagem, deploy ou recuperação foi disparado por esta correção. As mudanças permanecem somente na worktree local; a tag `latest` publicada automaticamente pelo run falho permanece associada à revisão quebrada até uma publicação versionada e verde substituí-la. O gargalo comercial informado continua `INSTRUMENTACAO`, sem eventos ou vendas reais.
+
+## 2026-09-02 — Modelo GPT Daybreak Blue nas opções do ChatGPT Codex
+
+- Solicitação recebida: adicionar `gpt-daybreak-blue-latest` à lista de opções de modelos.
+- Pergunta explícita de causa raiz: “por que esse modelo não aparecia?”. Resposta: a tela combina o catálogo retornado por `/account/models` com uma lista local de fallback, mas o identificador `gpt-daybreak-blue-latest` ainda não fazia parte desse fallback; assim, ele ficava indisponível quando o catálogo remoto não o retornava.
+- Ajuste aplicado: o modelo foi incluído no catálogo de fallback com o rótulo `GPT Daybreak Blue`, preservando exatamente o identificador exigido no valor enviado ao backend.
+- Proteção contra regressão: o cenário E2E com catálogo remoto vazio agora verifica a presença da opção, seleciona o modelo e confirma que a solicitação envia `gpt-daybreak-blue-latest`.
