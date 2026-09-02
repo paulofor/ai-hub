@@ -3331,3 +3331,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse modelo não aparecia?”. Resposta: a tela combina o catálogo retornado por `/account/models` com uma lista local de fallback, mas o identificador `gpt-daybreak-blue-latest` ainda não fazia parte desse fallback; assim, ele ficava indisponível quando o catálogo remoto não o retornava.
 - Ajuste aplicado: o modelo foi incluído no catálogo de fallback com o rótulo `GPT Daybreak Blue`, preservando exatamente o identificador exigido no valor enviado ao backend.
 - Proteção contra regressão: o cenário E2E com catálogo remoto vazio agora verifica a presença da opção, seleciona o modelo e confirma que a solicitação envia `gpt-daybreak-blue-latest`.
+
+## 2026-09-02 — Verificação de disponibilidade atual do AI Hub
+
+- Solicitação recebida: verificar se o AI Hub estava travado naquele momento.
+- Pergunta explícita de causa raiz: “por que pareceu que o AI Hub estava travado?”. Resposta: não foi encontrada indisponibilidade no período observado; havia uma execução recente ainda marcada como `RUNNING`, o que pode transmitir aparência de espera, mas ela concluiu normalmente cerca de um minuto após iniciar.
+- Evidências públicas: a página principal respondeu HTTP 200; o healthcheck oficial `GET https://iahub.xyz/mcp` respondeu HTTP 200 com `{"status":"UP"}` em quatro verificações, entre 105 e 494 ms; a listagem de solicitações, as métricas e o estado da conta responderam HTTP 200; e a conta informou `connected=true` e `executable=true`.
+- Evidência da execução corrente: a solicitação 2603 foi criada às `20:17:41Z`, iniciou às `20:17:42Z` e concluiu com `COMPLETED` às `20:18:45Z`, sem motivo de falha ou mensagem de erro.
+- Conclusão limitada às sondas disponíveis: o AI Hub e seus caminhos públicos principais estavam responsivos e a execução corrente não estava travada. Não foi realizada recuperação, reinício, deploy ou alteração operacional.
