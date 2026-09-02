@@ -3332,6 +3332,27 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Ajuste aplicado: o modelo foi incluído no catálogo de fallback com o rótulo `GPT Daybreak Blue`, preservando exatamente o identificador exigido no valor enviado ao backend.
 - Proteção contra regressão: o cenário E2E com catálogo remoto vazio agora verifica a presença da opção, seleciona o modelo e confirma que a solicitação envia `gpt-daybreak-blue-latest`.
 
+## 2026-09-02 — Investigação da solicitação Codex #2600
+
+- Solicitação recebida: explicar o que aconteceu com a solicitação `#2600` do AI Hub.
+- Fonte analisada: detalhe público `GET https://iahub.xyz/api/codex/requests/2600`, transcript de auditoria persistido no próprio registro e estado atual do PR associado consultado pela API pública do GitHub.
+- Estado factual: a solicitação foi criada em `2026-09-02T09:52:59Z`, iniciou somente em `2026-09-02T14:50:37Z` e terminou `FAILED` em `2026-09-02T19:04:17Z`, após 15.220.076 ms de execução (aproximadamente 4h13). A resposta persistida foi `Timeout em request turn/start`.
+- Trabalho observado antes da falha: a execução tentou produzir um vídeo para o experimento Vega 91 usando Apolo, o estúdio de áudio e vídeo e os artigos de pesquisa. O registro contabilizou 6.451 interações, 142.227.172 tokens totais (141.367.063 de prompt, dos quais 138.252.544 em cache, e 342.327 de conclusão) e acessos repetidos aos cânones e documentos de homologação do vídeo. O transcript termina com uma nova chamada `turn/start` pedindo retomada após falha transitória de conexão, mas não contém `turn/completed` nem resposta final posterior.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução entrou em uma trajetória excepcionalmente longa e volumosa, sofreu uma falha transitória de conexão e tentou retomar o mesmo thread; a chamada de retomada `turn/start` não concluiu dentro da janela operacional, então o orquestrador encerrou a solicitação como falha. A ausência de resposta final e de evento `turn/completed` impede afirmar que o vídeo foi concluído ou publicado.
+- O campo `timeoutCount=0` não contradiz o diagnóstico: o erro persistido identifica timeout da operação do App Server (`request turn/start`), enquanto esse contador não registrou a ocorrência nesse caminho.
+- O PR `paulofor/marketing-hub#5091` associado ao registro não comprova entrega da #2600: ele foi criado e mergeado cerca de oito horas antes da criação da solicitação e tem título referente à recuperação/otimização de outra tela. Trata-se de vínculo herdado do contexto/lote, não de um PR produzido pelo pedido do vídeo.
+- Conclusão: a #2600 não terminou com resultado utilizável. Houve trabalho intermediário e consumo muito elevado, mas a retomada falhou antes da resposta final; não há evidência suficiente no registro para considerar o criativo finalizado, publicado no Instagram/Meta Ads ou entregue por PR.
+- Nenhuma correção funcional, nova execução, PR no Marketing Hub, deploy, campanha, gasto ou publicação foi realizada nesta investigação.
+
+## 2026-09-02 — Timeout dedicado para retomada de `turn/start`
+
+- Solicitação recebida: avaliar e implementar aumento de timeout para reduzir falhas como a da solicitação Codex `#2600`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o timeout total do turno já era de 12 horas, mas não foi ele que encerrou a #2600. O cliente do Codex App Server aplicava o timeout genérico de apenas 60 segundos também à confirmação síncrona de `turn/start`; depois de uma execução com thread e contexto excepcionalmente grandes, a retomada podia levar mais de 60 segundos para ser reconhecida e falhava antes de voltar a aguardar o `turn/completed`.
+- Alternativas avaliadas: (1) aumentar o timeout total de 12 horas, sem efeito sobre a falha observada; (2) aumentar o timeout genérico de todos os requests, reduzindo diagnóstico rápido de travamentos em `initialize`, autenticação e controle; (3) criar uma janela dedicada para `turn/start`, mantendo requests de controle com fail-fast. Escolhida a alternativa 3 por atuar no ponto causal sem mascarar outras falhas.
+- Correção aplicada: `turn/start` agora usa `CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS`, com padrão de 300.000 ms (5 minutos), enquanto os demais requests preservam o limite genérico de 60 segundos. A variável foi documentada, adicionada ao exemplo de ambiente e normalizada explicitamente pelo workflow de deploy.
+- Proteção contra regressão: o fake App Server passou a simular confirmação lenta de `turn/start`; o teste comprova que ela conclui dentro da janela dedicada e que um request comum sem resposta continua falhando no limite curto. Os contratos também validam documentação, `.env.example` e configuração do deploy.
+- Validação final: `npm test` em `apps/sandbox-orchestrator` aprovou os 86 testes. `git diff --check` passou.
+- Limite da correção: ampliar a espera não mantém uma conexão de rede fisicamente ativa nem garante conclusão de sessões ilimitadas; evita especificamente o falso timeout ao reconhecer a retomada. Os limites adaptativos de inatividade e o timeout total de 12 horas continuam protegendo contra execuções realmente paradas.
 ## 2026-09-02 — Verificação de disponibilidade atual do AI Hub
 
 - Solicitação recebida: verificar se o AI Hub estava travado naquele momento.

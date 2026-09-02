@@ -77,6 +77,7 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
     fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
   ]);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_REASONING_EFFORT=high$/m);
@@ -84,7 +85,9 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
   assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`43200000` \(12 horas\)/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS[^\n]+`300000` \(5 minutos\)/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
   assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
