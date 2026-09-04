@@ -36,7 +36,7 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
 });
 
-test('offers fallback models and sends GPT Daybreak Blue with the request', async ({ page }) => {
+test('offers fallback models and sends GPT-6 Astra with the request', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
   await page.route('**/api/account/models', (route) => route.fulfill({ json: [] }));
@@ -61,14 +61,15 @@ test('offers fallback models and sends GPT Daybreak Blue with the request', asyn
   });
 
   await page.goto('/codex-chatgpt');
-  const modelSelect = page.locator('select').filter({ has: page.locator('option[value="gpt-daybreak-blue-latest"]') });
+  const modelSelect = page.locator('select').filter({ has: page.locator('option[value="gpt-6-astra"]') });
+  await expect(modelSelect.getByRole('option', { name: 'GPT-6 Astra', exact: true })).toHaveCount(1);
   await expect(modelSelect.getByRole('option', { name: 'GPT Daybreak Blue', exact: true })).toHaveCount(1);
-  await modelSelect.selectOption('gpt-daybreak-blue-latest');
-  await page.screenshot({ path: '/tmp/ai-hub-gpt-daybreak-blue-model-option.png', fullPage: true });
-  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo Daybreak Blue nesta solicitação.');
+  await modelSelect.selectOption('gpt-6-astra');
+  await page.screenshot({ path: '/tmp/ai-hub-gpt-6-astra-model-option.png', fullPage: true });
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo GPT-6 Astra nesta solicitação.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => submittedModel).toBe('gpt-daybreak-blue-latest');
+  await expect.poll(() => submittedModel).toBe('gpt-6-astra');
 });
 
 test('keeps the conversation flowing naturally without subject controls', async ({ page }) => {

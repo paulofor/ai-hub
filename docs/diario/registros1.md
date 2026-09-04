@@ -3360,3 +3360,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Evidências públicas: a página principal respondeu HTTP 200; o healthcheck oficial `GET https://iahub.xyz/mcp` respondeu HTTP 200 com `{"status":"UP"}` em quatro verificações, entre 105 e 494 ms; a listagem de solicitações, as métricas e o estado da conta responderam HTTP 200; e a conta informou `connected=true` e `executable=true`.
 - Evidência da execução corrente: a solicitação 2603 foi criada às `20:17:41Z`, iniciou às `20:17:42Z` e concluiu com `COMPLETED` às `20:18:45Z`, sem motivo de falha ou mensagem de erro.
 - Conclusão limitada às sondas disponíveis: o AI Hub e seus caminhos públicos principais estavam responsivos e a execução corrente não estava travada. Não foi realizada recuperação, reinício, deploy ou alteração operacional.
+
+## 2026-09-03 — Modelo GPT-6 Astra nas opções do ChatGPT Codex
+
+- Solicitação recebida: adicionar o modelo `gpt-6-astra`.
+- Pergunta explícita de causa raiz: “por que esse modelo não aparecia?”. Resposta: embora a tela combine os modelos descobertos por `/account/models` com um catálogo local de fallback, o identificador `gpt-6-astra` ainda não existia nesse catálogo; por isso a opção ficava indisponível quando a conta não a devolvia dinamicamente.
+- Correção aplicada na causa: incluído `gpt-6-astra` no catálogo de fallback, com o rótulo `GPT-6 Astra` e o identificador preservado no valor encaminhado ao backend.
+- Proteção contra regressão: o cenário E2E de catálogo remoto vazio agora confirma a opção, seleciona o modelo e verifica que o POST da solicitação envia `model: gpt-6-astra`.
+- Validação: o teste E2E direcionado passou no Chromium e confirmou visualmente a nova seleção; `npm run lint`, `npm run build` e `git diff --check` também passaram.
