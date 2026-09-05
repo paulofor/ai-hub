@@ -295,7 +295,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
-  assert.match(dockerfile, /CODEX_VERSION=0\.149\.0/);
+  assert.match(dockerfile, /CODEX_VERSION=0\.153\.4/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);

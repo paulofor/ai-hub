@@ -3368,3 +3368,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: incluído `gpt-6-astra` no catálogo de fallback, com o rótulo `GPT-6 Astra` e o identificador preservado no valor encaminhado ao backend.
 - Proteção contra regressão: o cenário E2E de catálogo remoto vazio agora confirma a opção, seleciona o modelo e verifica que o POST da solicitação envia `model: gpt-6-astra`.
 - Validação: o teste E2E direcionado passou no Chromium e confirmou visualmente a nova seleção; `npm run lint`, `npm run build` e `git diff --check` também passaram.
+
+## 2026-09-04 — Atualização do Codex para executar o GPT-6 Astra
+
+- Solicitação recebida: corrigir o erro HTTP 400 que informava que `gpt-6-astra` exige uma versão mais nova do Codex.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a interface passou a oferecer `gpt-6-astra`, mas a imagem de execução do `sandbox-orchestrator` permaneceu fixada em `@openai/codex@0.149.0`. O catálogo local, portanto, permitia selecionar um modelo cujo protocolo não era suportado pelo App Server efetivamente instalado.
+- Correção aplicada na causa: o argumento reproduzível `CODEX_VERSION` foi atualizado para `0.153.4`, versão estável marcada como `latest` no registro npm durante a investigação, em vez de ocultar o modelo ou tratar o HTTP 400 como uma falha transitória.
+- Proteção contra regressão: o contrato do Dockerfile agora exige explicitamente `CODEX_VERSION=0.153.4` e continua verificando que a instalação global usa exatamente o argumento versionado.
+- Validação: os 86 testes do `sandbox-orchestrator` passaram, o pacote versionado executou `codex-cli 0.153.4` e `git diff --check` não encontrou problemas.
