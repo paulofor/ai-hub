@@ -3376,3 +3376,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: o argumento reproduzível `CODEX_VERSION` foi atualizado para `0.153.4`, versão estável marcada como `latest` no registro npm durante a investigação, em vez de ocultar o modelo ou tratar o HTTP 400 como uma falha transitória.
 - Proteção contra regressão: o contrato do Dockerfile agora exige explicitamente `CODEX_VERSION=0.153.4` e continua verificando que a instalação global usa exatamente o argumento versionado.
 - Validação: os 86 testes do `sandbox-orchestrator` passaram, o pacote versionado executou `codex-cli 0.153.4` e `git diff --check` não encontrou problemas.
+
+## 2026-09-06 — Simplificação dos comentários e card da solicitação no detalhe
+
+- Solicitação recebida: manter somente os campos “Problema”, “O que eu espero da solução” e “O que o modelo entregou” nos comentários da execução e apresentar a solicitação como um card semelhante ao diálogo da tela de solicitações.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhe expunha diretamente os quatro campos históricos do contrato de feedback e renderizava o prompt como um bloco técnico escuro; essa estrutura refletia o armazenamento interno, mas não a linguagem nem o padrão visual já usado para a mensagem do usuário no diálogo.
+- Correção aplicada na causa: a interface passou a traduzir os três dados úteis para os rótulos orientados à avaliação solicitados, removeu da apresentação o campo redundante de log sem apagar seu valor histórico ao salvar e reutilizou no card da solicitação a hierarquia, largura, alinhamento e cores da mensagem do usuário no diálogo.
+- Proteção contra regressão: foi adicionado um cenário E2E que abre o detalhe, confirma o card verde da solicitação, verifica exatamente três caixas de texto e garante a ausência dos campos antigos “Dificuldade de resolução” e “Log”.

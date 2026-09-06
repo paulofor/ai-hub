@@ -594,9 +594,9 @@ export default function CodexRequestDetailPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-              <div className="rounded-lg border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="ml-auto w-full max-w-3xl rounded-lg bg-emerald-100 px-4 py-3 text-emerald-950 shadow-sm dark:bg-emerald-950/50 dark:text-emerald-100">
                 <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Prompt enviado</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Solicitação</h4>
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -608,7 +608,7 @@ export default function CodexRequestDetailPage() {
                     <span className="text-xs text-slate-500">{request.prompt.length.toLocaleString('pt-BR')} caracteres</span>
                   </div>
                 </div>
-                <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md bg-slate-900/90 p-4 text-xs leading-relaxed text-emerald-100">
+                <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap font-sans text-sm leading-relaxed">
                   {request.prompt}
                 </pre>
               </div>
@@ -682,8 +682,7 @@ export default function CodexRequestDetailPage() {
         <div className="rounded-xl border border-slate-200 bg-white/70 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold">Comentário e melhoria</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-300">Guarde aprendizados para evoluir o processo.</p>
+              <h3 className="text-lg font-semibold">Comentários sobre a execução</h3>
             </div>
             <Link to={`/codex/requests/${request.id}`} className="text-xs text-slate-500">
               Última atualização: {formatDateTime(request.finishedAt ?? request.createdAt)}
@@ -692,7 +691,7 @@ export default function CodexRequestDetailPage() {
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="problem-description">
-                Problema encontrado
+                Problema
               </label>
               <textarea
                 id="problem-description"
@@ -703,13 +702,12 @@ export default function CodexRequestDetailPage() {
                 }}
                 rows={3}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Descreva o problema, o contexto e o impacto observado."
+                placeholder="Descreva o problema."
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400">Ajuda a entender o motivo da solicitação.</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="resolution-difficulty">
-                Dificuldade de resolução
+                O que eu espero da solução
               </label>
               <textarea
                 id="resolution-difficulty"
@@ -718,15 +716,14 @@ export default function CodexRequestDetailPage() {
                   setResolutionDifficulty(event.target.value);
                   setFeedbackDirty(true);
                 }}
-                rows={2}
+                rows={3}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Baixa, média, alta ou detalhe do que tornou a resolução fácil ou difícil."
+                placeholder="Descreva o resultado esperado."
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400">Documente desafios, bloqueios ou facilidades encontrados.</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="comment-and-improvement">
-                Comentário e melhoria
+                O que o modelo entregou
               </label>
               <textarea
                 id="comment-and-improvement"
@@ -735,30 +732,10 @@ export default function CodexRequestDetailPage() {
                   setComment(event.target.value);
                   setFeedbackDirty(true);
                 }}
-                rows={5}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Anote decisões, problemas encontrados ou ideias para melhorar o fluxo."
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-400">Guarde aprendizados para evoluir o processo.</p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="execution-log">
-                Log
-              </label>
-              <textarea
-                id="execution-log"
-                value={executionLog}
-                onChange={(event) => {
-                  setExecutionLog(event.target.value);
-                  setFeedbackDirty(true);
-                }}
                 rows={3}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Registre um log ou observação após a solicitação ser executada."
+                placeholder="Descreva o resultado entregue pelo modelo."
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Ajuda a documentar ações realizadas e melhorias futuras.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <button
