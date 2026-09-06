@@ -3383,3 +3383,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhe expunha diretamente os quatro campos históricos do contrato de feedback e renderizava o prompt como um bloco técnico escuro; essa estrutura refletia o armazenamento interno, mas não a linguagem nem o padrão visual já usado para a mensagem do usuário no diálogo.
 - Correção aplicada na causa: a interface passou a traduzir os três dados úteis para os rótulos orientados à avaliação solicitados, removeu da apresentação o campo redundante de log sem apagar seu valor histórico ao salvar e reutilizou no card da solicitação a hierarquia, largura, alinhamento e cores da mensagem do usuário no diálogo.
 - Proteção contra regressão: foi adicionado um cenário E2E que abre o detalhe, confirma o card verde da solicitação, verifica exatamente três caixas de texto e garante a ausência dos campos antigos “Dificuldade de resolução” e “Log”.
+
+## 2026-09-06 — Resposta completa no detalhe sem rolagem vertical interna
+
+- Solicitação recebida: exibir toda a resposta do modelo na tela de detalhe sem uma barra de rolagem vertical dentro do card.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contêiner da resposta possuía simultaneamente uma altura máxima fixa de 420 px e `overflow-auto`; respostas maiores que esse limite eram deliberadamente recortadas pelo layout e ganhavam uma segunda rolagem vertical, além da rolagem natural da página.
+- Correção aplicada na causa: removidos o limite artificial de altura e o overflow interno do contêiner da resposta. O card agora cresce conforme o conteúdo e a página mantém a única rolagem vertical necessária; a rolagem horizontal específica de conteúdos largos, como blocos de código e tabelas, permanece preservada.
+- Proteção contra regressão: o cenário E2E do detalhe passou a usar uma resposta maior que o antigo limite e verifica que o contêiner tem `overflow-y: visible` e não possui conteúdo vertical recortado.

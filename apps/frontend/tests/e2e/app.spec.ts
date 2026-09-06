@@ -47,7 +47,7 @@ test('shows the request detail as a conversation card with only the three execut
       profile: 'CHATGPT_CODEX',
       reasoningEffort: 'high',
       prompt: 'Crie uma integração segura com a API pública.',
-      responseText: 'Integração criada e validada.',
+      responseText: Array.from({ length: 35 }, (_, index) => `${index + 1}. Etapa da integração criada e validada.`).join('\n\n'),
       status: 'COMPLETED',
       createdAt: '2026-09-06T09:00:00Z',
       finishedAt: '2026-09-06T09:05:00Z',
@@ -62,6 +62,14 @@ test('shows the request detail as a conversation card with only the three execut
   const requestCard = page.getByRole('heading', { name: 'Solicitação', exact: true }).locator('..').locator('..');
   await expect(requestCard).toHaveClass(/bg-emerald-100/);
   await expect(requestCard).toContainText('Crie uma integração segura com a API pública.');
+  const response = page.getByTestId('codex-response');
+  await expect(response).toBeVisible();
+  await expect(response).toHaveCSS('overflow-y', 'visible');
+  const responseDimensions = await response.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight
+  }));
+  expect(responseDimensions.scrollHeight).toBe(responseDimensions.clientHeight);
   await expect(page.locator('textarea')).toHaveCount(3);
   await expect(page.getByLabel('Problema', { exact: true })).toBeVisible();
   await expect(page.getByLabel('O que eu espero da solução', { exact: true })).toBeVisible();
