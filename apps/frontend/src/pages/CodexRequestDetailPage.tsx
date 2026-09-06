@@ -619,7 +619,10 @@ export default function CodexRequestDetailPage() {
                     {request.responseText ? `${request.responseText.length.toLocaleString('pt-BR')} caracteres` : 'Sem resposta'}
                   </span>
                 </div>
-                <div className="max-h-[420px] overflow-auto rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-100">
+                <div
+                  data-testid="codex-response"
+                  className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-100"
+                >
                   {request.responseText ? (
                     <CodexResponseBody
                       content={request.responseText}
