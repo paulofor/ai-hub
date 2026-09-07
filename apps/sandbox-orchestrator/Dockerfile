@@ -196,7 +196,17 @@ function escapeHtml(value) {
 EOF
 RUN chmod +x /usr/local/bin/sandbox-media-player
 COPY scripts/curl-with-timeout /usr/local/bin/curl
+COPY scripts/start-sandbox-ssh-agent /usr/local/bin/start-sandbox-ssh-agent
+COPY scripts/sandbox-ssh-agent-health /usr/local/bin/sandbox-ssh-agent-health
+COPY scripts/sandbox-ssh /usr/local/bin/sandbox-ssh
+COPY scripts/sandbox-remote-docker /usr/local/bin/sandbox-remote-docker
+COPY ssh /etc/sandbox-ssh
 RUN chmod +x /usr/local/bin/curl \
+  /usr/local/bin/start-sandbox-ssh-agent \
+  /usr/local/bin/sandbox-ssh-agent-health \
+  /usr/local/bin/sandbox-ssh \
+  /usr/local/bin/sandbox-remote-docker \
+  && chmod 644 /etc/sandbox-ssh/known_hosts /etc/sandbox-ssh/operator_key.pub \
   && /usr/local/bin/curl --version
 RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g typescript @openai/codex@${CODEX_VERSION} playwright@${PLAYWRIGHT_VERSION} @playwright/test@${PLAYWRIGHT_VERSION} \
   && codex --version \

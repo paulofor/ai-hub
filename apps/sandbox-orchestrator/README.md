@@ -77,6 +77,13 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `RADAR_META_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/radarmeta-token`; quando contém o arquivo `radar_meta_token`, o `docker-compose` exporta seu conteúdo como `RADAR_META_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/radarmeta-token` |
 | `META_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/meta-token`; quando contém o arquivo `meta_token`, o `docker-compose` exporta seu conteúdo como `META_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/meta-token` |
 | `AWS_CREDENTIALS_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/aws`; quando contém o arquivo `acesso_aws`, o `docker-compose` exporta `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` e, opcionalmente, `AWS_SESSION_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/aws` |
+| `SANDBOX_SSH_KEY_HOST_DIR` | Diretório persistente do host que contém `id_ed25519` com modo `0600`. Somente o sidecar `sandbox-ssh-agent` monta esse diretório; o orquestrador recebe apenas o socket. | `/root/infra/sandbox-ssh` |
+| `SANDBOX_SSH_ALLOWED_DESTINATIONS` | Lista separada por vírgulas de destinos `usuario@host` carregados como restrições no agente e aceitos pelo helper `sandbox-ssh`. Cada host também precisa estar fixado em `/etc/sandbox-ssh/known_hosts`. | quatro VPS operacionais versionados no Compose |
+| `SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS` | Timeout de conexão aplicado pelo helper `sandbox-ssh`. | `15` |
+| `SANDBOX_REMOTE_DOCKER_MEMORY_LIMIT` | Limite de memória de cada container temporário criado por `sandbox-remote-docker`. | `1g` |
+| `SANDBOX_REMOTE_DOCKER_CPU_LIMIT` | Limite de CPU de cada container temporário remoto. | `1` |
+| `SANDBOX_REMOTE_DOCKER_PIDS_LIMIT` | Limite de processos de cada container temporário remoto. | `256` |
+| `SANDBOX_REMOTE_DOCKER_NETWORK` | Rede do container temporário; `host` é sempre recusada. Use `none` por padrão ou uma rede Docker nominal quando a depuração exigir integração. | `none` |
 
 Formato esperado de `/root/infra/aws/acesso_aws` no host:
 
@@ -89,6 +96,32 @@ AWS_SESSION_TOKEN=xxxxxxxx
 ```
 
 O runner informa ao modelo que o comando `aws` está disponível e se as credenciais foram exportadas. Para validar acesso sem expor segredo, use comandos como `aws sts get-caller-identity`; não imprima variáveis `AWS_*` em logs.
+
+### Docker temporário em host autorizado
+
+Depois que a identidade estiver carregada no sidecar, o helper
+`sandbox-remote-docker` permite testar uma imagem construída localmente pelos
+arquivos versionados do repositório sem criar tar no VPS:
+
+```bash
+sandbox-remote-docker push root@HOST sessao imagem-local:teste app:teste
+sandbox-remote-docker run root@HOST sessao app app:teste
+sandbox-remote-docker logs root@HOST sessao app
+sandbox-remote-docker exec root@HOST sessao app comando argumento
+sandbox-remote-docker inspect root@HOST sessao app
+sandbox-remote-docker cleanup root@HOST sessao
+```
+
+As imagens usam o prefixo `aihubsbx/<sessao>/` e os containers recebem nome,
+labels, limites de CPU/RAM/PIDs, `no-new-privileges`, capabilities removidas,
+restart desativado e rede `none` por padrão. O helper não oferece modo
+privilegiado, host network, volumes, bind mounts ou socket Docker. A limpeza filtra
+a sessão e recusa containers sem os labels esperados.
+
+Esse fluxo é exclusivo de homologação e depuração temporária. Uma imagem ou
+alteração destinada à produção deve continuar sendo criada e publicada pelo
+Dockerfile/Compose/pipeline versionado após Pull Request; SSH não substitui esse
+processo.
 
 Os tokens Luma, Kling, HeyGen, Radar Meta e Meta devem ficar fora do repositório nos arquivos `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key`, `/root/infra/heygen-token/heygen_api_key`, `/root/infra/radarmeta-token/radar_meta_token` e `/root/infra/meta-token/meta_token`. Quando os arquivos existem, o `sandbox-orchestrator` exporta `LUMA_API_KEY`, `KLING_API_KEY`, `HEYGEN_API_KEY`, `RADAR_META_TOKEN` e `META_TOKEN` para os comandos do modelo e para o Codex App Server; nunca registre os valores dessas variáveis em logs, respostas ou arquivos.
 

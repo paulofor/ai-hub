@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+Uso:
+  sandbox-remote-docker push    <usuario@host> <sessao> <imagem-local> <artefato[:tag]>
+  sandbox-remote-docker run     <usuario@host> <sessao> <container> <artefato[:tag]>
+  sandbox-remote-docker exec    <usuario@host> <sessao> <container> <comando> [argumentos...]
+  sandbox-remote-docker logs    <usuario@host> <sessao> <container> [linhas]
+  sandbox-remote-docker inspect <usuario@host> <sessao> <container>
+  sandbox-remote-docker remove  <usuario@host> <sessao> <container>
+  sandbox-remote-docker unload  <usuario@host> <sessao> <artefato[:tag]>
+  sandbox-remote-docker cleanup <usuario@host> <sessao>
+
+Transfere imagens por stdin, sem tar remoto, e gerencia somente recursos
+temporários do namespace aihubsbx/<sessao>. Não substitui PR/pipeline de produção.
+USAGE
+  exit 64
+}
+
+fail() {
+  local message="$1"
+  local status="${2:-65}"
+  echo "sandbox-remote-docker: ${message}" >&2
+  exit "${status}"
+}
+
+require_executable() {
+  local executable="$1"
+  if [[ "${executable}" == */* ]]; then
+    [ -x "${executable}" ] || fail "executável indisponível: ${executable}" 69
+  else
+    command -v "${executable}" >/dev/null 2>&1 || fail "comando indisponível: ${executable}" 69
+  fi
+}
+
+validate_session() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || fail "sessão inválida" 64
+}
+
+validate_container_token() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9_.-]{0,31}$ ]] || fail "nome de container inválido" 64
+}
+
+validate_artifact() {
+  [[ "$1" =~ ^[a-z0-9][a-z0-9_.-]{0,63}(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,63})?$ ]] \
+    || fail "artefato ou tag inválido" 64
+}
+
+validate_local_image() {
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,254}$ ]] || fail "referência de imagem local inválida" 64
+}
+
+image_reference() {
+  local artifact="$1"
+  if [[ "${artifact}" != *:* ]]; then
+    artifact="${artifact}:latest"
+  fi
+  printf 'aihubsbx/%s/%s' "${session}" "${artifact}"
+}
+
+remote() {
+  "${ssh_command}" "${destination}" "$@"
+}
+
+remote_docker_ready() {
+  remote docker version --format '{{.Server.Version}}' >/dev/null
+}
+
+managed_container_metadata() {
+  local resource="$1"
+  local metadata
+  metadata="$(remote docker container inspect "${resource}")" \
+    || fail "container gerenciado não encontrado: ${resource}" 69
+  if ! jq -e \
+    --arg session "${session}" \
+    --arg prefix "/aihubsbx-${session}-" \
+    'length == 1
+      and .[0].Config.Labels["aihub.sandbox.managed"] == "true"
+      and .[0].Config.Labels["aihub.sandbox.session"] == $session
+      and (. [0].Name | startswith($prefix))' \
+    <<< "${metadata}" >/dev/null; then
+    fail "o recurso não pertence à sessão ${session}: ${resource}" 77
+  fi
+  printf '%s\n' "${metadata}"
+}
+
+[ "$#" -ge 3 ] || usage
+
+operation="$1"
+destination="$2"
+session="$3"
+shift 3
+
+[[ "${destination}" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$ ]] || fail "destino inválido" 64
+validate_session "${session}"
+
+ssh_command="${SANDBOX_SSH_COMMAND:-sandbox-ssh}"
+docker_command="${SANDBOX_DOCKER_COMMAND:-docker}"
+require_executable "${ssh_command}"
+require_executable "${docker_command}"
+require_executable jq
+
+case "${operation}" in
+  push)
+    [ "$#" -eq 2 ] || usage
+    local_image="$1"
+    artifact="$2"
+    validate_local_image "${local_image}"
+    validate_artifact "${artifact}"
+    remote_image="$(image_reference "${artifact}")"
+
+    local_image_id="$("${docker_command}" image inspect --format '{{.Id}}' "${local_image}")" \
+      || fail "imagem local não encontrada: ${local_image}" 66
+    transfer_tag_created=false
+    if existing_transfer_id="$("${docker_command}" image inspect --format '{{.Id}}' "${remote_image}" 2>/dev/null)"; then
+      [ "${existing_transfer_id}" = "${local_image_id}" ] \
+        || fail "a tag local de transferência já aponta para outra imagem: ${remote_image}" 73
+    else
+      "${docker_command}" image tag "${local_image}" "${remote_image}"
+      transfer_tag_created=true
+    fi
+
+    cleanup_transfer_tag() {
+      if [ "${transfer_tag_created}" = true ]; then
+        "${docker_command}" image rm "${remote_image}" >/dev/null 2>&1 || true
+      fi
+    }
+    trap cleanup_transfer_tag EXIT
+
+    remote_docker_ready
+    echo "sandbox-remote-docker: enviando ${remote_image} para ${destination} por streaming" >&2
+    "${docker_command}" image save "${remote_image}" | remote docker image load
+    remote_image_id="$(remote docker image inspect --format '{{.Id}}' "${remote_image}")" \
+      || fail "a imagem transferida não pode ser inspecionada" 69
+    [ "${remote_image_id}" = "${local_image_id}" ] \
+      || fail "image ID divergente após a transferência" 74
+    echo "sandbox-remote-docker: operation=push destination=${destination} session=${session} image=${remote_image} result=ok"
+    ;;
+
+  run)
+    [ "$#" -eq 2 ] || usage
+    container_token="$1"
+    artifact="$2"
+    validate_container_token "${container_token}"
+    validate_artifact "${artifact}"
+    container_name="aihubsbx-${session}-${container_token}"
+    remote_image="$(image_reference "${artifact}")"
+    memory_limit="${SANDBOX_REMOTE_DOCKER_MEMORY_LIMIT:-1g}"
+    cpu_limit="${SANDBOX_REMOTE_DOCKER_CPU_LIMIT:-1}"
+    pids_limit="${SANDBOX_REMOTE_DOCKER_PIDS_LIMIT:-256}"
+    network_name="${SANDBOX_REMOTE_DOCKER_NETWORK:-none}"
+
+    [[ "${memory_limit}" =~ ^[1-9][0-9]*([kKmMgG][bB]?)?$ ]] || fail "limite de memória inválido" 64
+    [[ "${cpu_limit}" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "limite de CPU inválido" 64
+    [[ "${pids_limit}" =~ ^[1-9][0-9]{0,5}$ ]] || fail "limite de PIDs inválido" 64
+    [[ "${network_name}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || fail "rede inválida" 64
+    [ "${network_name}" != host ] || fail "host network é proibida" 77
+
+    remote_docker_ready
+    remote docker image inspect "${remote_image}" >/dev/null \
+      || fail "imagem temporária ausente no destino: ${remote_image}" 66
+    if remote docker container inspect "${container_name}" >/dev/null 2>&1; then
+      fail "container já existe; remova-o explicitamente: ${container_name}" 73
+    fi
+
+    remote docker container run --detach \
+      --name "${container_name}" \
+      --label aihub.sandbox.managed=true \
+      --label "aihub.sandbox.session=${session}" \
+      --label aihub.sandbox.purpose=debug \
+      --restart no \
+      --memory "${memory_limit}" \
+      --cpus "${cpu_limit}" \
+      --pids-limit "${pids_limit}" \
+      --security-opt no-new-privileges:true \
+      --cap-drop ALL \
+      --network "${network_name}" \
+      "${remote_image}" >/dev/null
+    managed_container_metadata "${container_name}" >/dev/null
+    echo "sandbox-remote-docker: operation=run destination=${destination} session=${session} container=${container_name} result=ok"
+    ;;
+
+  exec)
+    [ "$#" -ge 2 ] || usage
+    container_token="$1"
+    shift
+    validate_container_token "${container_token}"
+    container_name="aihubsbx-${session}-${container_token}"
+    managed_container_metadata "${container_name}" >/dev/null
+    remote docker container exec "${container_name}" "$@"
+    ;;
+
+  logs)
+    if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+      usage
+    fi
+    container_token="$1"
+    lines="${2:-200}"
+    validate_container_token "${container_token}"
+    [[ "${lines}" =~ ^[1-9][0-9]{0,5}$ ]] || fail "quantidade de linhas inválida" 64
+    container_name="aihubsbx-${session}-${container_token}"
+    managed_container_metadata "${container_name}" >/dev/null
+    remote docker container logs --tail "${lines}" "${container_name}"
+    ;;
+
+  inspect)
+    [ "$#" -eq 1 ] || usage
+    container_token="$1"
+    validate_container_token "${container_token}"
+    container_name="aihubsbx-${session}-${container_token}"
+    managed_container_metadata "${container_name}"
+    ;;
+
+  remove)
+    [ "$#" -eq 1 ] || usage
+    container_token="$1"
+    validate_container_token "${container_token}"
+    container_name="aihubsbx-${session}-${container_token}"
+    managed_container_metadata "${container_name}" >/dev/null
+    remote docker container rm --force "${container_name}" >/dev/null
+    echo "sandbox-remote-docker: operation=remove destination=${destination} session=${session} container=${container_name} result=ok"
+    ;;
+
+  unload)
+    [ "$#" -eq 1 ] || usage
+    artifact="$1"
+    validate_artifact "${artifact}"
+    remote_image="$(image_reference "${artifact}")"
+    remote docker image inspect "${remote_image}" >/dev/null \
+      || fail "imagem temporária ausente no destino: ${remote_image}" 66
+    remote docker image rm "${remote_image}" >/dev/null
+    echo "sandbox-remote-docker: operation=unload destination=${destination} session=${session} image=${remote_image} result=ok"
+    ;;
+
+  cleanup)
+    [ "$#" -eq 0 ] || usage
+    remote_docker_ready
+    container_ids="$(remote docker container ls --all --quiet \
+      --filter label=aihub.sandbox.managed=true \
+      --filter "label=aihub.sandbox.session=${session}")"
+    while IFS= read -r container_id; do
+      [ -n "${container_id}" ] || continue
+      [[ "${container_id}" =~ ^[a-f0-9]{12,64}$ ]] || fail "ID de container remoto inválido" 74
+      managed_container_metadata "${container_id}" >/dev/null
+      remote docker container rm --force "${container_id}" >/dev/null
+    done <<< "${container_ids}"
+
+    image_list="$(remote docker image ls --format '{{.Repository}}:{{.Tag}}')"
+    image_prefix="aihubsbx/${session}/"
+    while IFS= read -r remote_image; do
+      [[ "${remote_image}" == "${image_prefix}"* ]] || continue
+      remote docker image rm "${remote_image}" >/dev/null
+    done <<< "${image_list}"
+    echo "sandbox-remote-docker: operation=cleanup destination=${destination} session=${session} result=ok"
+    ;;
+
+  *)
+    usage
+    ;;
+esac

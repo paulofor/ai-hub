@@ -52,6 +52,13 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura e, se os arquivos existirem, exporta `GITHUB_ACTOR`, `GITHUB_TOKEN` e `GITHUB_CLONE_TOKEN` antes de iniciar o runner; assim o valor não depende de editar o `.env` versionado/sincronizado.
 - Caso prefira outro caminho no host, defina `GITHUB_PACKAGES_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém esses dois arquivos.
 
+### Acesso SSH persistente da sandbox
+
+- A identidade operacional fica no segredo protegido `SANDBOX_OPS_SSH_PRIVATE_KEY`; o deploy a grava fora do repositório em `/root/infra/sandbox-ssh/id_ed25519` com permissão `0600`.
+- Somente o sidecar sem rede `sandbox-ssh-agent` monta a chave privada. O `sandbox-orchestrator` recebe apenas o socket read-only e usa `sandbox-ssh usuario@host comando` com destinos e host keys fixados.
+- A chave pública, o fingerprint, os destinos atuais e o procedimento de rotação estão em [docs/operacao/sandbox-ssh-persistente.md](docs/operacao/sandbox-ssh-persistente.md).
+- Nunca grave a chave privada em `.env`, no workspace, em logs ou em arquivos versionados.
+
 ### Armazenamento do token da Pepper para a sandbox
 
 - Para chamadas à API da Pepper executadas pelo modelo, guarde o token fora do repositório em `/root/infra/pepper-token/pepper_api_token`.

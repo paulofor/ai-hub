@@ -1,0 +1,102 @@
+#!/bin/sh
+set -eu
+
+umask 077
+
+socket_path="${SSH_AUTH_SOCK:-/run/sandbox-ssh-agent/agent.sock}"
+socket_dir="$(dirname "${socket_path}")"
+ready_file="${SANDBOX_SSH_READY_FILE:-${socket_dir}/ready}"
+private_key_file="${SANDBOX_SSH_PRIVATE_KEY_FILE:-/run/secrets/sandbox-ssh/id_ed25519}"
+known_hosts_file="${SANDBOX_SSH_KNOWN_HOSTS_FILE:-/etc/sandbox-ssh/known_hosts}"
+allowed_destinations="${SANDBOX_SSH_ALLOWED_DESTINATIONS:-}"
+
+mkdir -p "${socket_dir}"
+chmod 700 "${socket_dir}"
+rm -f "${socket_path}" "${ready_file}"
+
+ssh-agent -D -a "${socket_path}" >/dev/null 2>&1 &
+SSH_AGENT_PID=$!
+export SSH_AGENT_PID SSH_AUTH_SOCK="${socket_path}"
+
+cleanup() {
+  if [ -n "${SSH_AGENT_PID:-}" ]; then
+    kill "${SSH_AGENT_PID}" >/dev/null 2>&1 || true
+    wait "${SSH_AGENT_PID}" >/dev/null 2>&1 || true
+  fi
+  rm -f "${socket_path}" "${ready_file}"
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+
+socket_attempt=0
+while [ ! -S "${socket_path}" ]; do
+  if ! kill -0 "${SSH_AGENT_PID}" >/dev/null 2>&1; then
+    echo "sandbox-ssh-agent: processo encerrou antes de criar o socket" >&2
+    exit 1
+  fi
+  socket_attempt=$((socket_attempt + 1))
+  if [ "${socket_attempt}" -ge 50 ]; then
+    echo "sandbox-ssh-agent: timeout aguardando a criação do socket" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+
+if [ ! -f "${private_key_file}" ]; then
+  echo "sandbox-ssh-agent: identidade ausente; agente iniciado sem chaves" >&2
+  : > "${ready_file}"
+  wait "${SSH_AGENT_PID}"
+  exit $?
+fi
+
+private_key_mode="$(stat -c '%a' "${private_key_file}")"
+if [ "${private_key_mode}" != "600" ]; then
+  echo "sandbox-ssh-agent: a chave privada deve ter permissão 0600" >&2
+  exit 1
+fi
+
+if [ ! -s "${known_hosts_file}" ]; then
+  echo "sandbox-ssh-agent: arquivo known_hosts fixado está ausente ou vazio" >&2
+  exit 1
+fi
+
+normalized_destinations="$(printf '%s' "${allowed_destinations}" | tr ',' ' ')"
+set -- -H "${known_hosts_file}"
+destination_count=0
+
+for destination in ${normalized_destinations}; do
+  case "${destination}" in
+    *[!A-Za-z0-9._@-]*|*@*@*|@*|*@)
+      echo "sandbox-ssh-agent: destino inválido na allowlist" >&2
+      exit 1
+      ;;
+    *) ;;
+  esac
+
+  destination_host="${destination#*@}"
+  if ! ssh-keygen -F "${destination_host}" -f "${known_hosts_file}" >/dev/null; then
+    echo "sandbox-ssh-agent: destino sem host key fixada: ${destination_host}" >&2
+    exit 1
+  fi
+
+  set -- "$@" -h "${destination}"
+  destination_count=$((destination_count + 1))
+done
+
+if [ "${destination_count}" -eq 0 ]; then
+  echo "sandbox-ssh-agent: a allowlist de destinos não pode estar vazia" >&2
+  exit 1
+fi
+
+set -- "$@" "${private_key_file}"
+ssh-add "$@" >/dev/null
+
+loaded_fingerprint="$(ssh-add -L | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')"
+if [ -z "${loaded_fingerprint}" ]; then
+  echo "sandbox-ssh-agent: não foi possível confirmar o fingerprint carregado" >&2
+  exit 1
+fi
+
+echo "sandbox-ssh-agent: identidade carregada (${loaded_fingerprint}); ${destination_count} destino(s) fixado(s)" >&2
+: > "${ready_file}"
+wait "${SSH_AGENT_PID}"

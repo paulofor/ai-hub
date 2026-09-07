@@ -91,6 +91,10 @@ jobs:
         run: npm --prefix apps/sandbox-orchestrator ci
       - name: Test
         run: npm --prefix apps/sandbox-orchestrator test
+      - name: Test protected remote Docker lifecycle
+        env:
+          SANDBOX_REMOTE_DOCKER_TEST_PROJECT: aihub-remote-docker-${{ github.run_id }}-${{ github.run_attempt }}
+        run: apps/sandbox-orchestrator/tests/test-remote-docker-e2e.sh
 
   docker:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -232,7 +236,14 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60" >> "$GITHUB_ENV"
+          awk -v host="${DEPLOY_HOST}" '$1 == host { print }' \
+            apps/sandbox-orchestrator/ssh/known_hosts > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if ! ssh-keygen -F "${DEPLOY_HOST}" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "Host key fixada ausente para ${DEPLOY_HOST}." >&2
+            exit 1
+          fi
+          printf '%s\n' "SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60" >> "$GITHUB_ENV"
       - name: Prepare remote directory
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${REMOTE_PATH}"
@@ -246,6 +257,49 @@ jobs:
             --exclude 'infra/' \
             --exclude 'apps/backend/.env' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
+      - name: Provision protected sandbox SSH identity
+        env:
+          SANDBOX_OPS_SSH_PRIVATE_KEY: ${{ secrets.SANDBOX_OPS_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SANDBOX_OPS_SSH_PRIVATE_KEY}" ]; then
+            echo "SANDBOX_OPS_SSH_PRIVATE_KEY não configurado." >&2
+            exit 1
+          fi
+
+          local_private_key="$(mktemp)"
+          remote_private_key_tmp="/root/infra/sandbox-ssh/.id_ed25519.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.tmp"
+          cleanup() {
+            chmod 600 "${local_private_key}" 2>/dev/null || true
+            shred -u "${local_private_key}" 2>/dev/null || rm -f "${local_private_key}"
+          }
+          trap cleanup EXIT
+
+          umask 077
+          printf '%s\n' "${SANDBOX_OPS_SSH_PRIVATE_KEY}" > "${local_private_key}"
+          actual_public_key="$(ssh-keygen -y -f "${local_private_key}" | awk '{ print $1 " " $2 }')"
+          expected_public_key="$(awk '{ print $1 " " $2 }' apps/sandbox-orchestrator/ssh/operator_key.pub)"
+          if [ "${actual_public_key}" != "${expected_public_key}" ]; then
+            echo "O segredo SANDBOX_OPS_SSH_PRIVATE_KEY não corresponde à chave pública versionada." >&2
+            exit 1
+          fi
+
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "install -d -m 700 /root/infra/sandbox-ssh && rm -f '${remote_private_key_tmp}'"
+          scp ${SSH_COMMON_ARGS} "${local_private_key}" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_private_key_tmp}"
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "set -euo pipefail; \
+            trap 'rm -f \"${remote_private_key_tmp}\"' EXIT; \
+            chmod 600 '${remote_private_key_tmp}'; \
+            actual_public_key=\$(ssh-keygen -y -f '${remote_private_key_tmp}' | awk '{ print \$1 \" \" \$2 }'); \
+            expected_public_key=\$(awk '{ print \$1 \" \" \$2 }' '${REMOTE_PATH}/apps/sandbox-orchestrator/ssh/operator_key.pub'); \
+            test \"\${actual_public_key}\" = \"\${expected_public_key}\"; \
+            mv '${remote_private_key_tmp}' /root/infra/sandbox-ssh/id_ed25519; \
+            printf '%s\n' \"\${actual_public_key}\" > /root/infra/sandbox-ssh/id_ed25519.pub; \
+            chmod 600 /root/infra/sandbox-ssh/id_ed25519; \
+            chmod 644 /root/infra/sandbox-ssh/id_ed25519.pub; \
+            trap - EXIT"
       - name: Authenticate registry on VPS
         run: |
           if [ -z "${GHCR_TOKEN}" ]; then
@@ -335,6 +389,17 @@ jobs:
 
             sleep 2
           done
+
+          echo "== checking protected sandbox SSH agent =="
+          expected_ssh_fingerprint="$(ssh-keygen -lf apps/sandbox-orchestrator/ssh/operator_key.pub -E sha256 | awk '{ print $2 }')"
+          actual_ssh_fingerprint="$(docker compose exec -T sandbox-orchestrator ssh-add -L | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')"
+          test "${actual_ssh_fingerprint}" = "${expected_ssh_fingerprint}"
+          docker compose exec -T sandbox-orchestrator test ! -e /run/secrets/sandbox-ssh/id_ed25519
+          if docker compose exec -T sandbox-orchestrator \
+            sandbox-ssh root@127.0.0.1 true >/dev/null 2>&1; then
+            echo "sandbox-ssh aceitou destino fora da allowlist" >&2
+            exit 1
+          fi
 
           echo "== checking public reverse proxy =="
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/mcp >/tmp/mcp-health.json
