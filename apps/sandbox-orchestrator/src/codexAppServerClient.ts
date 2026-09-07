@@ -18,6 +18,7 @@ export interface CodexAppServerClientOptions {
   args?: string[];
   env?: NodeJS.ProcessEnv;
   requestTimeoutMs?: number;
+  turnStartRequestTimeoutMs?: number;
   restartBackoffMs?: number;
   maxRestartAttempts?: number;
   autoRestart?: boolean;
@@ -80,6 +81,7 @@ export class CodexAppServerClient {
   private readonly args: string[];
   private readonly env: NodeJS.ProcessEnv;
   private readonly requestTimeoutMs: number;
+  private readonly turnStartRequestTimeoutMs: number;
   private readonly restartBackoffMs: number;
   private readonly maxRestartAttempts: number;
   private readonly autoRestart: boolean;
@@ -102,6 +104,8 @@ export class CodexAppServerClient {
     this.args = options.args ?? (process.env.CODEX_APP_SERVER_ARGS?.trim().split(/\s+/).filter(Boolean) ?? ['app-server', '--listen', 'stdio://']);
     this.env = buildCodexAppServerEnv(process.env, options.env);
     this.requestTimeoutMs = options.requestTimeoutMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS ?? '60000', 10);
+    this.turnStartRequestTimeoutMs = options.turnStartRequestTimeoutMs
+      ?? Number.parseInt(process.env.CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS ?? '300000', 10);
     this.restartBackoffMs = options.restartBackoffMs ?? Number.parseInt(process.env.CODEX_APP_SERVER_RESTART_BACKOFF_MS ?? '2000', 10);
     this.maxRestartAttempts = options.maxRestartAttempts ?? Number.parseInt(process.env.CODEX_APP_SERVER_MAX_RESTART_ATTEMPTS ?? '3', 10);
     this.autoRestart = options.autoRestart ?? true;
@@ -240,6 +244,7 @@ export class CodexAppServerClient {
       message.params = params;
     }
 
+    const timeoutMs = method === 'turn/start' ? this.turnStartRequestTimeoutMs : this.requestTimeoutMs;
     return new Promise<T>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
@@ -249,7 +254,7 @@ export class CodexAppServerClient {
           this.lastError = error.message;
         }
         reject(error);
-      }, this.requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, {
         method,
         resolve: (value) => resolve(value as T),

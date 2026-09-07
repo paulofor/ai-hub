@@ -36,7 +36,50 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
 });
 
-test('offers GPT-5.6 and sends the selected model with the request', async ({ page }) => {
+test('shows the request detail as a conversation card with only the three execution comments', async ({ page }) => {
+  await page.route('**/api/codex/requests/2679/previous', (route) => route.fulfill({ status: 404, json: {} }));
+  await page.route('**/api/codex/requests/2679', (route) => route.fulfill({
+    json: {
+      id: 2679,
+      environment: 'produção',
+      model: 'gpt-5',
+      version: 'aihub-6',
+      profile: 'CHATGPT_CODEX',
+      reasoningEffort: 'high',
+      prompt: 'Crie uma integração segura com a API pública.',
+      responseText: Array.from({ length: 35 }, (_, index) => `${index + 1}. Etapa da integração criada e validada.`).join('\n\n'),
+      status: 'COMPLETED',
+      createdAt: '2026-09-06T09:00:00Z',
+      finishedAt: '2026-09-06T09:05:00Z',
+      problemDescription: 'A integração ainda não existe.',
+      resolutionDifficulty: 'Uma integração funcional e segura.',
+      userComment: 'O modelo implementou a integração.'
+    }
+  }));
+
+  await page.goto('/codex/requests/2679');
+
+  const requestCard = page.getByRole('heading', { name: 'Solicitação', exact: true }).locator('..').locator('..');
+  await expect(requestCard).toHaveClass(/bg-emerald-100/);
+  await expect(requestCard).toContainText('Crie uma integração segura com a API pública.');
+  const response = page.getByTestId('codex-response');
+  await expect(response).toBeVisible();
+  await expect(response).toHaveCSS('overflow-y', 'visible');
+  const responseDimensions = await response.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight
+  }));
+  expect(responseDimensions.scrollHeight).toBe(responseDimensions.clientHeight);
+  await expect(page.locator('textarea')).toHaveCount(3);
+  await expect(page.getByLabel('Problema', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('O que eu espero da solução', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('O que o modelo entregou', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Dificuldade de resolução')).toHaveCount(0);
+  await expect(page.getByLabel('Log', { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/ai-hub-request-detail-comments.png', fullPage: true });
+});
+
+test('offers fallback models and sends GPT-6 Astra with the request', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
   await page.route('**/api/account/models', (route) => route.fulfill({ json: [] }));
@@ -61,13 +104,15 @@ test('offers GPT-5.6 and sends the selected model with the request', async ({ pa
   });
 
   await page.goto('/codex-chatgpt');
-  const modelSelect = page.locator('select').filter({ has: page.locator('option[value="gpt-5.6"]') });
-  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6', exact: true })).toHaveCount(1);
-  await modelSelect.selectOption('gpt-5.6');
-  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo 5.6 nesta solicitação.');
+  const modelSelect = page.locator('select').filter({ has: page.locator('option[value="gpt-6-astra"]') });
+  await expect(modelSelect.getByRole('option', { name: 'GPT-6 Astra', exact: true })).toHaveCount(1);
+  await expect(modelSelect.getByRole('option', { name: 'GPT Daybreak Blue', exact: true })).toHaveCount(1);
+  await modelSelect.selectOption('gpt-6-astra');
+  await page.screenshot({ path: '/tmp/ai-hub-gpt-6-astra-model-option.png', fullPage: true });
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo GPT-6 Astra nesta solicitação.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => submittedModel).toBe('gpt-5.6');
+  await expect.poll(() => submittedModel).toBe('gpt-6-astra');
 });
 
 test('keeps the conversation flowing naturally without subject controls', async ({ page }) => {

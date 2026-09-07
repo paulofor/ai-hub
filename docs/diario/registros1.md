@@ -3378,3 +3378,68 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Homologação final: depois da correção, duas rodadas locais completas e consecutivas passaram. Cada rodada aprovou 96 testes do orquestrador, ShellCheck, Actionlint, três contratos Compose, build real da imagem, streaming e hash da fixture, ciclo `run/exec/logs/inspect/cleanup`, falhas e colisões, segregação de duas sessões e recurso externo, limites reais do container, sidecar com chave efêmera, ausência do segredo no probe e fingerprint estável após reinício.
 - Segregação e limpeza: o projeto Compose exclusivo `aihub-727f9875-f044-41b5-8981-f44437fd42ca-4bf945b770` terminou com zero containers e volumes; as sessões simuladas terminaram sem containers ou tags. A chave privada de teste foi destruída em cada rodada. A imagem de homologação restante foi removida ao encerrar o trabalho.
 - Estado externo preservado: nenhum host real, container produtivo, campanha, gasto ou venda foi alterado; nenhum commit, push, PR, workflow ou deploy foi criado. A ativação real depende do cadastro da pública nos hosts e da publicação do sidecar pelo fluxo normal de PR.
+## 2026-09-02 — Modelo GPT Daybreak Blue nas opções do ChatGPT Codex
+
+- Solicitação recebida: adicionar `gpt-daybreak-blue-latest` à lista de opções de modelos.
+- Pergunta explícita de causa raiz: “por que esse modelo não aparecia?”. Resposta: a tela combina o catálogo retornado por `/account/models` com uma lista local de fallback, mas o identificador `gpt-daybreak-blue-latest` ainda não fazia parte desse fallback; assim, ele ficava indisponível quando o catálogo remoto não o retornava.
+- Ajuste aplicado: o modelo foi incluído no catálogo de fallback com o rótulo `GPT Daybreak Blue`, preservando exatamente o identificador exigido no valor enviado ao backend.
+- Proteção contra regressão: o cenário E2E com catálogo remoto vazio agora verifica a presença da opção, seleciona o modelo e confirma que a solicitação envia `gpt-daybreak-blue-latest`.
+
+## 2026-09-02 — Investigação da solicitação Codex #2600
+
+- Solicitação recebida: explicar o que aconteceu com a solicitação `#2600` do AI Hub.
+- Fonte analisada: detalhe público `GET https://iahub.xyz/api/codex/requests/2600`, transcript de auditoria persistido no próprio registro e estado atual do PR associado consultado pela API pública do GitHub.
+- Estado factual: a solicitação foi criada em `2026-09-02T09:52:59Z`, iniciou somente em `2026-09-02T14:50:37Z` e terminou `FAILED` em `2026-09-02T19:04:17Z`, após 15.220.076 ms de execução (aproximadamente 4h13). A resposta persistida foi `Timeout em request turn/start`.
+- Trabalho observado antes da falha: a execução tentou produzir um vídeo para o experimento Vega 91 usando Apolo, o estúdio de áudio e vídeo e os artigos de pesquisa. O registro contabilizou 6.451 interações, 142.227.172 tokens totais (141.367.063 de prompt, dos quais 138.252.544 em cache, e 342.327 de conclusão) e acessos repetidos aos cânones e documentos de homologação do vídeo. O transcript termina com uma nova chamada `turn/start` pedindo retomada após falha transitória de conexão, mas não contém `turn/completed` nem resposta final posterior.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução entrou em uma trajetória excepcionalmente longa e volumosa, sofreu uma falha transitória de conexão e tentou retomar o mesmo thread; a chamada de retomada `turn/start` não concluiu dentro da janela operacional, então o orquestrador encerrou a solicitação como falha. A ausência de resposta final e de evento `turn/completed` impede afirmar que o vídeo foi concluído ou publicado.
+- O campo `timeoutCount=0` não contradiz o diagnóstico: o erro persistido identifica timeout da operação do App Server (`request turn/start`), enquanto esse contador não registrou a ocorrência nesse caminho.
+- O PR `paulofor/marketing-hub#5091` associado ao registro não comprova entrega da #2600: ele foi criado e mergeado cerca de oito horas antes da criação da solicitação e tem título referente à recuperação/otimização de outra tela. Trata-se de vínculo herdado do contexto/lote, não de um PR produzido pelo pedido do vídeo.
+- Conclusão: a #2600 não terminou com resultado utilizável. Houve trabalho intermediário e consumo muito elevado, mas a retomada falhou antes da resposta final; não há evidência suficiente no registro para considerar o criativo finalizado, publicado no Instagram/Meta Ads ou entregue por PR.
+- Nenhuma correção funcional, nova execução, PR no Marketing Hub, deploy, campanha, gasto ou publicação foi realizada nesta investigação.
+
+## 2026-09-02 — Timeout dedicado para retomada de `turn/start`
+
+- Solicitação recebida: avaliar e implementar aumento de timeout para reduzir falhas como a da solicitação Codex `#2600`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o timeout total do turno já era de 12 horas, mas não foi ele que encerrou a #2600. O cliente do Codex App Server aplicava o timeout genérico de apenas 60 segundos também à confirmação síncrona de `turn/start`; depois de uma execução com thread e contexto excepcionalmente grandes, a retomada podia levar mais de 60 segundos para ser reconhecida e falhava antes de voltar a aguardar o `turn/completed`.
+- Alternativas avaliadas: (1) aumentar o timeout total de 12 horas, sem efeito sobre a falha observada; (2) aumentar o timeout genérico de todos os requests, reduzindo diagnóstico rápido de travamentos em `initialize`, autenticação e controle; (3) criar uma janela dedicada para `turn/start`, mantendo requests de controle com fail-fast. Escolhida a alternativa 3 por atuar no ponto causal sem mascarar outras falhas.
+- Correção aplicada: `turn/start` agora usa `CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS`, com padrão de 300.000 ms (5 minutos), enquanto os demais requests preservam o limite genérico de 60 segundos. A variável foi documentada, adicionada ao exemplo de ambiente e normalizada explicitamente pelo workflow de deploy.
+- Proteção contra regressão: o fake App Server passou a simular confirmação lenta de `turn/start`; o teste comprova que ela conclui dentro da janela dedicada e que um request comum sem resposta continua falhando no limite curto. Os contratos também validam documentação, `.env.example` e configuração do deploy.
+- Validação final: `npm test` em `apps/sandbox-orchestrator` aprovou os 86 testes. `git diff --check` passou.
+- Limite da correção: ampliar a espera não mantém uma conexão de rede fisicamente ativa nem garante conclusão de sessões ilimitadas; evita especificamente o falso timeout ao reconhecer a retomada. Os limites adaptativos de inatividade e o timeout total de 12 horas continuam protegendo contra execuções realmente paradas.
+## 2026-09-02 — Verificação de disponibilidade atual do AI Hub
+
+- Solicitação recebida: verificar se o AI Hub estava travado naquele momento.
+- Pergunta explícita de causa raiz: “por que pareceu que o AI Hub estava travado?”. Resposta: não foi encontrada indisponibilidade no período observado; havia uma execução recente ainda marcada como `RUNNING`, o que pode transmitir aparência de espera, mas ela concluiu normalmente cerca de um minuto após iniciar.
+- Evidências públicas: a página principal respondeu HTTP 200; o healthcheck oficial `GET https://iahub.xyz/mcp` respondeu HTTP 200 com `{"status":"UP"}` em quatro verificações, entre 105 e 494 ms; a listagem de solicitações, as métricas e o estado da conta responderam HTTP 200; e a conta informou `connected=true` e `executable=true`.
+- Evidência da execução corrente: a solicitação 2603 foi criada às `20:17:41Z`, iniciou às `20:17:42Z` e concluiu com `COMPLETED` às `20:18:45Z`, sem motivo de falha ou mensagem de erro.
+- Conclusão limitada às sondas disponíveis: o AI Hub e seus caminhos públicos principais estavam responsivos e a execução corrente não estava travada. Não foi realizada recuperação, reinício, deploy ou alteração operacional.
+
+## 2026-09-03 — Modelo GPT-6 Astra nas opções do ChatGPT Codex
+
+- Solicitação recebida: adicionar o modelo `gpt-6-astra`.
+- Pergunta explícita de causa raiz: “por que esse modelo não aparecia?”. Resposta: embora a tela combine os modelos descobertos por `/account/models` com um catálogo local de fallback, o identificador `gpt-6-astra` ainda não existia nesse catálogo; por isso a opção ficava indisponível quando a conta não a devolvia dinamicamente.
+- Correção aplicada na causa: incluído `gpt-6-astra` no catálogo de fallback, com o rótulo `GPT-6 Astra` e o identificador preservado no valor encaminhado ao backend.
+- Proteção contra regressão: o cenário E2E de catálogo remoto vazio agora confirma a opção, seleciona o modelo e verifica que o POST da solicitação envia `model: gpt-6-astra`.
+- Validação: o teste E2E direcionado passou no Chromium e confirmou visualmente a nova seleção; `npm run lint`, `npm run build` e `git diff --check` também passaram.
+
+## 2026-09-04 — Atualização do Codex para executar o GPT-6 Astra
+
+- Solicitação recebida: corrigir o erro HTTP 400 que informava que `gpt-6-astra` exige uma versão mais nova do Codex.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a interface passou a oferecer `gpt-6-astra`, mas a imagem de execução do `sandbox-orchestrator` permaneceu fixada em `@openai/codex@0.149.0`. O catálogo local, portanto, permitia selecionar um modelo cujo protocolo não era suportado pelo App Server efetivamente instalado.
+- Correção aplicada na causa: o argumento reproduzível `CODEX_VERSION` foi atualizado para `0.153.4`, versão estável marcada como `latest` no registro npm durante a investigação, em vez de ocultar o modelo ou tratar o HTTP 400 como uma falha transitória.
+- Proteção contra regressão: o contrato do Dockerfile agora exige explicitamente `CODEX_VERSION=0.153.4` e continua verificando que a instalação global usa exatamente o argumento versionado.
+- Validação: os 86 testes do `sandbox-orchestrator` passaram, o pacote versionado executou `codex-cli 0.153.4` e `git diff --check` não encontrou problemas.
+
+## 2026-09-06 — Simplificação dos comentários e card da solicitação no detalhe
+
+- Solicitação recebida: manter somente os campos “Problema”, “O que eu espero da solução” e “O que o modelo entregou” nos comentários da execução e apresentar a solicitação como um card semelhante ao diálogo da tela de solicitações.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhe expunha diretamente os quatro campos históricos do contrato de feedback e renderizava o prompt como um bloco técnico escuro; essa estrutura refletia o armazenamento interno, mas não a linguagem nem o padrão visual já usado para a mensagem do usuário no diálogo.
+- Correção aplicada na causa: a interface passou a traduzir os três dados úteis para os rótulos orientados à avaliação solicitados, removeu da apresentação o campo redundante de log sem apagar seu valor histórico ao salvar e reutilizou no card da solicitação a hierarquia, largura, alinhamento e cores da mensagem do usuário no diálogo.
+- Proteção contra regressão: foi adicionado um cenário E2E que abre o detalhe, confirma o card verde da solicitação, verifica exatamente três caixas de texto e garante a ausência dos campos antigos “Dificuldade de resolução” e “Log”.
+
+## 2026-09-06 — Resposta completa no detalhe sem rolagem vertical interna
+
+- Solicitação recebida: exibir toda a resposta do modelo na tela de detalhe sem uma barra de rolagem vertical dentro do card.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contêiner da resposta possuía simultaneamente uma altura máxima fixa de 420 px e `overflow-auto`; respostas maiores que esse limite eram deliberadamente recortadas pelo layout e ganhavam uma segunda rolagem vertical, além da rolagem natural da página.
+- Correção aplicada na causa: removidos o limite artificial de altura e o overflow interno do contêiner da resposta. O card agora cresce conforme o conteúdo e a página mantém a única rolagem vertical necessária; a rolagem horizontal específica de conteúdos largos, como blocos de código e tabelas, permanece preservada.
+- Proteção contra regressão: o cenário E2E do detalhe passou a usar uma resposta maior que o antigo limite e verifica que o contêiner tem `overflow-y: visible` e não possui conteúdo vertical recortado.

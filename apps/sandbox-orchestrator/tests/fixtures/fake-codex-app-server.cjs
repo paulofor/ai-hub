@@ -42,7 +42,12 @@ rl.on('line', (line) => {
     return;
   }
   if (message.method === 'turn/start') {
-    send({ id: message.id, result: { id: 'turn-123' } });
+    const sendTurnStarted = () => send({ id: message.id, result: { id: 'turn-123' } });
+    if (mode === 'slow-turn-start') {
+      setTimeout(sendTurnStarted, 80);
+    } else {
+      sendTurnStarted();
+    }
     setTimeout(() => send({ method: 'item/agentMessage/delta', params: { threadId: message.params?.threadId, turnId: 'turn-123', delta: 'Resumo Codex App Server' } }), 5);
     setTimeout(() => send({ method: 'turn/completed', params: { threadId: message.params?.threadId, turnId: 'turn-123', status: 'completed' } }), 10);
     return;

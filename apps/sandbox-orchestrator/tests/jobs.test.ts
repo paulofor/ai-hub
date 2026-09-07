@@ -77,6 +77,7 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
     fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
   ]);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_REASONING_EFFORT=high$/m);
@@ -84,7 +85,9 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
   assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`43200000` \(12 horas\)/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS[^\n]+`300000` \(5 minutos\)/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
   assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
@@ -319,7 +322,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
-  assert.match(dockerfile, /CODEX_VERSION=0\.149\.0/);
+  assert.match(dockerfile, /CODEX_VERSION=0\.153\.4/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
