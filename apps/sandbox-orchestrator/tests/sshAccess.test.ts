@@ -313,6 +313,12 @@ test('helper Docker remoto impõe namespace, limites e limpeza sem modo privileg
   assert.match(helper, /--cap-drop ALL/);
   assert.match(helper, /\[ "\$\{network_name\}" != host \]/);
   assert.match(helper, /image save "\$\{remote_image\}" \| remote docker image load/);
+  assert.match(helper, /canonical_image_digest/);
+  assert.match(helper, /jq -S -c/);
+  assert.match(helper, /architecture: \(\.Architecture/);
+  assert.match(helper, /config: \(\.Config/);
+  assert.match(helper, /layers: \(\.RootFS\.Layers/);
+  assert.doesNotMatch(helper, /image inspect --format '\{\{\.Id\}\}'/);
   assert.doesNotMatch(helper, /--privileged|--pid[= ]host|--ipc[= ]host|docker\.sock|--volume|-v \/|scp|rsync/);
   assert.match(dockerfile, /COPY scripts\/sandbox-remote-docker \/usr\/local\/bin\/sandbox-remote-docker/);
   assert.match(dockerfile, /\/usr\/local\/bin\/sandbox-remote-docker/);

@@ -37,7 +37,7 @@ docker image tag "${base_image}" "${other_image}"
 
 if SANDBOX_SSH_COMMAND="${mismatch_ssh}" "${helper}" push \
   "${destination}" "${session}" "${session_image}" "${artifact}" >/dev/null 2>&1; then
-  echo 'o helper aceitou image ID divergente' >&2
+  echo 'o helper aceitou digest canônico divergente' >&2
   exit 1
 fi
 
