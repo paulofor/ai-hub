@@ -1,0 +1,12 @@
+#!/bin/sh
+set -u
+
+export SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-/run/sandbox-ssh-agent/agent.sock}"
+ready_file="${SANDBOX_SSH_READY_FILE:-$(dirname "${SSH_AUTH_SOCK}")/ready}"
+[ -f "${ready_file}" ] || exit 1
+ssh-add -l >/dev/null 2>&1
+status=$?
+
+# 0: agente com identidade; 1: agente alcançável, mas sem identidade.
+# Apenas 2+ significa que o socket/agente está indisponível.
+[ "${status}" -eq 0 ] || [ "${status}" -eq 1 ]

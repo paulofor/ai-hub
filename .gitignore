@@ -9,6 +9,7 @@ apps/frontend/tsconfig.tsbuildinfo
 **/.DS_Store
 .env.local
 npm-debug.log*
+.sandbox-ssh-seed/
 exemplo-cliente/codex/.github
 
 # deps

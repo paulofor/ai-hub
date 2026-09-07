@@ -227,6 +227,29 @@ test('informa ao modelo quando a Brave Search API esta disponivel', () => {
   }
 });
 
+test('informa ao modelo o helper SSH persistente sem expor chave privada', () => {
+  const previousSocket = process.env.SSH_AUTH_SOCK;
+  const previousDestinations = process.env.SANDBOX_SSH_ALLOWED_DESTINATIONS;
+  process.env.SSH_AUTH_SOCK = '/run/sandbox-ssh-agent/agent.sock';
+  process.env.SANDBOX_SSH_ALLOWED_DESTINATIONS = 'root@host-a.test,root@host-b.test';
+
+  try {
+    const processor = new SandboxJobProcessor();
+    const instruction = (processor as any).buildSshClientInstruction();
+
+    assert.match(instruction, /sandbox-ssh <usuario@host> <comando>/);
+    assert.match(instruction, /root@host-a\.test,root@host-b\.test/);
+    assert.match(instruction, /chave privada não está disponível para leitura/);
+    assert.match(instruction, /host key divergente/);
+    assert.doesNotMatch(instruction, /BEGIN OPENSSH PRIVATE KEY/);
+  } finally {
+    if (previousSocket === undefined) delete process.env.SSH_AUTH_SOCK;
+    else process.env.SSH_AUTH_SOCK = previousSocket;
+    if (previousDestinations === undefined) delete process.env.SANDBOX_SSH_ALLOWED_DESTINATIONS;
+    else process.env.SANDBOX_SSH_ALLOWED_DESTINATIONS = previousDestinations;
+  }
+});
+
 test('informa ao modelo a engine Docker dedicada e as regras de isolamento', () => {
   const processor = new SandboxJobProcessor();
   const job = { jobId: 'Job com espaços/123' } as SandboxJob;

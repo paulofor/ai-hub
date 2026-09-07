@@ -98,6 +98,41 @@ services:
         aliases:
           - sandbox-docker
 
+  # A chave privada existe somente neste sidecar e permanece fora do
+  # repositório. O orquestrador recebe apenas o socket Unix do ssh-agent.
+  sandbox-ssh-agent:
+    image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
+    build:
+      context: ./apps/sandbox-orchestrator
+    init: true
+    restart: unless-stopped
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 64m
+    memswap_limit: 64m
+    environment:
+      SSH_AUTH_SOCK: /run/sandbox-ssh-agent/agent.sock
+      SANDBOX_SSH_PRIVATE_KEY_FILE: /run/secrets/sandbox-ssh/id_ed25519
+      SANDBOX_SSH_KNOWN_HOSTS_FILE: /etc/sandbox-ssh/known_hosts
+      SANDBOX_SSH_ALLOWED_DESTINATIONS: ${SANDBOX_SSH_ALLOWED_DESTINATIONS:-root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83}
+    volumes:
+      - ${SANDBOX_SSH_KEY_HOST_DIR:-/root/infra/sandbox-ssh}:/run/secrets/sandbox-ssh:ro
+      - sandbox-ssh-agent-socket:/run/sandbox-ssh-agent
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    entrypoint: ["/usr/local/bin/start-sandbox-ssh-agent"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/sandbox-ssh-agent-health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   sandbox-orchestrator:
     image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
     # O orquestrador executa ferramentas que podem criar netos. O init do
@@ -119,8 +154,15 @@ services:
         condition: service_started
       sandbox-docker:
         condition: service_healthy
+      sandbox-ssh-agent:
+        condition: service_healthy
     environment:
       CODEX_HOME: /var/lib/ai-hub/codex
+      SSH_AUTH_SOCK: /run/sandbox-ssh-agent/agent.sock
+      SANDBOX_SSH_KNOWN_HOSTS_FILE: /etc/sandbox-ssh/known_hosts
+      SANDBOX_SSH_PUBLIC_KEY_FILE: /etc/sandbox-ssh/operator_key.pub
+      SANDBOX_SSH_ALLOWED_DESTINATIONS: ${SANDBOX_SSH_ALLOWED_DESTINATIONS:-root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83}
+      SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS: ${SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS:-15}
       SANDBOX_SMTP_HOST: ${SANDBOX_SMTP_HOST:-sandbox-mail}
       SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}
       SANDBOX_MAIL_WEB_URL: ${SANDBOX_MAIL_WEB_URL:-http://sandbox-mail:8025}
@@ -151,6 +193,7 @@ services:
       - ${META_TOKEN_HOST_DIR:-/root/infra/meta-token}:/run/secrets/meta-token:ro
       - ${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}:/run/secrets/aws:ro
       - codex-auth-data:/var/lib/ai-hub/codex
+      - sandbox-ssh-agent-socket:/run/sandbox-ssh-agent:ro
       - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
     command: >
       /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
@@ -240,3 +283,4 @@ volumes:
   caddy-config:
   codex-auth-data:
   sandbox-docker-data:
+  sandbox-ssh-agent-socket:

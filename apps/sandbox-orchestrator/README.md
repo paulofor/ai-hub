@@ -76,6 +76,9 @@ Jobs ficam armazenados em memória enquanto executam e são atualizados de forma
 | `RADAR_META_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/radarmeta-token`; quando contém o arquivo `radar_meta_token`, o `docker-compose` exporta seu conteúdo como `RADAR_META_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/radarmeta-token` |
 | `META_TOKEN_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/meta-token`; quando contém o arquivo `meta_token`, o `docker-compose` exporta seu conteúdo como `META_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/meta-token` |
 | `AWS_CREDENTIALS_HOST_DIR` | Diretório físico do host montado como segredo somente leitura em `/run/secrets/aws`; quando contém o arquivo `acesso_aws`, o `docker-compose` exporta `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` e, opcionalmente, `AWS_SESSION_TOKEN` antes de iniciar o runner/Codex App Server. | `/root/infra/aws` |
+| `SANDBOX_SSH_KEY_HOST_DIR` | Diretório persistente do host que contém `id_ed25519` com modo `0600`. Somente o sidecar `sandbox-ssh-agent` monta esse diretório; o orquestrador recebe apenas o socket. | `/root/infra/sandbox-ssh` |
+| `SANDBOX_SSH_ALLOWED_DESTINATIONS` | Lista separada por vírgulas de destinos `usuario@host` carregados como restrições no agente e aceitos pelo helper `sandbox-ssh`. Cada host também precisa estar fixado em `/etc/sandbox-ssh/known_hosts`. | quatro VPS operacionais versionados no Compose |
+| `SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS` | Timeout de conexão aplicado pelo helper `sandbox-ssh`. | `15` |
 
 Formato esperado de `/root/infra/aws/acesso_aws` no host:
 
