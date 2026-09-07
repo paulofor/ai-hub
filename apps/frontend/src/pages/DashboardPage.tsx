@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useFetch } from '../hooks/useFetch';
 import client from '../api/client';
 import { formatDuration } from '../lib/codex';
@@ -28,6 +29,13 @@ interface CodexDashboardMetrics {
   salesImpactDay?: SalesImpactScore;
   salesImpactWeek?: SalesImpactScore;
   salesImpactMonth?: SalesImpactScore;
+  recentSalesImpact?: SalesImpactPoint[];
+}
+
+interface SalesImpactPoint {
+  requestId: number;
+  createdAt: string;
+  score: number | null;
 }
 
 interface SalesImpactScore {
@@ -38,14 +46,6 @@ interface SalesImpactScore {
   muitoAlto: number;
   total: number;
 }
-
-const SALES_IMPACT_LEVELS = [
-  { key: 'muitoBaixo', label: 'Muito baixo', color: 'bg-slate-400' },
-  { key: 'baixo', label: 'Baixo', color: 'bg-rose-400' },
-  { key: 'medio', label: 'Médio', color: 'bg-amber-400' },
-  { key: 'alto', label: 'Alto', color: 'bg-emerald-500' },
-  { key: 'muitoAlto', label: 'Muito alto', color: 'bg-teal-600' }
-] as const;
 
 function formatModuleDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : 'indisponível';
@@ -86,6 +86,7 @@ function formatShortDuration(milliseconds?: number) {
 }
 
 export default function DashboardPage() {
+  const [salesView, setSalesView] = useState<'daily' | 'weekly'>('daily');
   const { data: sourceModules } = useFetch<SourceModuleChange[]>(
     () => client.get('/source-modules/changes').then((res) => res.data),
     []
@@ -154,19 +155,25 @@ export default function DashboardPage() {
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 sm:p-5">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Relevância estimada em vendas</h3>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Notas de venda</h3>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Distribuição das entregas do perfil de Marketing por potencial declarado de impacto comercial.
+            Evolução das notas declaradas pelo perfil de Marketing, considerando o dia operacional (02h–02h).
           </p>
+          </div>
+          <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-slate-800" aria-label="Período do gráfico de notas de venda">
+            {(['daily', 'weekly'] as const).map((view) => (
+              <button key={view} type="button" onClick={() => setSalesView(view)} aria-pressed={salesView === view}
+                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${salesView === view ? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-300'}`}>
+                {view === 'daily' ? 'Diário' : 'Semanal'}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <SalesImpactChart title="Hoje" score={salesMetrics?.salesImpactDay} />
-          <SalesImpactChart title="Esta semana" score={salesMetrics?.salesImpactWeek} />
-          <SalesImpactChart title="Este mês" score={salesMetrics?.salesImpactMonth} />
-        </div>
+        <SalesImpactTimeline view={salesView} metrics={salesMetrics} />
         <p className="mt-4 text-xs text-slate-500">
-          Estes contadores representam relevância estimada pelo modelo, não vendas confirmadas.
+          As notas representam relevância estimada pelo modelo, não vendas confirmadas.
         </p>
       </section>
 
@@ -201,39 +208,55 @@ export default function DashboardPage() {
   );
 }
 
-function SalesImpactChart({ title, score }: { title: string; score?: SalesImpactScore }) {
-  const total = score?.total ?? 0;
+function SalesImpactTimeline({ view, metrics }: { view: 'daily' | 'weekly'; metrics?: CodexDashboardMetrics | null }) {
+  const points = (metrics?.recentSalesImpact ?? []).filter((point): point is SalesImpactPoint & { score: number } =>
+    typeof point.score === 'number' && point.score >= 1 && point.score <= 5
+  );
+  const operationalDayStart = new Date(metrics?.day?.startsAt ?? 0).getTime();
+  const start = view === 'daily'
+    ? operationalDayStart - 20 * 24 * 60 * 60 * 1000
+    : new Date(metrics?.week?.startsAt ?? 0).getTime();
+  const visiblePoints = points.filter((point) => new Date(point.createdAt).getTime() >= start);
+
+  if (visiblePoints.length === 0) {
+    return <div className="mt-5 rounded-lg border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500 dark:border-slate-800">Sem avaliações no período.</div>;
+  }
+
+  const operationalDateKey = (value: string) => {
+    const date = new Date(value);
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(new Date(date.getTime() - 3 * 60 * 60 * 1000));
+  };
+  const dailyAverages = Array.from(visiblePoints.reduce((groups, point) => {
+    const key = operationalDateKey(point.createdAt);
+    const values = groups.get(key) ?? [];
+    values.push(point.score);
+    groups.set(key, values);
+    return groups;
+  }, new Map<string, number[]>())).map(([date, scores]) => ({ date, average: scores.reduce((sum, score) => sum + score, 0) / scores.length }));
+  const average = visiblePoints.reduce((sum, point) => sum + point.score, 0) / visiblePoints.length;
 
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-      <div className="flex items-baseline justify-between gap-3">
-        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{title}</h4>
-        <span className="text-2xl font-bold text-emerald-600">{formatMetricNumber(total)}</span>
+    <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="flex items-end justify-between gap-3">
+        <div><h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{view === 'daily' ? 'Média diária operacional · últimos 21 dias' : 'Média diária da semana operacional'}</h4>
+          <p className="text-xs text-slate-500">Cada tick é a média das notas daquele dia operacional.</p></div>
+        <div className="text-right"><span className="text-2xl font-bold text-emerald-600">{average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span><p className="text-xs text-slate-500">média geral</p></div>
       </div>
-      <p className="text-xs text-slate-500">entregas avaliadas</p>
-      {total > 0 ? (
-        <div className="mt-4 space-y-3">
-          {SALES_IMPACT_LEVELS.map(({ key, label, color }) => {
-            const value = score?.[key] ?? 0;
-            const percentage = Math.round((value / total) * 100);
-            return (
-              <div key={key}>
-                <div className="mb-1 flex justify-between gap-2 text-xs">
-                  <span className="text-slate-600 dark:text-slate-300">{label}</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{value} · {percentage}%</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                  <div className={`h-full rounded-full ${color}`} style={{ width: `${percentage}%` }} />
-                </div>
+      <div className="mt-5 flex h-52 gap-3" role="img" aria-label={view === 'daily' ? 'Gráfico com a média diária operacional dos últimos 21 dias' : 'Gráfico semanal com um tick de média por dia operacional'}>
+        <div className="flex flex-col justify-between pb-6 text-xs text-slate-400">{[5, 4, 3, 2, 1].map((tick) => <span key={tick}>{tick}</span>)}</div>
+        <div className="relative flex min-w-0 flex-1 items-end gap-2 border-b border-l border-slate-200 px-2 pb-6 dark:border-slate-700">
+          {dailyAverages.map((point) => (
+            <div key={point.date} className="relative h-full flex-1 text-center" title={`${formatChartDate(`${point.date}T12:00:00Z`)} · média ${point.average.toFixed(1)}`}>
+              <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: `calc(${point.average * 20}% - 6px)` }}>
+                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-700 dark:text-emerald-300">{point.average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>
+                <div className="h-3 w-3 rounded-full border-2 border-white bg-emerald-500 shadow" />
               </div>
-            );
-          })}
+              <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-slate-500">{view === 'daily' ? formatChartDate(`${point.date}T12:00:00Z`) : formatChartDate(`${point.date}T12:00:00Z`, { weekday: 'short' }).replace('.', '')}</span>
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="mt-4 rounded-md border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500 dark:border-slate-800">
-          Sem avaliações no período.
-        </div>
-      )}
+      </div>
     </div>
   );
 }

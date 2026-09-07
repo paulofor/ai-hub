@@ -13,36 +13,45 @@ Módulo Spring Boot para expor tools MCP via HTTP.
 }
 ```
 
-## Endpoint de comando Linux
+## Autenticação e superfície pública
 
-- `POST /mcp/tools/linux-command`
-- Aceita header opcional `Authorization: Bearer <MCP_SERVER_API_TOKEN>`.
-- Quando `MCP_SERVER_API_TOKEN` estiver configurado, o bearer passa a ser obrigatório; quando não estiver configurado, a chamada segue o contrato simples com `Content-Type: application/json` e body `{ "command": "<comando>" }`.
-- O comando é executado no container do MCP Server via `/bin/bash -lc`.
-- Para visibilidade de todo o filesystem do host, o `docker-compose` monta a raiz `/` do host em `/host` (somente leitura); use comandos como `ls /host`, `find /host/...` etc.
-- Com o socket Docker montado (`/var/run/docker.sock`) e Docker CLI disponível, o endpoint também pode consultar logs de containers do host (ex.: `docker logs <container>`).
-- O timeout padrão é de 30 segundos (`MCP_SERVER_COMMAND_TIMEOUT_SECONDS`) e a saída padrão é limitada a 20000 caracteres (`MCP_SERVER_MAX_OUTPUT_CHARS`).
-- Body:
+- Todas as rotas `/mcp/tools/**` exigem `Authorization: Bearer <MCP_SERVER_API_TOKEN>`.
+- Quando o token não está configurado, as tools respondem `503`; não há modo fail-open.
+- O Caddy bloqueia publicamente `/mcp/tools/linux-command` com `404`.
+- O shell continua disponível somente em `http://mcp-server:8084/mcp/tools/linux-command`, na rede
+  interna, para consumidores legados autenticados do AI Hub. O timeout padrão é 30 segundos e a
+  saída máxima é 20000 caracteres.
+
+## Recuperação controlada do proxy público
+
+- `POST /mcp/tools/recover-public-proxy`
+- Entrada fechada:
 
 ```json
 {
-  "command": "uname -a"
+  "requestId": "13f03b59-67db-4a43-872f-e0294a72270b",
+  "reason": "Proxy público indisponível após reboot",
+  "confirmation": "RECOVER_PUBLIC_PROXY"
 }
 ```
 
-Exemplo:
+- Repositório, workflow, branch, host, projeto Compose e serviço não são aceitos no payload.
+- `GET /mcp/tools/recover-public-proxy/{requestId}` acompanha o estado.
+- A operação só retorna `RECOVERED` quando o workflow GitHub conclui com sucesso suas sondas de
+  HTTPS, health e contrato PDE.
+
+Exemplo de solicitação explicitamente autorizada:
 
 ```bash
-curl -fsS https://iahub.xyz/mcp/tools/linux-command \
-  -H "Content-Type: application/json" \
-  -d '{"command":"docker logs --tail 200 ai-hub-6-backend-1"}'
-```
-
-Com token configurado:
-
-```bash
-curl -fsS https://iahub.xyz/mcp/tools/linux-command \
+curl -fsS https://iahub.xyz/mcp/tools/recover-public-proxy \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${MCP_SERVER_API_TOKEN}" \
-  -d '{"command":"docker logs --tail 200 ai-hub-6-backend-1"}'
+  -d '{"requestId":"13f03b59-67db-4a43-872f-e0294a72270b","reason":"Proxy público indisponível após reboot","confirmation":"RECOVER_PUBLIC_PROXY"}'
+```
+
+Consulta:
+
+```bash
+curl -fsS https://iahub.xyz/mcp/tools/recover-public-proxy/13f03b59-67db-4a43-872f-e0294a72270b \
+  -H "Authorization: Bearer ${MCP_SERVER_API_TOKEN}"
 ```

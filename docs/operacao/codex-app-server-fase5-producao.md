@@ -44,59 +44,25 @@ docker compose up -d
 
 ## Quando o sandbox não consegue reiniciar produção
 
-A falta de Docker daemon, systemd ou socket Docker dentro do sandbox não deve bloquear a validação operacional de produção. Nessa situação, trate o sandbox como ambiente de código/testes locais e use o MCP Server como plano de controle do host.
+A falta de systemd ou do daemon de produção dentro do sandbox não deve ser contornada com shell
+remoto genérico. O endpoint público `linux-command` foi removido da superfície de borda e todas as
+tools agora exigem bearer configurado, falhando fechadas quando ele não existe.
 
-Antes de propor restart ou qualquer ajuste operacional, pergunte: **por que esse erro aconteceu?** Para a limitação relatada, a causa raiz não era o contrato `connected=true`/`executable=true`; era a tentativa de validar um efeito de produção usando capacidades locais do sandbox que não existem naquele ambiente. A validação de produção precisa ser feita no host via MCP, ou pelo workflow de deploy, e a validação local precisa ficar restrita a testes automatizados e contratos de código.
+Antes de propor restart ou qualquer ajuste operacional, pergunte: **por que esse erro aconteceu?**
+Validações locais devem usar testes e contratos. Validações produtivas devem usar leitura
+operacional autorizada, a tela administrativa ou um workflow semântico de alvo fixo. Alterações
+persistentes de `.env`, imagens e código continuam pertencendo ao workflow de deploy de `main`.
 
-Alternativas avaliadas para esse tipo de bloqueio:
-
-1. Instalar Docker daemon/systemd dentro do sandbox. Reduz fricção local, mas aumenta superfície de segurança, mistura responsabilidades e ainda não prova o estado real de produção.
-2. Exigir SSH/manual fora do fluxo do agente. Funciona como emergência, mas perde rastreabilidade e torna a operação menos repetível.
-3. Usar MCP Server com comandos allowlistados, curtos e auditáveis para healthcheck, `docker ps`, logs e restart autorizado. É a melhor opção operacional porque valida o host real sem conceder Docker bruto ao sandbox.
-
-Decisão: para validações de produção, usar MCP Server; para alterações persistentes de `.env` e deploy, preferir o workflow de `main`; para restart manual via MCP, exigir autorização explícita quando afetar serviços de produção.
-
-Comandos seguros e copiáveis:
+O health público permanece somente leitura:
 
 ```bash
 curl -fsS https://iahub.xyz/mcp
 ```
 
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data @- <<'JSON'
-{"command":"docker ps --format '{{.Names}}' | grep -E 'ai-hub-6-(backend|sandbox-orchestrator|mcp-server|frontend|caddy)-1' || true"}
-JSON
-```
-
-Use `timeout -k` envolvendo a pipeline inteira nos logs para evitar chamadas presas no MCP. O `tail` final mantém a evidência curta:
-
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data @- <<'JSON'
-{"command":"timeout -k 2s 12s sh -lc 'docker logs --since 10m --tail 120 ai-hub-6-backend-1 2>&1 | grep -i \"/oauth/token\" | tail -n 40 || true' || true"}
-JSON
-```
-
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data @- <<'JSON'
-{"command":"timeout -k 2s 12s sh -lc 'docker logs --since 10m --tail 120 ai-hub-6-sandbox-orchestrator-1 2>&1 | grep -E \"thread/start|turn/start|turn/completed|request method=account/read\" | tail -n 40 || true' || true"}
-JSON
-```
-
-Restart manual apenas quando autorizado:
-
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data @- <<'JSON'
-{"command":"cd /host/root/ai-hub-6 && docker compose up -d backend sandbox-orchestrator"}
-JSON
-```
+Diagnóstico de containers e logs do próprio AI Hub continua disponível ao backend pela rota
+interna autenticada do MCP. Operações novas não devem ampliar esse shell; devem receber DTO fechado,
+ter alvo versionado, idempotência, cooldown e auditoria próprios, como definido em
+`docs/operacao/recuperacao-proxy-publico-v1.md`.
 
 Critério mínimo para considerar a fase validada:
 
@@ -146,26 +112,11 @@ Critério mínimo para considerar a fase validada:
 - Nos últimos logs consultados do backend não foi encontrada ocorrência de `/oauth/token`.
 - Nos últimos logs consultados do sandbox-orchestrator ainda não havia `thread/start`, `turn/start` ou `turn/completed`, portanto a execução real da fase 5 ainda depende de deploy, limpeza do `.env`, login humano pelo device code e disparo de uma request real.
 
-## Comandos MCP usados para validação
+## Evidência MCP histórica
 
 ```bash
 curl -fsS https://iahub.xyz/mcp
 ```
 
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data '{"command":"docker ps --format {{.Names}}"}'
-```
-
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data '{"command":"docker logs --tail 500 ai-hub-6-backend-1 2>&1 | grep -i '\''/oauth/token'\'' || true"}'
-```
-
-```bash
-curl -fsS -X POST https://iahub.xyz/mcp/tools/linux-command \
-  -H 'Content-Type: application/json' \
-  --data '{"command":"docker logs --tail 500 ai-hub-6-sandbox-orchestrator-1 2>&1 | grep -E '\''thread/start|turn/start|turn/completed|Codex App Server'\'' || true"}'
-```
+As consultas de shell registradas originalmente nesta fase são evidência histórica. O caminho
+público usado naquela coleta não faz mais parte do contrato e deve responder `404`.

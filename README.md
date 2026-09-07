@@ -52,24 +52,39 @@ infra/
 - O `sandbox-orchestrator` monta esse diretório como somente leitura e, se os arquivos existirem, exporta `GITHUB_ACTOR`, `GITHUB_TOKEN` e `GITHUB_CLONE_TOKEN` antes de iniciar o runner; assim o valor não depende de editar o `.env` versionado/sincronizado.
 - Caso prefira outro caminho no host, defina `GITHUB_PACKAGES_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém esses dois arquivos.
 
+### Acesso SSH persistente da sandbox
+
+- A identidade operacional fica no segredo protegido `SANDBOX_OPS_SSH_PRIVATE_KEY`; o deploy a grava fora do repositório em `/root/infra/sandbox-ssh/id_ed25519` com permissão `0600`.
+- Somente o sidecar sem rede `sandbox-ssh-agent` monta a chave privada. O `sandbox-orchestrator` recebe apenas o socket read-only e usa `sandbox-ssh usuario@host comando` com destinos e host keys fixados.
+- A chave pública, o fingerprint, os destinos atuais e o procedimento de rotação estão em [docs/operacao/sandbox-ssh-persistente.md](docs/operacao/sandbox-ssh-persistente.md).
+- Nunca grave a chave privada em `.env`, no workspace, em logs ou em arquivos versionados.
+
 ### Armazenamento do token da Pepper para a sandbox
 
 - Para chamadas à API da Pepper executadas pelo modelo, guarde o token fora do repositório em `/root/infra/pepper-token/pepper_api_token`.
 - O `sandbox-orchestrator` monta esse diretório como somente leitura em `/run/secrets/pepper-token`; se o arquivo existir, o conteúdo é exportado como `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` antes de iniciar o runner.
 - Caso prefira outro caminho no host, defina `PEPPER_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `pepper_api_token`.
 
-### Armazenamento dos tokens Luma, Kling e HeyGen para a sandbox
+### Armazenamento do token da Brave Search para a sandbox
 
-- Para chamadas às APIs Luma, Kling e HeyGen executadas pelo modelo, guarde as chaves fora do repositório em `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key` e `/root/infra/heygen-token/heygen_api_key`.
-- O `sandbox-orchestrator` monta esses diretórios como somente leitura em `/run/secrets/luma-token`, `/run/secrets/kling-token` e `/run/secrets/heygen-token`; se os arquivos existirem, exporta `LUMA_API_KEY`, `KLING_API_KEY` e `HEYGEN_API_KEY` antes de iniciar o runner e o Codex App Server.
-- Caso prefira outros caminhos no host, defina `LUMA_TOKEN_HOST_DIR`, `KLING_TOKEN_HOST_DIR` e `HEYGEN_TOKEN_HOST_DIR` no `.env` operacional apontando para as pastas que contêm os arquivos `luma_api_key`, `kling_api_key` e `heygen_api_key`.
+- Guarde o token fora do repositório em `/root/infra/brave-token/brave_api_key`.
+- O `sandbox-orchestrator` monta esse diretório como somente leitura e exporta o conteúdo como `BRAVE_API_KEY`; a instrução enviada ao modelo informa que ele pode usar a Brave Search API sem revelar a credencial.
+- Caso prefira outro caminho no host, defina `BRAVE_TOKEN_HOST_DIR` no `.env` operacional apontando para a pasta que contém `brave_api_key`.
 
-### MCP Server para comandos no host
+### Armazenamento dos tokens Luma, Kling, HeyGen, Radar Meta e Meta para a sandbox
+
+- Para chamadas às APIs Luma, Kling, HeyGen, Radar Meta e Meta executadas pelo modelo, guarde as chaves fora do repositório em `/root/infra/luma-token/luma_api_key`, `/root/infra/kling-token/kling_api_key`, `/root/infra/heygen-token/heygen_api_key`, `/root/infra/radarmeta-token/radar_meta_token` e `/root/infra/meta-token/meta_token`.
+- O `sandbox-orchestrator` monta esses diretórios como somente leitura em `/run/secrets/luma-token`, `/run/secrets/kling-token`, `/run/secrets/heygen-token`, `/run/secrets/radarmeta-token` e `/run/secrets/meta-token`; se os arquivos existirem, exporta `LUMA_API_KEY`, `KLING_API_KEY`, `HEYGEN_API_KEY`, `RADAR_META_TOKEN` e `META_TOKEN` antes de iniciar o runner e o Codex App Server.
+- Caso prefira outros caminhos no host, defina `LUMA_TOKEN_HOST_DIR`, `KLING_TOKEN_HOST_DIR`, `HEYGEN_TOKEN_HOST_DIR`, `RADAR_META_TOKEN_HOST_DIR` e `META_TOKEN_HOST_DIR` no `.env` operacional apontando para as pastas que contêm os arquivos `luma_api_key`, `kling_api_key`, `heygen_api_key`, `radar_meta_token` e `meta_token`.
+
+### MCP Server para operações controladas
 
 - O serviço Java `mcp-server` publica o healthcheck em `GET /mcp`, exposto pelo Caddy em `https://iahub.xyz/mcp`.
-- A tool `POST /mcp/tools/linux-command` aceita body `{ "command": "<comando>" }`.
-- Quando `MCP_SERVER_API_TOKEN` estiver definido no `.env` operacional, a tool exige `Authorization: Bearer <MCP_SERVER_API_TOKEN>`. Sem essa variável, mantém compatibilidade com o contrato operacional simples usado pelo Tihub.
-- O container monta `/var/run/docker.sock` e a raiz do host em `/host:ro`, permitindo validar arquivos e consultar logs com comandos como `docker logs --tail 200 ai-hub-6-backend-1`.
+- Todas as tools exigem `Authorization: Bearer <MCP_SERVER_API_TOKEN>`; sem token configurado, falham fechadas com `503`.
+- A operação pública `POST /mcp/tools/recover-public-proxy` recebe somente `requestId`, `reason` e a confirmação `RECOVER_PUBLIC_PROXY`; alvo e workflow são fixos no backend.
+- `GET /mcp/tools/recover-public-proxy/{requestId}` consulta o estado auditável e só retorna `RECOVERED` depois do workflow GitHub concluir as sondas públicas.
+- A tool genérica `linux-command` permanece somente na rede interna para rotinas legadas autenticadas. O Caddy bloqueia seu caminho público com `404`.
+- O container ainda monta `/var/run/docker.sock` e `/host:ro` para essas rotinas internas; nenhuma entrada da recuperação semântica é convertida em shell.
 - Os limites operacionais são controlados por `MCP_SERVER_COMMAND_TIMEOUT_SECONDS` e `MCP_SERVER_MAX_OUTPUT_CHARS`.
 
 ## Testes

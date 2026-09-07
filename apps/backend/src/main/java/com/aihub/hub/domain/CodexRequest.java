@@ -40,6 +40,10 @@ public class CodexRequest {
     @Column(nullable = false)
     private String model;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reasoning_effort", nullable = false, length = 16)
+    private CodexReasoningEffort reasoningEffort = CodexReasoningEffort.HIGH;
+
     @Column(name = "version", nullable = false, length = 45)
     private String version = DEFAULT_VERSION;
 
@@ -198,6 +202,14 @@ public class CodexRequest {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public CodexReasoningEffort getReasoningEffort() {
+        return reasoningEffort;
+    }
+
+    public void setReasoningEffort(CodexReasoningEffort reasoningEffort) {
+        this.reasoningEffort = reasoningEffort == null ? CodexReasoningEffort.HIGH : reasoningEffort;
     }
 
     public String getVersion() {

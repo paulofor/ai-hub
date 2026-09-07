@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+destination="$1"
+shift
+[ "${destination}" = root@fixture.test ] || exit 77
+exec "$@"

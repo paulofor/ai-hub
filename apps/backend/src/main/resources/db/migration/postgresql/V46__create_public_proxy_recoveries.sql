@@ -1,0 +1,14 @@
+CREATE TABLE public_proxy_recoveries (
+    id BIGSERIAL PRIMARY KEY,
+    request_id VARCHAR(36) NOT NULL,
+    reason VARCHAR(500) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    github_run_id BIGINT,
+    github_run_url VARCHAR(1000),
+    github_conclusion VARCHAR(40),
+    requested_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT uk_public_proxy_recoveries_request UNIQUE (request_id)
+);
+CREATE INDEX idx_public_proxy_recoveries_requested_at
+    ON public_proxy_recoveries(requested_at);

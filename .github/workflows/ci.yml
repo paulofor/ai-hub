@@ -8,10 +8,18 @@ on:
   push:
     branches: ["main", "master"]
   pull_request:
+  workflow_dispatch:
+
+# Pull requests receive frequent revisions and only their latest CI result is useful.
+# Pushes to the production branch are never cancelled here because they may deploy.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Set up Java
@@ -19,11 +27,22 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            apps/backend/pom.xml
+            apps/mcp-server/pom.xml
       - name: Build backend
-        run: mvn -f apps/backend -B test
+        run: |
+          ./apps/backend/scripts/validate-migration-versions.sh
+          ./apps/backend/scripts/test-public-proxy-recovery-migrations.sh
+          mvn -f apps/backend -B test
 
   mcp-server:
+    # Serializa os dois consumidores do Maven Central: o backend aquece o cache
+    # compartilhado antes de o MCP server tentar resolver as mesmas dependências.
+    needs: backend
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Set up Java
@@ -31,11 +50,19 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            apps/backend/pom.xml
+            apps/mcp-server/pom.xml
       - name: Build MCP server
-        run: mvn -f apps/mcp-server -B test
+        run: |
+          ./apps/mcp-server/scripts/test-public-surface-contract.sh
+          ./apps/mcp-server/scripts/test-public-surface-e2e.sh
+          mvn -f apps/mcp-server -B test
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node
@@ -51,6 +78,7 @@ jobs:
 
   sandbox:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node
@@ -63,10 +91,22 @@ jobs:
         run: npm --prefix apps/sandbox-orchestrator ci
       - name: Test
         run: npm --prefix apps/sandbox-orchestrator test
+      - name: Test protected remote Docker lifecycle
+        env:
+          SANDBOX_REMOTE_DOCKER_TEST_PROJECT: aihub-remote-docker-${{ github.run_id }}-${{ github.run_attempt }}
+        run: apps/sandbox-orchestrator/tests/test-remote-docker-e2e.sh
 
   docker:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # Never publish mutable image tags from a revision that has not passed the
+    # complete local-equivalent CI matrix.
+    needs:
+      - backend
+      - frontend
+      - sandbox
+      - mcp-server
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -165,7 +205,7 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-sandbox:buildcache,mode=max
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs:
       - backend
       - frontend
@@ -173,6 +213,7 @@ jobs:
       - mcp-server
       - docker
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: production-deploy-${{ github.ref }}
       cancel-in-progress: false
@@ -195,7 +236,14 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60" >> "$GITHUB_ENV"
+          awk -v host="${DEPLOY_HOST}" '$1 == host { print }' \
+            apps/sandbox-orchestrator/ssh/known_hosts > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if ! ssh-keygen -F "${DEPLOY_HOST}" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "Host key fixada ausente para ${DEPLOY_HOST}." >&2
+            exit 1
+          fi
+          printf '%s\n' "SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60" >> "$GITHUB_ENV"
       - name: Prepare remote directory
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${REMOTE_PATH}"
@@ -206,8 +254,52 @@ jobs:
             --exclude '.git/' \
             --exclude 'node_modules/' \
             --exclude '.env' \
+            --exclude 'infra/' \
             --exclude 'apps/backend/.env' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
+      - name: Provision protected sandbox SSH identity
+        env:
+          SANDBOX_OPS_SSH_PRIVATE_KEY: ${{ secrets.SANDBOX_OPS_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SANDBOX_OPS_SSH_PRIVATE_KEY}" ]; then
+            echo "SANDBOX_OPS_SSH_PRIVATE_KEY não configurado." >&2
+            exit 1
+          fi
+
+          local_private_key="$(mktemp)"
+          remote_private_key_tmp="/root/infra/sandbox-ssh/.id_ed25519.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.tmp"
+          cleanup() {
+            chmod 600 "${local_private_key}" 2>/dev/null || true
+            shred -u "${local_private_key}" 2>/dev/null || rm -f "${local_private_key}"
+          }
+          trap cleanup EXIT
+
+          umask 077
+          printf '%s\n' "${SANDBOX_OPS_SSH_PRIVATE_KEY}" > "${local_private_key}"
+          actual_public_key="$(ssh-keygen -y -f "${local_private_key}" | awk '{ print $1 " " $2 }')"
+          expected_public_key="$(awk '{ print $1 " " $2 }' apps/sandbox-orchestrator/ssh/operator_key.pub)"
+          if [ "${actual_public_key}" != "${expected_public_key}" ]; then
+            echo "O segredo SANDBOX_OPS_SSH_PRIVATE_KEY não corresponde à chave pública versionada." >&2
+            exit 1
+          fi
+
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "install -d -m 700 /root/infra/sandbox-ssh && rm -f '${remote_private_key_tmp}'"
+          scp ${SSH_COMMON_ARGS} "${local_private_key}" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_private_key_tmp}"
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "set -euo pipefail; \
+            trap 'rm -f \"${remote_private_key_tmp}\"' EXIT; \
+            chmod 600 '${remote_private_key_tmp}'; \
+            actual_public_key=\$(ssh-keygen -y -f '${remote_private_key_tmp}' | awk '{ print \$1 \" \" \$2 }'); \
+            expected_public_key=\$(awk '{ print \$1 \" \" \$2 }' '${REMOTE_PATH}/apps/sandbox-orchestrator/ssh/operator_key.pub'); \
+            test \"\${actual_public_key}\" = \"\${expected_public_key}\"; \
+            mv '${remote_private_key_tmp}' /root/infra/sandbox-ssh/id_ed25519; \
+            printf '%s\n' \"\${actual_public_key}\" > /root/infra/sandbox-ssh/id_ed25519.pub; \
+            chmod 600 /root/infra/sandbox-ssh/id_ed25519; \
+            chmod 644 /root/infra/sandbox-ssh/id_ed25519.pub; \
+            trap - EXIT"
       - name: Authenticate registry on VPS
         run: |
           if [ -z "${GHCR_TOKEN}" ]; then
@@ -226,16 +318,39 @@ jobs:
             sed -i '/^HUB_ACCOUNT_OAUTH_/d' .env && \
             sed -i '/^CODEX_APP_SERVER_ENABLED=/d' .env && \
             sed -i '/^CODEX_APP_SERVER_TURN_TIMEOUT_MS=/d' .env && \
+            sed -i '/^CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=/d' .env && \
+            sed -i '/^CODEX_APP_SERVER_REASONING_EFFORT=/d' .env && \
             sed -i '/^BACKEND_IMAGE=/d; /^FRONTEND_IMAGE=/d; /^SANDBOX_ORCHESTRATOR_IMAGE=/d; /^CADDY_IMAGE=/d; /^MCP_SERVER_IMAGE=/d' .env && \
             printf '%s\n' \
               'CODEX_APP_SERVER_ENABLED=true' \
-              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000' \
+              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000' \
+              'CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000' \
+              'CODEX_APP_SERVER_REASONING_EFFORT=high' \
               'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:${IMAGE_TAG}' \
               'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG}' \
               'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG}' \
               'CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:${IMAGE_TAG}' \
               'MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG}' \
               >> .env"
+      - name: Ensure fail-closed MCP configuration on VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE_MCP_CONFIG'
+          set -euo pipefail
+          cd /root/ai-hub-6
+          current_token="$(grep -E '^MCP_SERVER_API_TOKEN=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' || true)"
+          if [ "${#current_token}" -lt 32 ]; then
+            if command -v openssl >/dev/null 2>&1; then
+              current_token="$(openssl rand -hex 32)"
+            else
+              current_token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+            fi
+            sed -i '/^MCP_SERVER_API_TOKEN=/d' .env
+            printf 'MCP_SERVER_API_TOKEN=%s\n' "${current_token}" >> .env
+          fi
+          sed -i '/^HUB_PUBLIC_PROXY_RECOVERY_ENABLED=/d' .env
+          printf '%s\n' 'HUB_PUBLIC_PROXY_RECOVERY_ENABLED=true' >> .env
+          unset current_token
+          REMOTE_MCP_CONFIG
       - name: Publish services
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
@@ -275,23 +390,43 @@ jobs:
             sleep 2
           done
 
+          echo "== checking protected sandbox SSH agent =="
+          expected_ssh_fingerprint="$(ssh-keygen -lf apps/sandbox-orchestrator/ssh/operator_key.pub -E sha256 | awk '{ print $2 }')"
+          actual_ssh_fingerprint="$(docker compose exec -T sandbox-orchestrator ssh-add -L | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')"
+          test "${actual_ssh_fingerprint}" = "${expected_ssh_fingerprint}"
+          docker compose exec -T sandbox-orchestrator test ! -e /run/secrets/sandbox-ssh/id_ed25519
+          if docker compose exec -T sandbox-orchestrator \
+            sandbox-ssh root@127.0.0.1 true >/dev/null 2>&1; then
+            echo "sandbox-ssh aceitou destino fora da allowlist" >&2
+            exit 1
+          fi
+
           echo "== checking public reverse proxy =="
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/mcp >/tmp/mcp-health.json
           cat /tmp/mcp-health.json
           echo "== checking MCP linux-command tool =="
           mcp_token="$(grep -E '^MCP_SERVER_API_TOKEN=' .env | tail -n 1 | cut -d= -f2-)"
-          if [ -n "${mcp_token}" ]; then
-            docker compose exec -T caddy wget -q -O - \
-              --header="Content-Type: application/json" \
-              --header="Authorization: Bearer ${mcp_token}" \
-              --post-data='{"command":"printf mcp-ok"}' \
-              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
-          else
-            docker compose exec -T caddy wget -q -O - \
-              --header="Content-Type: application/json" \
-              --post-data='{"command":"printf mcp-ok"}' \
-              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          test "${#mcp_token}" -ge 32
+          if docker compose exec -T caddy wget -q -O /dev/null \
+            --header="Content-Type: application/json" \
+            --post-data='{"command":"printf should-not-run"}' \
+            http://mcp-server:8084/mcp/tools/linux-command; then
+            echo "MCP tool aceitou chamada interna sem bearer" >&2
+            exit 1
           fi
+          docker compose exec -T caddy wget -q -O - \
+            --header="Content-Type: application/json" \
+            --header="Authorization: Bearer ${mcp_token}" \
+            --post-data='{"command":"printf mcp-ok"}' \
+            http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          shell_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"command":"printf public-should-not-run"}' \
+            https://iahub.xyz/mcp/tools/linux-command)"
+          test "${shell_status}" = "404"
+          semantic_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            https://iahub.xyz/mcp/tools/recover-public-proxy/00000000-0000-4000-8000-000000000000)"
+          test "${semantic_status}" = "401"
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/ >/dev/null
           REMOTE_CHECK
       - name: Remove stale Docker artifacts from VPS

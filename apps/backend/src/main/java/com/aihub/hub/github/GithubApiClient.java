@@ -128,6 +128,19 @@ public class GithubApiClient {
             .toBodilessEntity();
     }
 
+    public JsonNode listWorkflowRuns(String owner, String repo, String workflowFile, String branch, int perPage) {
+        return restClient.get()
+            .uri(uriBuilder -> uriBuilder
+                .path("/repos/{owner}/{repo}/actions/workflows/{workflow}/runs")
+                .queryParam("event", "workflow_dispatch")
+                .queryParam("branch", branch)
+                .queryParam("per_page", perPage)
+                .build(owner, repo, workflowFile))
+            .headers(headers -> headers.setAll(authHeaders()))
+            .retrieve()
+            .body(JsonNode.class);
+    }
+
     public byte[] downloadRunLogs(String owner, String repo, long runId) {
         return restClient.get()
             .uri("/repos/{owner}/{repo}/actions/runs/{runId}/logs", owner, repo, runId)

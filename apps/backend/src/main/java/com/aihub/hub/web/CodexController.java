@@ -7,7 +7,9 @@ import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
+import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
 import com.aihub.hub.dto.UpdatePendingCodexRequest;
@@ -96,6 +98,37 @@ public class CodexController {
         return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
     }
 
+    @GetMapping("/open-batch")
+    public List<CodexRequest> openBatch(@RequestParam String environment,
+                                        @RequestParam String profile) {
+        return codexRequestService.listOpenBatch(environment, resolveProfileParam(profile));
+    }
+
+    @GetMapping("/token-ranking")
+    public List<CodexTokenRankingItem> tokenRanking() {
+        return codexRequestService.tokenRanking();
+    }
+
+    @GetMapping("/sales-impact/{score}")
+    public Page<CodexSalesImpactRequest> salesImpactRequests(@PathVariable int score,
+                                                             @RequestParam(defaultValue = "0") int page,
+                                                             @RequestParam(defaultValue = "25") int size) {
+        if (score < 1 || score > 5 || page < 0 || size != 25) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe score de 1 a 5, página não negativa e 25 itens por página");
+        }
+        return codexRequestService.listSalesImpactRequests(score, page, size);
+    }
+
+    @GetMapping("/sales-impact/{score}/{id}/previous")
+    public ResponseEntity<Map<String, Long>> previousSalesImpactRequest(@PathVariable int score, @PathVariable Long id) {
+        if (score < 1 || score > 5) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe score de 1 a 5");
+        }
+        return codexRequestService.previousSalesImpactRequestId(score, id)
+            .map(previousId -> ResponseEntity.ok(Map.of("id", previousId)))
+            .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/{id}/previous")
     public ResponseEntity<Map<String, Long>> previous(@PathVariable Long id) {
         return codexRequestService.previousRequestId(id)
@@ -122,6 +155,7 @@ public class CodexController {
         payload.put("requestId", request.getId());
         payload.put("environment", request.getEnvironment());
         payload.put("model", request.getModel());
+        payload.put("reasoningEffort", request.getReasoningEffort());
         payload.put("version", request.getVersion());
         payload.put("profile", request.getProfile());
         payload.put("createdAt", request.getCreatedAt());

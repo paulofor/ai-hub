@@ -17,6 +17,11 @@
         reverse_proxy mcp-server:8084
     }
 
+    @mcp_linux_command path /mcp/tools/linux-command*
+    handle @mcp_linux_command {
+        respond 404
+    }
+
     @mcp path /mcp/*
     handle @mcp {
         reverse_proxy mcp-server:8084

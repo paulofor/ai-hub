@@ -13,6 +13,7 @@ public record SandboxJobRequest(
     String testCommand,
     String profile,
     String model,
+    String reasoningEffort,
     String accessToken,
     String githubToken,
     DatabaseConnection database,

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  echo "Uso: sandbox-ssh <usuario@host-autorizado> <comando-remoto> [argumentos...]" >&2
+  exit 64
+}
+
+[ "$#" -ge 2 ] || usage
+
+destination="$1"
+shift
+
+IFS=',' read -r -a allowed_destinations <<< "${SANDBOX_SSH_ALLOWED_DESTINATIONS:-}"
+destination_allowed=false
+for allowed_destination in "${allowed_destinations[@]}"; do
+  if [ "${destination}" = "${allowed_destination}" ]; then
+    destination_allowed=true
+    break
+  fi
+done
+
+if [ "${destination_allowed}" != "true" ]; then
+  echo "sandbox-ssh: destino não autorizado: ${destination}" >&2
+  exit 77
+fi
+
+socket_path="${SSH_AUTH_SOCK:-/run/sandbox-ssh-agent/agent.sock}"
+known_hosts_file="${SANDBOX_SSH_KNOWN_HOSTS_FILE:-/etc/sandbox-ssh/known_hosts}"
+public_key_file="${SANDBOX_SSH_PUBLIC_KEY_FILE:-/etc/sandbox-ssh/operator_key.pub}"
+connect_timeout="${SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS:-15}"
+
+if [[ ! "${connect_timeout}" =~ ^[0-9]+$ ]]; then
+  echo "sandbox-ssh: timeout de conexão inválido" >&2
+  exit 78
+fi
+
+if [ ! -S "${socket_path}" ]; then
+  echo "sandbox-ssh: agente SSH indisponível" >&2
+  exit 69
+fi
+
+destination_host="${destination#*@}"
+if ! ssh-keygen -F "${destination_host}" -f "${known_hosts_file}" >/dev/null; then
+  echo "sandbox-ssh: host key não fixada para ${destination_host}" >&2
+  exit 77
+fi
+
+remote_command=''
+separator=''
+for remote_argument in "$@"; do
+  if [[ "${remote_argument}" == *$'\n'* || "${remote_argument}" == *$'\r'* ]]; then
+    echo "sandbox-ssh: argumentos remotos não podem conter quebras de linha" >&2
+    exit 78
+  fi
+  escaped_argument="${remote_argument//\'/\'\\\'\'}"
+  remote_command+="${separator}'${escaped_argument}'"
+  separator=' '
+done
+
+ssh_executable="${SANDBOX_SSH_EXECUTABLE:-/usr/bin/ssh}"
+if [ ! -x "${ssh_executable}" ]; then
+  echo "sandbox-ssh: cliente SSH indisponível" >&2
+  exit 69
+fi
+
+exec "${ssh_executable}" \
+  -F /dev/null \
+  -o "IdentityAgent=${socket_path}" \
+  -o "IdentityFile=${public_key_file}" \
+  -o IdentitiesOnly=yes \
+  -o "UserKnownHostsFile=${known_hosts_file}" \
+  -o GlobalKnownHostsFile=/dev/null \
+  -o StrictHostKeyChecking=yes \
+  -o BatchMode=yes \
+  -o PasswordAuthentication=no \
+  -o KbdInteractiveAuthentication=no \
+  -o PreferredAuthentications=publickey \
+  -o NumberOfPasswordPrompts=0 \
+  -o ForwardAgent=no \
+  -o ClearAllForwardings=yes \
+  -o RequestTTY=no \
+  -o PermitLocalCommand=no \
+  -o "ConnectTimeout=${connect_timeout}" \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -- "${destination}" "${remote_command}"

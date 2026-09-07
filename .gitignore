@@ -1,5 +1,6 @@
 # Build artifacts
 apps/backend/target/
+apps/mcp-server/target/
 apps/frontend/node_modules/
 apps/sandbox-orchestrator/node_modules/
 apps/sandbox-orchestrator/dist/
@@ -8,6 +9,7 @@ apps/frontend/tsconfig.tsbuildinfo
 **/.DS_Store
 .env.local
 npm-debug.log*
+.sandbox-ssh-seed/
 exemplo-cliente/codex/.github
 
 # deps
@@ -97,4 +99,3 @@ exemplo-cliente/codex/CHANGELOG.ignore.md
 # nix related
 exemplo-cliente/codex/.direnv
 exemplo-cliente/codex/.envrc
-

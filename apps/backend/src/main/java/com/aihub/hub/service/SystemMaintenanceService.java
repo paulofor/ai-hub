@@ -47,9 +47,7 @@ public class SystemMaintenanceService {
         } catch (RuntimeException ex) {
             result.put("sandbox", Map.of("status", "unavailable", "error", ex.getMessage()));
         }
-        result.put("queuedRequests", requests.findAllByOrderByCreatedAtDesc().stream()
-            .filter(item -> item.getStatus() == CodexRequestStatus.PENDING)
-            .limit(25)
+        result.put("queuedRequests", requests.findTop25ByStatusOrderByCreatedAtDesc(CodexRequestStatus.PENDING).stream()
             .map(item -> Map.of("id", item.getId(), "profile", item.getProfile().name(), "createdAt", item.getCreatedAt()))
             .toList());
         result.put("maintenanceBusy", destructiveActionRunning.get());

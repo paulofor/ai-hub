@@ -15,3 +15,21 @@ spring:
     enabled: false
   liquibase:
     enabled: false
+
+hub:
+  github:
+    app-id: ""
+    installation-id: "0"
+    webhook-secret: ""
+  mcp:
+    api-url: http://localhost:18084/mcp
+    api-token: ""
+  public-proxy-recovery:
+    enabled: false
+    repository-owner: paulofor
+    repository-name: marketing-hub
+    workflow-file: recover-public-proxy.yml
+    ref: main
+    target-key: kit-whatsapp-pronto-public-proxy
+    cooldown-seconds: 600
+    status-lookup-limit: 25

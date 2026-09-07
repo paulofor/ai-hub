@@ -4,12 +4,13 @@
 
 **Antes de propor ou implementar qualquer ajuste para um erro, pare e se pergunte explicitamente: “por que esse erro aconteceu?”. Use a resposta para guiar a investigação e só então defina a correção.**
 
-**O MCP Server permite executar comandos Linux no host e visualizar logs dos containers (ex.: via `docker logs`), respeitando autenticação por token e políticas de segurança do ambiente.**
+**O MCP Server usa autenticação bearer obrigatória e fail-closed em todas as tools. O shell Linux genérico é restrito à rede interna e não deve ser exposto pelo proxy público.**
 
 **Forma correta de acesso ao MCP Server:**
 - Healthcheck: `GET https://iahub.xyz/mcp` (retorna `{"status":"UP"}`).
-- Execução de comandos/logs: `POST https://iahub.xyz/mcp/tools/linux-command` com header `Content-Type: application/json` e body `{ "command": "<comando>" }`.
-- Exemplo para logs do backend: `{ "command": "docker logs --tail 200 ai-hub-6-backend-1" }`.
+- Recuperação do proxy público: `POST https://iahub.xyz/mcp/tools/recover-public-proxy` com bearer, `requestId` UUID, `reason` e confirmação literal `RECOVER_PUBLIC_PROXY`.
+- Consulta da recuperação: `GET https://iahub.xyz/mcp/tools/recover-public-proxy/{requestId}` com bearer.
+- `POST /mcp/tools/linux-command` só pode ser usado por serviços internos autenticados; a borda pública deve responder `404`.
 
 **Integração Codex App Server / sandbox mode:**
 - Ao montar payloads para o Codex App Server, especialmente `thread/start`, use os valores de sandbox em kebab-case aceitos pelo App Server: `read-only`, `workspace-write` ou `danger-full-access`.

@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+real_curl="${CURL_REAL_BIN:-/usr/bin/curl}"
+connect_timeout="${CURL_CONNECT_TIMEOUT_SECONDS:-10}"
+max_time="${CURL_MAX_TIME_SECONDS:-120}"
+has_connect_timeout=false
+has_max_time=false
+
+for argument in "$@"; do
+  case "$argument" in
+    --connect-timeout|--connect-timeout=*) has_connect_timeout=true ;;
+    --max-time|--max-time=*|-m|-m[0-9]*) has_max_time=true ;;
+  esac
+done
+
+set -- "$@"
+if [ "$has_connect_timeout" = false ]; then
+  set -- --connect-timeout "$connect_timeout" "$@"
+fi
+if [ "$has_max_time" = false ]; then
+  set -- --max-time "$max_time" "$@"
+fi
+
+exec "$real_curl" "$@"

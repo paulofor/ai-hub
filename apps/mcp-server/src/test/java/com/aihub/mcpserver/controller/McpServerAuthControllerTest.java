@@ -44,6 +44,15 @@ class McpServerAuthControllerTest {
     }
 
     @Test
+    void linuxCommandRejectsIncorrectBearerToken() throws Exception {
+        mockMvc.perform(post("/mcp/tools/linux-command")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer incorrect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"command\":\"printf hello\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void linuxCommandExecutesWithBearerTokenWhenApiTokenIsConfigured() {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("test-token");

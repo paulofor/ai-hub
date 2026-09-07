@@ -11,13 +11,21 @@ public record CodexDashboardMetrics(
     CodexDashboardMetricSeries series,
     CodexSalesImpactScore salesImpactDay,
     CodexSalesImpactScore salesImpactWeek,
-    CodexSalesImpactScore salesImpactMonth
+    CodexSalesImpactScore salesImpactMonth,
+    List<CodexSalesImpactPoint> recentSalesImpact
 ) {
     public record CodexDashboardMetricWindow(
         Instant startsAt,
         long requestCount,
         long interactionCount,
         long durationMs
+    ) {
+    }
+
+    public record CodexSalesImpactPoint(
+        long requestId,
+        Instant createdAt,
+        Integer score
     ) {
     }
 

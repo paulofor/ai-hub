@@ -20,6 +20,24 @@ function createClient(extraEnv: NodeJS.ProcessEnv = {}, requestTimeoutMs = 2000)
   });
 }
 
+test('reserva timeout maior para reconhecer turn/start sem ampliar os demais requests', async () => {
+  const client = new CodexAppServerClient({
+    command: process.execPath,
+    args: [fixturePath],
+    env: { FAKE_CODEX_APP_SERVER_MODE: 'slow-turn-start' },
+    requestTimeoutMs: 100,
+    turnStartRequestTimeoutMs: 500,
+    autoRestart: false,
+    logger: silentLogger,
+  });
+  await client.start();
+
+  assert.deepEqual(await client.request('turn/start', { threadId: 'thread-123' }), { id: 'turn-123' });
+  await assert.rejects(client.request('test/never'), /Timeout em request test\/never/);
+
+  await client.stop();
+});
+
 test('inicializa via initialize antes de requests e envia initialized', async () => {
   const client = createClient();
   await client.start();

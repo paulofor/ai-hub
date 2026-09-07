@@ -11,6 +11,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CodexRequestTest {
 
     @Test
+    void parsesMaxReasoningEffort() {
+        assertThat(CodexReasoningEffort.fromValue("max")).isEqualTo(CodexReasoningEffort.MAX);
+        assertThat(CodexReasoningEffort.MAX.value()).isEqualTo("max");
+    }
+
+    @Test
     void profileColumnFitsSandboxProfileName() throws Exception {
         Field field = CodexRequest.class.getDeclaredField("profile");
 
