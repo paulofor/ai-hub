@@ -1,0 +1,11 @@
+services:
+  fixture-image:
+    image: ${SANDBOX_REMOTE_DOCKER_FIXTURE_IMAGE:?Defina SANDBOX_REMOTE_DOCKER_FIXTURE_IMAGE}
+    build:
+      context: ./remote-docker-fixture
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

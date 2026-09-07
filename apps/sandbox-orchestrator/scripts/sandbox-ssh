@@ -1,5 +1,5 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
 usage() {
   echo "Uso: sandbox-ssh <usuario@host-autorizado> <comando-remoto> [argumentos...]" >&2
@@ -11,9 +11,9 @@ usage() {
 destination="$1"
 shift
 
-allowed_destinations="$(printf '%s' "${SANDBOX_SSH_ALLOWED_DESTINATIONS:-}" | tr ',' ' ')"
+IFS=',' read -r -a allowed_destinations <<< "${SANDBOX_SSH_ALLOWED_DESTINATIONS:-}"
 destination_allowed=false
-for allowed_destination in ${allowed_destinations}; do
+for allowed_destination in "${allowed_destinations[@]}"; do
   if [ "${destination}" = "${allowed_destination}" ]; then
     destination_allowed=true
     break
@@ -30,12 +30,10 @@ known_hosts_file="${SANDBOX_SSH_KNOWN_HOSTS_FILE:-/etc/sandbox-ssh/known_hosts}"
 public_key_file="${SANDBOX_SSH_PUBLIC_KEY_FILE:-/etc/sandbox-ssh/operator_key.pub}"
 connect_timeout="${SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS:-15}"
 
-case "${connect_timeout}" in
-  ''|*[!0-9]*)
-    echo "sandbox-ssh: timeout de conexão inválido" >&2
-    exit 78
-    ;;
-esac
+if [[ ! "${connect_timeout}" =~ ^[0-9]+$ ]]; then
+  echo "sandbox-ssh: timeout de conexão inválido" >&2
+  exit 78
+fi
 
 if [ ! -S "${socket_path}" ]; then
   echo "sandbox-ssh: agente SSH indisponível" >&2
@@ -48,7 +46,25 @@ if ! ssh-keygen -F "${destination_host}" -f "${known_hosts_file}" >/dev/null; th
   exit 77
 fi
 
-exec /usr/bin/ssh \
+remote_command=''
+separator=''
+for remote_argument in "$@"; do
+  if [[ "${remote_argument}" == *$'\n'* || "${remote_argument}" == *$'\r'* ]]; then
+    echo "sandbox-ssh: argumentos remotos não podem conter quebras de linha" >&2
+    exit 78
+  fi
+  escaped_argument="${remote_argument//\'/\'\\\'\'}"
+  remote_command+="${separator}'${escaped_argument}'"
+  separator=' '
+done
+
+ssh_executable="${SANDBOX_SSH_EXECUTABLE:-/usr/bin/ssh}"
+if [ ! -x "${ssh_executable}" ]; then
+  echo "sandbox-ssh: cliente SSH indisponível" >&2
+  exit 69
+fi
+
+exec "${ssh_executable}" \
   -F /dev/null \
   -o "IdentityAgent=${socket_path}" \
   -o "IdentityFile=${public_key_file}" \
@@ -68,4 +84,4 @@ exec /usr/bin/ssh \
   -o "ConnectTimeout=${connect_timeout}" \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
-  -- "${destination}" "$@"
+  -- "${destination}" "${remote_command}"

@@ -12,6 +12,7 @@ const repositoryRoot = path.resolve(packageRoot, '../..');
 const startAgentScript = path.join(packageRoot, 'scripts/start-sandbox-ssh-agent');
 const healthScript = path.join(packageRoot, 'scripts/sandbox-ssh-agent-health');
 const sshWrapper = path.join(packageRoot, 'scripts/sandbox-ssh');
+const remoteDockerWrapper = path.join(packageRoot, 'scripts/sandbox-remote-docker');
 
 type AgentFixture = {
   directory: string;
@@ -183,6 +184,44 @@ test('wrapper nega destino fora da allowlist antes de tentar a rede', () => {
   assert.match(result.stderr, /destino não autorizado/);
 });
 
+test('wrapper preserva argumentos remotos como tokens literais', async () => {
+  const fixture = await createAgentFixture();
+  const fakeSsh = path.join(fixture.directory, 'fake-ssh');
+  await fsp.writeFile(fakeSsh, `#!/bin/sh\nfor argument do last="$argument"; done\nprintf '%s' "$last"\n`);
+  await fsp.chmod(fakeSsh, 0o755);
+  const child = spawn(startAgentScript, [], {
+    env: agentEnvironment(fixture),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  try {
+    await waitForAgentReady(child, fixture.socket);
+    const literal = `valor com espaço; $(não-executar) e 'aspas'`;
+    const result = spawnSync(sshWrapper, ['root@allowed.test', 'printf', '%s', literal], {
+      encoding: 'utf8',
+      env: {
+        ...agentEnvironment(fixture),
+        SANDBOX_SSH_EXECUTABLE: fakeSsh,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `'printf' '%s' 'valor com espaço; $(não-executar) e '\\''aspas'\\'''`);
+
+    const newline = spawnSync(sshWrapper, ['root@allowed.test', 'printf', 'linha 1\nlinha 2'], {
+      encoding: 'utf8',
+      env: {
+        ...agentEnvironment(fixture),
+        SANDBOX_SSH_EXECUTABLE: fakeSsh,
+      },
+    });
+    assert.equal(newline.status, 78);
+    assert.match(newline.stderr, /quebras de linha/);
+  } finally {
+    await stopAgent(child);
+    await fsp.rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
 test('compose isola a chave privada no sidecar e monta somente o socket no orquestrador', async () => {
   const compose = await fsp.readFile(path.join(repositoryRoot, 'docker-compose.yml'), 'utf8');
   const sidecarStart = compose.indexOf('  sandbox-ssh-agent:');
@@ -246,6 +285,7 @@ test('arquivos versionados do mecanismo não contêm uma chave privada', async (
     'scripts/start-sandbox-ssh-agent',
     'scripts/sandbox-ssh-agent-health',
     'scripts/sandbox-ssh',
+    'scripts/sandbox-remote-docker',
     'ssh/operator_key.pub',
     'ssh/known_hosts',
     'tests/ssh-agent-compose.yml',
@@ -257,4 +297,23 @@ test('arquivos versionados do mecanismo não contêm uma chave privada', async (
     assert.doesNotMatch(contents, /BEGIN OPENSSH PRIVATE KEY/, relativePath);
   }
   assert.equal(fs.existsSync(path.join(packageRoot, 'ssh/id_ed25519')), false);
+});
+
+test('helper Docker remoto impõe namespace, limites e limpeza sem modo privilegiado', async () => {
+  const helper = await fsp.readFile(remoteDockerWrapper, 'utf8');
+  const dockerfile = await fsp.readFile(path.join(packageRoot, 'Dockerfile'), 'utf8');
+
+  assert.match(helper, /aihubsbx\/\$\{session\}/);
+  assert.match(helper, /aihub\.sandbox\.managed=true/);
+  assert.match(helper, /aihub\.sandbox\.session=\$\{session\}/);
+  assert.match(helper, /--memory "\$\{memory_limit\}"/);
+  assert.match(helper, /--cpus "\$\{cpu_limit\}"/);
+  assert.match(helper, /--pids-limit "\$\{pids_limit\}"/);
+  assert.match(helper, /--security-opt no-new-privileges:true/);
+  assert.match(helper, /--cap-drop ALL/);
+  assert.match(helper, /\[ "\$\{network_name\}" != host \]/);
+  assert.match(helper, /image save "\$\{remote_image\}" \| remote docker image load/);
+  assert.doesNotMatch(helper, /--privileged|--pid[= ]host|--ipc[= ]host|docker\.sock|--volume|-v \/|scp|rsync/);
+  assert.match(dockerfile, /COPY scripts\/sandbox-remote-docker \/usr\/local\/bin\/sandbox-remote-docker/);
+  assert.match(dockerfile, /\/usr\/local\/bin\/sandbox-remote-docker/);
 });

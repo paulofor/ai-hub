@@ -17,6 +17,9 @@ O acesso operacional usa uma identidade Ed25519 estável, mas a chave privada n�
 7. `ssh-add` aplica restrições de destino vinculadas às host keys versionadas;
 8. jobs usam `sandbox-ssh usuario@host comando`, que exige allowlist,
    `BatchMode=yes`, host key fixa e desabilita senha, PTY e encaminhamentos.
+9. homologações Docker usam `sandbox-remote-docker`: a imagem construída pelos
+   arquivos versionados é transmitida por stdin e executada somente no namespace
+   temporário da sessão, com labels, limites e limpeza próprios.
 
 Se o segredo não existir, o agente sobe vazio para não derrubar o Marketing Hub,
 mas qualquer autenticação SSH falha fechada. Em produção, o workflow exige que o
@@ -38,6 +41,14 @@ Cadastre somente essa linha pública no `authorized_keys` dos hosts autorizados.
 Nunca copie a chave privada para o workspace, `.env`, conversa, log ou arquivo
 versionado.
 
+Quando o OpenSSH do host aceitar a opção, prefira cadastrar a linha com o prefixo
+`restrict`, que bloqueia forwarding, PTY e recursos auxiliares sem impedir os
+comandos remotos necessários para streaming de imagens e operação de containers:
+
+```text
+restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK+poajAToxY0q9h+YhYmnoF1QlUXIDneBD9QAJIURqA codex-ops-ai-hub-2026-09-06
+```
+
 ## Destinos atuais
 
 - `root@163.245.203.201`
@@ -49,6 +60,31 @@ Adicionar ou trocar um destino exige fixar previamente sua host key em
 `apps/sandbox-orchestrator/ssh/known_hosts` e atualizar
 `SANDBOX_SSH_ALLOWED_DESTINATIONS`. Uma divergência de host key deve interromper o
 acesso; não use `StrictHostKeyChecking=no` como correção.
+
+## Homologação Docker remota
+
+O helper operacional cobre o ciclo temporário completo:
+
+```bash
+sandbox-remote-docker push root@HOST sessao imagem-local:teste app:teste
+sandbox-remote-docker run root@HOST sessao app app:teste
+sandbox-remote-docker exec root@HOST sessao app comando argumento
+sandbox-remote-docker logs root@HOST sessao app 200
+sandbox-remote-docker inspect root@HOST sessao app
+sandbox-remote-docker cleanup root@HOST sessao
+```
+
+O `push` usa `docker image save | ssh docker image load`, compara o image ID nas
+duas pontas e não grava tar no destino. `run` recusa colisões e aplica memória,
+CPU, PIDs, `no-new-privileges`, `cap-drop=ALL`, restart `no` e rede `none` por
+padrão. `cleanup` remove apenas containers com os dois labels de gerenciamento e
+tags `aihubsbx/<sessao>/...`; recursos externos ou de outra sessão são
+preservados.
+
+O helper não aceita `privileged`, host network, mounts ou socket Docker. Para
+integração temporária, uma rede Docker nominal pode ser informada por
+`SANDBOX_REMOTE_DOCKER_NETWORK`; `host` permanece proibida. Produção continua
+obrigatoriamente no fluxo versionado de Pull Request e pipeline.
 
 ## Rotação
 

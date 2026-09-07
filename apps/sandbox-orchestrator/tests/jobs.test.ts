@@ -241,6 +241,10 @@ test('informa ao modelo o helper SSH persistente sem expor chave privada', () =>
     assert.match(instruction, /root@host-a\.test,root@host-b\.test/);
     assert.match(instruction, /chave privada não está disponível para leitura/);
     assert.match(instruction, /host key divergente/);
+    assert.match(instruction, /sandbox-remote-docker/);
+    assert.match(instruction, /streaming/);
+    assert.match(instruction, /teste\/depuração/);
+    assert.match(instruction, /Pull Request\/pipeline/);
     assert.doesNotMatch(instruction, /BEGIN OPENSSH PRIVATE KEY/);
   } finally {
     if (previousSocket === undefined) delete process.env.SSH_AUTH_SOCK;

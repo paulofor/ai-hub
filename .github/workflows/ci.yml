@@ -91,6 +91,10 @@ jobs:
         run: npm --prefix apps/sandbox-orchestrator ci
       - name: Test
         run: npm --prefix apps/sandbox-orchestrator test
+      - name: Test protected remote Docker lifecycle
+        env:
+          SANDBOX_REMOTE_DOCKER_TEST_PROJECT: aihub-remote-docker-${{ github.run_id }}-${{ github.run_attempt }}
+        run: apps/sandbox-orchestrator/tests/test-remote-docker-e2e.sh
 
   docker:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
