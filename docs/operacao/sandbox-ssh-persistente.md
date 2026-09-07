@@ -74,7 +74,12 @@ sandbox-remote-docker inspect root@HOST sessao app
 sandbox-remote-docker cleanup root@HOST sessao
 ```
 
-O `push` usa `docker image save | ssh docker image load`, compara o image ID nas
+No `push`, a validação compara um digest canônico calculado sobre plataforma,
+configuração de execução e layers da imagem. Ela não compara o `.Id` textual do
+Docker, que pode variar na representação entre versões mesmo após uma
+transferência íntegra.
+
+O `push` usa `docker image save | ssh docker image load`, compara esse digest nas
 duas pontas e não grava tar no destino. `run` recusa colisões e aplica memória,
 CPU, PIDs, `no-new-privileges`, `cap-drop=ALL`, restart `no` e rede `none` por
 padrão. `cleanup` remove apenas containers com os dois labels de gerenciamento e
