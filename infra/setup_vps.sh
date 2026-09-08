@@ -146,6 +146,30 @@ install_docker() {
   fi
 }
 
+ensure_buildx() {
+  log_section "Verificando Docker Buildx"
+  if docker buildx version >/dev/null 2>&1; then
+    echo "Docker Buildx já instalado."
+    return
+  fi
+
+  echo "Docker Buildx não encontrado. Instalando plugin..."
+  local install_candidates=(docker-buildx-plugin docker-buildx)
+  local candidate
+  for candidate in "${install_candidates[@]}"; do
+    if package_available "${candidate}" && install_packages "${candidate}"; then
+      break
+    fi
+  done
+
+  if ! docker buildx version >/dev/null 2>&1; then
+    echo "[ERRO] Não foi possível instalar ou executar o Docker Buildx." >&2
+    exit 1
+  fi
+
+  docker buildx version
+}
+
 COMPOSE_CMD=()
 ensure_compose() {
   log_section "Verificando Docker Compose"
@@ -428,6 +452,7 @@ EOF
 
 ensure_base_packages
 install_docker
+ensure_buildx
 ensure_compose
 ensure_deploy_key
 collect_env_values

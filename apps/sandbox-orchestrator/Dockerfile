@@ -29,7 +29,7 @@ RUN apt-get update \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git gh openssh-client python3 python3-pip patch jq ffmpeg dnsutils temurin-21-jdk maven ripgrep docker-ce-cli docker-compose-plugin bash google-cloud-cli awscli chromium \
+  && apt-get install -y --no-install-recommends git gh openssh-client python3 python3-pip patch jq ffmpeg dnsutils temurin-21-jdk maven ripgrep docker-ce-cli docker-buildx-plugin docker-compose-plugin bash google-cloud-cli awscli chromium \
   && case "$(dpkg --print-architecture)" in \
     amd64) actionlint_arch=amd64 ;; \
     arm64) actionlint_arch=arm64 ;; \
@@ -40,6 +40,7 @@ RUN apt-get update \
   && chmod +x /usr/local/bin/actionlint \
   && gh --version \
   && actionlint --version \
+  && docker buildx version \
   && command -v nslookup \
   && ssh -V \
   && rm -rf /var/lib/apt/lists/* \
