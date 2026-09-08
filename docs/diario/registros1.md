@@ -3465,3 +3465,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitação: não criar arquivos binários no repositório.
 - Pergunta explícita de causa raiz: “por que esse arquivo binário foi criado?”. Resposta: a validação visual da remoção do painel foi registrada como uma captura PNG versionada, embora a evidência pudesse permanecer apenas no resultado da verificação automatizada e não precisasse integrar o código-fonte.
 - Correção na causa: removida do repositório a captura `docs/diario/remocao-metas-codex-mkt.png`; nenhuma substituição binária foi criada. As validações da interface permanecem reproduzíveis pelos comandos de build e teste.
+
+## 2026-09-08 — Verificação da pré-instalação do Docker Buildx
+
+- Solicitação recebida: verificar se a pré-instalação do Docker Buildx já existe no projeto.
+- Pergunta explícita de causa raiz: “por que o Buildx pode não estar disponível?”. Resposta: há duas instalações Docker distintas no projeto. O provisionamento inicial da VPS inclui `docker-buildx-plugin` na lista de pacotes, mas somente dentro do ramo executado quando o comando `docker` ainda não existe. Já a imagem do `sandbox-orchestrator`, que fornece o cliente conectado à engine Docker dedicada, instala `docker-ce-cli` e `docker-compose-plugin`, mas não instala `docker-buildx-plugin` nem valida `docker buildx version` durante o build.
+- Conclusão: a pré-instalação existe parcialmente para uma VPS nova provisionada por `infra/setup_vps.sh`, mas não está garantida para uma VPS que já possua Docker e não existe explicitamente na imagem da sandbox. Portanto, não se pode considerar Buildx pré-instalado em todos os ambientes do AI Hub.
+- Nenhuma correção funcional foi aplicada nesta verificação; a constatação foi registrada para orientar uma eventual implementação na causa, adicionando instalação e validação explícitas em cada ambiente que precise executar Buildx.
+
+## 2026-09-08 — Pré-instalação garantida do Docker Buildx
+
+- Solicitação recebida: executar o ajuste de pré-instalação do Docker Buildx identificado na verificação anterior.
+- Pergunta explícita de causa raiz: “por que o Buildx não estava garantido?”. Resposta: a imagem da sandbox instalava apenas o cliente Docker e o plugin Compose, enquanto o provisionamento da VPS incluía Buildx somente no ramo de instalação inicial do Docker; hosts com Docker preexistente pulavam esse ramo e não tinham uma verificação específica do plugin.
+- Correção aplicada na causa: a imagem do `sandbox-orchestrator` agora instala `docker-buildx-plugin` e executa `docker buildx version` durante o build. O provisionamento da VPS ganhou uma etapa idempotente `ensure_buildx`, executada mesmo quando o Docker já existe, que procura o pacote disponível, instala o plugin e interrompe o provisionamento caso o comando continue indisponível. As instruções e a auditoria inicial do runner também passaram a anunciar e detectar `docker buildx`, tornando a capacidade visível ao modelo.
+- Proteção contra regressão: o contrato do Dockerfile exige o pacote e sua validação, e um novo teste confirma que `ensure_buildx` permanece entre a instalação do Docker e a verificação do Compose no fluxo principal da VPS.

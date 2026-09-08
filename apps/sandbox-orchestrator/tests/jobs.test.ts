@@ -312,6 +312,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
 
   assert.match(dockerfile, /https:\/\/download\.docker\.com\/linux\/debian/);
   assert.match(dockerfile, /\bdocker-ce-cli\b/);
+  assert.match(dockerfile, /\bdocker-buildx-plugin\b/);
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
   assert.match(dockerfile, /\bffmpeg\b/);
@@ -326,11 +327,21 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
+  assert.match(dockerfile, /docker buildx version/);
   assert.match(dockerfile, /@openai\/codex@\$\{CODEX_VERSION\}/);
   assert.match(dockerfile, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g .*playwright@\$\{PLAYWRIGHT_VERSION\} .*@playwright\/test@\$\{PLAYWRIGHT_VERSION\}/);
   assert.match(dockerfile, /playwright --version/);
   assert.match(dockerfile, /NODE_PATH=\/usr\/local\/lib\/node_modules/);
   assert.doesNotMatch(dockerfile, /\bdocker\.io\b/);
+});
+
+test('provisionamento da VPS garante Buildx mesmo quando Docker já existe', async () => {
+  const setupVps = await fs.readFile(path.resolve('../../infra/setup_vps.sh'), 'utf8');
+
+  assert.match(setupVps, /ensure_buildx\(\)/);
+  assert.match(setupVps, /local install_candidates=\(docker-buildx-plugin docker-buildx\)/);
+  assert.match(setupVps, /if ! docker buildx version >\/dev\/null 2>&1; then/);
+  assert.match(setupVps, /install_docker\s*\nensure_buildx\s*\nensure_compose/);
 });
 
 test('accepts a job request and processes asynchronously', async () => {
@@ -3181,7 +3192,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
-    assert.match(promptText, /Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis/i);
+    assert.match(promptText, /Docker CLI, os plugins Docker Buildx e Docker Compose v2 e uma engine Docker dedicada estão disponíveis/i);
+    assert.match(promptText, /docker version\/docker buildx version\/docker compose version/i);
     assert.match(promptText, /existe um runner efêmero dedicado no GitHub Actions/i);
     assert.match(promptText, /ausência de Docker daemon local na sandbox não significa que essa validação esteja indisponível/i);
     assert.match(promptText, /gh workflow run liquibase-mysql57\.yml --ref <branch>/i);

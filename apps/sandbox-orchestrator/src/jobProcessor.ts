@@ -1477,7 +1477,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
   private buildDockerCliInstruction(job: SandboxJob): string {
     const project = dockerHomologationProjectName(job.jobId);
-    return `O Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis para homologações locais pelos comandos docker e docker compose. Essa engine é isolada do daemon que executa os serviços de produção: use docker compose preferencialmente a docker-compose, valide a engine com docker version/docker compose version antes de depender de containers e use obrigatoriamente o projeto Compose exclusivo ${project} (docker compose -p ${project} ...). Não use host network, containers privilegiados, sockets Docker ou bind mounts fora do workspace. Ao terminar, remova a topologia temporária com docker compose -p ${project} down --volumes --remove-orphans. O orquestrador também remove recursos com esse rótulo quando o job termina e, quando não há outro job ativo, elimina volumes não utilizados da engine efêmera.`;
+    return `O Docker CLI, os plugins Docker Buildx e Docker Compose v2 e uma engine Docker dedicada estão disponíveis para homologações locais pelos comandos docker, docker buildx e docker compose. Essa engine é isolada do daemon que executa os serviços de produção: use docker compose preferencialmente a docker-compose, valide a engine e os plugins com docker version/docker buildx version/docker compose version antes de depender de containers e use obrigatoriamente o projeto Compose exclusivo ${project} (docker compose -p ${project} ...). Não use host network, containers privilegiados, sockets Docker ou bind mounts fora do workspace. Ao terminar, remova a topologia temporária com docker compose -p ${project} down --volumes --remove-orphans. O orquestrador também remove recursos com esse rótulo quando o job termina e, quando não há outro job ativo, elimina volumes não utilizados da engine efêmera.`;
   }
 
   private buildLiquibaseMysql57RunnerInstruction(): string {
@@ -4556,6 +4556,9 @@ ${stderr}`);
     }
     if (await this.isCommandAvailable('docker')) {
       dockerTools.push('docker');
+    }
+    if (await this.isShellCommandSuccessful('docker buildx version')) {
+      dockerTools.push('docker buildx');
     }
     if (await this.isShellCommandSuccessful('docker compose version')) {
       dockerTools.push('docker compose');
