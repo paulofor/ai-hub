@@ -22,7 +22,7 @@ class PublicProxyRecoveryMigrationTest {
 
         var result = flyway.migrate();
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("46");
+        assertThat(result.targetSchemaVersion).isEqualTo("47");
 
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
