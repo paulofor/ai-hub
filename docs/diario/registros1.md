@@ -3451,3 +3451,17 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: a origem, a tag local de transferência e o destino agora são comparados por um digest SHA-256 de uma descrição JSON estável e ordenada, composta por plataforma (`os`, arquitetura e variante), configuração de execução e `RootFS`/layers. A normalização e o hash são executados localmente com a mesma versão de `jq` e `sha256sum`, inclusive para o JSON obtido do daemon remoto, eliminando diferenças de formatação e de versão das ferramentas remotas sem enfraquecer a verificação do conteúdo executável.
 - Proteção contra regressão: o contrato estático exige a normalização canônica e proíbe o retorno à comparação de `image inspect --format '{{.Id}}'`; a fixture negativa do ensaio E2E passou a adulterar uma layer, comprovando que uma divergência real continua sendo recusada.
 - Validação: os 97 testes do `sandbox-orchestrator`, `bash -n` e `git diff --check` passaram. ShellCheck e o ensaio Docker E2E não puderam ser executados porque, respectivamente, o binário e o daemon Docker não estão disponíveis nesta sandbox.
+
+## 2026-09-07 19:40 UTC — Remoção da área de metas do AI Hub
+
+- Solicitação: retirar do AI Hub toda a área de metas exibida no Codex ChatGPT MKT e as instruções relacionadas enviadas nos prompts.
+- Pergunta explícita de causa raiz: “por que essa parte de Metas continuava aparecendo no front e influenciando os prompts?”. Resposta: o Operador de Crescimento era uma funcionalidade transversal ainda conectada em três pontos ativos: estado/formulário e carregamento no frontend, composição do prompt no frontend e enriquecimento automático redundante no backend. Além disso, endpoints, serviços e persistência mantinham o recurso operacional mesmo que apenas o painel fosse ocultado.
+- Correção na causa: removidos o painel e sua chamada de bootstrap, a composição de contexto comercial nos prompts do navegador e o enriquecimento do prompt no backend. A requisição agora preserva o texto recebido sem anexar missão/meta automaticamente.
+- Aposentadoria completa: removidos controllers, serviços, DTOs, entidades, repositórios, configuração de token, documentação e testes exclusivos do Operador de Crescimento. A migração V47 remove as tabelas `growth_events` e `growth_missions` de H2, MySQL e PostgreSQL sem reescrever migrações já aplicadas.
+- Validações: build de produção do frontend concluído; suíte Maven executada e ajustada para a nova versão de schema; busca estática confirmou a ausência de referências ativas do recurso fora do histórico de migrações e deste diário.
+
+## 2026-09-08 — Remoção de artefato binário da alteração de Metas
+
+- Solicitação: não criar arquivos binários no repositório.
+- Pergunta explícita de causa raiz: “por que esse arquivo binário foi criado?”. Resposta: a validação visual da remoção do painel foi registrada como uma captura PNG versionada, embora a evidência pudesse permanecer apenas no resultado da verificação automatizada e não precisasse integrar o código-fonte.
+- Correção na causa: removida do repositório a captura `docs/diario/remocao-metas-codex-mkt.png`; nenhuma substituição binária foi criada. As validações da interface permanecem reproduzíveis pelos comandos de build e teste.

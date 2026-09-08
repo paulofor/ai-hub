@@ -106,7 +106,6 @@ class CodexRequestServiceTest {
             codexDocumentAccessRepository,
             environmentRepository,
             problemRepository,
-            mock(GrowthMissionService.class),
             sandboxOrchestratorClient,
             githubAppAuth,
             githubApiClient,

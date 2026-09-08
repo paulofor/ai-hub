@@ -101,7 +101,6 @@ public class CodexRequestService {
     private final CodexDocumentAccessRepository codexDocumentAccessRepository;
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
-    private final GrowthMissionService growthMissionService;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final GithubAppAuth githubAppAuth;
     private final GithubApiClient githubApiClient;
@@ -127,7 +126,6 @@ public class CodexRequestService {
                                CodexDocumentAccessRepository codexDocumentAccessRepository,
                                EnvironmentRepository environmentRepository,
                                ProblemRepository problemRepository,
-                               GrowthMissionService growthMissionService,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                GithubAppAuth githubAppAuth,
                                GithubApiClient githubApiClient,
@@ -150,7 +148,6 @@ public class CodexRequestService {
         this.codexDocumentAccessRepository = codexDocumentAccessRepository;
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
-        this.growthMissionService = growthMissionService;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.githubAppAuth = githubAppAuth;
         this.githubApiClient = githubApiClient;
@@ -173,7 +170,7 @@ public class CodexRequestService {
     @Transactional
     public CodexRequest create(CreateCodexRequest request) {
         CodexIntegrationProfile profile = resolveProfile(request.getProfile());
-        String effectivePrompt = enrichMarketingPrompt(profile, request.getPrompt().trim());
+        String effectivePrompt = request.getPrompt().trim();
         String model = resolveModel(profile, request.getModel(), request);
         String normalizedEnvironment = request.getEnvironment().trim();
         log.info("Criando CodexRequest para ambiente {} com modelo {} (perfil {})", request.getEnvironment(), model, profile);
@@ -228,15 +225,6 @@ public class CodexRequestService {
         }
         dispatchToSandbox(saved, request.getImageAttachments());
         return saved;
-    }
-
-    private String enrichMarketingPrompt(CodexIntegrationProfile profile, String prompt) {
-        if (profile != CodexIntegrationProfile.CHATGPT_CODEX_MKT || prompt.contains("Modo Operador de Crescimento ativo")) {
-            return prompt;
-        }
-        return growthMissionService.operatorContext()
-            .map(context -> context + "\n\n" + prompt)
-            .orElse("Não há missão comercial ativa no Operador de Crescimento. Configure meta, orçamento e métricas reais antes de executar ações de marketing.\n\n" + prompt);
     }
 
     private String serializeImageAttachments(List<CreateCodexRequest.ImageAttachment> imageAttachments) {
