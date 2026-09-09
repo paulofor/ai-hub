@@ -181,6 +181,20 @@ test('docker compose oferece engine dedicada ao modelo sem expor o socket de pro
   assert.match(orchestratorSection, /DOCKER_HOMOLOGATION_CLEANUP_ENABLED: \$\{DOCKER_HOMOLOGATION_CLEANUP_ENABLED:-true\}/);
 });
 
+test('deploy recupera sandbox-docker unhealthy antes de subir serviços dependentes', async () => {
+  const workflow = await fs.readFile(path.resolve('../..', '.github/workflows/ci.yml'), 'utf8');
+  const recoveryScript = await fs.readFile(
+    path.resolve('../..', '.github/scripts/ensure-sandbox-docker-healthy.sh'),
+    'utf8',
+  );
+
+  assert.match(workflow, /\.github\/scripts\/ensure-sandbox-docker-healthy\.sh/);
+  assert.match(recoveryScript, /docker compose up -d --force-recreate "\$\{service\}"/);
+  assert.match(recoveryScript, /docker inspect --format '\{\{if \.State\.Health\}\}/);
+  assert.match(recoveryScript, /docker compose logs --tail 120 "\$\{service\}"/);
+  assert.doesNotMatch(recoveryScript, /docker (system|volume) prune/);
+});
+
 test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta e Meta para o sandbox-orchestrator', async () => {
   const compose = await fs.readFile(path.resolve('../..', 'docker-compose.yml'), 'utf8');
 

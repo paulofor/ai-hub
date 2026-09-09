@@ -361,7 +361,9 @@ jobs:
             export FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG} && \
             export SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG} && \
             export MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG} && \
-            docker compose pull && docker compose up -d --remove-orphans"
+            docker compose pull && \
+            .github/scripts/ensure-sandbox-docker-healthy.sh && \
+            docker compose up -d --remove-orphans"
       - name: Verify production services
         run: |
           ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE_CHECK'
