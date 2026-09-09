@@ -3494,3 +3494,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção aplicada na causa: o callback agora executa explicitamente em uma transação `REQUIRES_NEW`, mantém a marca de sincronização até o commit terminar e relê a solicitação usando bloqueio pessimista de escrita por `externalId`. Assim, sincronizações concorrentes do mesmo job são serializadas antes da consulta e gravação dos acessos, preservando a restrição única em vez de capturar ou ocultar sua violação.
 - Proteção contra regressão: o teste de persistência de acessos documentais agora exige que o callback adquira a consulta com bloqueio antes de salvar o acesso.
 - Validação: `mvn -q -Dtest=CodexRequestServiceTest test` passou com todos os testes direcionados do serviço.
+
+## 2026-09-09 — Recuperação do Docker dedicado durante deploy
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O `sandbox-docker` já existia e continuava em execução, porém com healthcheck `unhealthy`; `restart: unless-stopped` não reage a falhas de healthcheck e `docker compose up` reutiliza um container cuja configuração não mudou. Assim, o Compose aguardou a dependência saudável e abortou antes de iniciar o `sandbox-orchestrator`.
+- Adicionado preflight idempotente ao deploy: preserva uma engine saudável e, somente quando ausente ou não saudável, registra logs/estado do healthcheck e recria isoladamente o `sandbox-docker`.
+- A recuperação aguarda até dois minutos pelo estado `healthy` e, se a engine continuar falhando, encerra com os logs finais, mantendo a falha fechada e evidência diagnóstica em vez de mascarar corrupção de volume, falta de disco ou outro defeito persistente.
+- O procedimento não executa `prune` nem remove o volume persistente `sandbox-docker-data`, evitando perda automática de artefatos de homologação.
+- Adicionado teste de contrato garantindo a ordem da recuperação no workflow, a recriação limitada ao serviço e a ausência de limpeza destrutiva.
