@@ -3,13 +3,15 @@ package com.aihub.hub.repository;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexTokenRankingItem;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import com.aihub.hub.dto.CodexRequestSummary;
-import com.aihub.hub.dto.CodexTokenRankingItem;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -24,6 +26,11 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     }
 
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cr from CodexRequest cr where cr.externalId = :externalId")
+    Optional<CodexRequest> findByExternalIdForUpdate(@Param("externalId") String externalId);
+
     List<QueuedRequestView> findTop25ByStatusOrderByCreatedAtDesc(CodexRequestStatus status);
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(

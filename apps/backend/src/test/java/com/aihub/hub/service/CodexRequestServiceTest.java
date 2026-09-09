@@ -128,6 +128,9 @@ class CodexRequestServiceTest {
         when(environmentRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
         when(githubAppAuth.getInstallationToken()).thenReturn("github-installation-token");
         when(codexDocumentAccessRepository.countDocumentAccessesByRequestId(anyLong())).thenReturn(List.of());
+        when(codexRequestRepository.findByExternalIdForUpdate(anyString())).thenAnswer(invocation ->
+            codexRequestRepository.findByExternalId(invocation.getArgument(0))
+        );
     }
 
     @Test
@@ -942,6 +945,7 @@ class CodexRequestServiceTest {
         CodexRequestService service = buildService();
         service.handleSandboxCallback(response);
 
+        verify(codexRequestRepository).findByExternalIdForUpdate("job-docs");
         ArgumentCaptor<CodexDocumentAccessLog> captor = ArgumentCaptor.forClass(CodexDocumentAccessLog.class);
         verify(codexDocumentAccessRepository).save(captor.capture());
         assertThat(captor.getValue().getCodexRequest()).isSameAs(request);
