@@ -1169,6 +1169,23 @@ const loadPersistedChatConversation = (profile: CodexProfile): ChatMessage[] => 
   }
 };
 
+const filterPromptHistoryByEnvironment = (messages: ChatMessage[], environment: string): ChatMessage[] => {
+  const normalizedEnvironment = environment.trim();
+  if (!normalizedEnvironment) return [];
+
+  return messages.filter((message, index) => {
+    if (message.role !== 'user' && message.role !== 'assistant') return false;
+    if (message.environment?.trim()) return message.environment.trim() === normalizedEnvironment;
+
+    // Mensagens de usuário persistidas antes de o ambiente ser gravado podem ser
+    // associadas com segurança somente à resposta imediatamente seguinte.
+    const nextMessage = messages[index + 1];
+    return message.role === 'user'
+      && nextMessage?.role === 'assistant'
+      && nextMessage.environment?.trim() === normalizedEnvironment;
+  });
+};
+
 const resolveAssistantMessageTimestamp = (request: CodexRequest, currentCreatedAt?: string) => {
   if (!isTerminalStatus(request.status)) {
     return currentCreatedAt ?? request.createdAt ?? new Date().toISOString();
@@ -2112,16 +2129,19 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   );
 
   const resolvePromptHistoryMessages = useCallback((historyMessages: ChatMessage[]) => {
-    const savedContextMessages = conversationMessagesMatchSavedContext(historyMessages)
-      ? []
-      : selectedSavedConversationMessages;
+    const selectedConversation = selectedSavedConversationId
+      ? savedConversations.find((item) => item.id === selectedSavedConversationId)
+      : undefined;
+    const savedConversationMatchesEnvironment = selectedConversation?.environment?.trim() === selectedEnvironment.trim();
+    const savedContextMessages = savedConversationMatchesEnvironment && !conversationMessagesMatchSavedContext(historyMessages)
+      ? selectedSavedConversationMessages
+      : [];
     return [
       ...savedContextMessages.map((item) => ({ role: item.role, content: item.content })),
-      ...historyMessages
-        .filter((item) => item.role === 'user' || item.role === 'assistant')
+      ...filterPromptHistoryByEnvironment(historyMessages, selectedEnvironment)
         .map((item) => ({ role: item.role, content: item.content }))
     ];
-  }, [conversationMessagesMatchSavedContext, selectedSavedConversationMessages]);
+  }, [conversationMessagesMatchSavedContext, savedConversations, selectedEnvironment, selectedSavedConversationId, selectedSavedConversationMessages]);
 
   const currentPromptHistoryMessageCount = useMemo(
     () => resolvePromptHistoryMessages(conversation).length,
@@ -2155,7 +2175,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       selectedPromptHintPhrases.length > 0 ? `Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:\n${selectedPromptHintPhrases.join('\n')}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.profile, config.promptExtraLines, config.promptModeLine, products, resolvePromptHistoryMessages, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId]);
+  }, [config.promptExtraLines, config.promptModeLine, products, resolvePromptHistoryMessages, savedConversations, selectedProductSlug, selectedPromptHints, selectedSavedConversationId]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -2350,7 +2370,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
     setActionLoading(true);
     try {
-      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: userPrompt, createdAt: new Date().toISOString() };
+      const userMessage: ChatMessage = { id: `${Date.now()}-user`, role: 'user', content: userPrompt, environment: selectedEnvironment, createdAt: new Date().toISOString() };
       const requestPrompt = buildConversationPrompt(userPrompt);
       setConversation((current) => [...current, userMessage]);
       const response = await client.post('/codex/requests', {

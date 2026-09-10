@@ -339,10 +339,10 @@ test('cuts old dialog messages out of subsequent model prompts', async ({ page }
     await route.fulfill({ json: { content: [] } });
   });
   await page.addInitScript(() => window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX', JSON.stringify([
-    { id: 'u1', role: 'user', content: 'mensagem muito antiga', createdAt: '2026-08-04T10:00:00Z' },
-    { id: 'a1', role: 'assistant', content: 'resposta muito antiga', createdAt: '2026-08-04T10:01:00Z' },
-    { id: 'u2', role: 'user', content: 'mensagem recente', createdAt: '2026-08-04T10:02:00Z' },
-    { id: 'a2', role: 'assistant', content: 'resposta recente', createdAt: '2026-08-04T10:03:00Z' }
+    { id: 'u1', role: 'user', content: 'mensagem muito antiga', environment: 'produção', createdAt: '2026-08-04T10:00:00Z' },
+    { id: 'a1', role: 'assistant', content: 'resposta muito antiga', environment: 'produção', createdAt: '2026-08-04T10:01:00Z' },
+    { id: 'u2', role: 'user', content: 'mensagem recente', environment: 'produção', createdAt: '2026-08-04T10:02:00Z' },
+    { id: 'a2', role: 'assistant', content: 'resposta recente', environment: 'produção', createdAt: '2026-08-04T10:03:00Z' }
   ])));
 
   await page.goto('/codex-chatgpt');
@@ -357,6 +357,45 @@ test('cuts old dialog messages out of subsequent model prompts', async ({ page }
   await expect.poll(() => submittedPrompt).not.toContain('mensagem muito antiga');
   await expect.poll(() => submittedPrompt).toContain('mensagem recente');
   await expect.poll(() => submittedPrompt).toContain('resposta recente');
+});
+
+test('only includes history from the selected environment in a new request prompt', async ({ page }) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [
+    { id: 1, name: 'ambiente-a' },
+    { id: 2, name: 'ambiente-b' }
+  ] }));
+  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: {} } }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  let submittedPrompt = '';
+  await page.route('**/api/codex/requests**', async (route) => {
+    if (route.request().method() === 'POST') {
+      submittedPrompt = (route.request().postDataJSON() as { prompt: string }).prompt;
+      await route.fulfill({ json: { id: 901, profile: 'CHATGPT_CODEX', environment: 'ambiente-b', status: 'PENDING', createdAt: '2026-09-10T12:00:00Z' } });
+      return;
+    }
+    await route.fulfill({ json: { content: [] } });
+  });
+  await page.addInitScript(() => window.localStorage.setItem('ai-hub:codex-chat-conversation:CHATGPT_CODEX', JSON.stringify([
+    { id: 'u-a', role: 'user', content: 'segredo exclusivo do ambiente A', environment: 'ambiente-a', createdAt: '2026-09-10T10:00:00Z' },
+    { id: 'a-a', role: 'assistant', content: 'resposta exclusiva do ambiente A', environment: 'ambiente-a', createdAt: '2026-09-10T10:01:00Z' },
+    { id: 'u-b', role: 'user', content: 'contexto permitido do ambiente B', environment: 'ambiente-b', createdAt: '2026-09-10T10:02:00Z' },
+    { id: 'a-b', role: 'assistant', content: 'resposta permitida do ambiente B', environment: 'ambiente-b', createdAt: '2026-09-10T10:03:00Z' }
+  ])));
+
+  await page.goto('/codex-chatgpt');
+  await page.locator('select').filter({ has: page.locator('option[value="ambiente-b"]') }).selectOption('ambiente-b');
+  await expect(page.getByText('Prompt atual: 2 mensagens de histórico')).toBeVisible();
+  await page.screenshot({ path: '/tmp/ai-hub-historico-isolado-por-ambiente.png', fullPage: true });
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('nova tarefa no ambiente B');
+  await page.getByRole('button', { name: 'Enviar mensagem' }).click();
+
+  await expect.poll(() => submittedPrompt).toContain('contexto permitido do ambiente B');
+  expect(submittedPrompt).toContain('resposta permitida do ambiente B');
+  expect(submittedPrompt).not.toContain('segredo exclusivo do ambiente A');
+  expect(submittedPrompt).not.toContain('resposta exclusiva do ambiente A');
 });
 
 test('renders structured model JSON as cards in the default ChatGPT dialog', async ({ page }) => {
