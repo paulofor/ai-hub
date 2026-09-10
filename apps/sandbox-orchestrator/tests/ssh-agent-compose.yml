@@ -29,7 +29,7 @@ services:
       SSH_AUTH_SOCK: /run/sandbox-ssh-agent/agent.sock
       SANDBOX_SSH_PRIVATE_KEY_FILE: /run/secrets/sandbox-ssh/id_ed25519
       SANDBOX_SSH_KNOWN_HOSTS_FILE: /etc/sandbox-ssh/known_hosts
-      SANDBOX_SSH_ALLOWED_DESTINATIONS: root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83
+      SANDBOX_SSH_ALLOWED_DESTINATIONS: root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83,root@163.245.202.80
     volumes:
       - ssh-key-data:/run/secrets/sandbox-ssh:ro
       - ssh-agent-socket:/run/sandbox-ssh-agent
@@ -55,7 +55,7 @@ services:
       SSH_AUTH_SOCK: /run/sandbox-ssh-agent/agent.sock
       SANDBOX_SSH_KNOWN_HOSTS_FILE: /etc/sandbox-ssh/known_hosts
       SANDBOX_SSH_PUBLIC_KEY_FILE: /etc/sandbox-ssh/operator_key.pub
-      SANDBOX_SSH_ALLOWED_DESTINATIONS: root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83
+      SANDBOX_SSH_ALLOWED_DESTINATIONS: root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83,root@163.245.202.80
     volumes:
       - ssh-agent-socket:/run/sandbox-ssh-agent:ro
     tmpfs:
