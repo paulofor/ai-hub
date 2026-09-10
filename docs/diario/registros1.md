@@ -3502,3 +3502,30 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - A recuperação aguarda até dois minutos pelo estado `healthy` e, se a engine continuar falhando, encerra com os logs finais, mantendo a falha fechada e evidência diagnóstica em vez de mascarar corrupção de volume, falta de disco ou outro defeito persistente.
 - O procedimento não executa `prune` nem remove o volume persistente `sandbox-docker-data`, evitando perda automática de artefatos de homologação.
 - Adicionado teste de contrato garantindo a ordem da recuperação no workflow, a recriação limitada ao serviço e a ausência de limpeza destrutiva.
+
+## 2026-09-09 — Verificação do pedido de acesso SSH ao Vega
+
+- Solicitação recebida: verificar o pedido do modelo para liberar `root@163.245.202.80` no helper protegido `sandbox-ssh`, a fim de concluir uma publicação e reexecutar a atividade do Vega pela interface.
+- Pergunta explícita de causa raiz: “por que esse pedido aconteceu?”. Resposta: o destino solicitado não integra a allowlist padrão nem o arquivo de host keys fixadas do helper. Os quatro destinos atualmente autorizados são outros hosts; por desenho, tanto o sidecar que carrega a identidade quanto o wrapper recusam um destino sem correspondência exata nesses dois controles.
+- Verificação: três tentativas de obter as chaves Ed25519/RSA do host com `ssh-keyscan -T 10` falharam com `Network is unreachable`, limitação de rede desta sandbox. Também não há `SSH_AUTH_SOCK` nem `SANDBOX_SSH_ALLOWED_DESTINATIONS` disponíveis nesta execução para testar a conexão operacional.
+- Conclusão segura: o acesso **não está liberado** no estado atual e nenhuma allowlist foi ampliada. Adicionar somente o endereço faria o agente falhar fechado na inicialização, pois falta a host key correspondente; aceitar uma chave não verificada ou desabilitar `StrictHostKeyChecking` violaria o controle de identidade do destino. A liberação exige obter e validar por canal confiável a host key de `163.245.202.80`, versioná-la em `apps/sandbox-orchestrator/ssh/known_hosts`, acrescentar `root@163.245.202.80` às configurações padrão e então publicar a mudança pelo fluxo versionado antes da reexecução pela tela.
+
+## 2026-09-09 — Autorização para liberar o destino SSH do Vega
+
+- O usuário autorizou expressamente a inclusão de `root@163.245.202.80`. A autorização resolve a decisão de acesso, mas não fornece a identidade criptográfica do servidor exigida pelo desenho fail-closed.
+- Nova tentativa pelo proxy HTTP da sandbox confirmou o bloqueio: o proxy aceitou o túnel `CONNECT` para a porta 22, mas encerrou o fluxo sem entregar sequer o banner SSH; portanto, nenhuma host key foi observada ou inferida.
+- A alteração operacional continua condicionada ao fornecimento da linha pública retornada por `ssh-keyscan -T 10 -t ed25519,rsa 163.245.202.80`, acompanhada da confirmação do fingerprint pelo painel/console do provedor. Não foi inserida chave inventada, copiada de outro VPS nem obtida por TOFU automático, pois qualquer dessas opções poderia liberar a identidade de um host diferente sob o endereço autorizado.
+
+## 2026-09-10 — Coleta local segura da host key do Vega
+
+- Solicitação recebida: fornecer o comando a ser executado no próprio servidor `163.245.202.80` para concluir a liberação no helper `sandbox-ssh`.
+- Orientação: ler exclusivamente os arquivos públicos `/etc/ssh/ssh_host_ed25519_key.pub` e `/etc/ssh/ssh_host_rsa_key.pub`, formatar as chaves com o endereço do servidor para uso direto em `known_hosts` e calcular os respectivos fingerprints com `ssh-keygen -lf`. O comando não acessa nem imprime qualquer arquivo de chave privada.
+- Próximo passo: o usuário deve devolver somente a seção `LINHAS PARA KNOWN_HOSTS` e a seção `FINGERPRINTS`; com essas informações públicas será possível validar e versionar a identidade do destino e ampliar a allowlist sem desativar o comportamento fail-closed.
+
+## 2026-09-10 — Liberação do destino SSH do Vega
+
+- O usuário forneceu diretamente do servidor a host key pública RSA de `163.245.202.80` e confirmou o fingerprint `SHA256:2tb+hH6Mihjs+dyuQDzXFOsiMmUBt9pBIYz2FXsShLI`; a chave privada não foi solicitada nem exposta.
+- Pergunta explícita de causa raiz: “por que o destino continuava recusado mesmo após a autorização?”. Resposta: autorização humana e autenticação criptográfica são controles distintos; faltavam tanto a entrada exata `root@163.245.202.80` nas configurações padrão quanto a host key correspondente no arquivo versionado usado pelo helper.
+- Correção aplicada na causa: a chave RSA fornecida foi fixada em `apps/sandbox-orchestrator/ssh/known_hosts`, o destino foi incluído nas configurações padrão do Compose e dos ambientes de exemplo, e a topologia de homologação foi mantida alinhada.
+- Proteção contra regressão: o teste de contrato da identidade SSH agora exige também a presença de `163.245.202.80` no arquivo de host keys. A conexão continuará falhando fechada se a chave apresentada pelo servidor divergir da chave fornecida.
+- Validação: `ssh-keygen -lf` recalculou da entrada versionada o fingerprint RSA informado pelo usuário; os 10 testes direcionados de `sshAccess.test.ts` passaram e `git diff --check` não encontrou problemas.

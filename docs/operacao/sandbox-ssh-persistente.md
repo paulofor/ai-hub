@@ -55,6 +55,7 @@ restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK+poajAToxY0q9h+YhYmnoF1QlUXIDneBD
 - `root@163.245.200.7`
 - `root@191.252.181.168`
 - `root@191.252.210.83`
+- `root@163.245.202.80`
 
 Adicionar ou trocar um destino exige fixar previamente sua host key em
 `apps/sandbox-orchestrator/ssh/known_hosts` e atualizar
