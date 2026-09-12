@@ -51,6 +51,9 @@ test('shows the request detail as a conversation card with only the three execut
       status: 'COMPLETED',
       createdAt: '2026-09-06T09:00:00Z',
       finishedAt: '2026-09-06T09:05:00Z',
+      maxModelReasoningWaitMs: 125400,
+      maxCommandExecutionWaitMs: 45200,
+      maxExternalServiceWaitMs: 9800,
       problemDescription: 'A integração ainda não existe.',
       resolutionDifficulty: 'Uma integração funcional e segura.',
       userComment: 'O modelo implementou a integração.'
@@ -76,6 +79,12 @@ test('shows the request detail as a conversation card with only the three execut
   await expect(page.getByLabel('O que o modelo entregou', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Dificuldade de resolução')).toHaveCount(0);
   await expect(page.getByLabel('Log', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Maior espera — modelo raciocinando')).toBeVisible();
+  await expect(page.getByText('2min 5s')).toBeVisible();
+  await expect(page.getByText('Maior espera — comando ou teste')).toBeVisible();
+  await expect(page.getByText('45s', { exact: true })).toBeVisible();
+  await expect(page.getByText('Maior espera — serviço externo')).toBeVisible();
+  await expect(page.getByText('9s', { exact: true })).toBeVisible();
   await page.screenshot({ path: '/tmp/ai-hub-request-detail-comments.png', fullPage: true });
 });
 

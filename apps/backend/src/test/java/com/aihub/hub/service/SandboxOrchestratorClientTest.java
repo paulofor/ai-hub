@@ -139,6 +139,31 @@ class SandboxOrchestratorClientTest {
         }
     }
 
+    @Test
+    void getJobParsesMaximumWaitMetrics() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                    {
+                      "jobId": "job-waits",
+                      "status": "RUNNING",
+                      "maxModelReasoningWaitMs": 1200,
+                      "maxCommandExecutionWaitMs": 2300,
+                      "maxExternalServiceWaitMs": 3400
+                    }
+                    """));
+            SandboxOrchestratorClient client = clientFor(server);
+
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = client.getJob("job-waits");
+
+            assertThat(response.maxModelReasoningWaitMs()).isEqualTo(1200L);
+            assertThat(response.maxCommandExecutionWaitMs()).isEqualTo(2300L);
+            assertThat(response.maxExternalServiceWaitMs()).isEqualTo(3400L);
+        }
+    }
+
     private SandboxOrchestratorClient clientFor(MockWebServer server) {
         RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())

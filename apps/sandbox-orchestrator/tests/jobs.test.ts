@@ -66,6 +66,29 @@ test('summarizes stalled jobs without returning the full job payload', () => {
   assert.equal('interactions' in summary, false);
 });
 
+test('job payload exposes the running wait in the matching maximum without leaking internal state', () => {
+  const job = {
+    jobId: 'job-active-external-wait',
+    taskDescription: 'wait for service',
+    status: 'RUNNING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+    maxExternalServiceWaitMs: 100,
+    activeWaitCategory: 'EXTERNAL_SERVICE',
+    activeWaitStartedAt: new Date(Date.now() - 2_000).toISOString(),
+  } as SandboxJob;
+
+  const payload = buildJobPayload(job);
+
+  assert.ok((payload.maxExternalServiceWaitMs ?? 0) >= 1_900);
+  assert.equal(payload.activeWaitCategory, undefined);
+  assert.equal(payload.activeWaitStartedAt, undefined);
+});
+
 test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 43_200_000);
   assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
@@ -4135,6 +4158,8 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
     assert.equal(job.cachedPromptTokens, 12);
     assert.equal(job.completionTokens, 5);
     assert.equal(job.totalTokens, 47);
+    assert.ok((job.maxModelReasoningWaitMs ?? 0) >= 0);
+    assert.ok((job.maxCommandExecutionWaitMs ?? 0) >= 0);
     const threadStartCall = calls.find((call) => call.method === 'thread/start');
     assert.ok(threadStartCall);
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');

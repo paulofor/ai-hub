@@ -166,6 +166,15 @@ public class CodexRequest {
     @Column(name = "interaction_count")
     private Integer interactionCount;
 
+    @Column(name = "max_model_reasoning_wait_ms")
+    private Long maxModelReasoningWaitMs;
+
+    @Column(name = "max_command_execution_wait_ms")
+    private Long maxCommandExecutionWaitMs;
+
+    @Column(name = "max_external_service_wait_ms")
+    private Long maxExternalServiceWaitMs;
+
     @Transient
     private List<DocumentAccessSummary> documentAccesses = List.of();
 
@@ -520,6 +529,30 @@ public class CodexRequest {
 
     public void setInteractionCount(Integer interactionCount) {
         this.interactionCount = interactionCount;
+    }
+
+    public Long getMaxModelReasoningWaitMs() {
+        return maxModelReasoningWaitMs;
+    }
+
+    public void setMaxModelReasoningWaitMs(Long maxModelReasoningWaitMs) {
+        this.maxModelReasoningWaitMs = maxModelReasoningWaitMs;
+    }
+
+    public Long getMaxCommandExecutionWaitMs() {
+        return maxCommandExecutionWaitMs;
+    }
+
+    public void setMaxCommandExecutionWaitMs(Long maxCommandExecutionWaitMs) {
+        this.maxCommandExecutionWaitMs = maxCommandExecutionWaitMs;
+    }
+
+    public Long getMaxExternalServiceWaitMs() {
+        return maxExternalServiceWaitMs;
+    }
+
+    public void setMaxExternalServiceWaitMs(Long maxExternalServiceWaitMs) {
+        this.maxExternalServiceWaitMs = maxExternalServiceWaitMs;
     }
 
     public List<DocumentAccessSummary> getDocumentAccesses() {

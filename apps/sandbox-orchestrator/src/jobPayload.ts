@@ -37,6 +37,20 @@ export function buildJobPayload(job: SandboxJob, patchLimit = resolvePatchRespon
     ? Math.max(...interactionCountCandidates)
     : undefined;
 
+  const activeWaitStartedAt = Date.parse(job.activeWaitStartedAt ?? '');
+  if (job.activeWaitCategory && Number.isFinite(activeWaitStartedAt)) {
+    const elapsedMs = Math.max(0, Date.now() - activeWaitStartedAt);
+    if (job.activeWaitCategory === 'MODEL_REASONING') {
+      payload.maxModelReasoningWaitMs = Math.max(payload.maxModelReasoningWaitMs ?? 0, elapsedMs);
+    } else if (job.activeWaitCategory === 'COMMAND_EXECUTION') {
+      payload.maxCommandExecutionWaitMs = Math.max(payload.maxCommandExecutionWaitMs ?? 0, elapsedMs);
+    } else {
+      payload.maxExternalServiceWaitMs = Math.max(payload.maxExternalServiceWaitMs ?? 0, elapsedMs);
+    }
+  }
+  delete payload.activeWaitCategory;
+  delete payload.activeWaitStartedAt;
+
   if (job.database) {
     const { password: _password, ...database } = job.database;
     payload.database = database;

@@ -18,6 +18,16 @@ import {
 
 const DETAIL_POLL_INTERVAL_MS = 15_000;
 
+const formatMaximumWait = (milliseconds?: number) => {
+  if (milliseconds === undefined || !Number.isFinite(milliseconds) || milliseconds < 0) return '—';
+  if (milliseconds < 1000) return `${Math.round(milliseconds)} ms`;
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours > 0 ? `${hours}h` : '', minutes > 0 ? `${minutes}min` : '', `${seconds}s`].filter(Boolean).join(' ');
+};
+
 export default function CodexRequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [request, setRequest] = useState<CodexRequest | null>(null);
@@ -522,6 +532,9 @@ export default function CodexRequestDetailPage() {
                 label="Interações com o modelo"
                 value={typeof request.interactionCount === 'number' ? request.interactionCount.toLocaleString('pt-BR') : '—'}
               />
+              <InfoItem label="Maior espera — modelo raciocinando" value={formatMaximumWait(request.maxModelReasoningWaitMs)} />
+              <InfoItem label="Maior espera — comando ou teste" value={formatMaximumWait(request.maxCommandExecutionWaitMs)} />
+              <InfoItem label="Maior espera — serviço externo" value={formatMaximumWait(request.maxExternalServiceWaitMs)} />
               <InfoItem
                 label="Problema vinculado"
                 value={request.problemTitle ? `#${request.problemId} — ${request.problemTitle}` : '—'}

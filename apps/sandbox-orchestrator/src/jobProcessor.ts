@@ -1305,7 +1305,7 @@ export class SandboxJobProcessor implements JobProcessor {
     let streamingAgentMessage = '';
     let firstEventAt: number | undefined;
     let lastActivityAt: number | undefined;
-    const activeCommandItemIds = new Set<string>();
+    const activeCommandItems = new Map<string, 'COMMAND_EXECUTION' | 'EXTERNAL_SERVICE'>();
     const recordedCodexDocumentAccessKeys = new Set<string>();
     const markActivity = (): void => {
       const now = Date.now();
@@ -1326,7 +1326,8 @@ export class SandboxJobProcessor implements JobProcessor {
         markActivity();
         const item = this.extractCodexItemIdentity(params);
         if (item?.id) {
-          activeCommandItemIds.delete(item.id);
+          activeCommandItems.delete(item.id);
+          this.transitionWaitCategory(job, this.resolveActiveWaitCategory(activeCommandItems));
         }
         this.addCodexAppServerUsageMetrics(job, params);
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
@@ -1342,7 +1343,12 @@ export class SandboxJobProcessor implements JobProcessor {
         markActivity();
         const item = this.extractCodexItemIdentity(params);
         if (item?.id && ['commandExecution', 'command_execution'].includes(item.type ?? '')) {
-          activeCommandItemIds.add(item.id);
+          const command = this.extractCodexCommand(params);
+          activeCommandItems.set(item.id, this.isExternalServiceCommand(command) ? 'EXTERNAL_SERVICE' : 'COMMAND_EXECUTION');
+          this.transitionWaitCategory(job, this.resolveActiveWaitCategory(activeCommandItems));
+        } else if (item?.id && ['mcpToolCall', 'mcp_tool_call', 'webSearch', 'web_search', 'dynamicToolCall', 'dynamic_tool_call'].includes(item.type ?? '')) {
+          activeCommandItems.set(item.id, 'EXTERNAL_SERVICE');
+          this.transitionWaitCategory(job, this.resolveActiveWaitCategory(activeCommandItems));
         }
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
@@ -1377,7 +1383,7 @@ export class SandboxJobProcessor implements JobProcessor {
       for (let attempt = 1; attempt <= this.codexTransientTurnMaxAttempts; attempt += 1) {
         completed = false;
         failedReason = undefined;
-        activeCommandItemIds.clear();
+        activeCommandItems.clear();
         if (attempt > 1) {
           finalAgentMessage = '';
           summary = '';
@@ -1395,6 +1401,7 @@ export class SandboxJobProcessor implements JobProcessor {
         };
         this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
         const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
+        this.transitionWaitCategory(job, 'MODEL_REASONING');
         const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
         this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}/${this.codexTransientTurnMaxAttempts}`);
         const immediateStatus = this.extractCodexStatus(turn);
@@ -1404,7 +1411,7 @@ export class SandboxJobProcessor implements JobProcessor {
         if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) completed = true;
 
         try {
-          await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt, () => activeCommandItemIds.size > 0);
+          await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt, () => activeCommandItems.size > 0);
           if (failedReason) throw new Error(failedReason);
           const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
           this.log(job, `Codex App Server turn/completed recebido threadId=${threadId} turnId=${turnId}${firstEventMs !== undefined ? ` firstEventMs=${firstEventMs}` : ''}`);
@@ -1418,6 +1425,7 @@ export class SandboxJobProcessor implements JobProcessor {
       }
       throw new Error('CODEX_TURN_FAILED: tentativas transitórias esgotadas');
     } finally {
+      this.finishActiveWait(job);
       unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
       try {
         await client.request('thread/archive', { threadId });
@@ -1427,6 +1435,62 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(job, `Codex App Server thread/archive falhou threadId=${threadId}: ${reason}`);
       }
     }
+  }
+
+  private extractCodexCommand(params: unknown): string {
+    if (!params || typeof params !== 'object') return '';
+    const item = (params as Record<string, unknown>).item;
+    if (!item || typeof item !== 'object') return '';
+    const command = (item as Record<string, unknown>).command;
+    return typeof command === 'string' ? command : this.safeStringify(command ?? '');
+  }
+
+  private isExternalServiceCommand(command: string): boolean {
+    return /\b(curl|wget|aria2c|git\s+(clone|fetch|pull|push)|npm\s+(install|ci)|pnpm\s+(install|i)|yarn\s+(install|add)|pip\s+install|mvn\s+dependency:|gradle\s+dependencies|docker\s+(pull|push)|gh\s+(api|pr|run|workflow)|aws\b|mysql\b|psql\b|redis-cli\b|ssh\b)\b/i.test(command);
+  }
+
+  private isExternalServiceTool(call: ToolCall): boolean {
+    if (['http_get', 'WebSearch', 'fetch_image', 'db_query'].includes(call.name ?? '')) return true;
+    if (call.name !== 'run_shell') return false;
+    const command = typeof call.arguments?.command === 'string'
+      ? call.arguments.command
+      : Array.isArray(call.arguments?.command)
+        ? call.arguments.command.join(' ')
+        : this.safeStringify(call.arguments ?? '');
+    return this.isExternalServiceCommand(command);
+  }
+
+  private recordCompletedWait(job: SandboxJob, category: 'MODEL_REASONING' | 'COMMAND_EXECUTION' | 'EXTERNAL_SERVICE', elapsedMs: number): void {
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return;
+    if (category === 'MODEL_REASONING') {
+      job.maxModelReasoningWaitMs = Math.max(job.maxModelReasoningWaitMs ?? 0, elapsedMs);
+    } else if (category === 'COMMAND_EXECUTION') {
+      job.maxCommandExecutionWaitMs = Math.max(job.maxCommandExecutionWaitMs ?? 0, elapsedMs);
+    } else {
+      job.maxExternalServiceWaitMs = Math.max(job.maxExternalServiceWaitMs ?? 0, elapsedMs);
+    }
+  }
+
+  private resolveActiveWaitCategory(items: Map<string, 'COMMAND_EXECUTION' | 'EXTERNAL_SERVICE'>): 'MODEL_REASONING' | 'COMMAND_EXECUTION' | 'EXTERNAL_SERVICE' {
+    if ([...items.values()].includes('EXTERNAL_SERVICE')) return 'EXTERNAL_SERVICE';
+    if (items.size > 0) return 'COMMAND_EXECUTION';
+    return 'MODEL_REASONING';
+  }
+
+  private transitionWaitCategory(job: SandboxJob, category: 'MODEL_REASONING' | 'COMMAND_EXECUTION' | 'EXTERNAL_SERVICE', now = Date.now()): void {
+    if (job.activeWaitCategory === category) return;
+    this.finishActiveWait(job, now);
+    job.activeWaitCategory = category;
+    job.activeWaitStartedAt = new Date(now).toISOString();
+  }
+
+  private finishActiveWait(job: SandboxJob, now = Date.now()): void {
+    const startedAt = Date.parse(job.activeWaitStartedAt ?? '');
+    if (job.activeWaitCategory && Number.isFinite(startedAt)) {
+      this.recordCompletedWait(job, job.activeWaitCategory, Math.max(0, now - startedAt));
+    }
+    job.activeWaitCategory = undefined;
+    job.activeWaitStartedAt = undefined;
   }
 
   private isRetryableCodexTurnFailure(reason: string): boolean {
@@ -1957,8 +2021,10 @@ ${profileInstruction}`,
       };
       logOpenAIExchange('outbound', 'responses.create', openAIRequest);
       let response: Awaited<ReturnType<OpenAI['responses']['create']>>;
+      const reasoningStartedAt = Date.now();
       try {
         response = await openai.responses.create(openAIRequest as any);
+        this.recordCompletedWait(job, 'MODEL_REASONING', Date.now() - reasoningStartedAt);
         logOpenAIExchange('inbound', 'responses.create', response);
       } catch (error) {
         logOpenAIExchange('error', 'responses.create', {
@@ -2089,8 +2155,13 @@ ${profileInstruction}`,
           `executando tool ${toolCall.name} (callId=${callId}, args=${JSON.stringify(toolCall.arguments)})`,
         );
         this.updateInvestigationStageFromTool(job, toolCall);
+        const toolStartedAt = Date.now();
+        const toolWaitCategory = this.isExternalServiceTool(toolCall)
+          ? 'EXTERNAL_SERVICE'
+          : 'COMMAND_EXECUTION';
         try {
           const result = await this.dispatchTool(toolCall, repoPath, job);
+          this.recordCompletedWait(job, toolWaitCategory, Date.now() - toolStartedAt);
           this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
           this.captureContextFromTool(job, toolCall, result);
           const preparedOutput = this.prepareToolOutput(result, job);
@@ -2109,6 +2180,7 @@ ${profileInstruction}`,
           this.recordLocalizarCausaEvidence(job, preparedOutput);
           this.resetRepeatedErrorState(job, toolSignature);
         } catch (err) {
+          this.recordCompletedWait(job, toolWaitCategory, Date.now() - toolStartedAt);
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
           const errorPayload = { error: message };

@@ -1879,6 +1879,16 @@ public class CodexRequestService {
             updated = true;
         }
 
+        if (applyMaximumWait(request.getMaxModelReasoningWaitMs(), response.maxModelReasoningWaitMs(), request::setMaxModelReasoningWaitMs)) {
+            updated = true;
+        }
+        if (applyMaximumWait(request.getMaxCommandExecutionWaitMs(), response.maxCommandExecutionWaitMs(), request::setMaxCommandExecutionWaitMs)) {
+            updated = true;
+        }
+        if (applyMaximumWait(request.getMaxExternalServiceWaitMs(), response.maxExternalServiceWaitMs(), request::setMaxExternalServiceWaitMs)) {
+            updated = true;
+        }
+
         String pullRequestUrl = response.pullRequestUrl();
         if (StringUtils.hasText(pullRequestUrl) && !Objects.equals(request.getPullRequestUrl(), pullRequestUrl.trim())) {
             request.setPullRequestUrl(pullRequestUrl.trim());
@@ -1886,6 +1896,14 @@ public class CodexRequestService {
         }
 
         return updated;
+    }
+
+    private boolean applyMaximumWait(Long current, Long candidate, java.util.function.Consumer<Long> setter) {
+        if (candidate == null || candidate < 0 || (current != null && current >= candidate)) {
+            return false;
+        }
+        setter.accept(candidate);
+        return true;
     }
 
     private boolean applySandboxResponseContent(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {

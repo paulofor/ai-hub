@@ -43,6 +43,9 @@ export interface CodexRequest {
   httpGetSuccessCount?: number;
   dbQueryCount?: number;
   interactionCount?: number;
+  maxModelReasoningWaitMs?: number;
+  maxCommandExecutionWaitMs?: number;
+  maxExternalServiceWaitMs?: number;
   documentAccessCount?: number;
   documentAccesses: CodexDocumentAccess[];
 }
@@ -230,6 +233,15 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const interactionCount = parseNumber(
     item.interactionCount ?? (item as Record<string, unknown>).interaction_count
   );
+  const maxModelReasoningWaitMs = parseNumber(
+    item.maxModelReasoningWaitMs ?? (item as Record<string, unknown>).max_model_reasoning_wait_ms
+  );
+  const maxCommandExecutionWaitMs = parseNumber(
+    item.maxCommandExecutionWaitMs ?? (item as Record<string, unknown>).max_command_execution_wait_ms
+  );
+  const maxExternalServiceWaitMs = parseNumber(
+    item.maxExternalServiceWaitMs ?? (item as Record<string, unknown>).max_external_service_wait_ms
+  );
   const documentAccessCount = parseNumber(
     item.documentAccessCount ?? (item as Record<string, unknown>).document_access_count
   );
@@ -353,6 +365,9 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     httpGetSuccessCount,
     dbQueryCount,
     interactionCount,
+    maxModelReasoningWaitMs,
+    maxCommandExecutionWaitMs,
+    maxExternalServiceWaitMs,
     documentAccessCount: documentAccessCount ?? (documentAccesses.length > 0 ? documentAccesses.length : undefined),
     documentAccesses,
     problemId: problemId ?? undefined,
