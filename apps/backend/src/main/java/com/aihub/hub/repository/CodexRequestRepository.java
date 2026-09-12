@@ -4,6 +4,7 @@ import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -82,6 +83,17 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         order by cr.totalTokens desc, cr.id desc
         """)
     List<CodexTokenRankingItem> findTokenRanking(Pageable pageable);
+
+    @Query("""
+        select new com.aihub.hub.dto.CodexProcessingTimeRankingItem(
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.profile, cr.status,
+            cr.durationMs, cr.createdAt, cr.prompt, cr.responseText, ''
+        )
+        from CodexRequest cr
+        where cr.durationMs is not null
+        order by cr.durationMs desc, cr.id desc
+        """)
+    List<CodexProcessingTimeRankingItem> findProcessingTimeRanking(Pageable pageable);
     @Query("""
         select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0)
         from CodexRequest cr

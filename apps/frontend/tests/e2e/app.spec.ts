@@ -302,6 +302,39 @@ test('shows the request title in the token ranking', async ({ page }) => {
   await expect(page.getByRole('cell', { name: /#2249 Otimizar campanha de aquisição/ })).toBeVisible();
 });
 
+test('shows requests ranked by processing time', async ({ page }) => {
+  await page.route('**/api/codex/requests/processing-time-ranking', (route) => route.fulfill({ json: [{
+    id: 2250,
+    environment: 'paulofor/ai-hub',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'HIGH',
+    profile: 'CHATGPT_CODEX',
+    status: 'COMPLETED',
+    durationMs: 7_200_000,
+    createdAt: '2026-09-12T00:00:00Z',
+    requestTitle: 'Processar lote extenso'
+  }, {
+    id: 2249,
+    environment: 'paulofor/ai-hub',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'MEDIUM',
+    profile: 'STANDARD',
+    status: 'FAILED',
+    durationMs: 90_000,
+    createdAt: '2026-09-11T00:00:00Z',
+    requestTitle: 'Validar integração'
+  }] }));
+
+  await page.goto('/codex/processing-time-ranking');
+
+  await expect(page.getByRole('heading', { name: 'Ranking por tempo de processamento' })).toBeVisible();
+  await expect(page.getByRole('row').nth(1)).toContainText('#2250');
+  await expect(page.getByRole('row').nth(1)).toContainText('Processar lote extenso');
+  await expect(page.getByRole('row').nth(1)).toContainText('2h 0min');
+  await expect(page.getByRole('row').nth(2)).toContainText('1min');
+  await page.screenshot({ path: '/tmp/processing-time-ranking.png', fullPage: true });
+});
+
 test('explains why old history does not enable trimming the open batch', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
