@@ -85,6 +85,11 @@ export interface SandboxJob {
   interactions: SandboxInteraction[];
   interactionSequence: number;
   interactionCount?: number;
+  maxModelReasoningWaitMs?: number;
+  maxCommandExecutionWaitMs?: number;
+  maxExternalServiceWaitMs?: number;
+  activeWaitCategory?: 'MODEL_REASONING' | 'COMMAND_EXECUTION' | 'EXTERNAL_SERVICE';
+  activeWaitStartedAt?: string;
   changedFiles?: string[];
   patch?: string;
   patchTruncated?: boolean;

@@ -3536,3 +3536,34 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa local era persistida apenas por perfil ChatGPT, reunindo mensagens de todos os ambientes na mesma lista, e o montador do prompt copiava todas as mensagens de usuário e modelo sem filtrar o campo `environment`. Além disso, novas mensagens do usuário não registravam esse campo, embora a resposta vinculada à execução já o registrasse.
 - Correção aplicada na causa: cada nova mensagem do usuário passa a guardar o ambiente selecionado, e o histórico usado no prompt é filtrado pelo mesmo ambiente. Para dados legados, uma mensagem de usuário sem ambiente só é aceita quando a resposta imediatamente seguinte identifica de forma inequívoca o ambiente selecionado; mensagens ambíguas falham de forma fechada e não entram no prompt. Conversas salvas também só fornecem contexto quando o ambiente salvo corresponde ao ambiente atual.
 - Proteção contra regressão: o teste ponta a ponta monta uma conversa com mensagens de dois ambientes, seleciona apenas um deles e verifica tanto a inclusão do contexto correto quanto a ausência completa do conteúdo do outro ambiente no payload enviado.
+
+### 2026-09-12 03:20:05 UTC — Consulta da solicitação Codex #2789
+
+- Trabalho realizado: consultado o detalhe atual da solicitação por meio do endpoint público `GET https://iahub.xyz/api/codex/requests/2789`.
+- Resultado observado: HTTP 200, solicitação em status `RUNNING` e `interactionCount` igual a **1.676** no instante da consulta.
+- Nenhum ajuste de código foi necessário; este registro atende à exigência de documentar todo trabalho realizado no projeto.
+
+### 2026-09-12 03:24:37 UTC — Nova consulta da solicitação Codex #2789
+
+- Nova verificação pelo endpoint público `GET https://iahub.xyz/api/codex/requests/2789` retornou HTTP 200.
+- Estado observado nesta consulta: status `RUNNING`, `interactionCount` igual a **1.880** e `finishedAt` ainda nulo.
+- A contagem aumentou em 204 interações desde a consulta anterior, que havia registrado 1.676.
+
+### 2026-09-12 — Análise de períodos sem avanço no contador de interações
+
+- Pergunta investigada: por que o contador de interações de uma solicitação pode permanecer sem alteração por algum tempo?
+- Causa conceitual principal: `interactionCount` não é um relógio nem um indicador de CPU; o orquestrador só o incrementa quando chama `recordInteraction`, principalmente ao enviar `thread/start`/`turn/start` ou receber texto do agente. Eventos de atividade como início de item e atualização de tokens renovam a atividade do turno, mas não incrementam necessariamente o contador.
+- Motivos normais mais comuns: raciocínio do modelo sem emissão de texto; execução de comando, teste, build ou consulta demorada; e espera por uma ferramenta ou serviço externo. Um comando ativo pode permanecer válido por até duas horas pela configuração padrão, enquanto a ausência de atividade sem comando tem limite padrão de 45 minutos e o turno completo, 12 horas.
+- Motivos de observação defasada: a interface consulta solicitações ativas a cada 15 segundos somente quando a aba está visível e reduz a frequência para solicitações antigas; falhas temporárias de polling ou sincronização entre backend e orquestrador também podem deixar o valor exibido parado embora o job tenha atividade.
+- Sinais de travamento real: ausência também de logs, tokens e eventos; repetição do mesmo comando; dependência externa bloqueada; ou posterior término com `CODEX_TURN_NO_ACTIVITY`, `CODEX_TURN_STALLED` ou `CODEX_TURN_INTERRUPTED`.
+- Verificação contextual: em nova consulta, a solicitação #2789 já estava `COMPLETED`, com 2.230 interações, 17.780.854 tokens, `timeoutCount` zero e término em `2026-09-12T03:24:27.918Z`; portanto, no caso específico, as pausas observadas não culminaram em timeout.
+
+### 2026-09-12 — Tempos máximos de espera por solicitação Codex
+
+- Solicitação: registrar, persistir e exibir no detalhe de cada solicitação os maiores períodos contínuos de espera por raciocínio do modelo, comando/teste e serviço externo.
+- Pergunta explícita de causa raiz: “por que esse dado não existia?”. Resposta: o orquestrador registrava contadores agregados e timeouts, mas não mantinha uma máquina de estados temporais entre o início e o fim das fases do turno. Como consequência, backend e banco não recebiam durações classificadas, e a tela de detalhe não tinha campos para apresentar.
+- Decisão de modelagem: períodos são mutuamente exclusivos. Sem item ativo, o tempo pertence a `MODEL_REASONING`; comandos e testes locais pertencem a `COMMAND_EXECUTION`; MCP/web search e comandos reconhecidamente dependentes de rede, banco, cloud ou SSH pertencem a `EXTERNAL_SERVICE`. Em concorrência, serviço externo tem precedência para impedir dupla contagem do mesmo intervalo.
+- Orquestrador: adicionada telemetria dos máximos nos fluxos Codex App Server e Responses API. O payload de polling calcula também o intervalo ainda em andamento, sem expor os campos internos de estado; ao finalizar ou trocar de fase, consolida o máximo observado.
+- Backend e banco: o cliente passou a ler as três métricas, o serviço as aplica de forma monotônica e `codex_requests` ganhou as colunas `max_model_reasoning_wait_ms`, `max_command_execution_wait_ms` e `max_external_service_wait_ms` nas migrations H2, PostgreSQL e MySQL V48. Solicitações anteriores permanecem com valor nulo porque não existe evidência histórica confiável para reconstruir a classificação.
+- Frontend: o parser aceita camelCase e snake_case e o detalhe mostra as três maiores esperas com precisão de milissegundos ou segundos/minutos/horas.
+- Testes: cobertura do intervalo ativo no payload, parsing do backend, mapeamento JPA/migration e renderização ponta a ponta dos três valores. A primeira execução conjunta encontrou duas limitações de validação, não defeitos da implementação: um teste sensível a tempo do App Server falhou sob carga paralela e a asserção da versão final do Flyway ainda esperava V47. A versão esperada foi atualizada para V48, os testes do orquestrador foram repetidos isoladamente com 79/79 aprovações e o backend completo passou após o ajuste.
