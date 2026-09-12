@@ -48,6 +48,7 @@ test('shows the request detail as a conversation card with only the three execut
       reasoningEffort: 'high',
       prompt: 'Crie uma integração segura com a API pública.',
       responseText: Array.from({ length: 35 }, (_, index) => `${index + 1}. Etapa da integração criada e validada.`).join('\n\n'),
+      reasoningSummary: 'Comparei as alternativas e escolhi a implementação de menor risco.',
       status: 'COMPLETED',
       createdAt: '2026-09-06T09:00:00Z',
       finishedAt: '2026-09-06T09:05:00Z',
@@ -73,6 +74,10 @@ test('shows the request detail as a conversation card with only the three execut
     scrollHeight: element.scrollHeight
   }));
   expect(responseDimensions.scrollHeight).toBe(responseDimensions.clientHeight);
+  await expect(page.getByTestId('codex-reasoning-summary')).toContainText(
+    'Comparei as alternativas e escolhi a implementação de menor risco.'
+  );
+  await page.screenshot({ path: '/tmp/ai-hub-request-reasoning-summary.png', fullPage: true });
   await expect(page.locator('textarea')).toHaveCount(3);
   await expect(page.getByLabel('Problema', { exact: true })).toBeVisible();
   await expect(page.getByLabel('O que eu espero da solução', { exact: true })).toBeVisible();

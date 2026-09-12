@@ -38,6 +38,7 @@ class CodexRequestTest {
     @Test
     void maximumWaitMetricsArePersistedOnTheRequest() throws Exception {
         assertPersistedColumn("maxModelReasoningWaitMs", "max_model_reasoning_wait_ms");
+        assertPersistedColumn("reasoningSummary", "reasoning_summary");
         assertPersistedColumn("maxCommandExecutionWaitMs", "max_command_execution_wait_ms");
         assertPersistedColumn("maxExternalServiceWaitMs", "max_external_service_wait_ms");
     }

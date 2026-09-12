@@ -12,6 +12,7 @@ export interface CodexRequest {
   profile: CodexProfile;
   prompt: string;
   responseText?: string;
+  reasoningSummary?: string;
   externalId?: string;
   pullRequestUrl?: string;
   workBranch?: string;
@@ -309,6 +310,11 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     : typeof (item as Record<string, unknown>).execution_log === 'string'
       ? ((item as Record<string, unknown>).execution_log as string)
       : undefined;
+  const reasoningSummaryRaw = typeof item.reasoningSummary === 'string'
+    ? item.reasoningSummary
+    : typeof (item as Record<string, unknown>).reasoning_summary === 'string'
+      ? ((item as Record<string, unknown>).reasoning_summary as string)
+      : undefined;
   const pullRequestUrl = pullRequestUrlRaw && pullRequestUrlRaw.trim() ? pullRequestUrlRaw.trim() : undefined;
   const workBranchRaw = typeof item.workBranch === 'string'
     ? item.workBranch
@@ -327,6 +333,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const resolutionDifficulty =
     resolutionDifficultyRaw && resolutionDifficultyRaw.trim() ? resolutionDifficultyRaw.trim() : undefined;
   const executionLog = executionLogRaw && executionLogRaw.trim() ? executionLogRaw.trim() : undefined;
+  const reasoningSummary = reasoningSummaryRaw && reasoningSummaryRaw.trim() ? reasoningSummaryRaw.trim() : undefined;
 
   return {
     id,
@@ -339,6 +346,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     status,
     rating,
     responseText: (item.responseText as string) ?? undefined,
+    reasoningSummary,
     externalId: (item.externalId as string) ?? undefined,
     pullRequestUrl: pullRequestUrl ?? undefined,
     workBranch: workBranch ?? undefined,
