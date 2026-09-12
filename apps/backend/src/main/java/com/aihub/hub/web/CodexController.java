@@ -8,6 +8,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexTokenRankingItem;
+import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
@@ -107,6 +108,11 @@ public class CodexController {
     @GetMapping("/token-ranking")
     public List<CodexTokenRankingItem> tokenRanking() {
         return codexRequestService.tokenRanking();
+    }
+
+    @GetMapping("/processing-time-ranking")
+    public List<CodexProcessingTimeRankingItem> processingTimeRanking() {
+        return codexRequestService.processingTimeRanking();
     }
 
     @GetMapping("/sales-impact/{score}")

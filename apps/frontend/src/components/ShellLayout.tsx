@@ -19,6 +19,7 @@ const links = [
   { to: '/codex-chatgpt-sandbox', label: 'Codex ChatGPT Sandbox' },
   { to: '/codex/models', label: 'Modelos Codex' },
   { to: '/codex/token-ranking', label: 'Ranking de Tokens' },
+  { to: '/codex/processing-time-ranking', label: 'Ranking de Tempo' },
   { to: '/source-repository-config', label: 'Config. Repositório' },
   { to: '/audit', label: 'Audit Log' },
   { to: '/admin/system-health', label: 'Saúde do sistema' }

@@ -3574,3 +3574,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o schema do ambiente já continha ao menos uma das novas colunas, mas o histórico do Flyway ainda não registrava a V48 como aplicada. A migration pressupunha que as três colunas estariam sempre ausentes e tentava criá-las em um único `ALTER TABLE`; portanto, não conseguia reconciliar esse estado parcial/divergente.
 - Correção na causa: a V48 agora verifica cada coluna no catálogo do banco antes de criá-la. No MySQL foi usada SQL dinâmica compatível com MySQL 5.7, que não oferece `ADD COLUMN IF NOT EXISTS`; H2 e PostgreSQL usam a cláusula nativa. Assim, colunas existentes são preservadas e as ausentes são adicionadas individualmente.
 - Proteção contra regressão: foi adicionado um teste de migration que parte de um schema marcado na V47 com a primeira coluna já existente e confirma que a V48 termina com sucesso e entrega as três colunas.
+
+### 2026-09-12 — Ranking de solicitações por tempo de processamento
+
+- Solicitação recebida: criar, em paralelo ao ranking por consumo de tokens, um ranking das solicitações com maior tempo de processamento.
+- Investigação da causa: o tempo total já era persistido em `duration_ms` e exibido individualmente, mas não existiam consulta ordenada, contrato de API, rota ou tela dedicados à comparação por duração. Por isso o dado disponível não podia ser consultado como ranking.
+- Implementação: foi criado o endpoint `GET /api/codex/requests/processing-time-ranking`, que seleciona as 20 solicitações com duração contabilizada e as ordena por `durationMs` decrescente, usando o identificador mais recente como desempate. O título derivado da solicitação também é retornado, sem expor prompt ou resposta.
+- Interface: a navegação ganhou “Ranking de Tempo” e a nova página apresenta posição, solicitação, ambiente, modelo, perfil, esforço de raciocínio, status e duração formatada, incluindo estados de carregamento, erro e lista vazia.
+- Proteção contra regressão: foram adicionados testes do encaminhamento no controller e da renderização ponta a ponta, incluindo ordem recebida e formatação de durações em horas e minutos.

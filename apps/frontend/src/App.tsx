@@ -21,6 +21,7 @@ import SystemHealthPage from './pages/SystemHealthPage';
 import SalesImpactRequestsPage from './pages/SalesImpactRequestsPage';
 import SalesImpactRequestDetailPage from './pages/SalesImpactRequestDetailPage';
 import TokenRankingPage from './pages/TokenRankingPage';
+import ProcessingTimeRankingPage from './pages/ProcessingTimeRankingPage';
 
 function App() {
   return (
@@ -45,6 +46,7 @@ function App() {
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
         <Route path="/codex/token-ranking" element={<TokenRankingPage />} />
+        <Route path="/codex/processing-time-ranking" element={<ProcessingTimeRankingPage />} />
         <Route path="/source-repository-config" element={<SourceRepositoryConfigPage />} />
         <Route path="/audit" element={<AuditLogPage />} />
         <Route path="/admin/system-health" element={<SystemHealthPage />} />

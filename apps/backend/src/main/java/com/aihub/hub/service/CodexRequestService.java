@@ -15,6 +15,7 @@ import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.CodexTokenRankingItem;
+import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -382,6 +383,13 @@ public class CodexRequestService {
     @Transactional(readOnly = true)
     public List<CodexTokenRankingItem> tokenRanking() {
         return codexRequestRepository.findTokenRanking(PageRequest.of(0, 20)).stream()
+            .map(item -> item.withRequestTitle(buildRequestTitle(item.prompt(), item.responseText())))
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodexProcessingTimeRankingItem> processingTimeRanking() {
+        return codexRequestRepository.findProcessingTimeRanking(PageRequest.of(0, 20)).stream()
             .map(item -> item.withRequestTitle(buildRequestTitle(item.prompt(), item.responseText())))
             .toList();
     }
