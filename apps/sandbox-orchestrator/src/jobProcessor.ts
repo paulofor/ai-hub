@@ -1314,6 +1314,19 @@ export class SandboxJobProcessor implements JobProcessor {
     };
     const startedAt = Date.now();
     const unsubscribeCallbacks = [
+      client.onNotification('item/reasoning/summaryTextDelta', (params) => {
+        markActivity();
+        const delta = this.extractCodexText(params) ?? '';
+        if (delta) {
+          job.reasoningSummary = `${job.reasoningSummary ?? ''}${delta}`;
+        }
+      }),
+      client.onNotification('item/reasoning/summaryPartAdded', () => {
+        markActivity();
+        if (job.reasoningSummary && !job.reasoningSummary.endsWith('\n\n')) {
+          job.reasoningSummary += '\n\n';
+        }
+      }),
       client.onNotification('item/agentMessage/delta', (params) => {
         markActivity();
         const delta = this.extractCodexText(params) ?? '';
@@ -2050,6 +2063,18 @@ ${profileInstruction}`,
         }
         return item as ResponseItem;
       });
+      const reasoningSummary = normalizedOutput
+        .filter((item) => this.isReasoningItem(item))
+        .flatMap((item) => {
+          const reasoning = item as unknown as ResponseReasoningItem;
+          return Array.isArray(reasoning.summary) ? reasoning.summary.map((entry) => entry.text) : [];
+        })
+        .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
+        .map((text) => text.trim())
+        .join('\n\n');
+      if (reasoningSummary) {
+        job.reasoningSummary = [job.reasoningSummary, reasoningSummary].filter(Boolean).join('\n\n');
+      }
       const assistantMessage = normalizedOutput.find((item) => item.type === 'message') as ResponseOutputMessage | undefined;
       const toolCalls = normalizedOutput.filter((item) => item.type === 'function_call') as ResponseFunctionToolCallItem[];
 

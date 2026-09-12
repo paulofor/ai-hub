@@ -1420,6 +1420,7 @@ test('mantém itens de reasoning associados aos function_call no histórico rece
     assert.ok(secondCall, 'segunda chamada não registrada');
     const reasoningItem = (secondCall.input as any[]).find((item) => item.type === 'reasoning');
     assert.ok(reasoningItem, 'item de reasoning deveria ser reenviado junto com o histórico');
+    assert.equal(job.reasoningSummary, 'planejando leitura');
     const functionCall = (secondCall.input as any[]).find((item) => item.type === 'function_call');
     assert.ok(functionCall, 'function_call deveria permanecer no histórico recente');
     assert.equal(functionCall.call_id, 'call-reason');
@@ -4080,6 +4081,9 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
             listener({ delta: 'resumo via app server' });
           }
+          for (const listener of listeners.get('item/reasoning/summaryTextDelta') ?? []) {
+            listener({ delta: 'Avaliei a alternativa mais segura.' });
+          }
           for (const listener of listeners.get('thread/tokenUsage/updated') ?? []) {
             listener({
               threadId: 'thread-123',
@@ -4154,6 +4158,7 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
 
     assert.equal(job.status, 'COMPLETED');
     assert.equal(job.summary, 'resumo via app server');
+    assert.equal(job.reasoningSummary, 'Avaliei a alternativa mais segura.');
     assert.equal(job.promptTokens, 30);
     assert.equal(job.cachedPromptTokens, 12);
     assert.equal(job.completionTokens, 5);

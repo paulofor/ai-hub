@@ -1926,6 +1926,12 @@ public class CodexRequestService {
             updated = true;
         }
 
+        if (StringUtils.hasText(response.reasoningSummary())
+            && !Objects.equals(request.getReasoningSummary(), response.reasoningSummary().trim())) {
+            request.setReasoningSummary(response.reasoningSummary().trim());
+            updated = true;
+        }
+
         String transcript = buildOutboundInteractionTranscript(response.interactions());
         if (StringUtils.hasText(transcript) && !Objects.equals(request.getModelTranscript(), transcript)) {
             request.setModelTranscript(transcript);

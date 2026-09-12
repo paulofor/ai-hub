@@ -3582,3 +3582,26 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Implementação: foi criado o endpoint `GET /api/codex/requests/processing-time-ranking`, que seleciona as 20 solicitações com duração contabilizada e as ordena por `durationMs` decrescente, usando o identificador mais recente como desempate. O título derivado da solicitação também é retornado, sem expor prompt ou resposta.
 - Interface: a navegação ganhou “Ranking de Tempo” e a nova página apresenta posição, solicitação, ambiente, modelo, perfil, esforço de raciocínio, status e duração formatada, incluindo estados de carregamento, erro e lista vazia.
 - Proteção contra regressão: foram adicionados testes do encaminhamento no controller e da renderização ponta a ponta, incluindo ordem recebida e formatação de durações em horas e minutos.
+
+### 2026-09-12 — Consulta sobre persistência do raciocínio do modelo
+
+- Pergunta investigada: existe no banco um campo com a descrição do pensamento do modelo em cada solicitação?
+- Resultado: não existe uma coluna dedicada ao pensamento interno completo. `reasoning_effort` registra somente o nível de esforço solicitado e `max_model_reasoning_wait_ms` registra somente a maior duração de espera classificada como raciocínio.
+- O campo `model_transcript` guarda a transcrição das interações de saída enviadas ao modelo; como o histórico de rodadas seguintes pode conter itens `[reasoning]`, ele pode incluir resumos de raciocínio retornados pela API, mas não constitui um registro garantido nem completo do pensamento interno.
+- A saída recebida do modelo é formatada pelo orquestrador com `[reasoning]` usando apenas o conteúdo de `reasoning.summary`. A resposta final destinada ao usuário é persistida separadamente em `response_text`.
+- Nenhum ajuste funcional foi realizado; a atividade consistiu em inspecionar migrations, entidades e os fluxos de gravação do backend e do orquestrador.
+
+#### Esclarecimento sobre o resumo de pensamento
+
+- Resposta objetiva: o resumo `reasoning.summary` recebido na interação `INBOUND` não é persistido diretamente em uma coluna própria nem em `codex_interactions` pelo fluxo atual do backend.
+- O backend persiste em `model_transcript` somente as interações classificadas como `OUTBOUND`. Por isso, um resumo de raciocínio de uma rodada anterior pode aparecer indiretamente nesse campo quando tiver sido reincorporado ao histórico enviado em uma rodada posterior; o resumo da última rodada pode nunca entrar nele.
+- Consequência: não é correto considerar `model_transcript` um armazenamento completo dos resumos de pensamento. Para garantir consulta posterior de cada resumo seria necessária uma persistência explícita das interações `INBOUND` ou um campo/tabela dedicado.
+
+### 2026-09-12 — Persistência do resumo de raciocínio por solicitação
+
+- Solicitação recebida: passar a guardar no banco o resumo de raciocínio associado a cada solicitação e mostrá-lo na tela de detalhe.
+- Pergunta explícita de causa raiz: “por que esse resumo não era armazenado?”. Resposta: o orquestrador formatava `reasoning.summary` apenas dentro da interação `INBOUND`, enquanto o backend persistia em `model_transcript` exclusivamente as interações `OUTBOUND`; não havia campo dedicado no contrato do job nem na entidade `CodexRequest`.
+- Correção na causa: o orquestrador agora agrega os textos de `reasoning.summary` no campo `reasoningSummary` do próprio job. O backend lê esse campo do polling/callback e o persiste por solicitação na nova coluna `codex_requests.reasoning_summary`, criada pela migration V49 para H2, PostgreSQL e MySQL.
+- Interface: o parser do frontend aceita `reasoningSummary` e `reasoning_summary`, e a tela de detalhe ganhou a seção “Resumo do raciocínio”, renderizada como Markdown e com estado explícito quando o modelo não disponibiliza resumo.
+- Limite semântico: o conteúdo armazenado é somente o resumo de raciocínio que a API disponibiliza; não é a cadeia de pensamento interna completa. Solicitações antigas permanecem sem valor porque não existe fonte histórica confiável para preenchimento retroativo.
+- Proteção contra regressão: adicionadas verificações da agregação no orquestrador, do parsing no cliente backend, do mapeamento JPA e da apresentação na tela de detalhe.

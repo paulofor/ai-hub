@@ -164,6 +164,27 @@ class SandboxOrchestratorClientTest {
         }
     }
 
+    @Test
+    void getJobParsesReasoningSummary() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                    {
+                      "jobId": "job-reasoning-summary",
+                      "status": "COMPLETED",
+                      "reasoningSummary": "Comparei as alternativas e escolhi a de menor risco."
+                    }
+                    """));
+            SandboxOrchestratorClient client = clientFor(server);
+
+            SandboxOrchestratorClient.SandboxOrchestratorJobResponse response = client.getJob("job-reasoning-summary");
+
+            assertThat(response.reasoningSummary()).isEqualTo("Comparei as alternativas e escolhi a de menor risco.");
+        }
+    }
+
     private SandboxOrchestratorClient clientFor(MockWebServer server) {
         RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())

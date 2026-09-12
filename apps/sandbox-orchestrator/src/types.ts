@@ -82,6 +82,7 @@ export interface SandboxJob {
   callbackSecret?: string;
   status: JobStatus;
   summary?: string;
+  reasoningSummary?: string;
   interactions: SandboxInteraction[];
   interactionSequence: number;
   interactionCount?: number;

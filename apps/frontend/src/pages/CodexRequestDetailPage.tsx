@@ -644,6 +644,17 @@ export default function CodexRequestDetailPage() {
                   ) : '—'}
                 </div>
               </div>
+              <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-900 dark:bg-violet-950/30">
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-violet-800 dark:text-violet-200">Resumo do raciocínio</h4>
+                  <span className="text-xs text-slate-500">
+                    {request.reasoningSummary ? `${request.reasoningSummary.length.toLocaleString('pt-BR')} caracteres` : 'Não disponibilizado pelo modelo'}
+                  </span>
+                </div>
+                <div data-testid="codex-reasoning-summary" className="rounded-md border border-violet-200 bg-white/70 p-4 text-sm leading-relaxed text-slate-800 dark:border-violet-900 dark:bg-slate-950/40 dark:text-slate-100">
+                  {request.reasoningSummary ? <CodexResponseBody content={request.reasoningSummary} /> : '—'}
+                </div>
+              </div>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
