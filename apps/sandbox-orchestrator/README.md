@@ -23,6 +23,16 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 
 Jobs ficam armazenados em memória enquanto executam e são atualizados de forma assíncrona pelo `SandboxJobProcessor`.
 
+## Resumo do raciocínio
+
+O orquestrador solicita `summary: "auto"` em cada `turn/start` do Codex App Server, inclusive nas retomadas. Na Responses API, envia `reasoning.summary: "auto"` para os modelos de raciocínio reconhecidos (GPT-5, GPT-6, Daybreak Blue, o3 e o4) ou quando há esforço de raciocínio explicitamente configurado; modelos econômicos sem esse recurso mantêm o contrato anterior.
+
+O campo `reasoningSummary` contém somente o resumo público retornado pelo provedor. Os deltas são agrupados por turno, item e índice da seção; o item concluído substitui os trechos provisórios, sem duplicação. Eventos de outras threads são ignorados. Polling e callback transportam o campo para o detalhe da solicitação, separadamente da resposta final e das métricas de uso.
+
+O provedor pode não disponibilizar texto mesmo com o resumo solicitado. Nesse caso a interface mantém “Não disponibilizado pelo modelo”; o sistema não cria um resumo artificial nem recupera automaticamente resumos de solicitações antigas.
+
+Validação local: `npm test` inclui os contratos de resumo com App Server simulado por JSON-RPC e Responses API. `CodexReasoningSummaryIntegrationTest` valida callback, persistência em H2 e leitura pela API; `tests/e2e/reasoningSummary.spec.ts` no frontend valida desktop e celular. Para encadear o mesmo dado sintético nos três módulos, defina `REASONING_SUMMARY_E2E_PAYLOAD` (arquivo gravado pelo teste do orquestrador e lido pelo backend) e `REASONING_SUMMARY_E2E_DETAIL` (arquivo gravado pelo backend e lido pelo Playwright) com caminhos absolutos temporários e execute os módulos nessa ordem.
+
 ## Política de publicação
 
 - Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada.

@@ -48,6 +48,12 @@ rl.on('line', (line) => {
     } else {
       sendTurnStarted();
     }
+    if (mode === 'reasoning-summary' && message.params?.summary === 'auto') {
+      setTimeout(() => send({ method: 'item/completed', params: {
+        threadId: message.params.threadId, turnId: 'turn-123',
+        item: { type: 'reasoning', id: 'reasoning-123', summary: ['Resumo público validado por JSON-RPC.'], content: [] },
+      } }), 3);
+    }
     setTimeout(() => send({ method: 'item/agentMessage/delta', params: { threadId: message.params?.threadId, turnId: 'turn-123', delta: 'Resumo Codex App Server' } }), 5);
     setTimeout(() => send({ method: 'turn/completed', params: { threadId: message.params?.threadId, turnId: 'turn-123', status: 'completed' } }), 10);
     return;

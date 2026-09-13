@@ -13,6 +13,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SandboxOrchestratorClientTest {
 
     @Test
+    void readsReasoningSummaryFromPollingAndLegacyPayloadWithoutReplacingAnswer() throws Exception {
+        for (String key : java.util.List.of("reasoningSummary", "reasoning_summary")) {
+            try (MockWebServer server = new MockWebServer()) {
+                server.enqueue(new MockResponse().setHeader("Content-Type", "application/json")
+                    .setBody("{\"jobId\":\"summary-test\",\"status\":\"COMPLETED\",\"summary\":\"Resposta final\",\"" + key + "\":\"Resumo público\"}"));
+                var response = clientFor(server).getJob("summary-test");
+                assertThat(response.reasoningSummary()).isEqualTo("Resumo público");
+                assertThat(response.summary()).isEqualTo("Resposta final");
+            }
+        }
+    }
+
+    @Test
     void readCodexAccountReturnsUpstreamUnavailableBodyInsteadOfThrowing() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
             server.enqueue(new MockResponse()
