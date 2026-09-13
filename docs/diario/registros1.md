@@ -3627,3 +3627,23 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - A host key confirmada foi fixada em `apps/sandbox-orchestrator/ssh/known_hosts`; o destino foi acrescentado às configurações padrão do Compose, aos dois exemplos de ambiente e à topologia Docker de teste. A documentação operacional e o teste de contrato passaram a exigir o sexto destino.
 - A configuração permanece fail-closed: o helper exige a entrada exata da allowlist e `StrictHostKeyChecking=yes`, enquanto o agente associa a identidade protegida somente aos destinos cujas host keys estão versionadas. A chave privada não foi disponibilizada nem alterada.
 - A disponibilização na sessão de produção ocorrerá após merge e deploy, que recriam os containers com a allowlist e o `known_hosts` atualizados; a verificação de conexão real não é possível nesta sessão sem rede para o destino.
+
+### 2026-09-13 — Cadastro e vínculo opcional de processos
+
+- Solicitação recebida: criar o menu “Processos”, permitir o cadastro de número e texto, oferecer a seleção opcional na solicitação e apresentar o vínculo no histórico e no detalhe.
+- Pergunta explícita de causa raiz: “por que os processos não podiam ser associados às solicitações?”. Resposta: não existia entidade, API, persistência nem contrato de criação para esse conceito; portanto, a interface não tinha uma fonte de opções nem campos duráveis para preservar a escolha.
+- Correção na causa: foi criado o cadastro completo de processos com número único e texto, migrations para os três bancos suportados e uma referência por snapshot (número/texto) em `codex_requests`. O snapshot preserva o contexto histórico mesmo se o cadastro for editado ou removido posteriormente.
+- Interface: foi adicionado o item de navegação e a tela de manutenção de processos, uma seleção opcional no formulário de solicitação e a identificação do processo no histórico de execuções e no detalhe.
+
+### 2026-09-13 — Remoção de binário do ajuste de processos
+
+- Solicitação recebida: retirar os binários do conjunto de alterações do cadastro de processos.
+- Pergunta explícita de causa raiz: “por que um binário entrou neste ajuste?”. Resposta: a validação visual gerou e versionou `docs/diario/processos.png`, embora a captura não fosse necessária para a execução da funcionalidade e tornasse o diff maior e não inspecionável como texto.
+- Correção na causa: a captura PNG foi removida do repositório. Nenhum código, migration ou teste funcional do cadastro e vínculo de processos foi alterado.
+
+### 2026-09-13 — Correção da migration MySQL V50 de processos
+
+- Erro investigado: o backend não iniciava porque o MySQL rejeitava a criação da tabela `processes` com `Invalid default value for 'updated_at'`; as linhas repetidas de `GET /` do frontend eram healthchecks bem-sucedidos, não a origem da falha.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a V50 declarou duas colunas `TIMESTAMP(6) NOT NULL` sem defaults explícitos. Em servidores MySQL com comportamento legado de inicialização automática da primeira coluna `TIMESTAMP`, a segunda coluna recebia implicitamente o default zero, incompatível com o modo SQL estrito, e o `CREATE TABLE` era recusado.
+- Correção na causa: `created_at` agora usa `DEFAULT CURRENT_TIMESTAMP(6)` e `updated_at` usa `DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)`, eliminando a dependência das regras implícitas que variam por configuração/versão do MySQL.
+- Proteção contra regressão: foi criado um check executável que exige os defaults explícitos nas duas colunas temporais e rejeita novo `TIMESTAMP(6) NOT NULL` sem default na migration.

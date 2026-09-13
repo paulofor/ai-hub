@@ -93,6 +93,12 @@ public class CodexRequest {
     @Column(name = "external_id")
     private String externalId;
 
+    @Column(name = "process_number", length = 80)
+    private String processNumber;
+
+    @Column(name = "process_text", length = 500)
+    private String processText;
+
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "image_attachments_json", columnDefinition = "LONGTEXT")
     @JsonIgnore
@@ -507,6 +513,11 @@ public class CodexRequest {
     public void setProblem(ProblemRecord problem) {
         this.problem = problem;
     }
+
+    public String getProcessNumber() { return processNumber; }
+    public void setProcessNumber(String processNumber) { this.processNumber = processNumber; }
+    public String getProcessText() { return processText; }
+    public void setProcessText(String processText) { this.processText = processText; }
 
     public BigDecimal getProblemCostContribution() {
         return problemCostContribution;
