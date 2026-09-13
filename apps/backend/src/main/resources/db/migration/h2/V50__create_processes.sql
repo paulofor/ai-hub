@@ -5,5 +5,9 @@ CREATE TABLE processes (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
-ALTER TABLE codex_requests ADD COLUMN process_number VARCHAR(80);
-ALTER TABLE codex_requests ADD COLUMN process_text VARCHAR(500);
+CREATE TABLE codex_request_processes (
+    request_id BIGINT PRIMARY KEY,
+    process_number VARCHAR(80) NOT NULL,
+    process_text VARCHAR(500) NOT NULL,
+    CONSTRAINT fk_codex_request_processes_request FOREIGN KEY (request_id) REFERENCES codex_requests (id) ON DELETE CASCADE
+);

@@ -42,12 +42,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.cloneDurationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, cr.processNumber, cr.processText,
+            problem.id, problem.title, process.processNumber, process.processText,
             (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
             cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
+        left join cr.processSnapshot process
         order by cr.createdAt desc
         """)
     Page<CodexRequestSummary> findSummariesByOrderByCreatedAtDesc(Pageable pageable);
@@ -61,12 +62,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.cloneDurationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, cr.processNumber, cr.processText,
+            problem.id, problem.title, process.processNumber, process.processText,
             (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
             cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
+        left join cr.processSnapshot process
         where cr.rating = :rating
         order by cr.createdAt desc
         """)
