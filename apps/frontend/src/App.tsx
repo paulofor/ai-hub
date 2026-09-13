@@ -16,6 +16,7 @@ import CodexChatgptPage from './pages/CodexChatgptPage';
 import PrivacyPage from './pages/PrivacyPage';
 import SourceRepositoryConfigPage from './pages/SourceRepositoryConfigPage';
 import ProductsPage from './pages/ProductsPage';
+import ProcessesPage from './pages/ProcessesPage';
 import PersonaReviewPage from './pages/PersonaReviewPage';
 import SystemHealthPage from './pages/SystemHealthPage';
 import SalesImpactRequestsPage from './pages/SalesImpactRequestsPage';
@@ -32,6 +33,7 @@ function App() {
         <Route path="/prompt-hints" element={<PromptHintsPage />} />
         <Route path="/prompt-lists" element={<PromptListsPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/processes" element={<ProcessesPage />} />
         <Route path="/problems" element={<ProblemsPage />} />
         <Route path="/problems/:id" element={<ProblemDetailPage />} />
         <Route path="/environments" element={<EnvironmentsPage />} />

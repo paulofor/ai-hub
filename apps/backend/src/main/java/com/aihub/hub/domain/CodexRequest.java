@@ -13,6 +13,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 
@@ -92,6 +94,10 @@ public class CodexRequest {
 
     @Column(name = "external_id")
     private String externalId;
+
+    @OneToOne(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JsonIgnore
+    private CodexRequestProcess processSnapshot;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "image_attachments_json", columnDefinition = "LONGTEXT")
@@ -506,6 +512,17 @@ public class CodexRequest {
 
     public void setProblem(ProblemRecord problem) {
         this.problem = problem;
+    }
+
+    @JsonProperty("processNumber")
+    public String getProcessNumber() { return processSnapshot == null ? null : processSnapshot.getProcessNumber(); }
+    public void setProcessNumber(String processNumber) { ensureProcessSnapshot().setProcessNumber(processNumber); }
+    @JsonProperty("processText")
+    public String getProcessText() { return processSnapshot == null ? null : processSnapshot.getProcessText(); }
+    public void setProcessText(String processText) { ensureProcessSnapshot().setProcessText(processText); }
+    private CodexRequestProcess ensureProcessSnapshot() {
+        if (processSnapshot == null) processSnapshot = new CodexRequestProcess(this);
+        return processSnapshot;
     }
 
     public BigDecimal getProblemCostContribution() {
