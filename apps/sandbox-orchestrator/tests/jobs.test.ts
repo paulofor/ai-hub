@@ -4082,7 +4082,13 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
             listener({ delta: 'resumo via app server' });
           }
           for (const listener of listeners.get('item/reasoning/summaryTextDelta') ?? []) {
-            listener({ delta: 'Avaliei a alternativa mais segura.' });
+            listener({
+              threadId: 'thread-123',
+              turnId: 'turn-123',
+              itemId: 'reasoning-123',
+              summaryIndex: 0,
+              delta: 'Avaliei a alternativa mais segura.',
+            });
           }
           for (const listener of listeners.get('thread/tokenUsage/updated') ?? []) {
             listener({

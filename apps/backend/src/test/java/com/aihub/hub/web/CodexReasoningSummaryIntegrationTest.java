@@ -8,7 +8,7 @@ import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.service.SandboxOrchestratorClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,10 +16,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,7 +29,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
-@Transactional
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:reasoning-summary-test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;NON_KEYWORDS=VALUE;DB_CLOSE_DELAY=-1",
     "hub.sandbox.callback.secret=synthetic-summary-callback",
@@ -38,9 +38,14 @@ class CodexReasoningSummaryIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private CodexRequestRepository repository;
-    @Autowired private EntityManager entityManager;
     @MockBean private SandboxOrchestratorClient sandboxClient;
     @MockBean private GithubApiClient githubClient;
+    private final List<Long> requestIds = new ArrayList<>();
+
+    @AfterEach
+    void deleteCommittedFixtures() {
+        repository.deleteAllById(requestIds);
+    }
 
     @Test
     void callbackPersistsPublicSummaryAndDetailReturnsItWithoutMixingRequests() throws Exception {
@@ -57,13 +62,16 @@ class CodexReasoningSummaryIntegrationTest {
         CodexRequest request = new CodexRequest("sandbox.local", "gpt-6-astra", CodexIntegrationProfile.CHATGPT_CODEX, "Validação local");
         request.setExternalId(payload.path("jobId").asText());
         request.setStatus(CodexRequestStatus.RUNNING);
+        // The callback reads in REQUIRES_NEW, so its fixtures must already be committed.
         repository.saveAndFlush(request);
         Long id = request.getId();
+        requestIds.add(id);
         CodexRequest other = new CodexRequest("sandbox.local", "gpt-6-astra", CodexIntegrationProfile.CHATGPT_CODEX, "Outra solicitação");
         other.setStatus(CodexRequestStatus.COMPLETED);
         other.setResponseText("Resposta de outra solicitação.");
         repository.saveAndFlush(other);
         Long otherId = other.getId();
+        requestIds.add(otherId);
 
         mvc.perform(post("/api/codex/requests/callbacks/sandbox").contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(payload)))
@@ -72,8 +80,6 @@ class CodexReasoningSummaryIntegrationTest {
                 .header("X-Sandbox-Callback-Token", "synthetic-summary-callback")
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(payload)))
             .andExpect(status().isAccepted()).andExpect(jsonPath("$.updated").value(true));
-        repository.flush();
-        entityManager.clear();
 
         assertThat(repository.findById(id).orElseThrow().getReasoningSummary()).isEqualTo(publicSummary);
         assertThat(repository.findById(otherId).orElseThrow().getReasoningSummary()).isNull();
@@ -92,8 +98,6 @@ class CodexReasoningSummaryIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(update)))
                 .andExpect(status().isAccepted());
         }
-        repository.flush();
-        entityManager.clear();
         assertThat(repository.findById(id).orElseThrow().getReasoningSummary()).isEqualTo(publicSummary);
         assertThat(repository.findById(id).orElseThrow().getResponseText()).isEqualTo(answer);
 
