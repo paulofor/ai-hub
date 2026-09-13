@@ -3640,3 +3640,10 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Solicitação recebida: retirar os binários do conjunto de alterações do cadastro de processos.
 - Pergunta explícita de causa raiz: “por que um binário entrou neste ajuste?”. Resposta: a validação visual gerou e versionou `docs/diario/processos.png`, embora a captura não fosse necessária para a execução da funcionalidade e tornasse o diff maior e não inspecionável como texto.
 - Correção na causa: a captura PNG foi removida do repositório. Nenhum código, migration ou teste funcional do cadastro e vínculo de processos foi alterado.
+
+### 2026-09-13 — Correção da migration MySQL V50 de processos
+
+- Erro investigado: o backend não iniciava porque o MySQL rejeitava a criação da tabela `processes` com `Invalid default value for 'updated_at'`; as linhas repetidas de `GET /` do frontend eram healthchecks bem-sucedidos, não a origem da falha.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a V50 declarou duas colunas `TIMESTAMP(6) NOT NULL` sem defaults explícitos. Em servidores MySQL com comportamento legado de inicialização automática da primeira coluna `TIMESTAMP`, a segunda coluna recebia implicitamente o default zero, incompatível com o modo SQL estrito, e o `CREATE TABLE` era recusado.
+- Correção na causa: `created_at` agora usa `DEFAULT CURRENT_TIMESTAMP(6)` e `updated_at` usa `DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)`, eliminando a dependência das regras implícitas que variam por configuração/versão do MySQL.
+- Proteção contra regressão: foi criado um check executável que exige os defaults explícitos nas duas colunas temporais e rejeita novo `TIMESTAMP(6) NOT NULL` sem default na migration.
