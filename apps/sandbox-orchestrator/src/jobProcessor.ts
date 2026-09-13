@@ -21,6 +21,7 @@ import { CodexAppServerClient } from './codexAppServerClient.js';
 import { readCodexAccount } from './codexAppServerAuth.js';
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
 import { buildJobPayload } from './jobPayload.js';
+import { ReasoningSummaryCollector, requestsReasoningSummary } from './reasoningSummary.js';
 import {
   JobProcessor,
   SandboxJob,
@@ -1313,21 +1314,39 @@ export class SandboxJobProcessor implements JobProcessor {
       lastActivityAt = now;
     };
     const startedAt = Date.now();
+    const reasoningSummaries = new ReasoningSummaryCollector();
+    let currentTurnId = 'attempt-1';
+    const reasoningTurnId = (params: unknown): string =>
+      this.extractCodexId(params, ['turnId'], 'turn.id') ?? currentTurnId;
+    const collectCompletedReasoning = (params: unknown): void => {
+      if (!params || typeof params !== 'object') return;
+      const record = params as Record<string, unknown>;
+      const turnId = reasoningTurnId(params);
+      reasoningSummaries.completeItem(turnId, record.item);
+      const turn = record.turn as { items?: unknown[] } | undefined;
+      if (Array.isArray(turn?.items)) {
+        turn.items.forEach((item) => reasoningSummaries.completeItem(turnId, item));
+      }
+      job.reasoningSummary = reasoningSummaries.text();
+    };
+    // The App Server client is shared by jobs. Scope every notification before it changes job state.
+    const onThreadNotification = (method: string, listener: (params: unknown) => void) =>
+      client.onNotification(method, (params) => {
+        const eventThreadId = this.extractCodexId(params, ['threadId'], 'thread.id');
+        if (eventThreadId && eventThreadId !== threadId) return;
+        listener(params);
+      });
     const unsubscribeCallbacks = [
-      client.onNotification('item/reasoning/summaryTextDelta', (params) => {
+      onThreadNotification('item/reasoning/summaryTextDelta', (params) => {
         markActivity();
-        const delta = this.extractCodexText(params) ?? '';
-        if (delta) {
-          job.reasoningSummary = `${job.reasoningSummary ?? ''}${delta}`;
-        }
+        reasoningSummaries.addDelta(reasoningTurnId(params), params);
+        job.reasoningSummary = reasoningSummaries.text();
       }),
-      client.onNotification('item/reasoning/summaryPartAdded', () => {
+      onThreadNotification('item/reasoning/summaryPartAdded', () => {
+        // summaryIndex on each delta defines the boundary, including providers without partAdded events.
         markActivity();
-        if (job.reasoningSummary && !job.reasoningSummary.endsWith('\n\n')) {
-          job.reasoningSummary += '\n\n';
-        }
       }),
-      client.onNotification('item/agentMessage/delta', (params) => {
+      onThreadNotification('item/agentMessage/delta', (params) => {
         markActivity();
         const delta = this.extractCodexText(params) ?? '';
         if (delta) {
@@ -1335,8 +1354,9 @@ export class SandboxJobProcessor implements JobProcessor {
           this.recordInteraction(job, 'INBOUND', delta);
         }
       }),
-      client.onNotification('item/completed', (params) => {
+      onThreadNotification('item/completed', (params) => {
         markActivity();
+        collectCompletedReasoning(params);
         const item = this.extractCodexItemIdentity(params);
         if (item?.id) {
           activeCommandItems.delete(item.id);
@@ -1352,7 +1372,7 @@ export class SandboxJobProcessor implements JobProcessor {
         }
         this.log(job, `Codex App Server item/completed ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
-      client.onNotification('item/started', (params) => {
+      onThreadNotification('item/started', (params) => {
         markActivity();
         const item = this.extractCodexItemIdentity(params);
         if (item?.id && ['commandExecution', 'command_execution'].includes(item.type ?? '')) {
@@ -1366,12 +1386,13 @@ export class SandboxJobProcessor implements JobProcessor {
         this.recordCodexAppServerDocumentAccesses(job, params, recordedCodexDocumentAccessKeys);
         this.log(job, `Codex App Server item/started ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
       }),
-      client.onNotification('thread/tokenUsage/updated', (params) => {
+      onThreadNotification('thread/tokenUsage/updated', (params) => {
         markActivity();
         this.addCodexAppServerUsageMetrics(job, params);
       }),
-      client.onNotification('turn/completed', (params) => {
+      onThreadNotification('turn/completed', (params) => {
         markActivity();
+        collectCompletedReasoning(params);
         this.addCodexAppServerUsageMetrics(job, params);
         const status = this.extractCodexStatus(params);
         const text = this.extractCodexText(params);
@@ -1385,7 +1406,7 @@ export class SandboxJobProcessor implements JobProcessor {
         }
         completed = true;
       }),
-      client.onNotification('error', (params) => {
+      onThreadNotification('error', (params) => {
         markActivity();
         failedReason = this.extractCodexErrorMessage(params) ?? 'CODEX_APP_SERVER_ERROR';
         this.log(job, `Codex App Server error ${this.safeStringify(this.sanitizeCodexEvent(params))}`);
@@ -1394,6 +1415,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     try {
       for (let attempt = 1; attempt <= this.codexTransientTurnMaxAttempts; attempt += 1) {
+        currentTurnId = `attempt-${attempt}`;
         completed = false;
         failedReason = undefined;
         activeCommandItems.clear();
@@ -1411,11 +1433,14 @@ export class SandboxJobProcessor implements JobProcessor {
                 text: 'A tentativa anterior foi encerrada por uma falha transitória de conexão. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.',
               }],
           effort: job.reasoningEffort ?? this.codexReasoningEffort,
+          summary: 'auto',
         };
         this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
         const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
         this.transitionWaitCategory(job, 'MODEL_REASONING');
         const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
+        currentTurnId = turnId;
+        collectCompletedReasoning(turn);
         this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}/${this.codexTransientTurnMaxAttempts}`);
         const immediateStatus = this.extractCodexStatus(turn);
         const immediateText = this.extractCodexText(turn);
@@ -1770,7 +1795,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     }
     const record = value as Record<string, unknown>;
     const status = record.status ?? record.outcome;
-    return typeof status === 'string' ? status.toLowerCase() : undefined;
+    return typeof status === 'string' ? status.toLowerCase() : this.extractCodexStatus(record.turn);
   }
 
   private extractCodexErrorMessage(value: unknown): string | undefined {
@@ -1789,7 +1814,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
         return nestedMessage.trim();
       }
     }
-    return undefined;
+    return this.extractCodexErrorMessage(record.turn);
   }
 
   private sanitizeCodexEvent(value: unknown): unknown {
@@ -2004,6 +2029,7 @@ ${profileInstruction}`,
 
     let summary = '';
     let turnCount = 0;
+    const reasoningSummaries = new ReasoningSummaryCollector();
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
@@ -2028,7 +2054,12 @@ ${profileInstruction}`,
         model,
         input: layeredMessages,
         tools,
-        ...(job.reasoningEffort ? { reasoning: { effort: job.reasoningEffort } } : {}),
+        ...(job.reasoningEffort || requestsReasoningSummary(model) ? {
+          reasoning: {
+            ...(job.reasoningEffort ? { effort: job.reasoningEffort } : {}),
+            summary: 'auto',
+          },
+        } : {}),
         ...(this.promptCacheRetention ? { prompt_cache_retention: this.promptCacheRetention } : {}),
         ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
       };
@@ -2055,6 +2086,8 @@ ${profileInstruction}`,
       this.enforceEcoThreeGuardrails(job, turnCount);
 
       const output = response.output ?? [];
+      output.forEach((item) => reasoningSummaries.completeItem(response.id ?? `response-${turnCount}`, item));
+      job.reasoningSummary = reasoningSummaries.text();
       const normalizedOutput: ResponseItem[] = output.map((item, index) => {
         if (item.type === 'function_call') {
           const callId = this.extractCallId(item, index);

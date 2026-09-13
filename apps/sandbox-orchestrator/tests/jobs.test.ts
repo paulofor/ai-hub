@@ -999,7 +999,7 @@ test('configura prompt cache retention e chave estável na Responses API', async
     assert.equal(fakeOpenAI.calls.length, 1);
     assert.equal(fakeOpenAI.calls[0].prompt_cache_retention, '24h');
     assert.equal(fakeOpenAI.calls[0].prompt_cache_key, 'acme:ai-hub:main:STANDARD:gpt-5-codex');
-    assert.deepEqual(fakeOpenAI.calls[0].reasoning, { effort: 'medium' });
+    assert.deepEqual(fakeOpenAI.calls[0].reasoning, { effort: 'medium', summary: 'auto' });
   } finally {
     if (originalRetention === undefined) {
       delete process.env.OPENAI_PROMPT_CACHE_RETENTION;
