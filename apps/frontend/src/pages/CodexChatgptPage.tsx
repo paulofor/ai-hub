@@ -73,6 +73,8 @@ interface ModelOption {
   displayName?: string;
 }
 
+interface ProcessOption { id: number; number: string; text: string }
+
 interface ProductOption {
   id: number;
   name: string;
@@ -1550,6 +1552,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [processes, setProcesses] = useState<ProcessOption[]>([]);
+  const [selectedProcessId, setSelectedProcessId] = useState('');
   const showProductSelector = config.profile === 'CHATGPT_CODEX_MKT';
   const sandboxOnly = config.profile === 'CHATGPT_CODEX_SANDBOX';
   const selectedEnvironment = sandboxOnly ? SANDBOX_ONLY_ENVIRONMENT : environment;
@@ -1802,6 +1806,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setSavedConversations(parsed);
     return parsed;
   }, [config.profile]);
+
+  useEffect(() => {
+    client.get<ProcessOption[]>('/processes').then(response => setProcesses(response.data)).catch(() => setProcesses([]));
+  }, []);
 
   const loadProducts = useCallback(async () => {
     if (config.profile !== 'CHATGPT_CODEX_MKT') {
@@ -2379,6 +2387,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         model,
         reasoningEffort,
         profile: config.profile,
+        processId: selectedProcessId ? Number(selectedProcessId) : undefined,
         imageAttachments: fileAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
       const created = parseCodexRequest(response.data);
@@ -3171,6 +3180,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </select>
           </label>
         </div>
+        <select aria-label="Processo" value={selectedProcessId} onChange={(event) => setSelectedProcessId(event.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
+          <option value="">Sem processo selecionado</option>
+          {processes.map((item) => <option key={item.id} value={item.id}>{item.number} — {item.text}</option>)}
+        </select>
         {showProductSelector ? <select value={selectedProductSlug} onChange={(e) => setSelectedProductSlug(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
           {products.map((item) => <option key={item.id} value={item.slug}>{item.name}</option>)}
@@ -3387,6 +3400,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   Raciocínio: {item.reasoningEffort}
                 </span>
               </p>
+              {item.processNumber && <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Processo: {item.processNumber} — {item.processText}</p>}
               <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
