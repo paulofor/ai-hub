@@ -536,6 +536,10 @@ export default function CodexRequestDetailPage() {
               <InfoItem label="Maior espera — comando ou teste" value={formatMaximumWait(request.maxCommandExecutionWaitMs)} />
               <InfoItem label="Maior espera — serviço externo" value={formatMaximumWait(request.maxExternalServiceWaitMs)} />
               <InfoItem
+                label="Processo"
+                value={request.processNumber ? `${request.processNumber} — ${request.processText}` : '—'}
+              />
+              <InfoItem
                 label="Problema vinculado"
                 value={request.problemTitle ? `#${request.problemId} — ${request.problemTitle}` : '—'}
               />

@@ -8,6 +8,7 @@ const links = [
   { to: '/prompt-hints', label: 'Itens do Prompt' },
   { to: '/prompt-lists', label: 'Lista de Prompts' },
   { to: '/products', label: 'Cadastro de Produtos' },
+  { to: '/processes', label: 'Processos' },
   { to: '/environments', label: 'Ambientes' },
   { to: '/problems', label: 'Problemas' },
   { to: '/logs', label: 'Interpretador de Logs' },

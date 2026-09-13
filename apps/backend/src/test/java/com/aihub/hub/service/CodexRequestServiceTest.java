@@ -18,6 +18,7 @@ import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ProblemRepository;
+import com.aihub.hub.repository.ProcessRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,6 +71,7 @@ class CodexRequestServiceTest {
     private final ResponseRepository responseRepository = mock(ResponseRepository.class);
     private final CodexInteractionRepository codexInteractionRepository = mock(CodexInteractionRepository.class);
     private final ProblemRepository problemRepository = mock(ProblemRepository.class);
+    private final ProcessRepository processRepository = mock(ProcessRepository.class);
     private final CodexHttpRequestRepository codexHttpRequestRepository = mock(CodexHttpRequestRepository.class);
     private final CodexDocumentAccessRepository codexDocumentAccessRepository = mock(CodexDocumentAccessRepository.class);
     private final EnvironmentRepository environmentRepository = mock(EnvironmentRepository.class);
@@ -116,6 +118,7 @@ class CodexRequestServiceTest {
             "gpt-4.1-mini",
             "main",
             1_500_000,
+            processRepository,
             "America/Sao_Paulo",
             codexAppServerEnabled,
             null,
@@ -439,7 +442,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
-            request.getInteractionCount(), null, null, 2L, null, null
+            request.getInteractionCount(), null, null, null, null, 2L, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -475,7 +478,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
-            request.getInteractionCount(), null, null, 1L, request.getResponseText(), null
+            request.getInteractionCount(), null, null, null, null, 1L, request.getResponseText(), null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));

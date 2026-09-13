@@ -32,6 +32,7 @@ import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.ProblemRepository;
+import com.aihub.hub.repository.ProcessRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.slf4j.Logger;
@@ -102,6 +103,7 @@ public class CodexRequestService {
     private final CodexDocumentAccessRepository codexDocumentAccessRepository;
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
+    private final ProcessRepository processRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final GithubAppAuth githubAppAuth;
     private final GithubApiClient githubApiClient;
@@ -137,6 +139,7 @@ public class CodexRequestService {
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch,
                                @Value("${hub.codex.smart-economy.max-economy-tokens:1500000}") int smartEconomyEconomyTokenCeiling,
+                               ProcessRepository processRepository,
                                @Value("${hub.dashboard.time-zone:America/Sao_Paulo}") String dashboardTimeZone,
                                @Value("${hub.codex.app-server-enabled:false}") boolean codexAppServerEnabled,
                                @Value("${hub.sandbox.callback.url:}") String sandboxCallbackUrl,
@@ -149,6 +152,7 @@ public class CodexRequestService {
         this.codexDocumentAccessRepository = codexDocumentAccessRepository;
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
+        this.processRepository = processRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.githubAppAuth = githubAppAuth;
         this.githubApiClient = githubApiClient;
@@ -197,6 +201,12 @@ public class CodexRequestService {
         ProblemRecord problem = resolveProblemAssociation(request.getProblemId(), normalizedEnvironment);
         if (problem != null) {
             codexRequest.setProblem(problem);
+        }
+        if (request.getProcessId() != null) {
+            var process = processRepository.findById(request.getProcessId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Processo não encontrado"));
+            codexRequest.setProcessNumber(process.getNumber());
+            codexRequest.setProcessText(process.getText());
         }
         codexRequest.setTimeoutCount(0);
         codexRequest.setHttpGetCount(0);
