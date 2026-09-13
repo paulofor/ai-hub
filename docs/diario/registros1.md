@@ -3473,3 +3473,11 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Limite da conclusão: não foram consultadas as solicitações recentes nem as vendas de produção; mudança na composição das tarefas ou no rigor da avaliação são hipóteses, não causas comprovadas da queda relatada.
 - Recomendações: comparar períodos equivalentes por categoria de tarefa, volume avaliado e critério de avaliação; concentrar a execução no gargalo de uma oferta/funil existente; concluir correções relacionadas em um mesmo escopo; acompanhar vendas, conversão, receita e gasto juntamente com a nota, mantendo critérios estáveis. Referência complementar: https://support.google.com/analytics/answer/13128171?hl=en (identificação de abandono entre etapas da compra).
 - Alterações limitadas a este registro documental, sem alteração funcional, commit, PR ou publicação. Validação: revisão do diff e `git diff --check`; testes de execução não se aplicam à orientação/documentação.
+
+## 2026-09-13 — Esclarecimento do JSON de resposta e da nota de vendas
+
+- Solicitação recebida: explicar a estrutura do JSON respondido pelo modelo em cada solicitação, no contexto da nota de impacto em vendas.
+- Investigação local: conferidos o contrato solicitado pelo prompt MKT em `apps/sandbox-orchestrator/src/jobProcessor.ts:1524`, a configuração MKT em `apps/frontend/src/pages/CodexChatgptPage.tsx:1460` e a extração de impacto em `CodexRequestService.java`.
+- Estrutura identificada: `titulo`, `comentario`, `impactoAumentoVendas`, `alterouCodigoRepositorio`, `resumoCodigoPr` e `sugestaoMelhoriaAmbiente`; `orientacaoProximaAcao` é opcional e só deve existir quando houver ação efetiva necessária do usuário. O impacto usa cinco níveis textuais, de `muito_baixo` a `muito_alto`.
+- Precisão de escopo: esse contrato é explicitamente solicitado pelo modo MKT; não se deve afirmar que todos os perfis obrigatoriamente respondem nesse formato. A nota é uma avaliação estimada pelo modelo.
+- Entrega documental: explicação com exemplo JSON e significado dos campos. Sem alteração funcional; validação por leitura do contrato, revisão do diff e `git diff --check`.
