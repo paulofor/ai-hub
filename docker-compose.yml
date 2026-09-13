@@ -119,7 +119,7 @@ services:
       SSH_AUTH_SOCK: /run/sandbox-ssh-agent/agent.sock
       SANDBOX_SSH_PRIVATE_KEY_FILE: /run/secrets/sandbox-ssh/id_ed25519
       SANDBOX_SSH_KNOWN_HOSTS_FILE: /etc/sandbox-ssh/known_hosts
-      SANDBOX_SSH_ALLOWED_DESTINATIONS: ${SANDBOX_SSH_ALLOWED_DESTINATIONS:-root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83,root@163.245.202.80}
+      SANDBOX_SSH_ALLOWED_DESTINATIONS: ${SANDBOX_SSH_ALLOWED_DESTINATIONS:-root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83,root@163.245.202.80,root@177.153.62.107}
     volumes:
       - ${SANDBOX_SSH_KEY_HOST_DIR:-/root/infra/sandbox-ssh}:/run/secrets/sandbox-ssh:ro
       - sandbox-ssh-agent-socket:/run/sandbox-ssh-agent
@@ -161,7 +161,7 @@ services:
       SSH_AUTH_SOCK: /run/sandbox-ssh-agent/agent.sock
       SANDBOX_SSH_KNOWN_HOSTS_FILE: /etc/sandbox-ssh/known_hosts
       SANDBOX_SSH_PUBLIC_KEY_FILE: /etc/sandbox-ssh/operator_key.pub
-      SANDBOX_SSH_ALLOWED_DESTINATIONS: ${SANDBOX_SSH_ALLOWED_DESTINATIONS:-root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83,root@163.245.202.80}
+      SANDBOX_SSH_ALLOWED_DESTINATIONS: ${SANDBOX_SSH_ALLOWED_DESTINATIONS:-root@163.245.203.201,root@163.245.200.7,root@191.252.181.168,root@191.252.210.83,root@163.245.202.80,root@177.153.62.107}
       SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS: ${SANDBOX_SSH_CONNECT_TIMEOUT_SECONDS:-15}
       SANDBOX_SMTP_HOST: ${SANDBOX_SMTP_HOST:-sandbox-mail}
       SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}

@@ -252,11 +252,12 @@ test('workflow persiste o segredo fora do repositório e verifica o fingerprint 
   const compose = await fsp.readFile(path.join(repositoryRoot, 'docker-compose.yml'), 'utf8');
 
   assert.match(publicKey, /^ssh-ed25519 [A-Za-z0-9+/=]+ codex-ops-ai-hub-2026-09-06\n$/);
-  for (const host of ['163.245.203.201', '163.245.200.7', '191.252.181.168', '191.252.210.83', '163.245.202.80']) {
+  for (const host of ['163.245.203.201', '163.245.200.7', '191.252.181.168', '191.252.210.83', '163.245.202.80', '177.153.62.107']) {
     assert.match(knownHosts, new RegExp(`^${host.replaceAll('.', '\\.')} `, 'm'));
   }
   for (const configuration of [rootEnvironment, packageEnvironment, compose]) {
     assert.match(configuration, /SANDBOX_SSH_ALLOWED_DESTINATIONS[^\n]*root@163\.245\.202\.80/);
+    assert.match(configuration, /SANDBOX_SSH_ALLOWED_DESTINATIONS[^\n]*root@177\.153\.62\.107/);
   }
   assert.match(workflow, /SANDBOX_OPS_SSH_PRIVATE_KEY: \$\{\{ secrets\.SANDBOX_OPS_SSH_PRIVATE_KEY \}\}/);
   assert.match(workflow, /\/root\/infra\/sandbox-ssh\/id_ed25519/);
