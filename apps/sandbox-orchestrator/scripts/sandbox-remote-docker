@@ -86,6 +86,29 @@ managed_container_metadata() {
   printf '%s\n' "${metadata}"
 }
 
+canonical_image_digest() {
+  jq -S -c '.[0] | {
+    platform: {
+      architecture: (.Architecture // ""),
+      os: (.Os // ""),
+      variant: (.Variant // "")
+    },
+    config: (.Config // {}),
+    rootfs: {
+      type: (.RootFS.Type // ""),
+      layers: (.RootFS.Layers // [])
+    }
+  }' | sha256sum | awk '{ print $1 }'
+}
+
+local_image_digest() {
+  "${docker_command}" image inspect "$1" | canonical_image_digest
+}
+
+remote_image_digest() {
+  remote docker image inspect "$1" | canonical_image_digest
+}
+
 [ "$#" -ge 3 ] || usage
 
 operation="$1"
@@ -101,6 +124,8 @@ docker_command="${SANDBOX_DOCKER_COMMAND:-docker}"
 require_executable "${ssh_command}"
 require_executable "${docker_command}"
 require_executable jq
+require_executable sha256sum
+require_executable awk
 
 case "${operation}" in
   push)
@@ -111,11 +136,11 @@ case "${operation}" in
     validate_artifact "${artifact}"
     remote_image="$(image_reference "${artifact}")"
 
-    local_image_id="$("${docker_command}" image inspect --format '{{.Id}}' "${local_image}")" \
+    source_image_digest="$(local_image_digest "${local_image}")" \
       || fail "imagem local não encontrada: ${local_image}" 66
     transfer_tag_created=false
-    if existing_transfer_id="$("${docker_command}" image inspect --format '{{.Id}}' "${remote_image}" 2>/dev/null)"; then
-      [ "${existing_transfer_id}" = "${local_image_id}" ] \
+    if existing_transfer_digest="$(local_image_digest "${remote_image}" 2>/dev/null)"; then
+      [ "${existing_transfer_digest}" = "${source_image_digest}" ] \
         || fail "a tag local de transferência já aponta para outra imagem: ${remote_image}" 73
     else
       "${docker_command}" image tag "${local_image}" "${remote_image}"
@@ -132,10 +157,10 @@ case "${operation}" in
     remote_docker_ready
     echo "sandbox-remote-docker: enviando ${remote_image} para ${destination} por streaming" >&2
     "${docker_command}" image save "${remote_image}" | remote docker image load
-    remote_image_id="$(remote docker image inspect --format '{{.Id}}' "${remote_image}")" \
+    transferred_image_digest="$(remote_image_digest "${remote_image}")" \
       || fail "a imagem transferida não pode ser inspecionada" 69
-    [ "${remote_image_id}" = "${local_image_id}" ] \
-      || fail "image ID divergente após a transferência" 74
+    [ "${transferred_image_digest}" = "${source_image_digest}" ] \
+      || fail "digest canônico divergente após a transferência" 74
     echo "sandbox-remote-docker: operation=push destination=${destination} session=${session} image=${remote_image} result=ok"
     ;;
 

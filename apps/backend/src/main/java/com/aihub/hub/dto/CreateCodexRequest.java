@@ -23,6 +23,8 @@ public class CreateCodexRequest {
 
     private Long problemId;
 
+    private Long processId;
+
     private Integer promptTokens;
 
     private Integer cachedPromptTokens;
@@ -102,6 +104,9 @@ public class CreateCodexRequest {
     public void setProblemId(Long problemId) {
         this.problemId = problemId;
     }
+
+    public Long getProcessId() { return processId; }
+    public void setProcessId(Long processId) { this.processId = processId; }
 
     public Integer getPromptTokens() {
         return promptTokens;

@@ -5,11 +5,8 @@ destination="$1"
 shift
 [ "${destination}" = root@fixture.test ] || exit 77
 
-if [ "$#" -ge 6 ] \
-  && [ "$1 $2 $3" = "docker image inspect" ] \
-  && [ "$4" = --format ] \
-  && [ "$5" = '{{.Id}}' ]; then
-  printf '%s\n' 'sha256:0000000000000000000000000000000000000000000000000000000000000000'
+if [ "$#" -eq 4 ] && [ "$1 $2 $3" = "docker image inspect" ]; then
+  docker image inspect "$4" | jq '.[0].RootFS.Layers += ["sha256:0000000000000000000000000000000000000000000000000000000000000000"]'
   exit 0
 fi
 

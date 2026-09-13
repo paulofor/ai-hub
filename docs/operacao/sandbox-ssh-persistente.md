@@ -55,6 +55,8 @@ restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK+poajAToxY0q9h+YhYmnoF1QlUXIDneBD
 - `root@163.245.200.7`
 - `root@191.252.181.168`
 - `root@191.252.210.83`
+- `root@163.245.202.80`
+- `root@177.153.62.107`
 
 Adicionar ou trocar um destino exige fixar previamente sua host key em
 `apps/sandbox-orchestrator/ssh/known_hosts` e atualizar
@@ -74,7 +76,12 @@ sandbox-remote-docker inspect root@HOST sessao app
 sandbox-remote-docker cleanup root@HOST sessao
 ```
 
-O `push` usa `docker image save | ssh docker image load`, compara o image ID nas
+No `push`, a validação compara um digest canônico calculado sobre plataforma,
+configuração de execução e layers da imagem. Ela não compara o `.Id` textual do
+Docker, que pode variar na representação entre versões mesmo após uma
+transferência íntegra.
+
+O `push` usa `docker image save | ssh docker image load`, compara esse digest nas
 duas pontas e não grava tar no destino. `run` recusa colisões e aplica memória,
 CPU, PIDs, `no-new-privileges`, `cap-drop=ALL`, restart `no` e rede `none` por
 padrão. `cleanup` remove apenas containers com os dois labels de gerenciamento e

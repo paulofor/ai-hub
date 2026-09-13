@@ -13,6 +13,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 
@@ -93,6 +95,10 @@ public class CodexRequest {
     @Column(name = "external_id")
     private String externalId;
 
+    @OneToOne(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JsonIgnore
+    private CodexRequestProcess processSnapshot;
+
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "image_attachments_json", columnDefinition = "LONGTEXT")
     @JsonIgnore
@@ -169,6 +175,15 @@ public class CodexRequest {
 
     @Column(name = "interaction_count")
     private Integer interactionCount;
+
+    @Column(name = "max_model_reasoning_wait_ms")
+    private Long maxModelReasoningWaitMs;
+
+    @Column(name = "max_command_execution_wait_ms")
+    private Long maxCommandExecutionWaitMs;
+
+    @Column(name = "max_external_service_wait_ms")
+    private Long maxExternalServiceWaitMs;
 
     @Transient
     private List<DocumentAccessSummary> documentAccesses = List.of();
@@ -499,6 +514,17 @@ public class CodexRequest {
         this.problem = problem;
     }
 
+    @JsonProperty("processNumber")
+    public String getProcessNumber() { return processSnapshot == null ? null : processSnapshot.getProcessNumber(); }
+    public void setProcessNumber(String processNumber) { ensureProcessSnapshot().setProcessNumber(processNumber); }
+    @JsonProperty("processText")
+    public String getProcessText() { return processSnapshot == null ? null : processSnapshot.getProcessText(); }
+    public void setProcessText(String processText) { ensureProcessSnapshot().setProcessText(processText); }
+    private CodexRequestProcess ensureProcessSnapshot() {
+        if (processSnapshot == null) processSnapshot = new CodexRequestProcess(this);
+        return processSnapshot;
+    }
+
     public BigDecimal getProblemCostContribution() {
         return problemCostContribution;
     }
@@ -532,6 +558,30 @@ public class CodexRequest {
 
     public void setInteractionCount(Integer interactionCount) {
         this.interactionCount = interactionCount;
+    }
+
+    public Long getMaxModelReasoningWaitMs() {
+        return maxModelReasoningWaitMs;
+    }
+
+    public void setMaxModelReasoningWaitMs(Long maxModelReasoningWaitMs) {
+        this.maxModelReasoningWaitMs = maxModelReasoningWaitMs;
+    }
+
+    public Long getMaxCommandExecutionWaitMs() {
+        return maxCommandExecutionWaitMs;
+    }
+
+    public void setMaxCommandExecutionWaitMs(Long maxCommandExecutionWaitMs) {
+        this.maxCommandExecutionWaitMs = maxCommandExecutionWaitMs;
+    }
+
+    public Long getMaxExternalServiceWaitMs() {
+        return maxExternalServiceWaitMs;
+    }
+
+    public void setMaxExternalServiceWaitMs(Long maxExternalServiceWaitMs) {
+        this.maxExternalServiceWaitMs = maxExternalServiceWaitMs;
     }
 
     public List<DocumentAccessSummary> getDocumentAccesses() {

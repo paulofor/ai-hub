@@ -247,10 +247,17 @@ test('workflow persiste o segredo fora do repositório e verifica o fingerprint 
   const workflow = await fsp.readFile(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
   const publicKey = await fsp.readFile(path.join(packageRoot, 'ssh/operator_key.pub'), 'utf8');
   const knownHosts = await fsp.readFile(path.join(packageRoot, 'ssh/known_hosts'), 'utf8');
+  const rootEnvironment = await fsp.readFile(path.join(repositoryRoot, '.env.example'), 'utf8');
+  const packageEnvironment = await fsp.readFile(path.join(packageRoot, '.env.example'), 'utf8');
+  const compose = await fsp.readFile(path.join(repositoryRoot, 'docker-compose.yml'), 'utf8');
 
   assert.match(publicKey, /^ssh-ed25519 [A-Za-z0-9+/=]+ codex-ops-ai-hub-2026-09-06\n$/);
-  for (const host of ['163.245.203.201', '163.245.200.7', '191.252.181.168', '191.252.210.83']) {
+  for (const host of ['163.245.203.201', '163.245.200.7', '191.252.181.168', '191.252.210.83', '163.245.202.80', '177.153.62.107']) {
     assert.match(knownHosts, new RegExp(`^${host.replaceAll('.', '\\.')} `, 'm'));
+  }
+  for (const configuration of [rootEnvironment, packageEnvironment, compose]) {
+    assert.match(configuration, /SANDBOX_SSH_ALLOWED_DESTINATIONS[^\n]*root@163\.245\.202\.80/);
+    assert.match(configuration, /SANDBOX_SSH_ALLOWED_DESTINATIONS[^\n]*root@177\.153\.62\.107/);
   }
   assert.match(workflow, /SANDBOX_OPS_SSH_PRIVATE_KEY: \$\{\{ secrets\.SANDBOX_OPS_SSH_PRIVATE_KEY \}\}/);
   assert.match(workflow, /\/root\/infra\/sandbox-ssh\/id_ed25519/);
@@ -313,6 +320,12 @@ test('helper Docker remoto impõe namespace, limites e limpeza sem modo privileg
   assert.match(helper, /--cap-drop ALL/);
   assert.match(helper, /\[ "\$\{network_name\}" != host \]/);
   assert.match(helper, /image save "\$\{remote_image\}" \| remote docker image load/);
+  assert.match(helper, /canonical_image_digest/);
+  assert.match(helper, /jq -S -c/);
+  assert.match(helper, /architecture: \(\.Architecture/);
+  assert.match(helper, /config: \(\.Config/);
+  assert.match(helper, /layers: \(\.RootFS\.Layers/);
+  assert.doesNotMatch(helper, /image inspect --format '\{\{\.Id\}\}'/);
   assert.doesNotMatch(helper, /--privileged|--pid[= ]host|--ipc[= ]host|docker\.sock|--volume|-v \/|scp|rsync/);
   assert.match(dockerfile, /COPY scripts\/sandbox-remote-docker \/usr\/local\/bin\/sandbox-remote-docker/);
   assert.match(dockerfile, /\/usr\/local\/bin\/sandbox-remote-docker/);

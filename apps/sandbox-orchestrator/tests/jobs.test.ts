@@ -66,6 +66,29 @@ test('summarizes stalled jobs without returning the full job payload', () => {
   assert.equal('interactions' in summary, false);
 });
 
+test('job payload exposes the running wait in the matching maximum without leaking internal state', () => {
+  const job = {
+    jobId: 'job-active-external-wait',
+    taskDescription: 'wait for service',
+    status: 'RUNNING',
+    logs: [],
+    interactions: [],
+    interactionSequence: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    timeoutCount: 0,
+    maxExternalServiceWaitMs: 100,
+    activeWaitCategory: 'EXTERNAL_SERVICE',
+    activeWaitStartedAt: new Date(Date.now() - 2_000).toISOString(),
+  } as SandboxJob;
+
+  const payload = buildJobPayload(job);
+
+  assert.ok((payload.maxExternalServiceWaitMs ?? 0) >= 1_900);
+  assert.equal(payload.activeWaitCategory, undefined);
+  assert.equal(payload.activeWaitStartedAt, undefined);
+});
+
 test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 43_200_000);
   assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
@@ -179,6 +202,20 @@ test('docker compose oferece engine dedicada ao modelo sem expor o socket de pro
   assert.match(compose, /sandbox-docker:\n\s+condition: service_healthy/);
   assert.doesNotMatch(orchestratorSection, /\/var\/run\/docker\.sock/);
   assert.match(orchestratorSection, /DOCKER_HOMOLOGATION_CLEANUP_ENABLED: \$\{DOCKER_HOMOLOGATION_CLEANUP_ENABLED:-true\}/);
+});
+
+test('deploy recupera sandbox-docker unhealthy antes de subir serviços dependentes', async () => {
+  const workflow = await fs.readFile(path.resolve('../..', '.github/workflows/ci.yml'), 'utf8');
+  const recoveryScript = await fs.readFile(
+    path.resolve('../..', '.github/scripts/ensure-sandbox-docker-healthy.sh'),
+    'utf8',
+  );
+
+  assert.match(workflow, /\.github\/scripts\/ensure-sandbox-docker-healthy\.sh/);
+  assert.match(recoveryScript, /docker compose up -d --force-recreate "\$\{service\}"/);
+  assert.match(recoveryScript, /docker inspect --format '\{\{if \.State\.Health\}\}/);
+  assert.match(recoveryScript, /docker compose logs --tail 120 "\$\{service\}"/);
+  assert.doesNotMatch(recoveryScript, /docker (system|volume) prune/);
 });
 
 test('docker compose monta e exporta credenciais Luma, Kling, HeyGen, Radar Meta e Meta para o sandbox-orchestrator', async () => {
@@ -312,6 +349,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
 
   assert.match(dockerfile, /https:\/\/download\.docker\.com\/linux\/debian/);
   assert.match(dockerfile, /\bdocker-ce-cli\b/);
+  assert.match(dockerfile, /\bdocker-buildx-plugin\b/);
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
   assert.match(dockerfile, /\bffmpeg\b/);
@@ -326,11 +364,21 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
+  assert.match(dockerfile, /docker buildx version/);
   assert.match(dockerfile, /@openai\/codex@\$\{CODEX_VERSION\}/);
   assert.match(dockerfile, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g .*playwright@\$\{PLAYWRIGHT_VERSION\} .*@playwright\/test@\$\{PLAYWRIGHT_VERSION\}/);
   assert.match(dockerfile, /playwright --version/);
   assert.match(dockerfile, /NODE_PATH=\/usr\/local\/lib\/node_modules/);
   assert.doesNotMatch(dockerfile, /\bdocker\.io\b/);
+});
+
+test('provisionamento da VPS garante Buildx mesmo quando Docker já existe', async () => {
+  const setupVps = await fs.readFile(path.resolve('../../infra/setup_vps.sh'), 'utf8');
+
+  assert.match(setupVps, /ensure_buildx\(\)/);
+  assert.match(setupVps, /local install_candidates=\(docker-buildx-plugin docker-buildx\)/);
+  assert.match(setupVps, /if ! docker buildx version >\/dev\/null 2>&1; then/);
+  assert.match(setupVps, /install_docker\s*\nensure_buildx\s*\nensure_compose/);
 });
 
 test('accepts a job request and processes asynchronously', async () => {
@@ -1372,6 +1420,7 @@ test('mantém itens de reasoning associados aos function_call no histórico rece
     assert.ok(secondCall, 'segunda chamada não registrada');
     const reasoningItem = (secondCall.input as any[]).find((item) => item.type === 'reasoning');
     assert.ok(reasoningItem, 'item de reasoning deveria ser reenviado junto com o histórico');
+    assert.equal(job.reasoningSummary, 'planejando leitura');
     const functionCall = (secondCall.input as any[]).find((item) => item.type === 'function_call');
     assert.ok(functionCall, 'function_call deveria permanecer no histórico recente');
     assert.equal(functionCall.call_id, 'call-reason');
@@ -3181,7 +3230,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /Checklist inicial obrigatório de auditoria do runner \(ambiente OK\)/i);
     assert.match(promptText, /tools essenciais: bash, git, rg/i);
     assert.match(promptText, /AWS CLI está disponível pelo comando aws/i);
-    assert.match(promptText, /Docker CLI, o plugin Docker Compose v2 e uma engine Docker dedicada estão disponíveis/i);
+    assert.match(promptText, /Docker CLI, os plugins Docker Buildx e Docker Compose v2 e uma engine Docker dedicada estão disponíveis/i);
+    assert.match(promptText, /docker version\/docker buildx version\/docker compose version/i);
     assert.match(promptText, /existe um runner efêmero dedicado no GitHub Actions/i);
     assert.match(promptText, /ausência de Docker daemon local na sandbox não significa que essa validação esteja indisponível/i);
     assert.match(promptText, /gh workflow run liquibase-mysql57\.yml --ref <branch>/i);
@@ -4031,6 +4081,9 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
             listener({ delta: 'resumo via app server' });
           }
+          for (const listener of listeners.get('item/reasoning/summaryTextDelta') ?? []) {
+            listener({ delta: 'Avaliei a alternativa mais segura.' });
+          }
           for (const listener of listeners.get('thread/tokenUsage/updated') ?? []) {
             listener({
               threadId: 'thread-123',
@@ -4105,10 +4158,13 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
 
     assert.equal(job.status, 'COMPLETED');
     assert.equal(job.summary, 'resumo via app server');
+    assert.equal(job.reasoningSummary, 'Avaliei a alternativa mais segura.');
     assert.equal(job.promptTokens, 30);
     assert.equal(job.cachedPromptTokens, 12);
     assert.equal(job.completionTokens, 5);
     assert.equal(job.totalTokens, 47);
+    assert.ok((job.maxModelReasoningWaitMs ?? 0) >= 0);
+    assert.ok((job.maxCommandExecutionWaitMs ?? 0) >= 0);
     const threadStartCall = calls.find((call) => call.method === 'thread/start');
     assert.ok(threadStartCall);
     assert.equal((threadStartCall.params as { sandbox?: string }).sandbox, 'danger-full-access');

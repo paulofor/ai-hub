@@ -5,6 +5,7 @@ import com.aihub.hub.domain.CodexReasoningEffort;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CodexTokenRankingItem;
+import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.service.CodexRequestService;
 import com.aihub.hub.service.PullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -56,6 +57,27 @@ class CodexControllerTest {
 
         assertThat(result).containsExactly(leader);
         verify(codexRequestService).tokenRanking();
+    }
+
+    @Test
+    void processingTimeRankingReturnsTopRequestsFromService() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        CodexController controller = new CodexController(
+            codexRequestService,
+            mock(PullRequestService.class),
+            new ObjectMapper()
+        );
+        CodexProcessingTimeRankingItem leader = new CodexProcessingTimeRankingItem(
+            100L, "owner/repo", "gpt-5.6-sol", CodexReasoningEffort.HIGH, null, CodexRequestStatus.COMPLETED,
+            7_200_000L, Instant.parse("2026-09-12T00:00:00Z"),
+            "Processar lote", null, "Processar lote"
+        );
+        when(codexRequestService.processingTimeRanking()).thenReturn(List.of(leader));
+
+        List<CodexProcessingTimeRankingItem> result = controller.processingTimeRanking();
+
+        assertThat(result).containsExactly(leader);
+        verify(codexRequestService).processingTimeRanking();
     }
 
     @Test

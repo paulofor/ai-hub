@@ -3514,3 +3514,213 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Reprodução das duas rodadas: `bash .local-reasoning-validation/run-round.sh 1` e `bash .local-reasoning-validation/run-round.sh 2`; logs, payloads e evidências temporários em `.local-reasoning-validation/round-{1,2}` (excluídos localmente do Git). Os testes permanentes e o encadeamento por `REASONING_SUMMARY_E2E_PAYLOAD`/`REASONING_SUMMARY_E2E_DETAIL` estão documentados no README do orquestrador.
 - Limites e entrega: não foi feita geração adicional no provedor real. A homologação usa suas interfaces documentadas com doubles locais; a disponibilidade efetiva do texto continua dependendo do modelo/provedor, e a interface mantém a indicação de ausência quando ele não retorna resumo. A mudança se aplica às execuções após o deploy, sem preenchimento retroativo de registros antigos. Arquivos alterados e validados na branch recebida; nenhum commit de entrega, push, Pull Request, pipeline, SSH, deploy ou publicação foi realizado.
 - Encerramento: confirmados zero containers e zero volumes com o rótulo do projeto Compose da sessão após o `down`; screenshots de teste movidas para o diretório local de evidências. Revisão final dos arquivos novos sem erros de whitespace (o código 1 de `git diff --no-index` indica diferença, não erro de validação); `git diff --check` aprovado.
+## 2026-09-07 — Digest canônico no `sandbox-remote-docker`
+
+- Solicitação recebida: evitar o falso erro de transferência ao usar versões diferentes do Docker na origem e no destino.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `push` validava a integridade comparando diretamente o campo textual `.Id` retornado por cada daemon. Esse campo é uma identificação interna produzida pela implementação do Docker e sua representação pode divergir entre versões/stores, mesmo quando plataforma, configuração e layers transferidos são equivalentes; portanto, ele não era um contrato interoperável adequado para a transferência.
+- Correção aplicada na causa: a origem, a tag local de transferência e o destino agora são comparados por um digest SHA-256 de uma descrição JSON estável e ordenada, composta por plataforma (`os`, arquitetura e variante), configuração de execução e `RootFS`/layers. A normalização e o hash são executados localmente com a mesma versão de `jq` e `sha256sum`, inclusive para o JSON obtido do daemon remoto, eliminando diferenças de formatação e de versão das ferramentas remotas sem enfraquecer a verificação do conteúdo executável.
+- Proteção contra regressão: o contrato estático exige a normalização canônica e proíbe o retorno à comparação de `image inspect --format '{{.Id}}'`; a fixture negativa do ensaio E2E passou a adulterar uma layer, comprovando que uma divergência real continua sendo recusada.
+- Validação: os 97 testes do `sandbox-orchestrator`, `bash -n` e `git diff --check` passaram. ShellCheck e o ensaio Docker E2E não puderam ser executados porque, respectivamente, o binário e o daemon Docker não estão disponíveis nesta sandbox.
+
+## 2026-09-07 19:40 UTC — Remoção da área de metas do AI Hub
+
+- Solicitação: retirar do AI Hub toda a área de metas exibida no Codex ChatGPT MKT e as instruções relacionadas enviadas nos prompts.
+- Pergunta explícita de causa raiz: “por que essa parte de Metas continuava aparecendo no front e influenciando os prompts?”. Resposta: o Operador de Crescimento era uma funcionalidade transversal ainda conectada em três pontos ativos: estado/formulário e carregamento no frontend, composição do prompt no frontend e enriquecimento automático redundante no backend. Além disso, endpoints, serviços e persistência mantinham o recurso operacional mesmo que apenas o painel fosse ocultado.
+- Correção na causa: removidos o painel e sua chamada de bootstrap, a composição de contexto comercial nos prompts do navegador e o enriquecimento do prompt no backend. A requisição agora preserva o texto recebido sem anexar missão/meta automaticamente.
+- Aposentadoria completa: removidos controllers, serviços, DTOs, entidades, repositórios, configuração de token, documentação e testes exclusivos do Operador de Crescimento. A migração V47 remove as tabelas `growth_events` e `growth_missions` de H2, MySQL e PostgreSQL sem reescrever migrações já aplicadas.
+- Validações: build de produção do frontend concluído; suíte Maven executada e ajustada para a nova versão de schema; busca estática confirmou a ausência de referências ativas do recurso fora do histórico de migrações e deste diário.
+
+## 2026-09-08 — Remoção de artefato binário da alteração de Metas
+
+- Solicitação: não criar arquivos binários no repositório.
+- Pergunta explícita de causa raiz: “por que esse arquivo binário foi criado?”. Resposta: a validação visual da remoção do painel foi registrada como uma captura PNG versionada, embora a evidência pudesse permanecer apenas no resultado da verificação automatizada e não precisasse integrar o código-fonte.
+- Correção na causa: removida do repositório a captura `docs/diario/remocao-metas-codex-mkt.png`; nenhuma substituição binária foi criada. As validações da interface permanecem reproduzíveis pelos comandos de build e teste.
+
+## 2026-09-08 — Verificação da pré-instalação do Docker Buildx
+
+- Solicitação recebida: verificar se a pré-instalação do Docker Buildx já existe no projeto.
+- Pergunta explícita de causa raiz: “por que o Buildx pode não estar disponível?”. Resposta: há duas instalações Docker distintas no projeto. O provisionamento inicial da VPS inclui `docker-buildx-plugin` na lista de pacotes, mas somente dentro do ramo executado quando o comando `docker` ainda não existe. Já a imagem do `sandbox-orchestrator`, que fornece o cliente conectado à engine Docker dedicada, instala `docker-ce-cli` e `docker-compose-plugin`, mas não instala `docker-buildx-plugin` nem valida `docker buildx version` durante o build.
+- Conclusão: a pré-instalação existe parcialmente para uma VPS nova provisionada por `infra/setup_vps.sh`, mas não está garantida para uma VPS que já possua Docker e não existe explicitamente na imagem da sandbox. Portanto, não se pode considerar Buildx pré-instalado em todos os ambientes do AI Hub.
+- Nenhuma correção funcional foi aplicada nesta verificação; a constatação foi registrada para orientar uma eventual implementação na causa, adicionando instalação e validação explícitas em cada ambiente que precise executar Buildx.
+
+## 2026-09-08 — Pré-instalação garantida do Docker Buildx
+
+- Solicitação recebida: executar o ajuste de pré-instalação do Docker Buildx identificado na verificação anterior.
+- Pergunta explícita de causa raiz: “por que o Buildx não estava garantido?”. Resposta: a imagem da sandbox instalava apenas o cliente Docker e o plugin Compose, enquanto o provisionamento da VPS incluía Buildx somente no ramo de instalação inicial do Docker; hosts com Docker preexistente pulavam esse ramo e não tinham uma verificação específica do plugin.
+- Correção aplicada na causa: a imagem do `sandbox-orchestrator` agora instala `docker-buildx-plugin` e executa `docker buildx version` durante o build. O provisionamento da VPS ganhou uma etapa idempotente `ensure_buildx`, executada mesmo quando o Docker já existe, que procura o pacote disponível, instala o plugin e interrompe o provisionamento caso o comando continue indisponível. As instruções e a auditoria inicial do runner também passaram a anunciar e detectar `docker buildx`, tornando a capacidade visível ao modelo.
+- Proteção contra regressão: o contrato do Dockerfile exige o pacote e sua validação, e um novo teste confirma que `ensure_buildx` permanece entre a instalação do Docker e a verificação do Compose no fluxo principal da VPS.
+
+## 2026-09-09 — Orientação para iniciar os contêineres após reinicialização do host
+
+- Solicitação recebida: informar como executar os contêineres do AI Hub depois da reinicialização do host.
+- Pergunta explícita de causa raiz: “por que esse estado aconteceu?”. Resposta: a captura mostra `backend`, `frontend` e `sandbox-orchestrator` como `Exited (255)`, enquanto outros serviços voltaram a executar. No Compose atual, esses três serviços não possuem uma política `restart`, ao contrário de `caddy`, `sandbox-mail`, `sandbox-docker` e `sandbox-ssh-agent`, que usam `restart: unless-stopped`; por isso não há garantia de que os três serviços de aplicação retornem automaticamente após o daemon reiniciar.
+- Orientação operacional: dentro de `/root/ai-hub-6`, executar `docker compose up -d` para reconciliar e iniciar toda a stack existente, sem rebuild, e validar com `docker compose ps` e `docker compose logs --tail=100 backend frontend sandbox-orchestrator`.
+- Observação: não foi proposta alteração funcional da política de reinício nesta solicitação; o registro documenta o diagnóstico e o procedimento manual pedido.
+
+## 2026-09-09 — Eliminação da corrida ao registrar acessos documentais do sandbox
+
+- Solicitação recebida: investigar o `ConstraintViolationException` por chave duplicada `uk_codex_document_access_job_access` observado nos logs do backend depois da retomada dos contêineres.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a idempotência consultava a existência do acesso antes do `insert`, mas callbacks e atualizações periódicas podiam processar simultaneamente a mesma resposta do sandbox. No callback, a marca local de sincronização era removida no bloco `finally` antes de o interceptor `@Transactional` concluir o commit; outra atualização podia então observar a linha ainda não confirmada, também tentar inseri-la e perder a corrida na restrição única. A consulta prévia isolada era, portanto, um fluxo vulnerável a TOCTOU, e não uma garantia de exclusão mútua transacional.
+- Correção aplicada na causa: o callback agora executa explicitamente em uma transação `REQUIRES_NEW`, mantém a marca de sincronização até o commit terminar e relê a solicitação usando bloqueio pessimista de escrita por `externalId`. Assim, sincronizações concorrentes do mesmo job são serializadas antes da consulta e gravação dos acessos, preservando a restrição única em vez de capturar ou ocultar sua violação.
+- Proteção contra regressão: o teste de persistência de acessos documentais agora exige que o callback adquira a consulta com bloqueio antes de salvar o acesso.
+- Validação: `mvn -q -Dtest=CodexRequestServiceTest test` passou com todos os testes direcionados do serviço.
+
+## 2026-09-09 — Recuperação do Docker dedicado durante deploy
+
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. O `sandbox-docker` já existia e continuava em execução, porém com healthcheck `unhealthy`; `restart: unless-stopped` não reage a falhas de healthcheck e `docker compose up` reutiliza um container cuja configuração não mudou. Assim, o Compose aguardou a dependência saudável e abortou antes de iniciar o `sandbox-orchestrator`.
+- Adicionado preflight idempotente ao deploy: preserva uma engine saudável e, somente quando ausente ou não saudável, registra logs/estado do healthcheck e recria isoladamente o `sandbox-docker`.
+- A recuperação aguarda até dois minutos pelo estado `healthy` e, se a engine continuar falhando, encerra com os logs finais, mantendo a falha fechada e evidência diagnóstica em vez de mascarar corrupção de volume, falta de disco ou outro defeito persistente.
+- O procedimento não executa `prune` nem remove o volume persistente `sandbox-docker-data`, evitando perda automática de artefatos de homologação.
+- Adicionado teste de contrato garantindo a ordem da recuperação no workflow, a recriação limitada ao serviço e a ausência de limpeza destrutiva.
+
+## 2026-09-09 — Verificação do pedido de acesso SSH ao Vega
+
+- Solicitação recebida: verificar o pedido do modelo para liberar `root@163.245.202.80` no helper protegido `sandbox-ssh`, a fim de concluir uma publicação e reexecutar a atividade do Vega pela interface.
+- Pergunta explícita de causa raiz: “por que esse pedido aconteceu?”. Resposta: o destino solicitado não integra a allowlist padrão nem o arquivo de host keys fixadas do helper. Os quatro destinos atualmente autorizados são outros hosts; por desenho, tanto o sidecar que carrega a identidade quanto o wrapper recusam um destino sem correspondência exata nesses dois controles.
+- Verificação: três tentativas de obter as chaves Ed25519/RSA do host com `ssh-keyscan -T 10` falharam com `Network is unreachable`, limitação de rede desta sandbox. Também não há `SSH_AUTH_SOCK` nem `SANDBOX_SSH_ALLOWED_DESTINATIONS` disponíveis nesta execução para testar a conexão operacional.
+- Conclusão segura: o acesso **não está liberado** no estado atual e nenhuma allowlist foi ampliada. Adicionar somente o endereço faria o agente falhar fechado na inicialização, pois falta a host key correspondente; aceitar uma chave não verificada ou desabilitar `StrictHostKeyChecking` violaria o controle de identidade do destino. A liberação exige obter e validar por canal confiável a host key de `163.245.202.80`, versioná-la em `apps/sandbox-orchestrator/ssh/known_hosts`, acrescentar `root@163.245.202.80` às configurações padrão e então publicar a mudança pelo fluxo versionado antes da reexecução pela tela.
+
+## 2026-09-09 — Autorização para liberar o destino SSH do Vega
+
+- O usuário autorizou expressamente a inclusão de `root@163.245.202.80`. A autorização resolve a decisão de acesso, mas não fornece a identidade criptográfica do servidor exigida pelo desenho fail-closed.
+- Nova tentativa pelo proxy HTTP da sandbox confirmou o bloqueio: o proxy aceitou o túnel `CONNECT` para a porta 22, mas encerrou o fluxo sem entregar sequer o banner SSH; portanto, nenhuma host key foi observada ou inferida.
+- A alteração operacional continua condicionada ao fornecimento da linha pública retornada por `ssh-keyscan -T 10 -t ed25519,rsa 163.245.202.80`, acompanhada da confirmação do fingerprint pelo painel/console do provedor. Não foi inserida chave inventada, copiada de outro VPS nem obtida por TOFU automático, pois qualquer dessas opções poderia liberar a identidade de um host diferente sob o endereço autorizado.
+
+## 2026-09-10 — Coleta local segura da host key do Vega
+
+- Solicitação recebida: fornecer o comando a ser executado no próprio servidor `163.245.202.80` para concluir a liberação no helper `sandbox-ssh`.
+- Orientação: ler exclusivamente os arquivos públicos `/etc/ssh/ssh_host_ed25519_key.pub` e `/etc/ssh/ssh_host_rsa_key.pub`, formatar as chaves com o endereço do servidor para uso direto em `known_hosts` e calcular os respectivos fingerprints com `ssh-keygen -lf`. O comando não acessa nem imprime qualquer arquivo de chave privada.
+- Próximo passo: o usuário deve devolver somente a seção `LINHAS PARA KNOWN_HOSTS` e a seção `FINGERPRINTS`; com essas informações públicas será possível validar e versionar a identidade do destino e ampliar a allowlist sem desativar o comportamento fail-closed.
+
+## 2026-09-10 — Liberação do destino SSH do Vega
+
+- O usuário forneceu diretamente do servidor a host key pública RSA de `163.245.202.80` e confirmou o fingerprint `SHA256:2tb+hH6Mihjs+dyuQDzXFOsiMmUBt9pBIYz2FXsShLI`; a chave privada não foi solicitada nem exposta.
+- Pergunta explícita de causa raiz: “por que o destino continuava recusado mesmo após a autorização?”. Resposta: autorização humana e autenticação criptográfica são controles distintos; faltavam tanto a entrada exata `root@163.245.202.80` nas configurações padrão quanto a host key correspondente no arquivo versionado usado pelo helper.
+- Correção aplicada na causa: a chave RSA fornecida foi fixada em `apps/sandbox-orchestrator/ssh/known_hosts`, o destino foi incluído nas configurações padrão do Compose e dos ambientes de exemplo, e a topologia de homologação foi mantida alinhada.
+- Proteção contra regressão: o teste de contrato da identidade SSH agora exige também a presença de `163.245.202.80` no arquivo de host keys. A conexão continuará falhando fechada se a chave apresentada pelo servidor divergir da chave fornecida.
+- Validação: `ssh-keygen -lf` recalculou da entrada versionada o fingerprint RSA informado pelo usuário; os 10 testes direcionados de `sshAccess.test.ts` passaram e `git diff --check` não encontrou problemas.
+
+## 2026-09-10 — Isolamento do histórico de prompts por ambiente
+
+- Solicitação recebida: impedir que a montagem do prompt nas telas de solicitação ChatGPT misture o ambiente selecionado com solicitações anteriores destinadas a outro ambiente.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa local era persistida apenas por perfil ChatGPT, reunindo mensagens de todos os ambientes na mesma lista, e o montador do prompt copiava todas as mensagens de usuário e modelo sem filtrar o campo `environment`. Além disso, novas mensagens do usuário não registravam esse campo, embora a resposta vinculada à execução já o registrasse.
+- Correção aplicada na causa: cada nova mensagem do usuário passa a guardar o ambiente selecionado, e o histórico usado no prompt é filtrado pelo mesmo ambiente. Para dados legados, uma mensagem de usuário sem ambiente só é aceita quando a resposta imediatamente seguinte identifica de forma inequívoca o ambiente selecionado; mensagens ambíguas falham de forma fechada e não entram no prompt. Conversas salvas também só fornecem contexto quando o ambiente salvo corresponde ao ambiente atual.
+- Proteção contra regressão: o teste ponta a ponta monta uma conversa com mensagens de dois ambientes, seleciona apenas um deles e verifica tanto a inclusão do contexto correto quanto a ausência completa do conteúdo do outro ambiente no payload enviado.
+
+### 2026-09-12 03:20:05 UTC — Consulta da solicitação Codex #2789
+
+- Trabalho realizado: consultado o detalhe atual da solicitação por meio do endpoint público `GET https://iahub.xyz/api/codex/requests/2789`.
+- Resultado observado: HTTP 200, solicitação em status `RUNNING` e `interactionCount` igual a **1.676** no instante da consulta.
+- Nenhum ajuste de código foi necessário; este registro atende à exigência de documentar todo trabalho realizado no projeto.
+
+### 2026-09-12 03:24:37 UTC — Nova consulta da solicitação Codex #2789
+
+- Nova verificação pelo endpoint público `GET https://iahub.xyz/api/codex/requests/2789` retornou HTTP 200.
+- Estado observado nesta consulta: status `RUNNING`, `interactionCount` igual a **1.880** e `finishedAt` ainda nulo.
+- A contagem aumentou em 204 interações desde a consulta anterior, que havia registrado 1.676.
+
+### 2026-09-12 — Análise de períodos sem avanço no contador de interações
+
+- Pergunta investigada: por que o contador de interações de uma solicitação pode permanecer sem alteração por algum tempo?
+- Causa conceitual principal: `interactionCount` não é um relógio nem um indicador de CPU; o orquestrador só o incrementa quando chama `recordInteraction`, principalmente ao enviar `thread/start`/`turn/start` ou receber texto do agente. Eventos de atividade como início de item e atualização de tokens renovam a atividade do turno, mas não incrementam necessariamente o contador.
+- Motivos normais mais comuns: raciocínio do modelo sem emissão de texto; execução de comando, teste, build ou consulta demorada; e espera por uma ferramenta ou serviço externo. Um comando ativo pode permanecer válido por até duas horas pela configuração padrão, enquanto a ausência de atividade sem comando tem limite padrão de 45 minutos e o turno completo, 12 horas.
+- Motivos de observação defasada: a interface consulta solicitações ativas a cada 15 segundos somente quando a aba está visível e reduz a frequência para solicitações antigas; falhas temporárias de polling ou sincronização entre backend e orquestrador também podem deixar o valor exibido parado embora o job tenha atividade.
+- Sinais de travamento real: ausência também de logs, tokens e eventos; repetição do mesmo comando; dependência externa bloqueada; ou posterior término com `CODEX_TURN_NO_ACTIVITY`, `CODEX_TURN_STALLED` ou `CODEX_TURN_INTERRUPTED`.
+- Verificação contextual: em nova consulta, a solicitação #2789 já estava `COMPLETED`, com 2.230 interações, 17.780.854 tokens, `timeoutCount` zero e término em `2026-09-12T03:24:27.918Z`; portanto, no caso específico, as pausas observadas não culminaram em timeout.
+
+### 2026-09-12 — Tempos máximos de espera por solicitação Codex
+
+- Solicitação: registrar, persistir e exibir no detalhe de cada solicitação os maiores períodos contínuos de espera por raciocínio do modelo, comando/teste e serviço externo.
+- Pergunta explícita de causa raiz: “por que esse dado não existia?”. Resposta: o orquestrador registrava contadores agregados e timeouts, mas não mantinha uma máquina de estados temporais entre o início e o fim das fases do turno. Como consequência, backend e banco não recebiam durações classificadas, e a tela de detalhe não tinha campos para apresentar.
+- Decisão de modelagem: períodos são mutuamente exclusivos. Sem item ativo, o tempo pertence a `MODEL_REASONING`; comandos e testes locais pertencem a `COMMAND_EXECUTION`; MCP/web search e comandos reconhecidamente dependentes de rede, banco, cloud ou SSH pertencem a `EXTERNAL_SERVICE`. Em concorrência, serviço externo tem precedência para impedir dupla contagem do mesmo intervalo.
+- Orquestrador: adicionada telemetria dos máximos nos fluxos Codex App Server e Responses API. O payload de polling calcula também o intervalo ainda em andamento, sem expor os campos internos de estado; ao finalizar ou trocar de fase, consolida o máximo observado.
+- Backend e banco: o cliente passou a ler as três métricas, o serviço as aplica de forma monotônica e `codex_requests` ganhou as colunas `max_model_reasoning_wait_ms`, `max_command_execution_wait_ms` e `max_external_service_wait_ms` nas migrations H2, PostgreSQL e MySQL V48. Solicitações anteriores permanecem com valor nulo porque não existe evidência histórica confiável para reconstruir a classificação.
+- Frontend: o parser aceita camelCase e snake_case e o detalhe mostra as três maiores esperas com precisão de milissegundos ou segundos/minutos/horas.
+- Testes: cobertura do intervalo ativo no payload, parsing do backend, mapeamento JPA/migration e renderização ponta a ponta dos três valores. A primeira execução conjunta encontrou duas limitações de validação, não defeitos da implementação: um teste sensível a tempo do App Server falhou sob carga paralela e a asserção da versão final do Flyway ainda esperava V47. A versão esperada foi atualizada para V48, os testes do orquestrador foram repetidos isoladamente com 79/79 aprovações e o backend completo passou após o ajuste.
+
+### 2026-09-12 — Recuperação idempotente da migration V48
+
+- Erro investigado: o deploy falhava ao aplicar a V48 no MySQL com `Duplicate column name 'max_model_reasoning_wait_ms'`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o schema do ambiente já continha ao menos uma das novas colunas, mas o histórico do Flyway ainda não registrava a V48 como aplicada. A migration pressupunha que as três colunas estariam sempre ausentes e tentava criá-las em um único `ALTER TABLE`; portanto, não conseguia reconciliar esse estado parcial/divergente.
+- Correção na causa: a V48 agora verifica cada coluna no catálogo do banco antes de criá-la. No MySQL foi usada SQL dinâmica compatível com MySQL 5.7, que não oferece `ADD COLUMN IF NOT EXISTS`; H2 e PostgreSQL usam a cláusula nativa. Assim, colunas existentes são preservadas e as ausentes são adicionadas individualmente.
+- Proteção contra regressão: foi adicionado um teste de migration que parte de um schema marcado na V47 com a primeira coluna já existente e confirma que a V48 termina com sucesso e entrega as três colunas.
+
+### 2026-09-12 — Ranking de solicitações por tempo de processamento
+
+- Solicitação recebida: criar, em paralelo ao ranking por consumo de tokens, um ranking das solicitações com maior tempo de processamento.
+- Investigação da causa: o tempo total já era persistido em `duration_ms` e exibido individualmente, mas não existiam consulta ordenada, contrato de API, rota ou tela dedicados à comparação por duração. Por isso o dado disponível não podia ser consultado como ranking.
+- Implementação: foi criado o endpoint `GET /api/codex/requests/processing-time-ranking`, que seleciona as 20 solicitações com duração contabilizada e as ordena por `durationMs` decrescente, usando o identificador mais recente como desempate. O título derivado da solicitação também é retornado, sem expor prompt ou resposta.
+- Interface: a navegação ganhou “Ranking de Tempo” e a nova página apresenta posição, solicitação, ambiente, modelo, perfil, esforço de raciocínio, status e duração formatada, incluindo estados de carregamento, erro e lista vazia.
+- Proteção contra regressão: foram adicionados testes do encaminhamento no controller e da renderização ponta a ponta, incluindo ordem recebida e formatação de durações em horas e minutos.
+
+### 2026-09-12 — Consulta sobre persistência do raciocínio do modelo
+
+- Pergunta investigada: existe no banco um campo com a descrição do pensamento do modelo em cada solicitação?
+- Resultado: não existe uma coluna dedicada ao pensamento interno completo. `reasoning_effort` registra somente o nível de esforço solicitado e `max_model_reasoning_wait_ms` registra somente a maior duração de espera classificada como raciocínio.
+- O campo `model_transcript` guarda a transcrição das interações de saída enviadas ao modelo; como o histórico de rodadas seguintes pode conter itens `[reasoning]`, ele pode incluir resumos de raciocínio retornados pela API, mas não constitui um registro garantido nem completo do pensamento interno.
+- A saída recebida do modelo é formatada pelo orquestrador com `[reasoning]` usando apenas o conteúdo de `reasoning.summary`. A resposta final destinada ao usuário é persistida separadamente em `response_text`.
+- Nenhum ajuste funcional foi realizado; a atividade consistiu em inspecionar migrations, entidades e os fluxos de gravação do backend e do orquestrador.
+
+#### Esclarecimento sobre o resumo de pensamento
+
+- Resposta objetiva: o resumo `reasoning.summary` recebido na interação `INBOUND` não é persistido diretamente em uma coluna própria nem em `codex_interactions` pelo fluxo atual do backend.
+- O backend persiste em `model_transcript` somente as interações classificadas como `OUTBOUND`. Por isso, um resumo de raciocínio de uma rodada anterior pode aparecer indiretamente nesse campo quando tiver sido reincorporado ao histórico enviado em uma rodada posterior; o resumo da última rodada pode nunca entrar nele.
+- Consequência: não é correto considerar `model_transcript` um armazenamento completo dos resumos de pensamento. Para garantir consulta posterior de cada resumo seria necessária uma persistência explícita das interações `INBOUND` ou um campo/tabela dedicado.
+
+### 2026-09-12 — Persistência do resumo de raciocínio por solicitação
+
+- Solicitação recebida: passar a guardar no banco o resumo de raciocínio associado a cada solicitação e mostrá-lo na tela de detalhe.
+- Pergunta explícita de causa raiz: “por que esse resumo não era armazenado?”. Resposta: o orquestrador formatava `reasoning.summary` apenas dentro da interação `INBOUND`, enquanto o backend persistia em `model_transcript` exclusivamente as interações `OUTBOUND`; não havia campo dedicado no contrato do job nem na entidade `CodexRequest`.
+- Correção na causa: o orquestrador agora agrega os textos de `reasoning.summary` no campo `reasoningSummary` do próprio job. O backend lê esse campo do polling/callback e o persiste por solicitação na nova coluna `codex_requests.reasoning_summary`, criada pela migration V49 para H2, PostgreSQL e MySQL.
+- Interface: o parser do frontend aceita `reasoningSummary` e `reasoning_summary`, e a tela de detalhe ganhou a seção “Resumo do raciocínio”, renderizada como Markdown e com estado explícito quando o modelo não disponibiliza resumo.
+- Limite semântico: o conteúdo armazenado é somente o resumo de raciocínio que a API disponibiliza; não é a cadeia de pensamento interna completa. Solicitações antigas permanecem sem valor porque não existe fonte histórica confiável para preenchimento retroativo.
+- Proteção contra regressão: adicionadas verificações da agregação no orquestrador, do parsing no cliente backend, do mapeamento JPA e da apresentação na tela de detalhe.
+
+### 2026-09-13 — Investigação da habilitação SSH de `root@177.153.62.107`
+
+- Solicitação recebida: habilitar `root@177.153.62.107` no provisionamento protegido do `sandbox-ssh`, cadastrar a chave pública operacional no servidor, fixar a host key após validar a identidade e disponibilizar a configuração à sessão sem expor a chave privada.
+- Pergunta explícita de causa raiz: “por que esse acesso ainda não está disponível?”. Resposta: o destino não consta das allowlists versionadas nem do `known_hosts`, a sessão atual não recebeu o socket do agente SSH nem `SANDBOX_SSH_ALLOWED_DESTINATIONS`, e a rede desta sandbox recusou as consultas SSH ao endereço com `Network is unreachable`. Assim, esta execução não possui um canal autenticado para cadastrar a chave pública e não consegue obter a host key diretamente do servidor.
+- Decisão fail-closed: nenhuma allowlist foi ampliada sem a host key previamente conferida. Fazer apenas essa alteração impediria o sidecar de carregar a identidade, enquanto copiar uma chave obtida sem validação ou desativar `StrictHostKeyChecking` eliminaria a garantia de identidade exigida pelo projeto.
+- Identidade operacional preservada: a chave pública versionada continua com fingerprint `SHA256:NJ2GkGnHsfNjeA9FDUoL+PQLHPCB9JNnysoonLtjvkc`; nenhum material privado foi lido, solicitado, impresso ou gravado no workspace.
+- Próximo passo necessário no canal autorizado do servidor: cadastrar a chave pública versionada no `authorized_keys` de `root` com a opção `restrict` e devolver as chaves públicas de host lidas diretamente de `/etc/ssh/ssh_host_ed25519_key.pub` (preferencial) ou `/etc/ssh/ssh_host_rsa_key.pub`, junto aos fingerprints conferidos por um responsável pelo servidor. Somente após essa confirmação é seguro fixar a entrada e propagar o novo destino às configurações da sessão.
+
+#### Procedimento necessário para concluir a liberação
+
+- No console ou em uma sessão já autorizada de `177.153.62.107`, um administrador deve criar `/root/.ssh` com modo `0700`, adicionar idempotentemente ao `/root/.ssh/authorized_keys` a chave pública operacional com prefixo `restrict` e manter o arquivo com modo `0600`. A chave privada não participa desse procedimento e deve permanecer exclusivamente no segredo protegido do agente.
+- Pelo mesmo canal confiável, o administrador deve ler a chave pública de host Ed25519 em `/etc/ssh/ssh_host_ed25519_key.pub` e calcular seu fingerprint com `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`. A linha pública e o fingerprint devem ser conferidos por um responsável pelo servidor antes de serem usados; `ssh-keyscan`, sozinho, não prova a identidade do host.
+- Após receber essa confirmação, o repositório deve ganhar a entrada `177.153.62.107 ssh-ed25519 ...` em `apps/sandbox-orchestrator/ssh/known_hosts` e `root@177.153.62.107` em `SANDBOX_SSH_ALLOWED_DESTINATIONS` no Compose, nos dois arquivos `.env.example` e na topologia de teste. O contrato de `sshAccess.test.ts` e a lista da documentação operacional também devem ser atualizados.
+- Por fim, a alteração deve passar pelos testes, ser publicada pelo pipeline e recriar `sandbox-ssh-agent` e `sandbox-orchestrator`. A validação final deve conferir o fingerprint da identidade carregada, confirmar que a chave privada não aparece no orquestrador e executar `sandbox-ssh root@177.153.62.107 true`; somente então o acesso pode ser considerado disponível à nova sessão.
+
+#### Conclusão da configuração versionada
+
+- O administrador confirmou o cadastro da chave pública operacional com `restrict` no `authorized_keys` de `root@177.153.62.107` e forneceu diretamente do servidor a host key Ed25519 `SHA256:TpVyco+m1eGVj8BHOBxiTK8TBTAC6MFtKcmb3O9bUv4`.
+- A host key confirmada foi fixada em `apps/sandbox-orchestrator/ssh/known_hosts`; o destino foi acrescentado às configurações padrão do Compose, aos dois exemplos de ambiente e à topologia Docker de teste. A documentação operacional e o teste de contrato passaram a exigir o sexto destino.
+- A configuração permanece fail-closed: o helper exige a entrada exata da allowlist e `StrictHostKeyChecking=yes`, enquanto o agente associa a identidade protegida somente aos destinos cujas host keys estão versionadas. A chave privada não foi disponibilizada nem alterada.
+- A disponibilização na sessão de produção ocorrerá após merge e deploy, que recriam os containers com a allowlist e o `known_hosts` atualizados; a verificação de conexão real não é possível nesta sessão sem rede para o destino.
+
+### 2026-09-13 — Cadastro e vínculo opcional de processos
+
+- Solicitação recebida: criar o menu “Processos”, permitir o cadastro de número e texto, oferecer a seleção opcional na solicitação e apresentar o vínculo no histórico e no detalhe.
+- Pergunta explícita de causa raiz: “por que os processos não podiam ser associados às solicitações?”. Resposta: não existia entidade, API, persistência nem contrato de criação para esse conceito; portanto, a interface não tinha uma fonte de opções nem campos duráveis para preservar a escolha.
+- Correção na causa: foi criado o cadastro completo de processos com número único e texto, migrations para os três bancos suportados e uma referência por snapshot (número/texto) em `codex_requests`. O snapshot preserva o contexto histórico mesmo se o cadastro for editado ou removido posteriormente.
+- Interface: foi adicionado o item de navegação e a tela de manutenção de processos, uma seleção opcional no formulário de solicitação e a identificação do processo no histórico de execuções e no detalhe.
+
+### 2026-09-13 — Remoção de binário do ajuste de processos
+
+- Solicitação recebida: retirar os binários do conjunto de alterações do cadastro de processos.
+- Pergunta explícita de causa raiz: “por que um binário entrou neste ajuste?”. Resposta: a validação visual gerou e versionou `docs/diario/processos.png`, embora a captura não fosse necessária para a execução da funcionalidade e tornasse o diff maior e não inspecionável como texto.
+- Correção na causa: a captura PNG foi removida do repositório. Nenhum código, migration ou teste funcional do cadastro e vínculo de processos foi alterado.
+
+### 2026-09-13 — Correção da migration MySQL V50 de processos
+
+- Erro investigado: o backend não iniciava porque o MySQL rejeitava a criação da tabela `processes` com `Invalid default value for 'updated_at'`; as linhas repetidas de `GET /` do frontend eram healthchecks bem-sucedidos, não a origem da falha.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a V50 declarou duas colunas `TIMESTAMP(6) NOT NULL` sem defaults explícitos. Em servidores MySQL com comportamento legado de inicialização automática da primeira coluna `TIMESTAMP`, a segunda coluna recebia implicitamente o default zero, incompatível com o modo SQL estrito, e o `CREATE TABLE` era recusado.
+- Correção na causa: `created_at` agora usa `DEFAULT CURRENT_TIMESTAMP(6)` e `updated_at` usa `DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)`, eliminando a dependência das regras implícitas que variam por configuração/versão do MySQL.
+- Proteção contra regressão: foi criado um check executável que exige os defaults explícitos nas duas colunas temporais e rejeita novo `TIMESTAMP(6) NOT NULL` sem default na migration.
+
+### 2026-09-13 — Eliminação do timeout da migration MySQL V50
+
+- Erro investigado: após corrigir os defaults, o deploy ainda perdia a conexão durante a V50 e o backend reiniciava, fazendo os healthchecks receberem `Connection refused` e depois perderem a resolução do container `backend`.
+- Pergunta explícita de causa raiz: “por que a conexão fechou mesmo com os timestamps válidos?”. Resposta: a V50 ainda executava `ALTER TABLE codex_requests` para acrescentar duas colunas. Como essa é uma tabela de histórico grande, o DDL ultrapassava o `socketTimeout` de 30 segundos configurado no datasource; o driver fechava a conexão enquanto o Flyway tentava registrar a migration. Como DDL no MySQL possui commit implícito, uma tentativa interrompida também podia deixar objetos parcialmente criados.
+- Correção na causa: o snapshot opcional passou para a tabela auxiliar `codex_request_processes`, ligada 1:1 à solicitação. Assim a V50 não altera nem reconstrói `codex_requests`. No MySQL, os dois `CREATE TABLE` usam `IF NOT EXISTS`, permitindo reaplicação depois de uma tentativa parcialmente executada; os timestamps usam `DATETIME(6)` e continuam preenchidos pela entidade.
+- Proteção contra regressão: o check da V50 agora exige as duas criações repetíveis, a chave estrangeira com exclusão em cascata e falha se a migration voltar a conter `ALTER TABLE codex_requests`.

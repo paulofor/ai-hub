@@ -8,6 +8,7 @@ const links = [
   { to: '/prompt-hints', label: 'Itens do Prompt' },
   { to: '/prompt-lists', label: 'Lista de Prompts' },
   { to: '/products', label: 'Cadastro de Produtos' },
+  { to: '/processes', label: 'Processos' },
   { to: '/environments', label: 'Ambientes' },
   { to: '/problems', label: 'Problemas' },
   { to: '/logs', label: 'Interpretador de Logs' },
@@ -19,6 +20,7 @@ const links = [
   { to: '/codex-chatgpt-sandbox', label: 'Codex ChatGPT Sandbox' },
   { to: '/codex/models', label: 'Modelos Codex' },
   { to: '/codex/token-ranking', label: 'Ranking de Tokens' },
+  { to: '/codex/processing-time-ranking', label: 'Ranking de Tempo' },
   { to: '/source-repository-config', label: 'Config. Repositório' },
   { to: '/audit', label: 'Audit Log' },
   { to: '/admin/system-health', label: 'Saúde do sistema' }

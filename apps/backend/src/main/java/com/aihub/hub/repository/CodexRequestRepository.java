@@ -3,13 +3,16 @@ package com.aihub.hub.repository;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
+import com.aihub.hub.dto.CodexTokenRankingItem;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import com.aihub.hub.dto.CodexRequestSummary;
-import com.aihub.hub.dto.CodexTokenRankingItem;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -24,6 +27,11 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     }
 
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cr from CodexRequest cr where cr.externalId = :externalId")
+    Optional<CodexRequest> findByExternalIdForUpdate(@Param("externalId") String externalId);
+
     List<QueuedRequestView> findTop25ByStatusOrderByCreatedAtDesc(CodexRequestStatus status);
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
@@ -34,12 +42,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.cloneDurationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title,
+            problem.id, problem.title, process.processNumber, process.processText,
             (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
             cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
+        left join cr.processSnapshot process
         order by cr.createdAt desc
         """)
     Page<CodexRequestSummary> findSummariesByOrderByCreatedAtDesc(Pageable pageable);
@@ -53,12 +62,13 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.cloneDurationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title,
+            problem.id, problem.title, process.processNumber, process.processText,
             (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
             cr.responseText, ''
         )
         from CodexRequest cr
         left join cr.problem problem
+        left join cr.processSnapshot process
         where cr.rating = :rating
         order by cr.createdAt desc
         """)
@@ -75,6 +85,17 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         order by cr.totalTokens desc, cr.id desc
         """)
     List<CodexTokenRankingItem> findTokenRanking(Pageable pageable);
+
+    @Query("""
+        select new com.aihub.hub.dto.CodexProcessingTimeRankingItem(
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.profile, cr.status,
+            cr.durationMs, cr.createdAt, cr.prompt, cr.responseText, ''
+        )
+        from CodexRequest cr
+        where cr.durationMs is not null
+        order by cr.durationMs desc, cr.id desc
+        """)
+    List<CodexProcessingTimeRankingItem> findProcessingTimeRanking(Pageable pageable);
     @Query("""
         select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0)
         from CodexRequest cr

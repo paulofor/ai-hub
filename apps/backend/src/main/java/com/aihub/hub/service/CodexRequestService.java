@@ -15,6 +15,7 @@ import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.CodexTokenRankingItem;
+import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -31,6 +32,7 @@ import com.aihub.hub.repository.EnvironmentRepository;
 import com.aihub.hub.repository.CodexInteractionRepository;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.repository.ProblemRepository;
+import com.aihub.hub.repository.ProcessRepository;
 import com.aihub.hub.repository.PromptRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import org.slf4j.Logger;
@@ -101,7 +103,7 @@ public class CodexRequestService {
     private final CodexDocumentAccessRepository codexDocumentAccessRepository;
     private final EnvironmentRepository environmentRepository;
     private final ProblemRepository problemRepository;
-    private final GrowthMissionService growthMissionService;
+    private final ProcessRepository processRepository;
     private final SandboxOrchestratorClient sandboxOrchestratorClient;
     private final GithubAppAuth githubAppAuth;
     private final GithubApiClient githubApiClient;
@@ -127,7 +129,6 @@ public class CodexRequestService {
                                CodexDocumentAccessRepository codexDocumentAccessRepository,
                                EnvironmentRepository environmentRepository,
                                ProblemRepository problemRepository,
-                               GrowthMissionService growthMissionService,
                                SandboxOrchestratorClient sandboxOrchestratorClient,
                                GithubAppAuth githubAppAuth,
                                GithubApiClient githubApiClient,
@@ -138,6 +139,7 @@ public class CodexRequestService {
                                @Value("${hub.codex.economy-model:gpt-4.1-mini}") String economyModel,
                                @Value("${hub.codex.default-branch:main}") String defaultBranch,
                                @Value("${hub.codex.smart-economy.max-economy-tokens:1500000}") int smartEconomyEconomyTokenCeiling,
+                               ProcessRepository processRepository,
                                @Value("${hub.dashboard.time-zone:America/Sao_Paulo}") String dashboardTimeZone,
                                @Value("${hub.codex.app-server-enabled:false}") boolean codexAppServerEnabled,
                                @Value("${hub.sandbox.callback.url:}") String sandboxCallbackUrl,
@@ -150,7 +152,7 @@ public class CodexRequestService {
         this.codexDocumentAccessRepository = codexDocumentAccessRepository;
         this.environmentRepository = environmentRepository;
         this.problemRepository = problemRepository;
-        this.growthMissionService = growthMissionService;
+        this.processRepository = processRepository;
         this.sandboxOrchestratorClient = sandboxOrchestratorClient;
         this.githubAppAuth = githubAppAuth;
         this.githubApiClient = githubApiClient;
@@ -173,7 +175,7 @@ public class CodexRequestService {
     @Transactional
     public CodexRequest create(CreateCodexRequest request) {
         CodexIntegrationProfile profile = resolveProfile(request.getProfile());
-        String effectivePrompt = enrichMarketingPrompt(profile, request.getPrompt().trim());
+        String effectivePrompt = request.getPrompt().trim();
         String model = resolveModel(profile, request.getModel(), request);
         String normalizedEnvironment = request.getEnvironment().trim();
         log.info("Criando CodexRequest para ambiente {} com modelo {} (perfil {})", request.getEnvironment(), model, profile);
@@ -199,6 +201,12 @@ public class CodexRequestService {
         ProblemRecord problem = resolveProblemAssociation(request.getProblemId(), normalizedEnvironment);
         if (problem != null) {
             codexRequest.setProblem(problem);
+        }
+        if (request.getProcessId() != null) {
+            var process = processRepository.findById(request.getProcessId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Processo não encontrado"));
+            codexRequest.setProcessNumber(process.getNumber());
+            codexRequest.setProcessText(process.getText());
         }
         codexRequest.setTimeoutCount(0);
         codexRequest.setHttpGetCount(0);
@@ -228,15 +236,6 @@ public class CodexRequestService {
         }
         dispatchToSandbox(saved, request.getImageAttachments());
         return saved;
-    }
-
-    private String enrichMarketingPrompt(CodexIntegrationProfile profile, String prompt) {
-        if (profile != CodexIntegrationProfile.CHATGPT_CODEX_MKT || prompt.contains("Modo Operador de Crescimento ativo")) {
-            return prompt;
-        }
-        return growthMissionService.operatorContext()
-            .map(context -> context + "\n\n" + prompt)
-            .orElse("Não há missão comercial ativa no Operador de Crescimento. Configure meta, orçamento e métricas reais antes de executar ações de marketing.\n\n" + prompt);
     }
 
     private String serializeImageAttachments(List<CreateCodexRequest.ImageAttachment> imageAttachments) {
@@ -394,6 +393,13 @@ public class CodexRequestService {
     @Transactional(readOnly = true)
     public List<CodexTokenRankingItem> tokenRanking() {
         return codexRequestRepository.findTokenRanking(PageRequest.of(0, 20)).stream()
+            .map(item -> item.withRequestTitle(buildRequestTitle(item.prompt(), item.responseText())))
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodexProcessingTimeRankingItem> processingTimeRanking() {
+        return codexRequestRepository.findProcessingTimeRanking(PageRequest.of(0, 20)).stream()
             .map(item -> item.withRequestTitle(buildRequestTitle(item.prompt(), item.responseText())))
             .toList();
     }
@@ -1564,7 +1570,6 @@ public class CodexRequestService {
     }
 
 
-    @Transactional
     public boolean handleSandboxCallback(SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
         if (response == null || !StringUtils.hasText(response.jobId())) {
             log.warn("Callback do sandbox ignorado: payload sem jobId");
@@ -1578,26 +1583,35 @@ public class CodexRequestService {
             return false;
         }
 
-        CodexRequest managed = optional.get();
-        if (managed.getId() != null && !SANDBOX_REFRESHES_IN_PROGRESS.add(managed.getId())) {
-            log.info("Callback do sandbox para CodexRequest {} ignorado temporariamente: já existe sincronização em andamento", managed.getId());
+        CodexRequest request = optional.get();
+        if (request.getId() != null && !SANDBOX_REFRESHES_IN_PROGRESS.add(request.getId())) {
+            log.info("Callback do sandbox para CodexRequest {} ignorado temporariamente: já existe sincronização em andamento", request.getId());
             return false;
         }
 
         try {
-            boolean updated = synchronizeRequestWithSandbox(managed, response);
-            if (updated) {
-                log.info("CodexRequest {} atualizado via callback do sandbox", managed.getId());
-            } else {
-                log.info("Callback do sandbox recebido para CodexRequest {} sem alterações", managed.getId());
-            }
-            if (Optional.ofNullable(managed.getStatus()).orElse(CodexRequestStatus.PENDING).isTerminal()) {
-                dispatchNextQueuedRequest(managed.getProfile());
-            }
-            return updated;
+            return Boolean.TRUE.equals(sandboxRefreshTemplate.execute(status -> {
+                Optional<CodexRequest> lockedRequest = codexRequestRepository.findByExternalIdForUpdate(jobId);
+                if (lockedRequest.isEmpty()) {
+                    log.warn("Callback do sandbox ignorado: CodexRequest com externalId {} desapareceu antes da sincronização", jobId);
+                    return false;
+                }
+
+                CodexRequest managed = lockedRequest.get();
+                boolean updated = synchronizeRequestWithSandbox(managed, response);
+                if (updated) {
+                    log.info("CodexRequest {} atualizado via callback do sandbox", managed.getId());
+                } else {
+                    log.info("Callback do sandbox recebido para CodexRequest {} sem alterações", managed.getId());
+                }
+                if (Optional.ofNullable(managed.getStatus()).orElse(CodexRequestStatus.PENDING).isTerminal()) {
+                    dispatchNextQueuedRequest(managed.getProfile());
+                }
+                return updated;
+            }));
         } finally {
-            if (managed.getId() != null) {
-                SANDBOX_REFRESHES_IN_PROGRESS.remove(managed.getId());
+            if (request.getId() != null) {
+                SANDBOX_REFRESHES_IN_PROGRESS.remove(request.getId());
             }
         }
     }
@@ -1883,6 +1897,16 @@ public class CodexRequestService {
             updated = true;
         }
 
+        if (applyMaximumWait(request.getMaxModelReasoningWaitMs(), response.maxModelReasoningWaitMs(), request::setMaxModelReasoningWaitMs)) {
+            updated = true;
+        }
+        if (applyMaximumWait(request.getMaxCommandExecutionWaitMs(), response.maxCommandExecutionWaitMs(), request::setMaxCommandExecutionWaitMs)) {
+            updated = true;
+        }
+        if (applyMaximumWait(request.getMaxExternalServiceWaitMs(), response.maxExternalServiceWaitMs(), request::setMaxExternalServiceWaitMs)) {
+            updated = true;
+        }
+
         String pullRequestUrl = response.pullRequestUrl();
         if (StringUtils.hasText(pullRequestUrl) && !Objects.equals(request.getPullRequestUrl(), pullRequestUrl.trim())) {
             request.setPullRequestUrl(pullRequestUrl.trim());
@@ -1890,6 +1914,14 @@ public class CodexRequestService {
         }
 
         return updated;
+    }
+
+    private boolean applyMaximumWait(Long current, Long candidate, java.util.function.Consumer<Long> setter) {
+        if (candidate == null || candidate < 0 || (current != null && current >= candidate)) {
+            return false;
+        }
+        setter.accept(candidate);
+        return true;
     }
 
     private boolean applySandboxResponseContent(CodexRequest request, SandboxOrchestratorClient.SandboxOrchestratorJobResponse response) {
