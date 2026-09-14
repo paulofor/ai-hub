@@ -18,7 +18,8 @@ public record CodexDashboardMetrics(
         Instant startsAt,
         long requestCount,
         long interactionCount,
-        long durationMs
+        long durationMs,
+        long totalTokens
     ) {
     }
 

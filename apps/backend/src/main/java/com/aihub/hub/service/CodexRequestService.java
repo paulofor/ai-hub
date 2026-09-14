@@ -560,7 +560,8 @@ public class CodexRequestService {
             start,
             aggregateLong(values, 0),
             aggregateLong(values, 1),
-            aggregateLong(values, 2)
+            aggregateLong(values, 2),
+            aggregateLong(values, 3)
         );
     }
 
@@ -648,10 +649,11 @@ public class CodexRequestService {
             LocalDate createdOperationalDate = operationalDate(createdDateTime);
             long interactions = aggregateLong(row, 1);
             long duration = aggregateLong(row, 2);
+            long totalTokens = aggregateLong(row, 3);
 
-            accumulate(daily, createdOperationalDate, interactions, duration);
-            accumulate(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), interactions, duration);
-            accumulate(monthly, createdDate.withDayOfMonth(1), interactions, duration);
+            accumulate(daily, createdOperationalDate, interactions, duration, totalTokens);
+            accumulate(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), interactions, duration, totalTokens);
+            accumulate(monthly, createdDate.withDayOfMonth(1), interactions, duration, totalTokens);
         }
 
         return new CodexDashboardMetrics.CodexDashboardMetricSeries(
@@ -689,11 +691,12 @@ public class CodexRequestService {
         return buckets;
     }
 
-    private void accumulate(Map<LocalDate, MetricAccumulator> buckets, LocalDate startsAt, long interactions, long durationMs) {
+    private void accumulate(Map<LocalDate, MetricAccumulator> buckets, LocalDate startsAt, long interactions, long durationMs, long totalTokens) {
         MetricAccumulator accumulator = buckets.computeIfAbsent(startsAt, ignored -> new MetricAccumulator());
         accumulator.requestCount++;
         accumulator.interactionCount += interactions;
         accumulator.durationMs += durationMs;
+        accumulator.totalTokens += totalTokens;
     }
 
     private List<CodexDashboardMetrics.CodexDashboardMetricWindow> toMetricWindows(Map<LocalDate, MetricAccumulator> buckets, ZoneId zone) {
@@ -702,7 +705,8 @@ public class CodexRequestService {
                 entry.getKey().atStartOfDay(zone).toInstant(),
                 entry.getValue().requestCount,
                 entry.getValue().interactionCount,
-                entry.getValue().durationMs
+                entry.getValue().durationMs,
+                entry.getValue().totalTokens
             ))
             .toList();
     }
@@ -713,7 +717,8 @@ public class CodexRequestService {
                 operationalDayStart(entry.getKey(), zone),
                 entry.getValue().requestCount,
                 entry.getValue().interactionCount,
-                entry.getValue().durationMs
+                entry.getValue().durationMs,
+                entry.getValue().totalTokens
             ))
             .toList();
     }
@@ -739,6 +744,7 @@ public class CodexRequestService {
         private long requestCount;
         private long interactionCount;
         private long durationMs;
+        private long totalTokens;
     }
 
     private CodexRequestSummary prepareRequestSummary(CodexRequestSummary summary) {

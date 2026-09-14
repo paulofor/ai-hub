@@ -36,6 +36,21 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
 });
 
+test('shows token usage in the daily and weekly dashboard charts', async ({ page }) => {
+  await page.route('**/api/source-modules/changes', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/metrics**', (route) => {
+    const window = { startsAt: '2026-09-14T05:00:00Z', requestCount: 1, interactionCount: 2, durationMs: 3_000, totalTokens: 12_345 };
+    const series = { daily: [window], weekly: [window], monthly: [window] };
+    return route.fulfill({ json: { day: window, week: window, month: window, series, recentSalesImpact: [] } });
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'Tokens' })).toHaveCount(2);
+  await expect(page.getByLabel('14/09/26: 12.345')).toHaveCount(2);
+  await page.screenshot({ path: '/tmp/ai-hub-dashboard-token-charts.png', fullPage: true });
+});
+
 test('shows the request detail as a conversation card with only the three execution comments', async ({ page }) => {
   await page.route('**/api/codex/requests/2679/previous', (route) => route.fulfill({ status: 404, json: {} }));
   await page.route('**/api/codex/requests/2679', (route) => route.fulfill({
