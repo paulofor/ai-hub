@@ -3748,3 +3748,12 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: as consultas de resumo e de série agora somam `totalTokens`, tratando valores ausentes como zero; o serviço inclui esse total nas janelas de dia, semana e mês e nos mesmos buckets diário, semanal e mensal já usados pelas demais métricas.
 - Interface: cada painel de série ganhou o gráfico “Tokens”, com formatação numérica em português, tooltip acessível e cor violeta. O cliente mantém compatibilidade defensiva com respostas antigas que ainda não tragam o novo campo.
 - Proteção contra regressão: o teste unitário do serviço passou a conferir tokens tanto na janela corrente quanto no bucket diário, e o E2E do dashboard valida a presença e o valor formatado dos dois gráficos visíveis (diário e semanal).
+
+### 2026-09-14 — Cadastro e seleção de subprocessos
+
+- Solicitação recebida: permitir subprocessos vinculados a um processo, com numeração hierárquica como `6.1` e `5.2`, e disponibilizá-los na seleção da solicitação.
+- Pergunta explícita de causa raiz: “por que esse ajuste era necessário?”. Resposta: o cadastro de processos era um modelo totalmente plano; ele aceitava qualquer texto no número, mas não persistia qual processo era o principal. Assim, um valor como `6.1` não era de fato um subprocesso e a interface de solicitação não conseguia identificá-lo como tal.
+- Correção na causa: a entidade e a API de processos agora persistem a referência opcional ao processo principal. As migrations V51 adicionam a autorreferência indexada nos bancos H2, PostgreSQL e MySQL, preservando os processos existentes como principais.
+- Regras de integridade: o backend aceita apenas um nível de subprocesso, exige que sua numeração comece com o número do processo principal seguido de ponto e sequência positiva, impede autorreferência, bloqueia a renumeração de processos que tenham filhos e exige que os subprocessos sejam removidos ou desvinculados antes da exclusão do pai.
+- Interface: o formulário permite escolher o processo principal, orienta o formato da numeração, mostra o tipo/vínculo na listagem e identifica processos e subprocessos na combo da solicitação. A tela foi validada em Chromium com dados sintéticos contendo `5`, `5.2`, `6` e `6.1`; a captura de inspeção permaneceu fora do Git.
+- Proteção contra regressão: testes unitários cobrem criação vinculada, rejeição de prefixo incompatível e bloqueio de um segundo nível hierárquico; lint e build do frontend confirmam o novo contrato.

@@ -8,4 +8,5 @@ public interface ProcessRepository extends JpaRepository<ProcessRecord, Long> {
     List<ProcessRecord> findAllByOrderByNumberAsc();
     boolean existsByNumberIgnoreCase(String number);
     boolean existsByNumberIgnoreCaseAndIdNot(String number, Long id);
+    boolean existsByParentProcessId(Long parentProcessId);
 }

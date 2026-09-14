@@ -73,7 +73,7 @@ interface ModelOption {
   displayName?: string;
 }
 
-interface ProcessOption { id: number; number: string; text: string }
+interface ProcessOption { id: number; number: string; text: string; parentProcessId?: number; parentProcessNumber?: string }
 
 interface ProductOption {
   id: number;
@@ -3182,7 +3182,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         <select aria-label="Processo" value={selectedProcessId} onChange={(event) => setSelectedProcessId(event.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
           <option value="">Sem processo selecionado</option>
-          {processes.map((item) => <option key={item.id} value={item.id}>{item.number} — {item.text}</option>)}
+          {processes.map((item) => <option key={item.id} value={item.id}>{item.parentProcessId ? '↳ Subprocesso ' : 'Processo '}{item.number} — {item.text}</option>)}
         </select>
         {showProductSelector ? <select value={selectedProductSlug} onChange={(e) => setSelectedProductSlug(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
