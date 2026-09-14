@@ -12,6 +12,9 @@ public class ProcessRecord {
     private String number;
     @Column(nullable = false, length = 500)
     private String text;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_process_id")
+    private ProcessRecord parentProcess;
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
     @Column(name = "updated_at", nullable = false)
@@ -24,6 +27,8 @@ public class ProcessRecord {
     public void setNumber(String number) { this.number = number; }
     public String getText() { return text; }
     public void setText(String text) { this.text = text; }
+    public ProcessRecord getParentProcess() { return parentProcess; }
+    public void setParentProcess(ProcessRecord parentProcess) { this.parentProcess = parentProcess; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }
