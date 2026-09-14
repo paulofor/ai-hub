@@ -15,6 +15,7 @@ interface CodexDashboardMetricWindow {
   requestCount: number;
   interactionCount: number;
   durationMs: number;
+  totalTokens?: number;
 }
 
 interface CodexDashboardMetrics {
@@ -307,6 +308,14 @@ function MetricSeriesPanel({
             formatValue={formatMetricNumber}
             labelForBucket={labelForBucket}
             barClassName="bg-sky-500"
+          />
+          <MiniBarChart
+            title="Tokens"
+            buckets={buckets}
+            getValue={(bucket) => bucket.totalTokens ?? 0}
+            formatValue={formatMetricNumber}
+            labelForBucket={labelForBucket}
+            barClassName="bg-violet-500"
           />
         </div>
       ) : (

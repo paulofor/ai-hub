@@ -242,12 +242,12 @@ class CodexRequestServiceTest {
         Instant previousMonthStart = today.minusMonths(1).withDayOfMonth(1).atTime(2, 0).atZone(zone).toInstant();
 
         when(codexRequestRepository.summarizeMetricsSince(any(Instant.class)))
-            .thenReturn(new Object[] {1L, 3L, 1_000L})
-            .thenReturn(new Object[] {2L, 5L, 3_000L})
-            .thenReturn(new Object[] {4L, 9L, 7_000L});
+            .thenReturn(new Object[] {1L, 3L, 1_000L, 12_000L})
+            .thenReturn(new Object[] {2L, 5L, 3_000L, 34_000L})
+            .thenReturn(new Object[] {4L, 9L, 7_000L, 56_000L});
         when(codexRequestRepository.findMetricRowsSince(any(Instant.class))).thenReturn(List.of(
-            new Object[] {todayStart.plusSeconds(3_600), 3, 1_000L},
-            new Object[] {previousMonthStart.plusSeconds(7_200), 2, 2_000L}
+            new Object[] {todayStart.plusSeconds(3_600), 3, 1_000L, 12_000L},
+            new Object[] {previousMonthStart.plusSeconds(7_200), 2, 2_000L, 22_000L}
         ));
 
         var metrics = buildService().dashboardMetrics();
@@ -256,6 +256,7 @@ class CodexRequestServiceTest {
         assertThat(metrics.day().interactionCount()).isEqualTo(3);
         assertThat(metrics.week().requestCount()).isEqualTo(2);
         assertThat(metrics.month().durationMs()).isEqualTo(7_000L);
+        assertThat(metrics.day().totalTokens()).isEqualTo(12_000L);
 
         assertThat(metrics.series().daily())
             .filteredOn(window -> window.startsAt().equals(todayStart))
@@ -264,6 +265,7 @@ class CodexRequestServiceTest {
                 assertThat(window.requestCount()).isEqualTo(1);
                 assertThat(window.interactionCount()).isEqualTo(3);
                 assertThat(window.durationMs()).isEqualTo(1_000L);
+                assertThat(window.totalTokens()).isEqualTo(12_000L);
             });
 
         Instant thisWeekBucket = today

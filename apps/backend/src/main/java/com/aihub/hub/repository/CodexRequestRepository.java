@@ -97,27 +97,27 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         """)
     List<CodexProcessingTimeRankingItem> findProcessingTimeRanking(Pageable pageable);
     @Query("""
-        select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0)
+        select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0), coalesce(sum(cr.totalTokens), 0)
         from CodexRequest cr
         where cr.createdAt >= :start
         """)
     Object[] summarizeMetricsSince(@Param("start") Instant start);
     @Query("""
-        select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0)
+        select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0), coalesce(sum(cr.totalTokens), 0)
         from CodexRequest cr
         where cr.createdAt >= :start
           and cr.profile = :profile
         """)
     Object[] summarizeMetricsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     @Query("""
-        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0)
+        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0), coalesce(cr.totalTokens, 0)
         from CodexRequest cr
         where cr.createdAt >= :start
         order by cr.createdAt asc
         """)
     List<Object[]> findMetricRowsSince(@Param("start") Instant start);
     @Query("""
-        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0)
+        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0), coalesce(cr.totalTokens, 0)
         from CodexRequest cr
         where cr.createdAt >= :start
           and cr.profile = :profile
