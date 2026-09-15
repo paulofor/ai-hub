@@ -1,4 +1,4 @@
-import { exec as execCallback, spawn } from 'node:child_process';
+import { exec as execCallback, execFile as execFileCallback, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
@@ -80,6 +80,7 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 }
 
 const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
 
 export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 12 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
@@ -765,6 +766,7 @@ export class SandboxJobProcessor implements JobProcessor {
 
     let workspace: string | undefined;
     let repoPath: string | undefined;
+    let workBranchPublished = false;
 
     this.activeJobs += 1;
     try {
@@ -859,7 +861,7 @@ export class SandboxJobProcessor implements JobProcessor {
         await this.runConfiguredTestCommand(job, repoPath!);
         this.advanceInvestigationStage(job, 'VALIDAR', 'testes configurados executados');
         this.ensureNotCancelled(job);
-        await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
+        workBranchPublished = await this.maybeCreatePullRequest(job, repoPath!, githubAuth, baseCommit, job.patch);
       }
       this.advanceInvestigationStage(job, 'ENCERRAR', 'fluxo finalizado após validação');
       this.log(job, 'job concluído com sucesso, coletando patch e arquivos alterados');
@@ -886,8 +888,14 @@ export class SandboxJobProcessor implements JobProcessor {
         if (this.dockerCleanupPromise === dockerCleanup) this.dockerCleanupPromise = undefined;
       }
       if (workspace) {
-        this.log(job, `limpando workspace ${workspace}`);
-        await this.cleanup(workspace);
+        const canRemoveWorkspace = this.isChatgptCodexSandbox(job)
+          || (job.status === 'COMPLETED' && (!job.patch?.trim() || workBranchPublished));
+        if (canRemoveWorkspace) {
+          this.log(job, `limpando workspace ${workspace}`);
+          await this.cleanup(workspace);
+        } else {
+          this.log(job, `workspace preservado para recuperação de código não publicado: ${workspace}`);
+        }
       }
       await this.disposeDbPool(job.jobId);
       const finished = job.finishedAt ? new Date(job.finishedAt) : new Date();
@@ -5446,38 +5454,38 @@ grep -R -n -- "$@"
     githubAuth: { token?: string; username: string; source: string },
     baseCommit?: string,
     diffPatch?: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.ensureNotCancelled(job);
     const token = githubAuth.token;
     if (!token) {
       this.log(job, 'nenhum token GitHub disponível; ignorando criação de PR');
-      return;
+      return false;
     }
 
     const repoSlug = this.resolveRepoSlug(job);
     if (!repoSlug) {
       this.log(job, 'repoSlug ausente e repoUrl não é github.com; não é possível criar PR');
-      return;
+      return false;
     }
     if (!job.repoUrl || !job.branch) {
       this.log(job, 'repoUrl ou branch ausente; não é possível criar PR');
-      return;
+      return false;
     }
 
     if (!this.fetchImpl) {
       this.log(job, 'fetch API indisponível; não é possível criar PR');
-      return;
+      return false;
     }
 
     if (!(await this.isGitRepository(repoPath))) {
       this.log(job, 'repositório git ausente, não é possível criar PR');
-      return;
+      return false;
     }
 
     const diff = diffPatch ?? (await this.generatePatch(repoPath, baseCommit, job));
     if (!diff.trim()) {
       this.log(job, 'nenhuma alteração detectada; PR não será criado');
-      return;
+      return false;
     }
 
     const branchName = this.resolveWorkBranch(job);
@@ -5510,13 +5518,13 @@ grep -R -n -- "$@"
         const message = err instanceof Error ? err.message : String(err);
         const hint = this.permissionHintFromMessage(message);
         throw new Error(
-          `Falha ao fazer push para criar PR: ${message}${hint ? ` (${hint})` : ''}`,
+          `Falha ao publicar a branch ${branchName}; código local preservado${hint ? ` (${hint})` : ''}.`,
         );
       }
 
       if (job.createPullRequest === false) {
         this.log(job, 'criação automática de pull request desativada para este job; branch de trabalho publicada');
-        return;
+        return true;
       }
 
       const prTitle = this.buildPrTitle(job.summary);
@@ -5534,9 +5542,11 @@ grep -R -n -- "$@"
         job.pullRequestUrl = pr.html_url;
         this.log(job, `pull request criado em ${job.pullRequestUrl}`);
       }
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.log(job, `falha ao criar pull request: ${message}`);
+      throw err;
     }
   }
 
@@ -5555,32 +5565,43 @@ grep -R -n -- "$@"
   }
 
   private async checkoutWorkBranch(repoPath: string, branchName: string, job: SandboxJob): Promise<boolean> {
-    const command = `git fetch origin ${branchName}:refs/remotes/origin/${branchName}`;
-    const startedAt = new Date().toISOString();
-    try {
-      this.recordDownload(job, {
-        source: 'git',
-        command,
-        startedAt,
-        note: 'busca de branch remota antes de PR',
-      });
-      await exec(command, { cwd: repoPath });
-      this.recordDownload(job, {
-        source: 'git',
-        command,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        success: true,
-        note: 'busca de branch remota antes de PR concluída',
-      });
-      await exec(`git checkout -B ${branchName} refs/remotes/origin/${branchName}`, { cwd: repoPath });
-      return true;
-    } catch {
-      await exec(`git checkout -B ${branchName}`, { cwd: repoPath });
-      return false;
+    const exists = await this.fetchWorkBranch(repoPath, branchName, job);
+    if (exists) {
+      try {
+        await execFile('git', ['merge-base', '--is-ancestor', `refs/remotes/origin/${branchName}`, 'HEAD'], { cwd: repoPath });
+      } catch {
+        throw new Error(`A branch remota ${branchName} avançou ou divergiu durante a tarefa. Código local preservado; integre as revisões e valide novamente antes de publicar.`);
+      }
     }
+    // Keep the exact commits and working tree that were validated. Resetting to
+    // origin here used to silently abandon commits made during model execution.
+    await execFile('git', ['checkout', '-B', branchName], { cwd: repoPath });
+    return exists;
   }
 
+  private async fetchWorkBranch(repoPath: string, branchName: string, job: SandboxJob): Promise<boolean> {
+    const remoteRef = `refs/heads/${branchName}`;
+    try {
+      await execFile('git', ['ls-remote', '--exit-code', '--heads', 'origin', remoteRef], { cwd: repoPath });
+    } catch (error) {
+      if ((error as { code?: number }).code === 2) return false;
+      // Do not interpret transport/authentication failure as a missing branch,
+      // or include stderr containing remote credentials in the public error.
+      throw new Error(`Não foi possível consultar a branch remota ${branchName}; código local preservado.`);
+    }
+    const refspec = `${remoteRef}:refs/remotes/origin/${branchName}`;
+    const command = `git fetch origin ${refspec}`;
+    const startedAt = new Date().toISOString();
+    this.recordDownload(job, { source: 'git', command, startedAt, note: 'busca da branch de trabalho' });
+    try {
+      await execFile('git', ['fetch', 'origin', refspec], { cwd: repoPath });
+    } catch {
+      this.recordDownload(job, { source: 'git', command, startedAt, finishedAt: new Date().toISOString(), success: false });
+      throw new Error(`Não foi possível carregar a branch remota ${branchName}; código local preservado.`);
+    }
+    this.recordDownload(job, { source: 'git', command, startedAt, finishedAt: new Date().toISOString(), success: true });
+    return true;
+  }
 
   private async checkoutExistingWorkBranchForContext(job: SandboxJob, repoPath: string): Promise<void> {
     const branchName = job.workBranch?.trim();
@@ -5592,33 +5613,16 @@ grep -R -n -- "$@"
       return;
     }
 
-    try {
-      const command = `git fetch origin ${branchName}:refs/remotes/origin/${branchName}`;
-      const startedAt = new Date().toISOString();
-      this.recordDownload(job, {
-        source: 'git',
-        command,
-        startedAt,
-        note: 'busca de branch remota para contexto',
-      });
-      await exec(command, { cwd: repoPath });
-      this.recordDownload(job, {
-        source: 'git',
-        command,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        success: true,
-        note: 'busca de branch remota para contexto concluída',
-      });
-      await exec(`git checkout -B ${branchName} refs/remotes/origin/${branchName}`, { cwd: repoPath });
+    if (await this.fetchWorkBranch(repoPath, branchName, job)) {
+      await execFile('git', ['checkout', '-B', branchName, `refs/remotes/origin/${branchName}`], { cwd: repoPath });
       this.log(job, `branch de trabalho existente carregada antes da execução: ${branchName}`);
-    } catch {
+    } else {
       this.log(job, `nenhuma branch de trabalho remota encontrada antes da execução: ${branchName}`);
     }
   }
 
   private isValidWorkBranchName(branch: string): boolean {
-    return /^[A-Za-z0-9._/-]+$/.test(branch) && !branch.includes('..') && !branch.startsWith('/') && !branch.endsWith('/');
+    return /^[A-Za-z0-9._/-]+$/.test(branch) && !branch.includes('..') && !branch.startsWith('-') && !branch.startsWith('/') && !branch.endsWith('/');
   }
 
   private async createOrReusePullRequest(
