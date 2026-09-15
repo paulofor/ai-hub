@@ -71,6 +71,19 @@ rl.on('line', (line) => {
     setTimeout(() => send({ method: 'error', params: { error: { message: 'fake codex app server error' }, willRetry: false } }), 5);
     return;
   }
+  if (message.method === 'test/retrying-error-notification') {
+    send({ id: message.id, result: { ok: true } });
+    setTimeout(() => send({
+      method: 'error',
+      params: {
+        error: { message: 'Reconnecting... 1/5' },
+        willRetry: true,
+        threadId: 'thread-123',
+        turnId: 'turn-123',
+      },
+    }), 5);
+    return;
+  }
   if (message.method === 'test/never') {
     return;
   }

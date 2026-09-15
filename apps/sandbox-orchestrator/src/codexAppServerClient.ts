@@ -180,8 +180,16 @@ export class CodexAppServerClient {
   }
 
   onNotification(method: string, listener: (params: unknown) => void): () => void {
-    this.notifications.on(method, listener);
-    return () => this.notifications.off(method, listener);
+    const wrappedListener = method === 'error'
+      ? (params: unknown) => {
+          if (this.isRetryingErrorNotification(params)) {
+            return;
+          }
+          listener(params);
+        }
+      : listener;
+    this.notifications.on(method, wrappedListener);
+    return () => this.notifications.off(method, wrappedListener);
   }
 
   pendingRequestCountForTests(): number {
@@ -359,6 +367,12 @@ export class CodexAppServerClient {
       pending.reject(error);
       this.pending.delete(id);
     }
+  }
+
+  private isRetryingErrorNotification(params: unknown): boolean {
+    return !!params
+      && typeof params === 'object'
+      && (params as JsonObject).willRetry === true;
   }
 
   private stringifyForLog(value: unknown): string {

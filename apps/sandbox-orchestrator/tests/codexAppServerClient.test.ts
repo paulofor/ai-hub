@@ -108,6 +108,24 @@ test('trata notificações error do Codex App Server sem derrubar o processo', a
   await client.stop();
 });
 
+test('não propaga error transitório enquanto o Codex App Server vai tentar novamente', async () => {
+  const client = createClient({}, 1000);
+  let received = false;
+  client.onNotification('error', () => {
+    received = true;
+  });
+
+  await client.start();
+  assert.deepEqual(await client.request('test/retrying-error-notification'), { ok: true });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(received, false);
+  assert.equal(client.isReady(), true);
+  assert.match(client.health().lastError ?? '', /Reconnecting\.\.\. 1\/5/);
+
+  await client.stop();
+});
+
 test('rebaixa TRACE do ambiente do Codex App Server por padrão', () => {
   const env = buildCodexAppServerEnv(
     { RUST_LOG: 'trace', CODEX_APP_SERVER_RUST_LOG: 'codex_api=trace,tokio_tungstenite=trace,warn' },
