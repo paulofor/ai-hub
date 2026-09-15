@@ -1,2 +1,0 @@
-# Blank context lines belong to the unified diff; validate the patch with git apply --check.
-marketing-hub.patch whitespace=-blank-at-eol
