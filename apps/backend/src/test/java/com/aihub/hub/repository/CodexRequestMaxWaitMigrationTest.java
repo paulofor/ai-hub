@@ -36,7 +36,8 @@ class CodexRequestMaxWaitMigrationTest {
         var result = flyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("51");
+        assertThat(flyway.info().pending()).isEmpty();
+        assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement();
              var columns = statement.executeQuery("""
