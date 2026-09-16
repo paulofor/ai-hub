@@ -34,7 +34,12 @@ function parse(raw?: string): Usage | undefined {
 }
 export function CodexQuotaUsage({ raw, detail = false }: { raw?: string; detail?: boolean }) {
   const usage = parse(raw);
-  const windows = usage?.windows ?? [];
+  const allWindows = usage?.windows ?? [];
+  // The compact history summarizes the primary weekly Codex allowance. The
+  // detail view remains the source for every window reported by the provider.
+  const windows = detail
+    ? allWindows
+    : allWindows.filter((window) => window.limitId === 'codex' && window.windowDurationMins === 10080);
   const text = !usage ? 'Indisponível' : usage.status === 'measuring' ? 'Em medição' : windows.length === 0 ? 'Indisponível' : undefined;
   const explanation = 'Estimativa da variação da cota da conta durante a solicitação. Pode incluir outras execuções e uso externo. Arredondamento e atraso do provedor podem ocultar consumo; 0 p.p. não comprova consumo zero. Não é custo em dinheiro.';
   return <div data-testid="codex-quota-usage" className={detail ? 'rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-700' : 'text-xs text-slate-600 dark:text-slate-400'} title={explanation}>

@@ -6,6 +6,8 @@ const fixture = generated ? JSON.parse(readFileSync(generated, 'utf8')) : {
   id: 990052, environment: 'sandbox.local', model: 'gpt-6-astra', status: 'COMPLETED',
   prompt: 'Teste de cota', createdAt: '2026-09-16T12:00:00Z',
   quotaUsage: JSON.stringify({ status: 'estimated', start: { capturedAt: '2026-09-16T12:00:00Z' }, end: { capturedAt: '2026-09-16T12:01:00Z' }, windows: [
+    { limitId: 'codex', windowDurationMins: 300, resetsAt: 2000000000, usedPercent: 3, finalUsedPercent: 4, consumedPercentagePoints: 1 },
+    { limitId: 'base_model_inference', windowDurationMins: 10080, resetsAt: 2000000000, usedPercent: 10, finalUsedPercent: 13, consumedPercentagePoints: 3 },
     { limitId: 'codex', windowDurationMins: 10080, resetsAt: 2000000000, usedPercent: 6, finalUsedPercent: 8, consumedPercentagePoints: 2 }
   ] })
 };
@@ -32,8 +34,13 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
         const quota = page.getByTestId('codex-quota-usage');
         await expect(quota).toContainText('2 p.p. (estimado)');
         await expect(quota).toContainText('semanal');
+        await expect(quota).not.toContainText('5 horas');
+        await expect(quota).not.toContainText('base_model_inference');
+        await page.screenshot({ path: testInfo.outputPath('quota-history.png'), fullPage: true });
         await page.getByRole('link', { name: 'Abrir detalhes' }).click();
         await expect(quota).toContainText('2 p.p.');
+        await expect(quota).toContainText('5 horas');
+        await expect(quota).toContainText('base_model_inference');
         await expect(quota).toContainText('6% → 8%');
         await expect(quota).toContainText('Não é custo em dinheiro.');
         await expect(quota).toContainText('Leitura inicial:');
