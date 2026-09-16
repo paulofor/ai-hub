@@ -147,3 +147,15 @@ test('permite TRACE apenas quando habilitado explicitamente', () => {
 
   assert.equal(env.RUST_LOG, 'codex_api=trace,warn');
 });
+test('timeout curto de telemetria remove request pendente e mantém cliente utilizável', async () => {
+  const client = createClient({}, 2000);
+  await client.start();
+  try {
+    await assert.rejects(client.request('test/never', {}, 20), /Timeout em request test\/never/);
+    assert.equal(client.pendingRequestCountForTests(), 0);
+    assert.deepEqual(await client.request('account/read'), { authMode: 'chatgpt', planType: 'plus' });
+    assert.equal(client.isReady(), true);
+  } finally {
+    await client.stop();
+  }
+});

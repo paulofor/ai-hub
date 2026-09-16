@@ -47,7 +47,8 @@ public record CodexRequestSummary(
     Long documentAccessCount,
     @JsonIgnore
     String responseText,
-    String requestTitle
+    String requestTitle,
+    String quotaUsage
 ) {
     public CodexRequestSummary withPromptAndRequestTitle(String prompt, String requestTitle) {
         return new CodexRequestSummary(
@@ -56,7 +57,7 @@ public record CodexRequestSummary(
             promptCost, cachedPromptCost, completionCost, cost, timeoutCount, httpGetCount, httpGetSuccessCount,
             dbQueryCount, startedAt, finishedAt, durationMs, cloneDurationMs, createdAt, interactionCount, problemId, problemTitle,
             processNumber, processText,
-            documentAccessCount, responseText, requestTitle
+            documentAccessCount, responseText, requestTitle, quotaUsage
         );
     }
 }

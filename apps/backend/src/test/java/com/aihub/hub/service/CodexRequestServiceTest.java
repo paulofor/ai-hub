@@ -444,7 +444,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
-            request.getInteractionCount(), null, null, null, null, 2L, null, null
+            request.getInteractionCount(), null, null, null, null, 2L, null, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -480,7 +480,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
-            request.getInteractionCount(), null, null, null, null, 1L, request.getResponseText(), null
+            request.getInteractionCount(), null, null, null, null, 1L, request.getResponseText(), null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));

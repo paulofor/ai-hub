@@ -13,6 +13,7 @@ export interface CodexRequest {
   prompt: string;
   responseText?: string;
   reasoningSummary?: string;
+  quotaUsage?: string;
   externalId?: string;
   pullRequestUrl?: string;
   workBranch?: string;
@@ -351,6 +352,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     rating,
     responseText: (item.responseText as string) ?? undefined,
     reasoningSummary,
+    quotaUsage: typeof item.quotaUsage === 'string' ? item.quotaUsage : undefined,
     externalId: (item.externalId as string) ?? undefined,
     pullRequestUrl: pullRequestUrl ?? undefined,
     workBranch: workBranch ?? undefined,

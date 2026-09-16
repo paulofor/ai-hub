@@ -1,3 +1,4 @@
+import { type QuotaUsage, readQuotaSnapshot, finishQuotaUsage, observeQuota } from './quotaUsage.js';
 import { exec as execCallback, execFile as execFileCallback, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -1286,6 +1287,26 @@ export class SandboxJobProcessor implements JobProcessor {
       throw new Error('CODEX_APP_SERVER_UNAVAILABLE');
     }
 
+    const usage: QuotaUsage = job.quotaUsage = {
+      version: 1 as const, status: 'measuring' as const,
+      start: { capturedAt: new Date().toISOString(), windows: [] },
+      eventsObserved: 0, concurrentObserved: false, accountChanged: false, windows: [],
+    };
+    const stopObserving = observeQuota(client, usage);
+    try {
+      usage.start = await readQuotaSnapshot(client);
+      return await this.runMeasuredCodexTurn(job, repoPath, model, client);
+    } finally {
+      try {
+        finishQuotaUsage(usage, await readQuotaSnapshot(client));
+        this.log(job, `Cota por solicitação: ${usage.status}; eventos=${usage.eventsObserved}; concorrência=${usage.concurrentObserved}`);
+      } finally {
+        stopObserving();
+      }
+    }
+  }
+
+  private async runMeasuredCodexTurn(job: SandboxJob, repoPath: string, model: string, client: CodexAppServerClient): Promise<string> {
     const account = await readCodexAccount(client);
     if (!account.executable) {
       throw new Error(account.blockReason || 'CODEX_NOT_AUTHENTICATED');

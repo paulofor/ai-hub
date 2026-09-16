@@ -172,11 +172,11 @@ export class CodexAppServerClient {
     };
   }
 
-  async request<T>(method: string, params?: unknown): Promise<T> {
+  async request<T>(method: string, params?: unknown, timeoutOverrideMs?: number): Promise<T> {
     if (!this.isReady()) {
       throw new CodexAppServerError('Codex App Server não está pronto');
     }
-    return this.sendRequest<T>(method, params);
+    return this.sendRequest<T>(method, params, timeoutOverrideMs);
   }
 
   onNotification(method: string, listener: (params: unknown) => void): () => void {
@@ -240,7 +240,7 @@ export class CodexAppServerClient {
     this.logger.info('Codex App Server inicializado com sucesso');
   }
 
-  private sendRequest<T>(method: string, params?: unknown): Promise<T> {
+  private sendRequest<T>(method: string, params?: unknown, timeoutOverrideMs?: number): Promise<T> {
     const id = this.nextId++;
     const child = this.process;
     if (!child || !child.stdin.writable) {
@@ -252,7 +252,7 @@ export class CodexAppServerClient {
       message.params = params;
     }
 
-    const timeoutMs = method === 'turn/start' ? this.turnStartRequestTimeoutMs : this.requestTimeoutMs;
+    const timeoutMs = timeoutOverrideMs ?? (method === 'turn/start' ? this.turnStartRequestTimeoutMs : this.requestTimeoutMs);
     return new Promise<T>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);

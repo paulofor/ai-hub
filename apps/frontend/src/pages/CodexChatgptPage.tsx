@@ -1,3 +1,4 @@
+import { CodexQuotaUsage } from '../components/CodexQuotaUsage';
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
@@ -3408,6 +3409,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Perfil:</span> {formatProfile(item.profile)}
               </p>
               {item.workBranch ? <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{item.workBranch}</p> : null}
+              <CodexQuotaUsage raw={item.quotaUsage} />
               {(item.status === 'COMPLETED' || item.interactionCount !== undefined || item.documentAccessCount !== undefined || item.totalTokens !== undefined || item.cost !== undefined || item.durationMs !== undefined) ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
                 {item.status === 'COMPLETED' || item.durationMs !== undefined ? <span>Tempo gasto: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.durationMs)}</strong></span> : null}
                 {item.cloneDurationMs !== undefined ? <span>Clone do repositório: <strong className="font-medium text-slate-700 dark:text-slate-300">{formatDuration(item.cloneDurationMs)}</strong></span> : null}
