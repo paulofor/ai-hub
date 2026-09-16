@@ -2060,6 +2060,15 @@ public class CodexRequestService {
         return promptRepository.findTopByRepoOrderByCreatedAtDesc(metadata.repo());
     }
 
+    private boolean hasFinalQuotaSnapshot(String json) {
+        if (json == null) return false;
+        try {
+            return objectMapper.readTree(json).path("end").isObject();
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            return false;
+        }
+    }
+
     private boolean applyUsageMetadata(
         CodexRequest request,
         SandboxOrchestratorClient.SandboxOrchestratorJobResponse response
@@ -2069,6 +2078,15 @@ public class CodexRequestService {
         }
 
         boolean updated = false;
+        if (response.quotaUsage() != null && !Objects.equals(request.getQuotaUsage(), response.quotaUsage())) {
+            // Polling may finish after the terminal callback. Do not replace a final measurement with a baseline.
+            boolean incomingFinal = hasFinalQuotaSnapshot(response.quotaUsage());
+            boolean existingFinal = hasFinalQuotaSnapshot(request.getQuotaUsage());
+            if (incomingFinal || !existingFinal) {
+                request.setQuotaUsage(response.quotaUsage());
+                updated = true;
+            }
+        }
         Integer promptTokens = response.promptTokens();
         Integer cachedPromptTokens = response.cachedPromptTokens();
         Integer completionTokens = response.completionTokens();

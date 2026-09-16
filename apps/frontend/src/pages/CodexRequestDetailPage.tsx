@@ -1,3 +1,4 @@
+import { CodexQuotaUsage } from '../components/CodexQuotaUsage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
@@ -548,6 +549,8 @@ export default function CodexRequestDetailPage() {
                 value={request.externalId ? `ID ${request.externalId}` : '—'}
               />
             </div>
+
+            <CodexQuotaUsage raw={request.quotaUsage} detail />
 
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-800/40">

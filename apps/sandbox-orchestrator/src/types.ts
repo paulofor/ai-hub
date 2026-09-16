@@ -1,3 +1,4 @@
+import type { QuotaUsage } from './quotaUsage.js';
 export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type SandboxProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
@@ -83,6 +84,7 @@ export interface SandboxJob {
   status: JobStatus;
   summary?: string;
   reasoningSummary?: string;
+  quotaUsage?: QuotaUsage;
   interactions: SandboxInteraction[];
   interactionSequence: number;
   interactionCount?: number;
