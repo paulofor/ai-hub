@@ -54,6 +54,7 @@ test('shows token usage in the daily and weekly dashboard charts', async ({ page
 
 test('shows the request detail as a conversation card with only the three execution comments', async ({ page }) => {
   await page.route('**/api/codex/requests/2679/previous', (route) => route.fulfill({ status: 404, json: {} }));
+  await page.route('**/api/codex/requests/2679/next', (route) => route.fulfill({ json: { id: 2681 } }));
   await page.route('**/api/codex/requests/2679', (route) => route.fulfill({
     json: {
       id: 2679,
@@ -79,6 +80,9 @@ test('shows the request detail as a conversation card with only the three execut
   }));
 
   await page.goto('/codex/requests/2679');
+
+  await expect(page.getByRole('button', { name: 'Próximo' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Próximo' })).toHaveAttribute('title', 'Ir para a solicitação 2681');
 
   const requestCard = page.getByRole('heading', { name: 'Solicitação', exact: true }).locator('..').locator('..');
   await expect(requestCard).toHaveClass(/bg-emerald-100/);

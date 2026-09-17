@@ -142,6 +142,13 @@ public class CodexController {
             .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
+    @GetMapping("/{id}/next")
+    public ResponseEntity<Map<String, Long>> next(@PathVariable Long id) {
+        return codexRequestService.nextRequestId(id)
+            .map(nextId -> ResponseEntity.ok(Map.of("id", nextId)))
+            .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/{id}")
     public CodexRequest get(@PathVariable Long id) {
         return codexRequestService.find(id);

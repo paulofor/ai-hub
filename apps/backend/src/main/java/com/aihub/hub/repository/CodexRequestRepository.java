@@ -194,6 +194,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
                                                @Param("profile") CodexIntegrationProfile profile,
                                                Pageable pageable);
     Optional<CodexRequest> findFirstByIdLessThanOrderByIdDesc(Long id);
+    Optional<CodexRequest> findFirstByIdGreaterThanOrderByIdAsc(Long id);
     Optional<CodexRequest> findByExternalId(String externalId);
     List<CodexRequest> findByStatusInAndExternalIdIsNotNullOrderByCreatedAtAsc(Collection<CodexRequestStatus> statuses);
     boolean existsByProfileAndStatusInAndExternalIdIsNotNull(CodexIntegrationProfile profile, Collection<CodexRequestStatus> statuses);

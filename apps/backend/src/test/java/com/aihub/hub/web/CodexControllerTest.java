@@ -109,6 +109,34 @@ class CodexControllerTest {
     }
 
     @Test
+    void nextReturnsNearestHigherRequestId() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        when(codexRequestService.nextRequestId(10L)).thenReturn(Optional.of(12L));
+
+        ResponseEntity<Map<String, Long>> response = controller.next(10L);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("id", 12L);
+    }
+
+    @Test
+    void nextReturnsNoContentWhenThereIsNoHigherRequestId() {
+        CodexRequestService codexRequestService = mock(CodexRequestService.class);
+        PullRequestService pullRequestService = mock(PullRequestService.class);
+        CodexController controller = new CodexController(codexRequestService, pullRequestService, new ObjectMapper());
+
+        when(codexRequestService.nextRequestId(12L)).thenReturn(Optional.empty());
+
+        ResponseEntity<Map<String, Long>> response = controller.next(12L);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
     void downloadInteractionsUsesPersistedSummaryCountWhenDetailedRowsAreEmpty() throws Exception {
         CodexRequestService codexRequestService = mock(CodexRequestService.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);
