@@ -315,6 +315,17 @@ const formatRequestEnvironment = (environment?: string) => {
   return value ? value : 'Ambiente não informado';
 };
 
+const formatReasoningEffort = (reasoningEffort?: CodexReasoningEffort) => {
+  switch (reasoningEffort) {
+    case 'low': return 'Baixo';
+    case 'medium': return 'Médio';
+    case 'high': return 'Alto';
+    case 'xhigh': return 'Extra alto';
+    case 'max': return 'Máximo';
+    default: return undefined;
+  }
+};
+
 const maxDefinedNumber = (...values: Array<number | undefined>) => {
   const definedValues = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
   return definedValues.length > 0 ? Math.max(...definedValues) : undefined;
@@ -1143,6 +1154,8 @@ interface ChatMessage {
   content: string;
   requestId?: number;
   environment?: string;
+  model?: string;
+  reasoningEffort?: CodexReasoningEffort;
   status?: CodexRequest['status'];
   createdAt: string;
 }
@@ -1158,10 +1171,14 @@ const parsePersistedChatMessage = (value: unknown): ChatMessage | null => {
   const createdAt = typeof item.createdAt === 'string' ? item.createdAt : '';
   const requestId = typeof item.requestId === 'number' && Number.isFinite(item.requestId) ? item.requestId : undefined;
   const environment = typeof item.environment === 'string' && item.environment.trim() ? item.environment.trim() : undefined;
+  const model = typeof item.model === 'string' && item.model.trim() ? item.model.trim() : undefined;
+  const reasoningEffort = typeof item.reasoningEffort === 'string' && ['low', 'medium', 'high', 'xhigh', 'max'].includes(item.reasoningEffort)
+    ? item.reasoningEffort as CodexReasoningEffort
+    : undefined;
   const status = typeof item.status === 'string' && ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(item.status)
     ? item.status as CodexRequest['status']
     : undefined;
-  return role && content.trim() && id && createdAt ? { id, role, content, requestId, environment, status, createdAt } : null;
+  return role && content.trim() && id && createdAt ? { id, role, content, requestId, environment, model, reasoningEffort, status, createdAt } : null;
 };
 
 const loadPersistedChatConversation = (profile: CodexProfile): ChatMessage[] => {
@@ -2251,6 +2268,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     () => new Map(requests.map((item) => [item.id, item.environment])),
     [requests]
   );
+  const requestById = useMemo(
+    () => new Map(requests.map((item) => [item.id, item])),
+    [requests]
+  );
   const promptComposerDisabled = config.profile === 'CHATGPT_CODEX_MKT'
     && activeConversationRequestCount >= MAX_ACTIVE_CONVERSATION_REQUESTS;
   const promptComposerDisabledReason = promptComposerDisabled
@@ -2265,6 +2286,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       return {
         ...message,
         environment: request.environment,
+        model: request.model,
+        reasoningEffort: request.reasoningEffort,
         status: request.status,
         content: isTerminalStatus(request.status) ? responseContent : `Aguardando resposta do modelo... (${formatStatus(request.status)})`,
         createdAt: isTerminalStatus(request.status) && becameTerminal
@@ -2410,6 +2433,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           content: createdContent,
           requestId: created.id,
           environment: created.environment,
+          model: created.model,
+          reasoningEffort: created.reasoningEffort,
           status: created.status,
           createdAt: resolveAssistantMessageTimestamp(created)
         }]);
@@ -3098,6 +3123,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             const nextMessage = visibleConversation[messageIndex + 1];
             const isEditingUserMessage = message.role === 'user' && nextMessage?.role === 'assistant' && nextMessage.requestId === editingRequestId;
             const messageEnvironment = message.environment ?? (message.requestId ? requestEnvironmentById.get(message.requestId) : undefined);
+            const messageRequest = message.requestId ? requestById.get(message.requestId) : undefined;
+            const messageModel = message.model ?? messageRequest?.model;
+            const messageReasoningEffort = message.reasoningEffort ?? messageRequest?.reasoningEffort;
             const structuredAssistantResponse = message.role === 'assistant' ? parseMarketingStructuredResponse(message.content) : null;
             const canDismissTerminalFailure = config.profile === 'CHATGPT_CODEX_MKT'
               && message.role === 'assistant'
@@ -3143,6 +3171,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
+              {message.role === 'assistant' && message.requestId && (messageModel || messageReasoningEffort) ? <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                {messageModel ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Modelo usado:</strong> {messageModel}</span> : null}
+                {messageReasoningEffort ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Tipo de raciocínio:</strong> {formatReasoningEffort(messageReasoningEffort)}</span> : null}
+              </div> : null}
               {isEditingUserMessage ? <div className="space-y-2">
                 <textarea value={editingDraft} onChange={(event) => setEditingDraft(event.target.value)} rows={4} className="w-full rounded-md border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100" />
                 <div className="flex flex-wrap justify-end gap-2 text-xs">

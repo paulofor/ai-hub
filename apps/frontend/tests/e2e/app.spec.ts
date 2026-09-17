@@ -958,7 +958,7 @@ test('keeps the running-token inactivity alert on the weekly-consumption card', 
   await page.screenshot({ path: testInfo.outputPath('weekly-quota-stale-alert.png'), fullPage: true });
 });
 
-test('dismisses a read marketing request from the dialog and restores it', async ({ page }) => {
+test('dismisses a read marketing request from the dialog and restores it', async ({ page }, testInfo) => {
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
@@ -985,6 +985,8 @@ test('dismisses a read marketing request from the dialog and restores it', async
         id: 'assistant-dismissable-request',
         role: 'assistant',
         requestId: 991,
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'xhigh',
         status: 'COMPLETED',
         content: JSON.stringify({ titulo: 'Remarketing revisado', comentario: 'Comentário lido que pode sair da tela.', impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' }),
         createdAt: '2026-07-27T12:01:00Z'
@@ -996,6 +998,9 @@ test('dismisses a read marketing request from the dialog and restores it', async
 
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+  await expect(page.getByText('Modelo usado:').locator('..')).toContainText('gpt-5.6-sol');
+  await expect(page.getByText('Tipo de raciocínio:').locator('..')).toContainText('Extra alto');
+  await page.screenshot({ path: testInfo.outputPath('request-model-and-reasoning.png'), fullPage: true });
   await expect(page.getByRole('button', { name: 'Retirar solicitação da tela' })).toHaveCount(0);
   await page.getByRole('checkbox', { name: 'Lido' }).check();
   await page.getByRole('button', { name: 'Retirar solicitação da tela' }).click();
