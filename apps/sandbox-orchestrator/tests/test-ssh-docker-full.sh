@@ -28,15 +28,7 @@ trap cleanup_round EXIT
 npm --prefix apps/sandbox-orchestrator test >"${unit_log}" 2>&1
 grep -E '^# (tests|pass|fail|skipped)|^1\.\.' "${unit_log}" | tail -n 8
 
-shellcheck \
-  apps/sandbox-orchestrator/scripts/sandbox-ssh \
-  apps/sandbox-orchestrator/scripts/sandbox-remote-docker \
-  apps/sandbox-orchestrator/scripts/start-sandbox-ssh-agent \
-  apps/sandbox-orchestrator/scripts/sandbox-ssh-agent-health \
-  apps/sandbox-orchestrator/tests/fixtures/fake-sandbox-ssh \
-  apps/sandbox-orchestrator/tests/fixtures/fake-sandbox-ssh-mismatched-id \
-  apps/sandbox-orchestrator/tests/test-remote-docker-e2e.sh \
-  apps/sandbox-orchestrator/tests/test-ssh-docker-full.sh
+bash .github/scripts/validate-shell-scripts.sh
 actionlint -shellcheck= .github/workflows/ci.yml
 
 export SANDBOX_REMOTE_DOCKER_FIXTURE_IMAGE=aihubsbx/fixture/base:test

@@ -81,6 +81,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --version
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -89,6 +94,8 @@ jobs:
           cache-dependency-path: apps/sandbox-orchestrator/package-lock.json
       - name: Install deps
         run: npm --prefix apps/sandbox-orchestrator ci
+      - name: Validate shell scripts
+        run: bash .github/scripts/validate-shell-scripts.sh
       - name: Test
         run: npm --prefix apps/sandbox-orchestrator test
       - name: Test protected remote Docker lifecycle

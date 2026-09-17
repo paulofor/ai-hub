@@ -352,6 +352,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /\bdocker-buildx-plugin\b/);
   assert.match(dockerfile, /\bdocker-compose-plugin\b/);
   assert.match(dockerfile, /\bgh\b/);
+  assert.match(dockerfile, /\bshellcheck\b/);
   assert.match(dockerfile, /\bffmpeg\b/);
   assert.match(dockerfile, /\bdnsutils\b/);
   assert.match(dockerfile, /\bopenssh-client\b/);
@@ -364,6 +365,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
+  assert.match(dockerfile, /shellcheck --version/);
   assert.match(dockerfile, /docker buildx version/);
   assert.match(dockerfile, /@openai\/codex@\$\{CODEX_VERSION\}/);
   assert.match(dockerfile, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g .*playwright@\$\{PLAYWRIGHT_VERSION\} .*@playwright\/test@\$\{PLAYWRIGHT_VERSION\}/);
@@ -3252,6 +3254,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /GitHub CLI e o actionlint estão disponíveis/i);
     assert.match(promptText, /use gh para inspecionar repositórios, PRs, issues e workflows/i);
     assert.match(promptText, /use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em \.github\/workflows/i);
+    assert.match(promptText, /ShellCheck está disponível pelo comando shellcheck/i);
+    assert.match(promptText, /execute bash -n e depois shellcheck/i);
     assert.match(promptText, /O ffmpeg e o ffprobe estão disponíveis para o modelo pelos comandos ffmpeg e ffprobe/i);
     assert.match(promptText, /use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails/i);
     assert.match(promptText, /use ffprobe para inspecionar metadados, codecs, resolução, duração, streams/i);
@@ -3260,6 +3264,7 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /ferramentas Docker disponíveis:/i);
     assert.match(promptText, /ferramentas cloud disponíveis:/i);
     assert.match(promptText, /ferramentas GitHub\/CI disponíveis:/i);
+    assert.match(promptText, /ferramentas de shell disponíveis:.*shellcheck/i);
     assert.match(promptText, /ferramentas de mídia disponíveis: .*ffmpeg.*ffprobe|ferramentas de mídia disponíveis: nenhuma detectada/i);
     assert.match(promptText, /credenciais AWS exportadas: (sim|não)/i);
     assert.match(promptText, /Playwright e @playwright\/test instalados, com Chromium em \/usr\/bin\/chromium/i);

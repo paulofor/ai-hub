@@ -265,6 +265,7 @@ interface RunnerEnvironmentState {
   dockerTools: string[];
   cloudTools: string[];
   githubCiTools: string[];
+  shellTools: string[];
   mediaTools: string[];
   awsCredentialsAvailable: boolean;
   browserTools: string[];
@@ -1619,6 +1620,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'O GitHub CLI e o actionlint estão disponíveis para o modelo pelos comandos gh e actionlint; use gh para inspecionar repositórios, PRs, issues e workflows quando houver autenticação GitHub disponível, e use actionlint para validar arquivos de GitHub Actions antes de concluir ajustes em .github/workflows.';
   }
 
+  private buildShellCheckInstruction(): string {
+    return 'O ShellCheck está disponível pelo comando shellcheck para análise estática de scripts shell; ao alterar ou investigar scripts, execute bash -n e depois shellcheck nos arquivos relevantes, corrigindo os achados antes de concluir a validação.';
+  }
+
   private buildSshClientInstruction(): string {
     const sshAgentSocket = process.env.SSH_AUTH_SOCK?.trim();
     const allowedDestinations = process.env.SANDBOX_SSH_ALLOWED_DESTINATIONS?.trim();
@@ -1661,6 +1666,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const sshClientInstruction = this.buildSshClientInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const browserTestingInstruction = this.buildBrowserTestingInstruction();
+    const shellCheckInstruction = this.buildShellCheckInstruction();
     const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
       ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português e não crie nem publique PR quando o usuário ainda não solicitou explicitamente. ${noPrButEditInstruction} ${productionPublicationInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
@@ -1675,7 +1681,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
-    const taskDescriptionWithValidationGate = `${localValidationBeforePublicationInstruction}\n\n${taskDescription}`;
+    const taskDescriptionWithValidationGate = `${localValidationBeforePublicationInstruction}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
     return [
       { type: 'text', text: taskDescriptionWithValidationGate },
       ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
@@ -1966,9 +1972,10 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const dockerCliInstruction = this.buildDockerCliInstruction(job);
     const liquibaseMysql57RunnerInstruction = this.buildLiquibaseMysql57RunnerInstruction();
     const githubCiInstruction = this.buildGithubCiInstruction();
+    const shellCheckInstruction = this.buildShellCheckInstruction();
     const mediaToolsInstruction = this.buildMediaToolsInstruction();
     const sshClientInstruction = this.buildSshClientInstruction();
-    const repositoryModuleTestInstruction = 'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.';
+    const repositoryModuleTestInstruction = `Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis. ${shellCheckInstruction}`;
     const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
     const noPrButEditInstruction = 'Não criar Pull Request sem pedido explícito não significa evitar alterações: quando o usuário solicitar ajuste, correção ou implementação e você identificar a solução, altere os arquivos necessários, valide e deixe as mudanças prontas na branch/worktree; apenas não abra nem publique o PR até o usuário pedir.';
     const productionPublicationInstruction = 'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.';
@@ -4673,6 +4680,7 @@ ${stderr}`);
     const dockerTools: string[] = [];
     const cloudTools: string[] = [];
     const githubCiTools: string[] = [];
+    const shellTools: string[] = [];
     const mediaTools: string[] = [];
     const hardRequirements = ['bash', 'git'];
     for (const tool of hardRequirements) {
@@ -4700,6 +4708,9 @@ ${stderr}`);
     }
     if (await this.isCommandAvailable('actionlint')) {
       githubCiTools.push('actionlint');
+    }
+    if (await this.isCommandAvailable('shellcheck')) {
+      shellTools.push('shellcheck');
     }
     if (await this.isCommandAvailable('docker')) {
       dockerTools.push('docker');
@@ -4737,6 +4748,7 @@ ${stderr}`);
       dockerTools,
       cloudTools,
       githubCiTools,
+      shellTools,
       mediaTools,
       awsCredentialsAvailable,
       browserTools,
@@ -4769,6 +4781,7 @@ ${stderr}`);
       `- [x] ferramentas Docker disponíveis: ${state.dockerTools.length > 0 ? state.dockerTools.join(', ') : 'nenhuma detectada'}`,
       `- [x] ferramentas cloud disponíveis: ${state.cloudTools.length > 0 ? state.cloudTools.join(', ') : 'nenhuma detectada'}`,
       `- [x] ferramentas GitHub/CI disponíveis: ${state.githubCiTools.length > 0 ? state.githubCiTools.join(', ') : 'nenhuma detectada'}`,
+      `- [x] ferramentas de shell disponíveis: ${state.shellTools.length > 0 ? state.shellTools.join(', ') : 'nenhuma detectada'}`,
       `- [x] ferramentas de mídia disponíveis: ${state.mediaTools.length > 0 ? state.mediaTools.join(', ') : 'nenhuma detectada'}`,
       `- [x] credenciais AWS exportadas: ${state.awsCredentialsAvailable ? 'sim' : 'não'}`,
       `- [x] navegador headless disponível para screenshots: ${state.browserTools.join(', ')} (/usr/bin/chromium; CHROME_BIN/CHROMIUM_BIN/PUPPETEER_EXECUTABLE_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH; PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1; NODE_PATH=/usr/local/lib/node_modules)`,
