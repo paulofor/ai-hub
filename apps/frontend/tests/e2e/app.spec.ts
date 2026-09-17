@@ -26,12 +26,13 @@ test('renders the dashboard shell', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Visão geral' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Codex ChatGPT MKT' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Notas de venda' })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Gráfico com a média diária operacional dos últimos 21 dias' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Gráfico de linha com a média diária operacional dos últimos 21 dias' })).toBeVisible();
+  await expect(page.getByTestId('sales-impact-line')).toHaveAttribute('d', /^M .* L /);
   await expect(page.getByText('Média diária operacional · últimos 21 dias')).toBeVisible();
   await expect(page.getByText('Cada tick é a média das notas daquele dia operacional.')).toBeVisible();
   await page.screenshot({ path: '/tmp/ai-hub-dashboard-media-diaria-21-dias.png', fullPage: true });
   await page.getByRole('button', { name: 'Semanal' }).click();
-  await expect(page.getByRole('img', { name: 'Gráfico semanal com um tick de média por dia operacional' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Gráfico de linha semanal com a média por dia operacional' })).toBeVisible();
   await expect(page.getByText('Cada tick é a média das notas daquele dia operacional.')).toBeVisible();
   await expect(page.getByText('As notas representam relevância estimada pelo modelo, não vendas confirmadas.')).toBeVisible();
 });
