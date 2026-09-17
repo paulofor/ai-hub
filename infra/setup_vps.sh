@@ -102,8 +102,10 @@ install_docker() {
       curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
       chmod a+r /etc/apt/keyrings/docker.asc
 
-      local codename="$(. /etc/os-release && echo "${VERSION_CODENAME}")"
-      local arch="$(dpkg --print-architecture)"
+      local codename
+      codename="$(. /etc/os-release && echo "${VERSION_CODENAME}")"
+      local arch
+      arch="$(dpkg --print-architecture)"
       echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" \
         > /etc/apt/sources.list.d/docker.list
 
@@ -214,7 +216,8 @@ ensure_compose() {
   fi
 
   echo "Download direto do binário do Docker Compose..."
-  local compose_url="https://github.com/docker/compose/releases/download/v2.24.7/docker-compose-$(uname -s)-$(uname -m)"
+  local compose_url
+  compose_url="https://github.com/docker/compose/releases/download/v2.24.7/docker-compose-$(uname -s)-$(uname -m)"
   curl -L "${compose_url}" -o /usr/local/bin/docker-compose
   chmod +x /usr/local/bin/docker-compose
 
@@ -365,7 +368,7 @@ EOF
 
   echo
   echo "Para o GITHUB_PRIVATE_KEY_PEM você pode informar um caminho para o arquivo .pem."
-  echo "Se preferir, cole o valor já com quebras de linha escapadas (\\n)."
+  printf '%s\n' 'Se preferir, cole o valor já com quebras de linha escapadas (\\n).'
   echo "Se acabou de registrar a app e viu a mensagem 'Registration successful! You must generate a private key...',"
   echo "clique em 'Generate a private key' na aba General para baixar o arquivo antes de prosseguir."
   local key_path=""
@@ -394,7 +397,8 @@ create_env_file() {
   log_section "Gerando arquivo .env"
   local env_file="${REPO_DIR}/.env"
   if [ -f "${env_file}" ]; then
-    local backup="${env_file}.backup.$(date +%Y%m%d%H%M%S)"
+    local backup
+    backup="${env_file}.backup.$(date +%Y%m%d%H%M%S)"
     cp "${env_file}" "${backup}"
     echo "Backup criado: ${backup}"
   fi
