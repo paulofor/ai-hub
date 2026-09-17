@@ -3838,3 +3838,59 @@ O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estr
 - Correção na causa: o modo compacto agora seleciona exclusivamente a janela `codex` de 10.080 minutos (semanal); o detalhe continua exibindo todas as janelas para não perder informação diagnóstica. Dados persistidos e coleta não foram alterados.
 - Proteção contra regressão: a fixture passou a conter simultaneamente as janelas Codex de cinco horas, Codex semanal e `base_model_inference` semanal. Os testes verificam que somente a Codex semanal aparece no histórico e que todas continuam disponíveis no detalhe, em desktop e iPhone 15 Pro emulado, nos três perfis ChatGPT.
 - Validação: build do frontend aprovado e oito cenários Playwright aprovados. Capturas do histórico e do detalhe foram produzidas e inspecionadas. Foi necessário instalar o Chromium e suas bibliotecas de sistema na sandbox; a primeira tentativa de navegador falhou apenas pela ausência dessas dependências, e a execução após a preparação passou integralmente.
+
+## 2026-09-17 — Diagnóstico comercial pelas solicitações recentes do Marketing Hub
+
+- Solicitação: observar os pedidos recentes e sugerir como tornar o Marketing Hub comercial. Trabalho de análise e orientação, sem implementação funcional, criação de artefato no Hub, publicação, PR, campanha ou gasto.
+- Escopo: listados os 100 registros mais recentes em `GET https://iahub.xyz/api/codex/requests?page=0&size=100`; 95 pertencem a `paulofor/marketing-hub`, entre 13/09 21:02 UTC e 16/09 22:33 UTC. Nesse recorte há 82 concluídos, 10 falhos e 3 cancelados. Foram lidos os detalhes dos 40 mais recentes desse ambiente, #2879–#2918: 36 concluídos, 2 falhos e 2 cancelados. A solicitação corrente #2919 não foi contada como trabalho anterior do Marketing Hub. Conclusão de solicitação não foi tratada como conclusão comercial.
+- Repositório canônico baixado apenas para leitura em `/tmp/mkt-analysis-20260917/marketing-hub`, revisão `0fb2c4a05d27220278f616efdc701bade71cdd34` (merge #5216). Foram consultados AGENTS.md, cânones comerciais, documentos de marketing e homologações. O workspace original é o AI Hub; somente este diário nele foi alterado.
+- Pergunta explícita de causa-raiz: **“por que esse erro aconteceu?”** Evidência observada: o mesmo ciclo comercial atravessa decisões de versão, correções de integração e novas estruturas de processos sem chegar à aquisição mensurada. A interpretação gerencial é expansão da fábrica e conclusão por tarefa antes da comprovação de um percurso comercial completo. Há falhas técnicas concretas e necessárias de resolver, mas nenhuma evidência suficiente para atribuir o insucesso a preço, nicho ou qualidade de criativo. Essa interpretação não é um experimento causal.
+
+### Evidências do histórico
+
+- [#2880](https://iahub.xyz/codex/requests/2880) e [#2883](https://iahub.xyz/codex/requests/2883): preparação bloqueada por divergência v7/v12; aprovação privada não demonstrava prontidão comercial.
+- [#2895](https://iahub.xyz/codex/requests/2895), [#2896](https://iahub.xyz/codex/requests/2896) e [#2897](https://iahub.xyz/codex/requests/2897): descrição de quatro materiais, seguida de conferência que encontrou três materiais vinculados à v7 e ausência de avaliação específica do kit v12. Isso documenta inconsistência na leitura da oferta; correções posteriores não foram ignoradas.
+- [#2898](https://iahub.xyz/codex/requests/2898): o que a compradora recebe por R$ 67 ainda precisava ser explicitado: Dias 2–7, materiais e acesso de 90 dias.
+- [#2901](https://iahub.xyz/codex/requests/2901), [#2911](https://iahub.xyz/codex/requests/2911) e [#2914](https://iahub.xyz/codex/requests/2914): avanços locais e testes relevantes na identidade da candidata, preparação e checkout; os relatos distinguiam esses avanços da operação publicada. Não se presumiu que cada bloqueio relatado continuava vigente nesta análise.
+- [#2908](https://iahub.xyz/codex/requests/2908)–[#2910](https://iahub.xyz/codex/requests/2910), [#2915](https://iahub.xyz/codex/requests/2915)–[#2917](https://iahub.xyz/codex/requests/2917): enquadramento/numeração e ampliação da cadeia v16. A #2918 iniciou pedido para outro tipo, Quartzo, mas foi cancelada. Organização e reutilização têm valor; não são evidência de venda.
+- O padrão já havia sido apontado neste diário em 03/08 e 12/08. No Marketing Hub, a [análise de Vega de 08/09](https://github.com/paulofor/marketing-hub/blob/0fb2c4a05d27220278f616efdc701bade71cdd34/docs/marketing/vega-cadeia-valor-estrategia-2026-09-08.md) também priorizava utilidade, compra conciliada e entrega. A recomendação presente é executar esse recorte, evitando criar mais um mecanismo de governança.
+
+### Fotografia comercial consultada nesta execução
+
+Consultas somente leitura aos monitores oficiais, detalhes do experimento e MCP (`db_health`, `db_query`, `java_module_logs`). O MCP confirmou banco saudável e os estados dos experimentos. O filtro de logs `experimentId=92` retornou zero linhas na janela retida; isso não prova ausência de falhas.
+
+| Item | Evidência | Limite de interpretação |
+| --- | --- | --- |
+| Experimento #91 | `USER_STOPPED`; 4 sessões classificadas humanas; 1 resultado, 1 paywall, 0 checkout e 0 compra aprovada | Amostra insuficiente para diagnosticar rejeição da oferta ou estimar conversão estável |
+| Mídia #91 | Hub: R$ 27,25, 120 impressões e 5 cliques totais; última sincronização em 07/09 | Snapshot antigo; não é consulta atual à Meta nem custo por clique de saída |
+| Reconciliação histórica de 08/09 | Documento registra R$ 27,45 e 4 cliques de saída obtidos diretamente da Meta | Diferença de fonte/data preservada; não mesclar números como se fossem contemporâneos |
+| Experimento #92 | `PLANNED`, teto R$ 100, preço R$ 67, `creativeApproved=false`, janela 15–16/09 | Janela registrada já passou na data UTC desta análise; estado não comprova autorização para nova janela |
+| Monitor #92 | `PRE_LAUNCH_VALIDATION`; 0 sessões/eventos, sem mídia sincronizada | Não há teste comercial mensurado da v12 nesse experimento |
+| Slot v8 do #92 | v12, `CANDIDATE`, sem `publishedAt` ou `validationStatus` | Vínculo cadastrado não significa promoção/homologação produtiva concluída |
+| Meta textual #92 | 5 vendas líquidas em 100 sessões humanas, contribuição positiva, uso e satisfação | Meta é hipótese; não é resultado nem autorização de gasto |
+
+Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-17T00:33:28Z`; `GET /api/experiments/92`; MCP `SELECT id,name,status FROM experiment WHERE id IN (91,92)`. Não foi realizada conciliação de todo o faturamento do portfólio; zeros desses experimentos não demonstram receita global zero. Snapshots e hashes ficaram fora do Git em `/tmp/mkt-analysis-20260917/evidence-summary.json`; este diário preserva os agregados relevantes sem dados pessoais.
+
+### Alternativas e decisão recomendada
+
+| Alternativa | Benefício | Risco | Esforço/custo | Aderência agora |
+| --- | --- | --- | --- | --- |
+| Continuar expandindo tipos, agentes e processos | Maior capacidade futura de reutilização | Mais dependências antes de validar receita | Alto | Baixa para resolver o bloqueio imediato |
+| Trocar a prioridade para um produto mais simples, como Quartzo | Pode reduzir complexidade de entrega | Reinicia oferta e aquisição sem evidência de demanda superior | Médio/alto | Condicional; comparar prontidão e evidência antes de trocar |
+| Concluir um piloto comercial do Vega v12/#92 com escopo congelado | Aproveita ativos existentes e produz aprendizado sobre uma venda completa | Exige fechar pendências reais e não garante demanda | Médio, com gasto limitado ao que for autorizado | Melhor no recorte observado; escolhida como recomendação |
+
+- Horizonte sugerido: um ciclo de foco de 14 dias, como disciplina de trabalho, não promessa de vendas. Manter um produto, público, oferta e canal prioritários; Instagram Ads permanece o canal principal aprovado no cânone. Evitar abrir Quartzo, novos agentes ou reorganizações sem evidência de que removem o bloqueio desse piloto.
+- Critério operacional: mesma v12 em anúncio, URL, demonstração, oferta, checkout e entrega; homologação local integrada e dados de QA separados; depois do fluxo oficial de publicação, conferência produtiva e autorização externa cabível. Não pedir PR nesta análise nem recomendar liberar mídia enquanto persistirem pendências.
+- Critério comercial: compra paga reconciliada, acesso entregue, primeira ação útil e registro de satisfação/objeções. Cinco compradores podem ser um marco inicial, não prova estatística de escala. Parecer de Psique/Têmis e testes automatizados não substituem esses fatos.
+- Oferta: usar no paywall uma demonstração real e o bloco “Você recebe por R$ 67”, descrevendo apenas os Dias 2–7 e os três materiais efetivamente vinculados à versão, sua utilidade e os 90 dias de acesso. Não anunciar consultoria humana ou conversacional contínua quando a experiência opera por regras determinísticas. A copy final precisa refletir os artefatos vigentes.
+- Placar: sessões humanas → primeiro ajuste → oferta → checkout → pagamento aprovado → acesso/primeiro uso; receita conciliada, reembolsos, mídia, custos variáveis e contribuição. Separar produto, versão, experimento e QA. Verificar a definição de cada evento: paywall emitido não comprova leitura e resultado exibido não comprova utilidade.
+- Economia: o custo histórico reconciliado de R$ 27,45/4 saídas equivale a aproximadamente R$ 6,86. Ao mesmo custo, R$ 100 comprariam cerca de 14 acessos, não 100. É cenário aritmético de uma amostra pequena, não previsão. Dimensionar expectativa/amostra ao teto, sem elevar orçamento automaticamente; acompanhar custo de IA/produção separadamente da mídia e não atribuir lucratividade a receita bruta.
+- Decisões: sem tráfego, resolver prontidão/aquisição; com tráfego e sem primeiro valor, observar a experiência; com valor e sem checkout, testar clareza/prova da oferta; com checkout e sem compra, investigar pagamento/confiança; com compra e sem uso, corrigir entrega. Alterar uma hipótese principal por vez, dentro do teto, sem concluir fracasso com poucos acessos.
+- Produtos de alto valor continuam como direção estratégica; a oferta atual de R$ 67 pode provar o mecanismo de aquisição e entrega, mas não valida sozinha a disposição de pagar por uma oferta premium. Uma expansão deve partir de resultado e demanda observados, não de mais materiais ou preço arbitrário.
+- Referências externas de apoio: [YC — foco inicial em clientes e aprendizado](https://www.ycombinator.com/blog/ycs-essential-startup-advice/) e [GA4 — eventos de comércio](https://support.google.com/analytics/answer/12200568?hl=en). Foram usadas como orientação complementar, sem inferir resultados do projeto ou exigir nova ferramenta.
+
+### Limitações e encerramento
+
+- O frontend administrativo retornou `ERR_CONNECTION_RESET` no Chromium; a inspeção visual não foi concluída. APIs e MCP responderam inicialmente; duas tentativas posteriores de ler ciclos/versões receberam `Connection refused`. Preserva-se a fotografia bem-sucedida, sem inferir que os serviços ou os bloqueios mantiveram o mesmo estado depois dela. Não houve tentativa de reparar ou publicar serviços, pois o pedido é de orientação comercial.
+- Incidente de manuseio: a leitura inicial do remoto Git exibiu uma credencial embutida na URL na saída da ferramenta. O valor não foi reproduzido neste documento, nos snapshots agregados ou nas mensagens. O usuário foi avisado sobre a necessidade de revogação/substituição; consultas posteriores evitaram imprimir remotos autenticados.
+- Validação proporcional: conferidos os totais do recorte, os estados do monitor contra o banco, as datas das fontes e o cálculo de orçamento. Alteração apenas documental; testes funcionais não se aplicam. Revisão do diff e `git diff --check` completam a entrega, sem commit, push ou PR.
