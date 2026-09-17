@@ -3895,6 +3895,13 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Incidente de manuseio: a leitura inicial do remoto Git exibiu uma credencial embutida na URL na saída da ferramenta. O valor não foi reproduzido neste documento, nos snapshots agregados ou nas mensagens. O usuário foi avisado sobre a necessidade de revogação/substituição; consultas posteriores evitaram imprimir remotos autenticados.
 - Validação proporcional: conferidos os totais do recorte, os estados do monitor contra o banco, as datas das fontes e o cálculo de orçamento. Alteração apenas documental; testes funcionais não se aplicam. Revisão do diff e `git diff --check` completam a entrega, sem commit, push ou PR.
 
+## 2026-09-17 — Rastreio da ativação do experimento Vega #91
+
+- Pergunta: identificar a solicitação em que o experimento #91 teria chegado a `RUNNING`.
+- Evidência consultada, somente leitura: detalhes públicos das solicitações Codex #2596 e #2609, mais o monitor do experimento registrado nesta data. A #2596 (`Vega preparado para publicação`, concluída em 02/09) foi a solicitação que criou/preparou o sucessor Facebook #91, mas sua própria resposta afirma que ele permaneceu `PLANNED`, sem campanhas Meta e sem gasto, à espera de PR/deploy e dos gates de publicação.
+- A #2600 falhou e a #2605 foi cancelada durante a produção do criativo; não comprovam ativação. A #2609 concluiu a criação/vinculação do vídeo #37, porém informou o vídeo como `PENDING`, aguardando aprovação. A fotografia comercial posterior confirma o experimento #91 como `USER_STOPPED`.
+- Conclusão factual: não há solicitação com evidência de que o #91 foi efetivamente colocado em `RUNNING`. A referência correta para a preparação é a #2596; tratá-la como ativação seria confundir prontidão local com publicação operacional.
+
 ## 2026-09-17 — Linha no gráfico de notas de venda do dashboard
 
 - Solicitação: colocar um gráfico de linha na região marcada da tela `Notas de venda` do dashboard, mantendo os dados de médias operacionais e os modos Diário/Semanal.
