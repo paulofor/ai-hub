@@ -1,7 +1,9 @@
 package com.aihub.hub.domain;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -31,6 +33,7 @@ import java.util.Objects;
 public class CodexRequest {
 
     public static final String DEFAULT_VERSION = "aihub-6";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -107,6 +110,11 @@ public class CodexRequest {
     @Column(name = "image_attachments_json", columnDefinition = "LONGTEXT")
     @JsonIgnore
     private String imageAttachmentsJson;
+
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "screen_prompt_items_json", columnDefinition = "LONGTEXT")
+    @JsonIgnore
+    private String screenPromptItemsJson;
 
     @Column(name = "pull_request_url")
     private String pullRequestUrl;
@@ -352,6 +360,29 @@ public class CodexRequest {
 
     public void setImageAttachmentsJson(String imageAttachmentsJson) {
         this.imageAttachmentsJson = imageAttachmentsJson;
+    }
+
+    public String getScreenPromptItemsJson() {
+        return screenPromptItemsJson;
+    }
+
+    public void setScreenPromptItemsJson(String screenPromptItemsJson) {
+        this.screenPromptItemsJson = screenPromptItemsJson;
+    }
+
+    @JsonProperty("screenPromptItems")
+    public List<ScreenPromptItemSnapshot> getScreenPromptItems() {
+        if (screenPromptItemsJson == null || screenPromptItemsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(screenPromptItemsJson, new TypeReference<>() { });
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    public record ScreenPromptItemSnapshot(Long id, String label, String phrase) {
     }
 
     public String getPullRequestUrl() {

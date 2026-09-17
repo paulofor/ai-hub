@@ -212,6 +212,7 @@ public class CodexRequestService {
         codexRequest.setHttpGetCount(0);
         codexRequest.setDbQueryCount(0);
         codexRequest.setImageAttachmentsJson(serializeImageAttachments(request.getImageAttachments()));
+        codexRequest.setScreenPromptItemsJson(serializeScreenPromptItems(request.getScreenPromptItems()));
 
         if (!isChatgptCodexSandboxProfile(profile)) {
             PromptMetadata metadata = extractMetadata(request.getEnvironment());
@@ -246,6 +247,30 @@ public class CodexRequestService {
             return objectMapper.writeValueAsString(imageAttachments);
         } catch (JsonProcessingException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Não foi possível salvar as imagens anexadas da solicitação", ex);
+        }
+    }
+
+    private String serializeScreenPromptItems(List<CreateCodexRequest.ScreenPromptItem> screenPromptItems) {
+        if (screenPromptItems == null || screenPromptItems.isEmpty()) {
+            return null;
+        }
+        List<CreateCodexRequest.ScreenPromptItem> snapshot = screenPromptItems.stream()
+            .filter(Objects::nonNull)
+            .filter(item -> item.id() != null && StringUtils.hasText(item.label()) && StringUtils.hasText(item.phrase()))
+            .limit(100)
+            .map(item -> new CreateCodexRequest.ScreenPromptItem(
+                item.id(),
+                item.label().trim(),
+                item.phrase().trim()
+            ))
+            .toList();
+        if (snapshot.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (JsonProcessingException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Não foi possível salvar os itens de tela da solicitação", ex);
         }
     }
 

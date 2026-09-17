@@ -63,6 +63,7 @@ test('shows the request detail as a conversation card with only the three execut
       profile: 'CHATGPT_CODEX',
       reasoningEffort: 'high',
       prompt: 'Crie uma integração segura com a API pública.',
+      screenPromptItems: [{ id: 12, label: 'Checklist de integração', phrase: 'Valide autenticação, erros e observabilidade.' }],
       responseText: Array.from({ length: 35 }, (_, index) => `${index + 1}. Etapa da integração criada e validada.`).join('\n\n'),
       reasoningSummary: 'Comparei as alternativas e escolhi a implementação de menor risco.',
       status: 'COMPLETED',
@@ -82,6 +83,8 @@ test('shows the request detail as a conversation card with only the three execut
   const requestCard = page.getByRole('heading', { name: 'Solicitação', exact: true }).locator('..').locator('..');
   await expect(requestCard).toHaveClass(/bg-emerald-100/);
   await expect(requestCard).toContainText('Crie uma integração segura com a API pública.');
+  await expect(page.getByRole('heading', { name: 'Itens de tela usados' })).toBeVisible();
+  await expect(page.getByText('Checklist de integração')).toBeVisible();
   const response = page.getByTestId('codex-response');
   await expect(response).toBeVisible();
   await expect(response).toHaveCSS('overflow-y', 'visible');
@@ -1362,6 +1365,7 @@ test('lists score-five sales requests in pages of 25 and opens request details',
     version: 'aihub-6',
     profile: 'CHATGPT_CODEX_MKT',
     prompt: 'Como melhorar a conversão do checkout?',
+    screenPromptItems: [{ id: 31, label: 'Oferta na tela', phrase: 'Considere a oferta exibida no checkout.' }],
     responseText: 'Priorize uma proposta de valor clara e reduza os campos.',
     status: 'COMPLETED',
     createdAt: '2026-08-06T11:59:00Z',
@@ -1385,6 +1389,8 @@ test('lists score-five sales requests in pages of 25 and opens request details',
   await expect(page).toHaveURL(/\/codex-chatgpt-mkt\/nota-5-vendas\/901$/);
   await expect(page.getByText('Diálogo')).toBeVisible();
   await expect(page.getByText('1.200')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Itens de tela usados' })).toBeVisible();
+  await expect(page.getByText('Oferta na tela')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Próxima (mais antiga) →' })).toBeVisible();
   await page.screenshot({ path: '/tmp/ai-hub-detalhe-nota-5-vendas.png', fullPage: true });
 });

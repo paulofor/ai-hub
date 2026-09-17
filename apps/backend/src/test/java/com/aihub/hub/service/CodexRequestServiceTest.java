@@ -1009,10 +1009,16 @@ class CodexRequestServiceTest {
         payload.setPrompt("ajuste simples");
         payload.setProfile(CodexIntegrationProfile.SMART_ECONOMY);
         payload.setTotalTokens(900_000);
+        payload.setScreenPromptItems(List.of(
+            new CreateCodexRequest.ScreenPromptItem(7L, "  Contexto visual  ", "  Texto exibido na tela.  ")
+        ));
 
         CodexRequest created = service.create(payload);
         assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
         assertThat(created.getVersion()).isEqualTo(CodexRequest.DEFAULT_VERSION);
+        assertThat(created.getScreenPromptItems()).containsExactly(
+            new CodexRequest.ScreenPromptItemSnapshot(7L, "Contexto visual", "Texto exibido na tela.")
+        );
     }
 
     @Test

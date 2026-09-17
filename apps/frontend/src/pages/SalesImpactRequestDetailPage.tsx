@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
 import CodexResponseBody from '../components/CodexResponseBody';
+import ScreenPromptItems from '../components/ScreenPromptItems';
 import {
   CodexRequest,
   codexStatusStyles,
@@ -89,6 +90,8 @@ export default function SalesImpactRequestDetailPage() {
         <Metric label="Hora de início" value={formatDateTime(request.startedAt ?? request.createdAt)} />
         <Metric label="Hora de fim" value={formatDateTime(request.finishedAt)} />
       </dl>
+
+      <ScreenPromptItems items={request.screenPromptItems} />
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="border-b border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:text-slate-300">Diálogo</div>
