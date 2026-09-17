@@ -2389,6 +2389,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         reasoningEffort,
         profile: config.profile,
         processId: selectedProcessId ? Number(selectedProcessId) : undefined,
+        screenPromptItems: selectedPromptHints
+          .filter((hint) => normalizePromptHintType(hint.type) === 'text')
+          .map(({ id, label, phrase }) => ({ id, label, phrase })),
         imageAttachments: fileAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }))
       });
       const created = parseCodexRequest(response.data);
@@ -2417,7 +2420,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, selectedEnvironment]);
+  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, selectedEnvironment, selectedProcessId, selectedPromptHints]);
 
 
   useEffect(() => {

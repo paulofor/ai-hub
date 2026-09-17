@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
 import CodexResponseBody from '../components/CodexResponseBody';
+import ScreenPromptItems from '../components/ScreenPromptItems';
 import { useToasts } from '../components/ToastContext';
 import {
   CodexRequest,
@@ -614,6 +615,7 @@ export default function CodexRequestDetailPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
+              <ScreenPromptItems items={request.screenPromptItems} />
               <div className="ml-auto w-full max-w-3xl rounded-lg bg-emerald-100 px-4 py-3 text-emerald-950 shadow-sm dark:bg-emerald-950/50 dark:text-emerald-100">
                 <div className="mb-2 flex items-center justify-between">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Solicitação</h4>

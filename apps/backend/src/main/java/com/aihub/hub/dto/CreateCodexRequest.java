@@ -43,6 +43,8 @@ public class CreateCodexRequest {
 
     private List<ImageAttachment> imageAttachments;
 
+    private List<ScreenPromptItem> screenPromptItems;
+
     public CreateCodexRequest() {
     }
 
@@ -55,6 +57,17 @@ public class CreateCodexRequest {
     }
 
     public record ImageAttachment(String name, String mimeType, Long size, String dataUrl) {
+    }
+
+    public record ScreenPromptItem(Long id, String label, String phrase) {
+    }
+
+    public List<ScreenPromptItem> getScreenPromptItems() {
+        return screenPromptItems;
+    }
+
+    public void setScreenPromptItems(List<ScreenPromptItem> screenPromptItems) {
+        this.screenPromptItems = screenPromptItems;
     }
 
     public String getEnvironment() {

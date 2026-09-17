@@ -52,6 +52,13 @@ export interface CodexRequest {
   maxExternalServiceWaitMs?: number;
   documentAccessCount?: number;
   documentAccesses: CodexDocumentAccess[];
+  screenPromptItems: CodexScreenPromptItem[];
+}
+
+export interface CodexScreenPromptItem {
+  id: number;
+  label: string;
+  phrase: string;
 }
 
 export interface CodexDocumentAccess {
@@ -275,6 +282,17 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
       return { documentPath, accessCount };
     })
     .filter((entry): entry is CodexDocumentAccess => entry !== null);
+  const screenPromptItemsRaw = Array.isArray(item.screenPromptItems) ? item.screenPromptItems : [];
+  const screenPromptItems = screenPromptItemsRaw
+    .map((entry) => {
+      if (typeof entry !== 'object' || entry === null) return null;
+      const promptItem = entry as Record<string, unknown>;
+      const promptItemId = parseNumber(promptItem.id);
+      const label = typeof promptItem.label === 'string' ? promptItem.label.trim() : '';
+      const phrase = typeof promptItem.phrase === 'string' ? promptItem.phrase.trim() : '';
+      return promptItemId !== undefined && label && phrase ? { id: promptItemId, label, phrase } : null;
+    })
+    .filter((entry): entry is CodexScreenPromptItem => entry !== null);
   const problemId = parseNumber(item.problemId ?? (item as Record<string, unknown>).problem_id);
   const problemTitleRaw = typeof item.problemTitle === 'string'
     ? item.problemTitle
@@ -384,6 +402,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     maxExternalServiceWaitMs,
     documentAccessCount: documentAccessCount ?? (documentAccesses.length > 0 ? documentAccesses.length : undefined),
     documentAccesses,
+    screenPromptItems,
     problemId: problemId ?? undefined,
     problemTitle: problemTitle ?? undefined,
     processNumber: processNumber || undefined,
