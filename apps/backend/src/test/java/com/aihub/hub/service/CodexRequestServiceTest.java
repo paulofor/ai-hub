@@ -369,6 +369,17 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void nextRequestIdReturnsTheNearestHigherRequest() {
+        CodexRequest nextRequest = new CodexRequest();
+        ReflectionTestUtils.setField(nextRequest, "id", 12L);
+        when(codexRequestRepository.findFirstByIdGreaterThanOrderByIdAsc(10L))
+            .thenReturn(Optional.of(nextRequest));
+
+        assertThat(buildService().nextRequestId(10L)).contains(12L);
+        verify(codexRequestRepository).findFirstByIdGreaterThanOrderByIdAsc(10L);
+    }
+
+    @Test
     void dashboardMetricsUsesSaoPauloOperationalDayBoundaryAtTwoAm() {
         ZoneId zone = ZoneId.of("America/Sao_Paulo");
         Instant localMidnight = Instant.parse("2026-07-23T03:14:00Z");
