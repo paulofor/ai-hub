@@ -832,7 +832,7 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
     json: {
-      day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0 },
+      day: { startsAt: '2026-07-26T00:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0, weeklyQuotaConsumedPercentagePoints: 1.25 },
       salesImpactDay: { muitoBaixo: 1, baixo: 1, medio: 1, alto: 1, muitoAlto: 2, total: 6 },
       recentSalesImpact: [
         ...Array.from({ length: 103 }, (_, index) => ({
@@ -866,9 +866,9 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
 
   const operationalDayCard = page.getByText('Dia operacional').locator('xpath=ancestor::div[contains(@class, "fixed")][1]');
   await expect(operationalDayCard.getByText('Solicitações')).toBeVisible();
-  await expect(operationalDayCard.getByText('Interações')).toBeVisible();
+  await expect(operationalDayCard.getByText('Cota semanal')).toBeVisible();
   await expect(operationalDayCard.locator('p').getByText('3', { exact: true })).toBeVisible();
-  await expect(operationalDayCard.locator('p').getByText('12', { exact: true })).toBeVisible();
+  await expect(operationalDayCard.getByText('1,25 p.p.', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByText('Média do dia')).toBeVisible();
   await expect(operationalDayCard.getByText('3,33', { exact: true })).toBeVisible();
   await expect(operationalDayCard.getByRole('img', { name: 'Gráfico da média móvel de 6 pontos da nota de impacto em vendas' })).toBeVisible();
@@ -906,8 +906,8 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]').locator('[title="Comentário lido"]')).toBeVisible();
 });
 
-test('alerts when the marketing interaction count stays unchanged for five minutes', async ({ page }, testInfo) => {
-  let interactionCount = 12;
+test('keeps the running-token inactivity alert on the weekly-consumption card', async ({ page }, testInfo) => {
+  const totalTokens = 12;
   await page.clock.install({ time: new Date('2026-07-29T12:00:00Z') });
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
@@ -917,27 +917,45 @@ test('alerts when the marketing interaction count stays unchanged for five minut
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
-    json: { day: { startsAt: '2026-07-29T06:00:00Z', requestCount: 3, interactionCount, durationMs: 0 } }
+    json: { day: { startsAt: '2026-07-29T06:00:00Z', requestCount: 3, interactionCount: 12, durationMs: 0, weeklyQuotaConsumedPercentagePoints: 2.5 } }
   }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
-  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [{
+    id: 77,
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'RUNNING',
+    externalId: 'job-77',
+    environment: 'produção',
+    model: 'gpt-5',
+    prompt: 'Executar tarefa',
+    createdAt: '2026-07-29T12:00:00Z',
+    totalTokens
+  }] } }));
+  await page.route('**/api/codex/requests/77', (route) => route.fulfill({ json: {
+    id: 77,
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'RUNNING',
+    externalId: 'job-77',
+    environment: 'produção',
+    model: 'gpt-5',
+    prompt: 'Executar tarefa',
+    createdAt: '2026-07-29T12:00:00Z',
+    totalTokens
+  } }));
 
   await page.goto('/codex-chatgpt-mkt');
 
-  const interactionAlert = page.locator('[role="status"]', { hasText: 'Alerta: interações sem alteração há 5 minutos.' });
-  await expect(page.getByText('Interações').locator('xpath=ancestor::div[1]').getByText('12', { exact: true })).toBeVisible();
-  await expect(interactionAlert).toHaveCount(0);
+  const tokenAlert = page.locator('[role="status"]', { hasText: 'Alerta: tokens da solicitação em execução sem alteração há 5 minutos.' });
+  const consumptionCard = page.getByText('Cota semanal').locator('xpath=ancestor::div[1]');
+  await expect(consumptionCard.getByText('2,5 p.p.', { exact: true })).toBeVisible();
+  await expect(tokenAlert).toHaveCount(0);
 
   await page.clock.runFor(301_000);
-  await expect(interactionAlert).toBeAttached();
-  await expect(page.getByText('Interações').locator('xpath=ancestor::div[1]')).toHaveClass(/border-amber-500/);
-  await page.screenshot({ path: testInfo.outputPath('interaction-stale-alert.png'), fullPage: true });
-
-  interactionCount = 13;
-  await page.clock.runFor(5_000);
-  await expect(interactionAlert).toHaveCount(0);
+  await expect(tokenAlert).toBeAttached();
+  await expect(consumptionCard).toHaveClass(/border-amber-500/);
+  await page.screenshot({ path: testInfo.outputPath('weekly-quota-stale-alert.png'), fullPage: true });
 });
 
 test('dismisses a read marketing request from the dialog and restores it', async ({ page }) => {

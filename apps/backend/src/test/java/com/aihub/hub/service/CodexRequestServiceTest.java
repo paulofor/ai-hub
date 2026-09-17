@@ -249,6 +249,11 @@ class CodexRequestServiceTest {
             new Object[] {todayStart.plusSeconds(3_600), 3, 1_000L, 12_000L},
             new Object[] {previousMonthStart.plusSeconds(7_200), 2, 2_000L, 22_000L}
         ));
+        when(codexRequestRepository.findQuotaUsagesSince(any(Instant.class))).thenReturn(List.of(
+            "{\"windows\":[{\"limitId\":\"codex\",\"windowDurationMins\":10080,\"consumedPercentagePoints\":1.25}]}",
+            "{\"windows\":[{\"limitId\":\"codex\",\"windowDurationMins\":300,\"consumedPercentagePoints\":9}]}",
+            "invalid-json"
+        ));
 
         var metrics = buildService().dashboardMetrics();
 
@@ -257,6 +262,7 @@ class CodexRequestServiceTest {
         assertThat(metrics.week().requestCount()).isEqualTo(2);
         assertThat(metrics.month().durationMs()).isEqualTo(7_000L);
         assertThat(metrics.day().totalTokens()).isEqualTo(12_000L);
+        assertThat(metrics.day().weeklyQuotaConsumedPercentagePoints()).isEqualTo(1.25);
 
         assertThat(metrics.series().daily())
             .filteredOn(window -> window.startsAt().equals(todayStart))

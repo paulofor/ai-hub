@@ -52,7 +52,7 @@ interface CodexSalesImpactScore {
 }
 
 interface CodexDashboardMetrics {
-  day: CodexDashboardMetricWindow;
+  day: CodexDashboardMetricWindow & { weeklyQuotaConsumedPercentagePoints?: number | null };
   salesImpactDay?: CodexSalesImpactScore;
   recentSalesImpact?: CodexSalesImpactPoint[];
 }
@@ -275,6 +275,12 @@ const formatDocumentAccessCount = (count?: number) => {
 
 const formatMetricNumber = (value?: number) => {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('pt-BR') : '—';
+};
+
+const formatPercentagePoints = (value?: number | null) => {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })} p.p.`
+    : '—';
 };
 
 const formatDailySalesImpactAverage = (scores?: CodexSalesImpactScore) => {
@@ -2926,11 +2932,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </div>
             <div title="O alerta de inatividade acompanha os tokens da solicitação em execução." className={`rounded border px-1.5 py-1 ${runningTokensAreStale ? 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-500 dark:bg-amber-950/50' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80'}`}>
               <p className={`text-[9px] font-semibold uppercase tracking-wide ${runningTokensAreStale ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
-                Interações
+                Cota semanal
                 {runningTokensAreStale ? <span className="ml-1 inline-flex h-3 w-3 animate-pulse items-center justify-center rounded-full bg-amber-500 text-[9px] text-white" aria-hidden="true">!</span> : null}
               </p>
               <p className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-100">
-                {formatMetricNumber(dailyMetrics?.day?.interactionCount)}
+                {formatPercentagePoints(dailyMetrics?.day?.weeklyQuotaConsumedPercentagePoints)}
               </p>
               {runningTokensAreStale ? <span role="status" className="sr-only">Alerta: tokens da solicitação em execução sem alteração há 5 minutos.</span> : null}
             </div>
