@@ -3953,3 +3953,20 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Correção na causa: o repositório passou a consultar a primeira solicitação com ID maior em ordem crescente; serviço e controller expõem `GET /api/codex/requests/{id}/next`, retornando o vizinho mais próximo ou `204` quando não houver. O frontend carrega esse destino ao trocar de detalhe, mostra `Próximo` junto a `Anterior`, desabilita-o quando não existe destino e navega diretamente para a solicitação retornada.
 - Proteção contra regressão: testes do controller cobrem resposta com próximo ID e ausência de sucessor; teste do serviço confirma a consulta ordenada; o E2E do detalhe valida botão habilitado e tooltip com o destino. A captura `/tmp/ai-hub-request-detail-comments.png` foi inspecionada e confirmou alinhamento de `Atualizar`, `Anterior`, `Próximo` e `Voltar`.
 - Validação: teste direcionado do controller, build e lint do frontend aprovados; após instalar o Chromium e suas bibliotecas na sandbox, o cenário Playwright direcionado passou. Os avisos de Browserslist desatualizado, chunk principal acima de 500 kB e configurações npm legadas já existentes não impediram as verificações.
+
+## 2026-09-17 20:01:52 UTC-3
+
+- Causa raiz da ausência de um card para a última mensagem: a solicitação persistia apenas o prompt composto, que mistura instruções, histórico e a mensagem atual.
+- Alternativas avaliadas: extrair somente no frontend (baixo esforço, porém ambíguo); persistir somente para novas solicitações (preciso, porém sem cobrir o histórico); e persistir a mensagem com fallback para prompts legados. Foi escolhida a terceira por preservar precisão futura e já atender solicitações como a #2953.
+- Adicionado o campo `user_message` em `codex_requests`, enviado na criação e na edição de solicitações e exposto à tela de detalhe.
+- A tela de detalhe agora exibe um card independente “Última mensagem do usuário”, com contagem de caracteres e ação de cópia; solicitações legadas usam o marcador já existente no prompt como fallback.
+- Validações locais aprovadas: `mvn -q test`, `npm run build`, `npm run lint`, `npm run test:e2e` e `apps/backend/scripts/validate-migration-versions.sh`.
+
+## 2026-09-17 20:03:11 UTC-3
+
+- Correção do registro anterior: `npm run test:e2e` executou 40 cenários; 34 passaram e 6 falharam fora do escopo deste card, principalmente por fixtures que não interceptam chamadas ao backend local em `127.0.0.1:8081`. O cenário específico do detalhe com o novo card passou isoladamente.
+- Permanecem aprovados: `mvn -q test`, `npm run build`, `npm run lint`, o E2E direcionado e a validação de versões de migração. Artefatos transitórios da suíte foram removidos após a verificação.
+
+## 2026-09-17 20:03:52 UTC-3
+
+- Inspeção visual local da captura Playwright `/tmp/ai-hub-request-reasoning-summary.png`: o card azul “Última mensagem do usuário” aparece separado do card verde do prompt composto, com texto completo, contagem de caracteres e cópia. O layout desktop permanece legível e sem sobreposição.

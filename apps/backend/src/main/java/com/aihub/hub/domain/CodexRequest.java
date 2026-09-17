@@ -60,6 +60,10 @@ public class CodexRequest {
     @Column(columnDefinition = "LONGTEXT", nullable = false)
     private String prompt;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "user_message", columnDefinition = "LONGTEXT")
+    private String userMessage;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private CodexRequestStatus status = CodexRequestStatus.PENDING;
@@ -265,6 +269,14 @@ public class CodexRequest {
 
     public void setPrompt(String prompt) {
         this.prompt = prompt;
+    }
+
+    public String getUserMessage() {
+        return userMessage;
+    }
+
+    public void setUserMessage(String userMessage) {
+        this.userMessage = userMessage;
     }
 
     public CodexRequestStatus getStatus() {
