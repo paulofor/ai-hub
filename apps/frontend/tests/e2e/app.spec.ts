@@ -63,7 +63,7 @@ test('shows the request detail as a conversation card with only the three execut
       version: 'aihub-6',
       profile: 'CHATGPT_CODEX',
       reasoningEffort: 'high',
-      prompt: 'Crie uma integração segura com a API pública.',
+      prompt: 'Instruções do perfil.\n\nÚltima mensagem do usuário:\nCrie uma integração segura com a API pública.',
       screenPromptItems: [{ id: 12, label: 'Checklist de integração', phrase: 'Valide autenticação, erros e observabilidade.' }],
       responseText: Array.from({ length: 35 }, (_, index) => `${index + 1}. Etapa da integração criada e validada.`).join('\n\n'),
       reasoningSummary: 'Comparei as alternativas e escolhi a implementação de menor risco.',
@@ -87,6 +87,10 @@ test('shows the request detail as a conversation card with only the three execut
   const requestCard = page.getByRole('heading', { name: 'Solicitação', exact: true }).locator('..').locator('..');
   await expect(requestCard).toHaveClass(/bg-emerald-100/);
   await expect(requestCard).toContainText('Crie uma integração segura com a API pública.');
+  const lastUserMessage = page.getByTestId('last-user-message');
+  await expect(lastUserMessage).toBeVisible();
+  await expect(lastUserMessage).toContainText('Crie uma integração segura com a API pública.');
+  await expect(lastUserMessage.getByRole('button', { name: 'Copiar mensagem' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Itens de tela usados' })).toBeVisible();
   await expect(page.getByText('Checklist de integração')).toBeVisible();
   const response = page.getByTestId('codex-response');

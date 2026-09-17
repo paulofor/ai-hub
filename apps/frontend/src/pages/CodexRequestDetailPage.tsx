@@ -14,6 +14,7 @@ import {
   formatProfile,
   formatStatus,
   formatTokens,
+  extractLastUserMessage,
   isTerminalStatus,
   parseCodexRequest
 } from '../lib/codex';
@@ -54,7 +55,7 @@ export default function CodexRequestDetailPage() {
   const { pushToast } = useToasts();
 
   const handleCopyPrompt = useCallback(
-    async (text: string) => {
+    async (text: string, successMessage = 'Prompt copiado para a área de transferência.') => {
       try {
         if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(text);
@@ -69,7 +70,7 @@ export default function CodexRequestDetailPage() {
           document.execCommand('copy');
           document.body.removeChild(textarea);
         }
-        pushToast('Prompt copiado para a área de transferência.');
+        pushToast(successMessage);
       } catch (err) {
         pushToast('Não foi possível copiar o prompt.', 'error');
       }
@@ -205,6 +206,11 @@ export default function CodexRequestDetailPage() {
       </span>
     );
   }, [request]);
+
+  const lastUserMessage = useMemo(
+    () => request?.userMessage ?? extractLastUserMessage(request?.prompt),
+    [request]
+  );
 
   const handleSaveComment = useCallback(async () => {
     if (!request) return;
@@ -672,6 +678,26 @@ export default function CodexRequestDetailPage() {
                   {request.prompt}
                 </pre>
               </div>
+              {lastUserMessage ? (
+                <div data-testid="last-user-message" className="ml-auto w-full max-w-3xl rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-slate-900 shadow-sm dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-100">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">Última mensagem do usuário</h4>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPrompt(lastUserMessage, 'Mensagem copiada para a área de transferência.')}
+                        className="text-xs font-semibold text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+                      >
+                        Copiar mensagem
+                      </button>
+                      <span className="text-xs text-slate-500">{lastUserMessage.length.toLocaleString('pt-BR')} caracteres</span>
+                    </div>
+                  </div>
+                  <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap font-sans text-sm leading-relaxed">
+                    {lastUserMessage}
+                  </pre>
+                </div>
+              ) : null}
               <div className="rounded-lg border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="mb-2 flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Resposta do Codex</h4>

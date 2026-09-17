@@ -11,6 +11,7 @@ export interface CodexRequest {
   version: string;
   profile: CodexProfile;
   prompt: string;
+  userMessage?: string;
   responseText?: string;
   reasoningSummary?: string;
   quotaUsage?: string;
@@ -77,6 +78,19 @@ const parseNumber = (value: unknown): number | undefined => {
     }
   }
   return undefined;
+};
+
+export const extractLastUserMessage = (prompt?: string) => {
+  if (!prompt) {
+    return undefined;
+  }
+  const marker = 'Última mensagem do usuário:';
+  const markerIndex = prompt.lastIndexOf(marker);
+  if (markerIndex < 0) {
+    return undefined;
+  }
+  const message = prompt.slice(markerIndex + marker.length).trim();
+  return message || undefined;
 };
 
 const parseProfile = (value: unknown): CodexProfile => {
@@ -357,6 +371,12 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     resolutionDifficultyRaw && resolutionDifficultyRaw.trim() ? resolutionDifficultyRaw.trim() : undefined;
   const executionLog = executionLogRaw && executionLogRaw.trim() ? executionLogRaw.trim() : undefined;
   const reasoningSummary = reasoningSummaryRaw && reasoningSummaryRaw.trim() ? reasoningSummaryRaw.trim() : undefined;
+  const userMessageRaw = typeof item.userMessage === 'string'
+    ? item.userMessage
+    : typeof (item as Record<string, unknown>).user_message === 'string'
+      ? ((item as Record<string, unknown>).user_message as string)
+      : undefined;
+  const userMessage = userMessageRaw && userMessageRaw.trim() ? userMessageRaw.trim() : undefined;
 
   return {
     id,
@@ -366,6 +386,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     version,
     profile,
     prompt: (item.prompt as string) ?? '',
+    userMessage,
     status,
     rating,
     responseText: (item.responseText as string) ?? undefined,

@@ -187,6 +187,7 @@ public class CodexRequestService {
         );
 
         codexRequest.setProfile(profile);
+        codexRequest.setUserMessage(resolveUserMessage(request.getUserMessage(), effectivePrompt));
         codexRequest.setReasoningEffort(request.getReasoningEffort());
         codexRequest.setVersion(CodexRequest.DEFAULT_VERSION);
         codexRequest.setStatus(CodexRequestStatus.PENDING);
@@ -834,6 +835,14 @@ public class CodexRequestService {
         Matcher matcher = LAST_USER_MESSAGE_PATTERN.matcher(prompt);
         String candidate = matcher.find() ? matcher.group(1) : prompt;
         return abbreviate(normalizeTitle(candidate), REQUEST_TITLE_LIMIT);
+    }
+
+    private String resolveUserMessage(String userMessage, String prompt) {
+        if (StringUtils.hasText(userMessage)) {
+            return userMessage.trim();
+        }
+        Matcher matcher = LAST_USER_MESSAGE_PATTERN.matcher(prompt);
+        return matcher.find() ? matcher.group(1).trim() : null;
     }
 
     private String extractMarketingStructuredTitle(String content) {
@@ -1861,7 +1870,9 @@ public class CodexRequestService {
                 "Só é possível editar solicitações pendentes antes do envio"
             );
         }
-        request.setPrompt(payload.getPrompt().trim());
+        String prompt = payload.getPrompt().trim();
+        request.setPrompt(prompt);
+        request.setUserMessage(resolveUserMessage(payload.getUserMessage(), prompt));
         return saveRequest(request);
     }
 

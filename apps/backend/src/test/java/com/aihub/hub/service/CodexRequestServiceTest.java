@@ -1024,6 +1024,7 @@ class CodexRequestServiceTest {
         CreateCodexRequest payload = new CreateCodexRequest();
         payload.setEnvironment("owner/repo@main");
         payload.setPrompt("ajuste simples");
+        payload.setUserMessage("Ajuste somente a mensagem do usuário.");
         payload.setProfile(CodexIntegrationProfile.SMART_ECONOMY);
         payload.setTotalTokens(900_000);
         payload.setScreenPromptItems(List.of(
@@ -1033,6 +1034,7 @@ class CodexRequestServiceTest {
         CodexRequest created = service.create(payload);
         assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
         assertThat(created.getVersion()).isEqualTo(CodexRequest.DEFAULT_VERSION);
+        assertThat(created.getUserMessage()).isEqualTo("Ajuste somente a mensagem do usuário.");
         assertThat(created.getScreenPromptItems()).containsExactly(
             new CodexRequest.ScreenPromptItemSnapshot(7L, "Contexto visual", "Texto exibido na tela.")
         );

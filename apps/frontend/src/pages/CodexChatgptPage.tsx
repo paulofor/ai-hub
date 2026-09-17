@@ -2413,6 +2413,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setConversation((current) => [...current, userMessage]);
       const response = await client.post('/codex/requests', {
         prompt: requestPrompt,
+        userMessage: userPrompt,
         environment: selectedEnvironment,
         model,
         reasoningEffort,
@@ -2629,7 +2630,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     const requestPrompt = buildConversationPromptFromHistory(nextMessage, conversation.slice(0, userIndex));
     setSavingEditRequestId(requestId);
     try {
-      const response = await client.patch(`/codex/requests/${requestId}`, { prompt: requestPrompt });
+      const response = await client.patch(`/codex/requests/${requestId}`, { prompt: requestPrompt, userMessage: nextMessage });
       const updated = parseCodexRequest(response.data);
       setConversation((current) => current.map((message) => {
         if (message.id === userMessageId && message.role === 'user') {

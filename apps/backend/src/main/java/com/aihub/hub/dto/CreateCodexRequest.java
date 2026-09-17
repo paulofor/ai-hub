@@ -15,6 +15,8 @@ public class CreateCodexRequest {
     @NotBlank
     private String prompt;
 
+    private String userMessage;
+
     private String model;
 
     private CodexReasoningEffort reasoningEffort = CodexReasoningEffort.HIGH;
@@ -84,6 +86,14 @@ public class CreateCodexRequest {
 
     public void setPrompt(String prompt) {
         this.prompt = prompt;
+    }
+
+    public String getUserMessage() {
+        return userMessage;
+    }
+
+    public void setUserMessage(String userMessage) {
+        this.userMessage = userMessage;
     }
 
     public String getModel() {

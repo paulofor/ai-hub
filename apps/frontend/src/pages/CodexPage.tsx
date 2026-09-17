@@ -445,6 +445,7 @@ export default function CodexPage() {
     try {
       const response = await client.post('/codex/requests', {
         prompt: finalPrompt,
+        userMessage: trimmedPrompt,
         environment: trimmedEnvironment,
         profile,
         model: trimmedModel,
