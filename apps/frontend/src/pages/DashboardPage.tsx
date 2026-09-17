@@ -16,6 +16,7 @@ interface CodexDashboardMetricWindow {
   interactionCount: number;
   durationMs: number;
   totalTokens?: number;
+  weeklyQuotaConsumedPercentagePoints?: number | null;
 }
 
 interface CodexDashboardMetrics {

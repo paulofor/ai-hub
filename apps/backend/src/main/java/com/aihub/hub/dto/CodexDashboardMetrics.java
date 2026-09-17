@@ -19,7 +19,8 @@ public record CodexDashboardMetrics(
         long requestCount,
         long interactionCount,
         long durationMs,
-        long totalTokens
+        long totalTokens,
+        Double weeklyQuotaConsumedPercentagePoints
     ) {
     }
 

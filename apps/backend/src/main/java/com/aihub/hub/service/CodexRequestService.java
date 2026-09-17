@@ -586,8 +586,38 @@ public class CodexRequestService {
             aggregateLong(values, 0),
             aggregateLong(values, 1),
             aggregateLong(values, 2),
-            aggregateLong(values, 3)
+            aggregateLong(values, 3),
+            aggregateWeeklyQuotaConsumption(start, profile)
         );
+    }
+
+    private Double aggregateWeeklyQuotaConsumption(Instant start, CodexIntegrationProfile profile) {
+        List<String> quotaUsages = profile == null
+            ? codexRequestRepository.findQuotaUsagesSince(start)
+            : codexRequestRepository.findQuotaUsagesSinceAndProfile(start, profile);
+        double total = 0;
+        boolean measured = false;
+        for (String quotaUsage : quotaUsages == null ? List.<String>of() : quotaUsages) {
+            try {
+                JsonNode windows = objectMapper.readTree(quotaUsage).path("windows");
+                if (!windows.isArray()) {
+                    continue;
+                }
+                for (JsonNode window : windows) {
+                    JsonNode consumed = window.path("consumedPercentagePoints");
+                    if ("codex".equals(window.path("limitId").asText())
+                        && window.path("windowDurationMins").asInt() == 10_080
+                        && consumed.isNumber()
+                        && Double.isFinite(consumed.asDouble())) {
+                        total += consumed.asDouble();
+                        measured = true;
+                    }
+                }
+            } catch (JsonProcessingException ignored) {
+                // A malformed historical snapshot must not make the dashboard unavailable.
+            }
+        }
+        return measured ? total : null;
     }
 
     private CodexDashboardMetrics.CodexSalesImpactScore buildSalesImpactScore(Instant start, CodexIntegrationProfile profile) {
@@ -731,7 +761,8 @@ public class CodexRequestService {
                 entry.getValue().requestCount,
                 entry.getValue().interactionCount,
                 entry.getValue().durationMs,
-                entry.getValue().totalTokens
+                entry.getValue().totalTokens,
+                null
             ))
             .toList();
     }
@@ -743,7 +774,8 @@ public class CodexRequestService {
                 entry.getValue().requestCount,
                 entry.getValue().interactionCount,
                 entry.getValue().durationMs,
-                entry.getValue().totalTokens
+                entry.getValue().totalTokens,
+                null
             ))
             .toList();
     }
