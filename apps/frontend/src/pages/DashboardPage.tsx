@@ -236,6 +236,13 @@ function SalesImpactTimeline({ view, metrics }: { view: 'daily' | 'weekly'; metr
     return groups;
   }, new Map<string, number[]>())).map(([date, scores]) => ({ date, average: scores.reduce((sum, score) => sum + score, 0) / scores.length }));
   const average = visiblePoints.reduce((sum, point) => sum + point.score, 0) / visiblePoints.length;
+  const chartPoints = dailyAverages.map((point, index) => {
+    const normalizedScore = Math.max(1, Math.min(5, point.average));
+    const x = dailyAverages.length === 1 ? 50 : (index / (dailyAverages.length - 1)) * 100;
+    const y = 96 - ((normalizedScore - 1) / 4) * 92;
+    return { ...point, x, y };
+  });
+  const linePath = chartPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 
   return (
     <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/40">
@@ -244,18 +251,25 @@ function SalesImpactTimeline({ view, metrics }: { view: 'daily' | 'weekly'; metr
           <p className="text-xs text-slate-500">Cada tick é a média das notas daquele dia operacional.</p></div>
         <div className="text-right"><span className="text-2xl font-bold text-emerald-600">{average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span><p className="text-xs text-slate-500">média geral</p></div>
       </div>
-      <div className="mt-5 flex h-52 gap-3" role="img" aria-label={view === 'daily' ? 'Gráfico com a média diária operacional dos últimos 21 dias' : 'Gráfico semanal com um tick de média por dia operacional'}>
+      <div className="mt-5 flex h-52 gap-3" role="img" aria-label={view === 'daily' ? 'Gráfico de linha com a média diária operacional dos últimos 21 dias' : 'Gráfico de linha semanal com a média por dia operacional'}>
         <div className="flex flex-col justify-between pb-6 text-xs text-slate-400">{[5, 4, 3, 2, 1].map((tick) => <span key={tick}>{tick}</span>)}</div>
-        <div className="relative flex min-w-0 flex-1 items-end gap-2 border-b border-l border-slate-200 px-2 pb-6 dark:border-slate-700">
-          {dailyAverages.map((point) => (
-            <div key={point.date} className="relative h-full flex-1 text-center" title={`${formatChartDate(`${point.date}T12:00:00Z`)} · média ${point.average.toFixed(1)}`}>
-              <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: `calc(${point.average * 20}% - 6px)` }}>
-                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-700 dark:text-emerald-300">{point.average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>
-                <div className="h-3 w-3 rounded-full border-2 border-white bg-emerald-500 shadow" />
+        <div className="relative flex min-w-0 flex-1 flex-col border-b border-l border-slate-200 dark:border-slate-700">
+          <div className="relative min-h-0 flex-1 px-2">
+            <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <path d={linePath} fill="none" stroke="#10b981" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" vectorEffect="non-scaling-stroke" data-testid="sales-impact-line" />
+            </svg>
+            {chartPoints.map((point) => (
+              <div key={point.date} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${point.x}%`, top: `${point.y}%` }} title={`${formatChartDate(`${point.date}T12:00:00Z`)} · média ${point.average.toFixed(1)}`}>
+                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-emerald-700 dark:text-emerald-300">{point.average.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>
+                <span className="block h-3 w-3 rounded-full border-2 border-white bg-emerald-500 shadow" />
               </div>
-              <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-slate-500">{view === 'daily' ? formatChartDate(`${point.date}T12:00:00Z`) : formatChartDate(`${point.date}T12:00:00Z`, { weekday: 'short' }).replace('.', '')}</span>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="grid h-6 shrink-0" style={{ gridTemplateColumns: `repeat(${dailyAverages.length}, minmax(0, 1fr))` }}>
+            {dailyAverages.map((point) => (
+              <span key={point.date} className="truncate text-center text-[10px] text-slate-500">{view === 'daily' ? formatChartDate(`${point.date}T12:00:00Z`) : formatChartDate(`${point.date}T12:00:00Z`, { weekday: 'short' }).replace('.', '')}</span>
+            ))}
+          </div>
         </div>
       </div>
     </div>
