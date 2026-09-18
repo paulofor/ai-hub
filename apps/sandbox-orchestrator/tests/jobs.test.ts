@@ -19,6 +19,18 @@ import {
 } from '../src/jobProcessor.js';
 import { JobProcessor, SandboxJob } from '../src/types.js';
 
+// Publication tests below capture POST payloads. Model the two read endpoints
+// separately; workBranch.test.ts exercises their state and failure scenarios.
+function pullRequestPreflightResponse(input: string | URL, init?: any): any | undefined {
+  if (init?.method !== 'GET') return undefined;
+  const url = new URL(String(input));
+  const body = url.pathname.includes('/compare/')
+    ? { ahead_by: 1, files: [{ filename: 'README.md' }] }
+    : url.pathname.endsWith('/pulls') ? [] : undefined;
+  if (body === undefined) return undefined;
+  return { ok: true, status: 200, json: async () => body };
+}
+
 function assertGithubDeliveryInstruction(prompt: string) {
   assert.match(prompt, /pedido de implementação ou correção autoriza/);
   assert.match(prompt, /criar ou atualizar o Pull Request/);
@@ -551,6 +563,8 @@ test('uses github token from job payload when creating a pull request', async ()
 
   const fetchCalls: any[] = [];
   const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     const url = typeof input === 'string' ? input : input.toString();
     fetchCalls.push({ url, init });
     return {
@@ -2499,6 +2513,8 @@ test('pushes changes and opens a pull request when credentials are present', asy
 
   const fetchCalls: any[] = [];
   const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     const url = typeof input === 'string' ? input : input.toString();
     fetchCalls.push({ url, init });
     return {
@@ -2694,6 +2710,8 @@ test('creates a pull request when only new files are added', async () => {
 
   const fetchCalls: any[] = [];
   const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     const url = typeof input === 'string' ? input : input.toString();
     fetchCalls.push({ url, init });
     return {
@@ -2796,7 +2814,9 @@ test('loads existing work branch before model execution and diffs against base b
   } as any;
 
   const fetchCalls: any[] = [];
-  const fakeFetch = async () => {
+  const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     fetchCalls.push({});
     return {
       ok: true,
@@ -2894,6 +2914,8 @@ test('limits pull request title and describes only code-generating request topic
 
   const fetchCalls: any[] = [];
   const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     const url = typeof input === 'string' ? input : input.toString();
     fetchCalls.push({ url, init });
     return {
@@ -2989,6 +3011,8 @@ test('reuses repository credentials from repoUrl when creating a pull request', 
 
   const fetchCalls: any[] = [];
   const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     const url = typeof input === 'string' ? input : input.toString();
     fetchCalls.push({ url, init });
     return {
@@ -3114,6 +3138,8 @@ test('retries pull request creation after transient errors', async () => {
 
   const fetchCalls: any[] = [];
   const fakeFetch = async (input: string | URL, init?: any) => {
+    const preflight = pullRequestPreflightResponse(input, init);
+    if (preflight) return preflight;
     const url = typeof input === 'string' ? input : input.toString();
     const attempt = fetchCalls.length + 1;
     fetchCalls.push({ attempt, url, init });

@@ -40,6 +40,7 @@ Validação local: `npm test` inclui os contratos de resumo com App Server simul
 - Falhas de CI/deploy devem ser diagnosticadas e corrigidas na sandbox antes de atualizar o PR; se já houve merge, usar um PR de correção. Proteções da branch e revisões obrigatórias continuam valendo. Falta de acesso/aprovação é bloqueio, nunca evidência de entrega concluída.
 - Qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório. Não use imagem de produção gerada manualmente fora do fluxo do repositório.
 - Análises sem alterações e o perfil Sandbox sem Git não iniciam publicação. Consulte os critérios, limites e matriz em [Entrega do modelo até o deploy](../../docs/entrega-modelo-github.md). A orientação não implementa um coordenador persistente de GitHub; o término de um turno não comprova deploy por si só.
+- A criação automática reutiliza primeiro o PR aberto para a mesma base e branch. Antes de criar outro, compara as branches remotas atuais: sem commits novos ou arquivos alterados, encerra normalmente sem PR vazio, mantendo o patch histórico do job. Um `422 No commits between` ocorrido após a comparação só é tratado como ausência de novidades quando uma nova consulta confirma esse estado; outros erros continuam preservando o workspace para recuperação. Consulte a [matriz de homologação](../../docs/homologacao-pr-sem-commits.md).
 
 ## Variáveis de ambiente
 

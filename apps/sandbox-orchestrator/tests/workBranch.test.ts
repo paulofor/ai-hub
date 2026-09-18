@@ -5,13 +5,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { SandboxJobProcessor } from '../src/jobProcessor.js';
-import { SandboxJob } from '../src/types.js';
+import { SandboxJob, SandboxProfile } from '../src/types.js';
 
 const branch = 'ai-hub/recovery-test';
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
-async function fixture(t: TestContext, existing = true) {
+type Fetch = NonNullable<ConstructorParameters<typeof SandboxJobProcessor>[3]>;
+
+async function fixture(t: TestContext, existing = true, github?: (remote: string) => Fetch) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-code-preservation-'));
   const remote = path.join(directory, 'remote.git');
   const seed = path.join(directory, 'seed');
@@ -39,9 +41,9 @@ async function fixture(t: TestContext, existing = true) {
     logs: [], interactions: [], interactionSequence: 0, timeoutCount: 0,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   };
-  const processor = new SandboxJobProcessor(undefined, 'test-model', {} as any, async () => {
+  const processor = new SandboxJobProcessor(undefined, 'test-model', {} as any, github?.(remote) ?? (async () => {
     assert.fail('No GitHub HTTP request is allowed in this fixture');
-  });
+  }));
   t.after(async () => {
     if (job.sandboxPath) await fs.rm(job.sandboxPath, { recursive: true, force: true });
     await fs.rm(directory, { recursive: true, force: true });
@@ -51,6 +53,7 @@ async function fixture(t: TestContext, existing = true) {
       await implementation(repo);
       return 'Synthetic code ready';
     };
+    (processor as any).runWithCodexAppServer = (processor as any).runWithOpenAIResponsesApi;
   };
   const commit = async (repo: string) => {
     git(repo, 'config', 'user.email', 'test@sandbox.local');
@@ -157,4 +160,217 @@ test('keeps recoverable code after local validation fails and never pushes it', 
   assert.equal(git(f.remote, 'rev-parse', `refs/heads/${branch}`), initialHead);
   assert.equal(await fs.readFile(path.join(f.job.sandboxPath!, 'repo/model.txt'), 'utf8'), 'validated model commit\n');
   assert.ok(f.job.patch?.includes('validated model commit'));
+});
+
+function githubFixture() {
+  const calls: { method: string; url: URL }[] = [];
+  let openPr: { html_url: string } | undefined;
+  let onCreate: (() => any) | undefined;
+  let onRead: ((url: URL) => any) | undefined;
+  const response = (status: number, body: unknown) => ({
+    ok: status >= 200 && status < 300, status,
+    json: async () => body, text: async () => JSON.stringify(body),
+  });
+  const noCommits = () => response(422, { message: 'Validation Failed', errors: [
+    { resource: 'PullRequest', code: 'custom', message: `No commits between main and ${branch}` },
+  ] });
+  const fetch = (remote: string): Fetch => async (input, init) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    calls.push({ method, url });
+    assert.equal(init?.headers?.Authorization, 'Bearer synthetic-token');
+    if (method === 'GET' && onRead) return onRead(url);
+    if (method === 'GET' && url.pathname.endsWith('/pulls')) {
+      assert.equal(url.searchParams.get('state'), 'open');
+      assert.equal(url.searchParams.get('head'), `example:${branch}`);
+      assert.equal(url.searchParams.get('base'), 'main');
+      return response(200, openPr ? [openPr] : []);
+    }
+    const ahead = Number(git(remote, 'rev-list', '--count', `main..${branch}`));
+    const changed = git(remote, 'diff', '--name-only', `main...${branch}`);
+    if (method === 'GET' && url.pathname.includes('/compare/')) {
+      assert.ok(decodeURIComponent(url.pathname).endsWith(`/compare/main...${branch}`));
+      return response(200, { ahead_by: ahead, files: changed ? changed.split('\n').map(filename => ({ filename })) : [] });
+    }
+    assert.equal(method, 'POST');
+    assert.ok(url.pathname.endsWith('/pulls'));
+    if (onCreate) return onCreate();
+    if (!ahead || !changed) return noCommits();
+    return response(201, { html_url: 'https://github.com/example/recovery-test/pull/1' });
+  };
+  return { calls, fetch, response, noCommits,
+    setOpenPr: (value: { html_url: string }) => { openPr = value; },
+    setOnCreate: (value: () => any) => { onCreate = value; },
+    setOnRead: (value: (url: URL) => any) => { onRead = value; },
+  };
+}
+
+const profiles: SandboxProfile[] = ['STANDARD', 'ECONOMY', 'SMART_ECONOMY', 'ECO_1', 'ECO_2', 'ECO_3', 'CHATGPT_CODEX', 'CHATGPT_CODEX_MKT'];
+
+test('completes unchanged identical branches without GitHub calls', async (t) => {
+  const f = await fixture(t);
+  f.job.createPullRequest = true;
+  git(f.seed, 'checkout', 'main');
+  git(f.seed, 'merge', '--ff-only', branch);
+  git(f.seed, 'push', 'origin', 'main');
+  f.model(async () => {});
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(f.job.patch, '');
+  assert.equal(f.job.pullRequestUrl, undefined);
+});
+
+for (const profile of profiles) {
+  test(`does not create a PR for a merged branch behind main (${profile})`, async (t) => {
+    const api = githubFixture();
+    const f = await fixture(t, true, api.fetch);
+    f.job.profile = profile;
+    f.job.createPullRequest = true;
+    git(f.seed, 'checkout', 'main');
+    git(f.seed, 'merge', '--ff-only', branch);
+    await fs.writeFile(path.join(f.seed, 'later.txt'), 'another delivered request\n');
+    git(f.seed, 'add', '.');
+    git(f.seed, 'commit', '-m', 'fixture later request');
+    git(f.seed, 'push', 'origin', 'main');
+    const main = git(f.remote, 'rev-parse', 'main');
+    f.model(async () => {});
+    await f.processor.process(f.job);
+    assert.equal(f.job.status, 'COMPLETED', f.job.error);
+    assert.equal(f.job.error, undefined);
+    assert.ok(f.job.patch?.includes('later.txt'), 'historical diff must remain available');
+    assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
+    assert.equal(git(f.remote, 'rev-parse', 'main'), main);
+    assert.ok(f.job.logs.some(line => line.includes('sem commits novos')));
+    await assert.rejects(fs.stat(f.job.sandboxPath!), { code: 'ENOENT' });
+  });
+}
+
+test('does not create a second PR when the model merges during the job', async (t) => {
+  const api = githubFixture();
+  const f = await fixture(t, false, api.fetch);
+  f.job.createPullRequest = true;
+  f.model(async (repo) => {
+    git(repo, 'checkout', '-b', branch);
+    await f.commit(repo);
+    git(repo, 'push', 'origin', branch);
+    git(f.seed, 'fetch', 'origin', branch);
+    git(f.seed, 'merge', '--no-ff', '-m', 'fixture merged PR', 'FETCH_HEAD');
+    git(f.seed, 'push', 'origin', 'main');
+  });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.ok(f.job.patch?.includes('model.txt'));
+  assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
+});
+
+test('reuses an open PR without attempting a duplicate POST', async (t) => {
+  const api = githubFixture();
+  api.setOpenPr({ html_url: 'https://github.com/example/recovery-test/pull/7' });
+  const f = await fixture(t, true, api.fetch);
+  f.job.createPullRequest = true;
+  f.model(async (repo) => { await f.commit(repo); });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(f.job.pullRequestUrl, 'https://github.com/example/recovery-test/pull/7');
+  assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
+  assert.equal(git(f.remote, 'show', `${branch}:model.txt`), 'validated model commit');
+});
+
+test('creates exactly one PR after comparing new remote changes', async (t) => {
+  const api = githubFixture();
+  const f = await fixture(t, false, api.fetch);
+  f.job.createPullRequest = true;
+  f.model(async (repo) => { await f.commit(repo); });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(f.job.pullRequestUrl, 'https://github.com/example/recovery-test/pull/1');
+  assert.deepEqual(api.calls.map(call => call.method), ['GET', 'GET', 'POST']);
+});
+
+test('rechecks a merge racing with PR creation instead of failing the job', async (t) => {
+  const api = githubFixture();
+  const f = await fixture(t, false, api.fetch);
+  f.job.createPullRequest = true;
+  f.model(async (repo) => { await f.commit(repo); });
+  api.setOnCreate(() => {
+    git(f.seed, 'fetch', 'origin', branch);
+    git(f.seed, 'merge', '--ff-only', 'FETCH_HEAD');
+    git(f.seed, 'push', 'origin', 'main');
+    return api.noCommits();
+  });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(api.calls.filter(call => call.method === 'POST').length, 1);
+  assert.equal(api.calls.filter(call => call.url.pathname.includes('/compare/')).length, 2);
+});
+
+test('reuses a PR opened between the initial lookup and POST', async (t) => {
+  const api = githubFixture();
+  const f = await fixture(t, false, api.fetch);
+  f.job.createPullRequest = true;
+  f.model(async (repo) => { await f.commit(repo); });
+  api.setOnCreate(() => {
+    api.setOpenPr({ html_url: 'https://github.com/example/recovery-test/pull/8' });
+    return api.response(422, { errors: [{ resource: 'PullRequest', code: 'custom', message: 'A pull request already exists' }] });
+  });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(f.job.pullRequestUrl, 'https://github.com/example/recovery-test/pull/8');
+  assert.equal(api.calls.filter(call => call.method === 'POST').length, 1);
+});
+
+for (const noCommits of [false, true]) {
+  test(`preserves an unconfirmed 422 and recoverable workspace (noCommits=${noCommits})`, async (t) => {
+    const api = githubFixture();
+    const f = await fixture(t, false, api.fetch);
+    f.job.createPullRequest = true;
+    f.model(async (repo) => { await f.commit(repo); });
+    api.setOnCreate(() => noCommits ? api.noCommits() : api.response(422, { errors: [{ resource: 'PullRequest', code: 'invalid', field: 'head' }] }));
+    await f.processor.process(f.job);
+    assert.equal(f.job.status, 'FAILED');
+    assert.match(f.job.error!, /Falha ao criar PR: 422/);
+    assert.equal(api.calls.filter(call => call.method === 'POST').length, 1);
+    assert.equal(await fs.readFile(path.join(f.job.sandboxPath!, 'repo/model.txt'), 'utf8'), 'validated model commit\n');
+  });
+}
+
+for (const endpoint of ['pulls', 'compare']) {
+  for (const failure of ['401', '403', 'network', 'invalid-json', 'invalid-shape']) {
+    test(`fails closed when ${endpoint} returns ${failure}`, async (t) => {
+      const api = githubFixture();
+      const f = await fixture(t, false, api.fetch);
+      f.job.createPullRequest = true;
+      f.model(async (repo) => { await f.commit(repo); });
+      api.setOnRead(url => {
+        if (endpoint === 'compare' && url.pathname.endsWith('/pulls')) return api.response(200, []);
+        if (failure === 'network') throw new Error('synthetic connection failure');
+        if (failure === 'invalid-json') return { ok: true, json: async () => { throw new SyntaxError('invalid JSON'); } };
+        if (failure === 'invalid-shape') return api.response(200, {});
+        return api.response(Number(failure), {});
+      });
+      await f.processor.process(f.job);
+      assert.equal(f.job.status, 'FAILED');
+      assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
+      assert.equal(await fs.readFile(path.join(f.job.sandboxPath!, 'repo/model.txt'), 'utf8'), 'validated model commit\n');
+      assert.ok(!f.job.logs.join('\n').includes('synthetic-token'));
+    });
+  }
+}
+
+test('does not open an empty PR for commits whose changes were reverted', async (t) => {
+  const api = githubFixture();
+  const f = await fixture(t, true, api.fetch);
+  f.job.createPullRequest = true;
+  git(f.seed, 'revert', '--no-edit', 'HEAD');
+  git(f.seed, 'push', 'origin', branch);
+  git(f.seed, 'checkout', 'main');
+  await fs.writeFile(path.join(f.seed, 'later.txt'), 'later main change\n');
+  git(f.seed, 'add', '.');
+  git(f.seed, 'commit', '-m', 'fixture main change');
+  git(f.seed, 'push', 'origin', 'main');
+  f.model(async () => {});
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
+  assert.ok(f.job.logs.some(line => line.includes('sem arquivos alterados')));
 });

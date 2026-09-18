@@ -282,6 +282,24 @@ class JobCancelledError extends Error {
   }
 }
 
+class PullRequestCreationError extends Error {
+  readonly noCommits: boolean;
+
+  constructor(readonly status: number, message: string, rawBody: string) {
+    super(message);
+    this.name = 'PullRequestCreationError';
+    let errors: unknown;
+    try {
+      errors = JSON.parse(rawBody)?.errors;
+    } catch {
+      // A non-JSON error must never be classified as a successful no-op.
+    }
+    this.noCommits = status === 422 && Array.isArray(errors) && errors.some(error =>
+      error?.resource === 'PullRequest' && error?.code === 'custom'
+      && typeof error.message === 'string' && error.message.startsWith('No commits between '));
+  }
+}
+
 export class SandboxJobProcessor implements JobProcessor {
   private static readonly INVESTIGATION_STAGES: InvestigationStage[] = [
     'REPRODUZIR',
@@ -5575,7 +5593,7 @@ grep -R -n -- "$@"
       );
       if (pr?.html_url) {
         job.pullRequestUrl = pr.html_url;
-        this.log(job, `pull request criado em ${job.pullRequestUrl}`);
+        this.log(job, `pull request disponível em ${job.pullRequestUrl}`);
       }
       return true;
     } catch (err) {
@@ -5669,11 +5687,20 @@ grep -R -n -- "$@"
     title: string,
     body: string,
   ): Promise<any> {
+    const existing = await this.findOpenPullRequest(job, repoSlug, token, head, baseBranch);
+    if (existing) {
+      this.log(job, `pull request existente reutilizado para branch ${head}`);
+      return existing;
+    }
+    // The job patch is relative to the base captured before model execution.
+    // Only the current remote comparison can tell whether a PR is still needed.
+    if (!(await this.hasPullRequestChanges(job, repoSlug, token, head, baseBranch))) {
+      return null;
+    }
     try {
       return await this.createPullRequestWithRetry(job, repoSlug, token, head, baseBranch, title, body);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('Falha ao criar PR: 422')) {
+      if (!(error instanceof PullRequestCreationError) || error.status !== 422) {
         throw error;
       }
       const existing = await this.findOpenPullRequest(job, repoSlug, token, head, baseBranch);
@@ -5681,8 +5708,43 @@ grep -R -n -- "$@"
         this.log(job, `pull request existente reutilizado para branch ${head}`);
         return existing;
       }
+      // A merge can happen between the comparison and POST. Confirm it instead
+      // of swallowing all validation errors (or trusting the message alone).
+      if (error.noCommits && !(await this.hasPullRequestChanges(job, repoSlug, token, head, baseBranch))) {
+        return null;
+      }
       throw error;
     }
+  }
+
+  private async hasPullRequestChanges(
+    job: SandboxJob,
+    repoSlug: string,
+    token: string,
+    head: string,
+    baseBranch: string,
+  ): Promise<boolean> {
+    if (!this.fetchImpl) {
+      throw new Error('fetch API indisponível; não é possível comparar branches para PR');
+    }
+    const url = `${this.githubApiBase}/repos/${repoSlug}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(head)}`;
+    const response = await this.fetchImpl(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) {
+      throw new Error(`Falha ao comparar branches para PR: ${response.status}`);
+    }
+    const comparison = await response.json();
+    if (!Number.isSafeInteger(comparison?.ahead_by) || comparison.ahead_by < 0 || !Array.isArray(comparison.files)) {
+      throw new Error('Resposta inválida ao comparar branches para PR');
+    }
+    if (comparison.ahead_by === 0 || comparison.files.length === 0) {
+      const reason = comparison.ahead_by === 0 ? 'sem commits novos' : 'sem arquivos alterados';
+      this.log(job, `branch ${head} ${reason} em relação a ${baseBranch}; nenhum PR novo necessário`);
+      return false;
+    }
+    return true;
   }
 
   private async findOpenPullRequest(
@@ -5705,11 +5767,13 @@ grep -R -n -- "$@"
       },
     });
     if (!response.ok) {
-      this.log(job, `falha ao consultar PR existente: ${response.status}`);
-      return null;
+      throw new Error(`Falha ao consultar PR existente: ${response.status}`);
     }
-    const pulls = await response.json().catch(() => []);
-    return Array.isArray(pulls) && pulls.length > 0 ? pulls[0] : null;
+    const pulls = await response.json();
+    if (!Array.isArray(pulls) || (pulls.length > 0 && typeof pulls[0]?.html_url !== 'string')) {
+      throw new Error('Resposta inválida ao consultar PR existente');
+    }
+    return pulls[0] ?? null;
   }
 
 
@@ -5759,10 +5823,12 @@ grep -R -n -- "$@"
             continue;
           }
 
-          throw new Error(
+          throw new PullRequestCreationError(
+            response.status,
             `Falha ao criar PR: ${response.status} ${message}${
               permissionHint ? ` (${permissionHint})` : ''
             }`,
+            rawBody,
           );
         }
 
