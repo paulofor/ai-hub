@@ -103,6 +103,16 @@ public class PullRequestService {
                                                                         String baseBranch,
                                                                         String headBranch) {
         JsonNode comparison = githubApiClient.compare(owner, repo, baseBranch, headBranch);
+        if (comparison == null || !comparison.has("ahead_by") || !comparison.get("ahead_by").canConvertToInt()) {
+            throw new IllegalStateException("Resposta inválida ao comparar branches para publicação");
+        }
+        int aheadBy = comparison.get("ahead_by").asInt();
+        if (aheadBy < 0) {
+            throw new IllegalStateException("Resposta inválida ao comparar branches para publicação");
+        }
+        if (aheadBy == 0) {
+            return new BranchPublicationReadiness(List.of(), List.of());
+        }
         List<String> changedFiles = new ArrayList<>();
         if (comparison != null && comparison.has("files") && comparison.get("files").isArray()) {
             comparison.get("files").forEach(file -> {
