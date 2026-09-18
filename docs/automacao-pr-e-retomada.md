@@ -1,5 +1,7 @@
 # Automação de PR e retomada de solicitações
 
+> Atualização de 18/09/2026: a [orientação de entrega do modelo](entrega-modelo-github.md) passou a exigir PR, merge e acompanhamento de CI/deploy durante a execução, conforme solicitação do usuário. O diagnóstico e a proposta abaixo descrevem a automação persistente, que permanece um escopo distinto; a orientação atual não depende de um novo clique em “Pedir PR”.
+
 ## Pergunta respondida
 
 É possível eliminar a intervenção do usuário entre a conclusão de uma alteração e a

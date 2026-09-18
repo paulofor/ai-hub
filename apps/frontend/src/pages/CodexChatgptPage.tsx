@@ -1,3 +1,4 @@
+import { buildPostPrContinuationPrompt, GITHUB_DELIVERY_INSTRUCTION, PRODUCTION_PUBLICATION_INSTRUCTION, CODEX_OPERATIONAL_INSTRUCTION, SANDBOX_OPERATIONAL_INSTRUCTION } from '../lib/deliveryInstructions';
 import { CodexQuotaUsage } from '../components/CodexQuotaUsage';
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -1228,15 +1229,6 @@ const buildPrRequestMarkerContent = (url?: string, title?: string) => {
   return `Pedido de PR registrado no lote. ${label}`;
 };
 
-const buildPostPrContinuationPrompt = (prUrl?: string, environment?: string) => [
-  'Continue esta solicitação até ela ficar completamente resolvida.',
-  prUrl?.trim() ? `O PR do lote já foi criado em ${prUrl.trim()}.` : 'O PR do lote já foi solicitado.',
-  'Considere que o usuário aprovou ou está acompanhando o PR pelo GitHub e quer evitar recomeçar contexto em uma nova solicitação.',
-  'Verifique o estado atual do repositório, do PR/deploy e da funcionalidade afetada usando as ferramentas disponíveis.',
-  'Se o PR ainda não tiver sido aprovado, mergeado ou deployado, explique objetivamente o bloqueio e qual validação deve ser feita depois da publicação.',
-  'Se a alteração já estiver publicada, valide como usuário final quando possível, identifique o que ainda falta para resolver o pedido original e implemente os ajustes restantes no mesmo fluxo.',
-  environment?.trim() ? `Ambiente/repositório selecionado: ${environment.trim()}.` : ''
-].filter(Boolean).join('\n');
 
 const RESPONSE_READY_TITLE_PREFIX = '● ';
 const RESPONSE_READY_MELODY_FREQUENCIES_HZ = [
@@ -1444,7 +1436,6 @@ interface CodexChatgptVariantConfig {
   promptExtraLines: string[];
 }
 
-const CODEX_CHATGPT_OPERATIONAL_INSTRUCTION = 'Orientação importante para perfis Codex ChatGPT: quando a solicitação for criar um artefato dentro do Marketing Hub, faça isso pelo front-end do sistema; se o front-end ainda não tiver a funcionalidade necessária, implemente essa funcionalidade, avise o usuário e aguarde o deploy antes de criar o artefato por esse caminho; quando a solicitação for alterar uma funcionalidade de módulo, altere o código do repositório, valide e deixe a mudança pronta para aguardar o deploy. Nunca use SSH para publicar diretamente uma alteração.';
 const CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION = 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis de navegador configuradas. A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium, usando dispositivos de @playwright/test como devices["iPhone 15 Pro"] ou devices["Pixel 7"]; sempre que precisar testar uma URL como usuário de celular, use esse recurso para abrir a página com viewport, user agent, touch e deviceScaleFactor de celular, gerar screenshots e validar interações. Para vídeos, áudio e animações em mobile, combine essa emulação com sandbox-media-player, ffmpeg e ffprobe para testar reprodução, duração, frames, sincronia, controles nativos e comportamento visual no layout mobile.';
 const CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION = 'A sandbox dos modelos possui ffmpeg e ffprobe disponíveis pelos comandos ffmpeg e ffprobe; quando a solicitação envolver vídeos, use ffmpeg para converter, cortar, extrair áudio, gerar thumbnails e sintetizar mídias de teste, e use ffprobe para inspecionar metadados, codecs, resolução, duração, streams e integridade básica. O comando sandbox-media-player <arquivo-video-ou-audio> [saida.html] gera um player HTML local com controles nativos de vídeo/áudio; abra o HTML com Chromium/Playwright para reproduzir a mídia e avaliar naturalidade da pronúncia, sincronização labial, cortes e qualidade perceptual além da validação técnica.';
 
@@ -1458,8 +1449,9 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptModeLine: 'Você está em uma conversa interativa da Fase 2 do Codex ChatGPT Managed.',
   promptExtraLines: [
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
-    'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
-    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    GITHUB_DELIVERY_INSTRUCTION,
+    PRODUCTION_PUBLICATION_INSTRUCTION,
+    CODEX_OPERATIONAL_INSTRUCTION,
     CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
     CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION
   ]
@@ -1477,13 +1469,13 @@ const MARKETING_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     'Nosso objetivo principal é gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub.',
     'Use a sandbox para baixar e analisar o repositório como uma base de relatórios de marketing, principalmente arquivos Markdown.',
     'Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis.',
-    'Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada. O modelo pode testar tudo no próprio ambiente, mas qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório; não publique nem recomende imagem de produção gerada manualmente fora do fluxo do repositório.',
-    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    GITHUB_DELIVERY_INSTRUCTION,
+    PRODUCTION_PUBLICATION_INSTRUCTION,
+    CODEX_OPERATIONAL_INSTRUCTION,
     CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
     CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
-    'No lugar de atuar como programação, atue como analista de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades.',
+    'Priorize a análise de marketing digital: campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades. Quando o usuário solicitar implementação ou correção, execute também as alterações e a entrega de código necessárias.',
     'Gere relatórios de orientação com melhorias acionáveis para o usuário e preserve evidências dos arquivos analisados.',
-    'Só crie ou prepare Pull Request quando o usuário pedir explicitamente o PR ou usar o botão Pedir PR.',
     'Na resposta final, responda somente com JSON válido no formato {"titulo":"<título muito curto, uma frase simples>","comentario":"<resposta principal em Markdown>","impactoAumentoVendas":"medio","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":"<sugestão de recurso ou ferramenta que teria permitido fazer um trabalho melhor durante a solicitação, ou string vazia se o ambiente já foi suficiente>"}. O campo "impactoAumentoVendas" é obrigatório e deve indicar se esta solicitação contribui para aumentar vendas, usando exclusivamente um dos cinco níveis: "muito_baixo", "baixo", "medio", "alto" ou "muito_alto". Use "muito_alto" quando a entrega atuar diretamente em uma alavanca central de receita ou conversão com alto potencial mensurável; use "alto" quando mexer diretamente em oferta, funil, copy, criativos, segmentação, checkout, recuperação ou campanhas; use "medio" quando melhorar análise, operação, instrumentação ou uma etapa indireta do crescimento; use "baixo" quando o efeito comercial for pequeno e distante; use "muito_baixo" quando for ajuste técnico, organização ou investigação sem conexão comercial relevante. O campo "alterouCodigoRepositorio" é obrigatório e deve ser true somente quando você tiver criado, removido ou alterado arquivos de código/configuração/testes/documentação versionada no repositório; use false quando tiver feito apenas análise, orientação ou leitura. O campo "resumoCodigoPr" é obrigatório e deve conter um resumo muito curto, em uma frase, das mudanças de código para entrar no PR; use string vazia quando "alterouCodigoRepositorio" for false. O campo opcional "orientacaoProximaAcao" deve ser incluído somente quando existir uma ação efetiva do usuário necessária para concluir a solicitação, como decidir entre alternativas, aprovar algo, fornecer acesso ou executar uma etapa fora da sandbox; quando a solicitação já tiver sido implementada ou não houver ação necessária do usuário, omita esse campo. Use comentario para a resposta normal e sugestaoMelhoriaAmbiente apenas para melhoria do ambiente de execução.'
   ]
 };
@@ -1499,7 +1491,7 @@ const SANDBOX_VARIANT_CONFIG: CodexChatgptVariantConfig = {
   promptExtraLines: [
     'Execute solicitações do usuário dentro da sandbox do modelo, sem integração com Git e sem uso de repositório.',
     'Não clone repositórios, não gere diff, não prepare branch e não crie Pull Request.',
-    CODEX_CHATGPT_OPERATIONAL_INSTRUCTION,
+    SANDBOX_OPERATIONAL_INSTRUCTION,
     CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
     CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
     'Use o diretório temporário da sandbox apenas como área de trabalho descartável para comandos, arquivos auxiliares e anexos.',
@@ -2200,7 +2192,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       productSourceInstruction,
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
-      'Não crie Pull Request até o usuário pedir explicitamente o PR ou até o botão Pedir PR ser usado.',
       ...config.promptExtraLines,
       selectedConversation ? `Contexto selecionado pelo usuário: conversa salva "${selectedConversation.title}" (${selectedConversation.messageCount} mensagem(ns), atualizada em ${formatDateTime(selectedConversation.updatedAt)}).` : '',
       history ? `Histórico da conversa:\n${history}` : '',
