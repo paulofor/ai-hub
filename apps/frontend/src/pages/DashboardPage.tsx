@@ -332,6 +332,16 @@ function MetricSeriesPanel({
             labelForBucket={labelForBucket}
             barClassName="bg-violet-500"
           />
+          <MiniBarChart
+            title="Cota semanal consumida"
+            buckets={buckets}
+            getValue={(bucket) => bucket.weeklyQuotaConsumedPercentagePoints ?? null}
+            formatValue={(value) => `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} p.p.`}
+            labelForBucket={labelForBucket}
+            barClassName="bg-rose-500"
+            referenceValue={title === 'Últimos 14 dias' ? 14 : undefined}
+            referenceLabel="Meta diária: 14 p.p."
+          />
         </div>
       ) : (
         <div className="mt-4 rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500 dark:border-slate-800">
@@ -348,17 +358,21 @@ function MiniBarChart({
   getValue,
   formatValue,
   labelForBucket,
-  barClassName
+  barClassName,
+  referenceValue,
+  referenceLabel
 }: {
   title: string;
   buckets: CodexDashboardMetricWindow[];
-  getValue: (bucket: CodexDashboardMetricWindow) => number;
+  getValue: (bucket: CodexDashboardMetricWindow) => number | null;
   formatValue: (value: number) => string;
   labelForBucket: (bucket: CodexDashboardMetricWindow, index: number) => string;
   barClassName: string;
+  referenceValue?: number;
+  referenceLabel?: string;
 }) {
   const values = buckets.map((bucket) => getValue(bucket));
-  const maxValue = Math.max(1, ...values);
+  const maxValue = Math.max(1, referenceValue ?? 0, ...values.filter((value): value is number => typeof value === 'number'));
   const periodLabel =
     buckets.length > 0
       ? `${formatChartDate(buckets[0].startsAt)} a ${formatChartDate(buckets[buckets.length - 1].startsAt)}`
@@ -372,26 +386,37 @@ function MiniBarChart({
           <div className="mt-0.5 text-[10px] leading-none text-slate-500 sm:hidden">{periodLabel}</div>
         </div>
       </div>
-      <div className="flex h-36 items-end gap-1 rounded-lg border border-slate-100 bg-slate-50/80 px-2 pb-7 pt-3 dark:border-slate-800 dark:bg-slate-950/40">
-        {buckets.map((bucket, index) => {
+      <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-2 pt-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="relative flex h-28 items-end gap-1">
+          {referenceValue !== undefined && (
+            <div className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-rose-700/80 dark:border-rose-300/80" style={{ bottom: `${Math.min(100, (referenceValue / maxValue) * 100)}%` }} aria-label={referenceLabel}>
+              <span className="absolute -top-4 right-0 rounded bg-white/90 px-1 text-[10px] font-medium text-rose-700 dark:bg-slate-950/90 dark:text-rose-300">{referenceLabel}</span>
+            </div>
+          )}
+          {buckets.map((bucket, index) => {
           const value = getValue(bucket);
-          const height = value > 0 ? Math.max(8, Math.round((value / maxValue) * 100)) : 2;
-          const label = labelForBucket(bucket, index);
+          const height = typeof value === 'number' && value > 0 ? Math.max(8, Math.round((value / maxValue) * 100)) : 2;
           const fullLabel = formatChartDate(bucket.startsAt, { day: '2-digit', month: '2-digit', year: '2-digit' });
+          const valueLabel = typeof value === 'number' ? formatValue(value) : 'Indisponível';
           return (
             <div key={`${bucket.startsAt}-${index}`} className="relative flex h-full min-w-0 flex-1 items-end justify-center">
               <div
-                className={`w-full max-w-8 rounded-t-sm ${barClassName}`}
+                className={`w-full max-w-8 rounded-t-sm ${typeof value === 'number' ? barClassName : 'bg-slate-300 dark:bg-slate-700'}`}
                 style={{ height: `${height}%` }}
-                title={`${fullLabel}: ${formatValue(value)}`}
-                aria-label={`${fullLabel}: ${formatValue(value)}`}
+                title={`${fullLabel}: ${valueLabel}`}
+                aria-label={`${fullLabel}: ${valueLabel}`}
               />
-              <span className="absolute top-full mt-1 hidden w-12 -translate-x-1/2 left-1/2 truncate text-center text-[10px] leading-none text-slate-500 sm:block">
-                {label}
-              </span>
             </div>
           );
-        })}
+          })}
+        </div>
+        <div className="relative h-7">
+          {buckets.map((bucket, index) => (
+            <span key={`${bucket.startsAt}-${index}`} className="absolute top-1 hidden w-12 -translate-x-1/2 truncate text-center text-[10px] leading-none text-slate-500 sm:block" style={{ left: `${((index + 0.5) / buckets.length) * 100}%` }}>
+              {labelForBucket(bucket, index)}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

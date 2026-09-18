@@ -155,6 +155,23 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         """)
     List<String> findQuotaUsagesSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     @Query("""
+        select cr.createdAt, cr.quotaUsage
+        from CodexRequest cr
+        where cr.createdAt >= :start
+          and cr.quotaUsage is not null
+        order by cr.createdAt asc
+        """)
+    List<Object[]> findQuotaUsageRowsSince(@Param("start") Instant start);
+    @Query("""
+        select cr.createdAt, cr.quotaUsage
+        from CodexRequest cr
+        where cr.createdAt >= :start
+          and cr.profile = :profile
+          and cr.quotaUsage is not null
+        order by cr.createdAt asc
+        """)
+    List<Object[]> findQuotaUsageRowsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
+    @Query("""
         select cr.id, cr.createdAt, cr.responseText
         from CodexRequest cr
         where cr.profile = :profile
