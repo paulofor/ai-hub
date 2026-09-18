@@ -605,26 +605,38 @@ public class CodexRequestService {
         double total = 0;
         boolean measured = false;
         for (String quotaUsage : quotaUsages == null ? List.<String>of() : quotaUsages) {
-            try {
-                JsonNode windows = objectMapper.readTree(quotaUsage).path("windows");
-                if (!windows.isArray()) {
-                    continue;
-                }
-                for (JsonNode window : windows) {
-                    JsonNode consumed = window.path("consumedPercentagePoints");
-                    if ("codex".equals(window.path("limitId").asText())
-                        && window.path("windowDurationMins").asInt() == 10_080
-                        && consumed.isNumber()
-                        && Double.isFinite(consumed.asDouble())) {
-                        total += consumed.asDouble();
-                        measured = true;
-                    }
-                }
-            } catch (JsonProcessingException ignored) {
-                // A malformed historical snapshot must not make the dashboard unavailable.
+            Double consumed = weeklyQuotaConsumption(quotaUsage);
+            if (consumed != null) {
+                total += consumed;
+                measured = true;
             }
         }
         return measured ? total : null;
+    }
+
+    private Double weeklyQuotaConsumption(String quotaUsage) {
+        try {
+            JsonNode windows = objectMapper.readTree(quotaUsage).path("windows");
+            if (!windows.isArray()) {
+                return null;
+            }
+            double total = 0;
+            boolean measured = false;
+            for (JsonNode window : windows) {
+                JsonNode consumed = window.path("consumedPercentagePoints");
+                if ("codex".equals(window.path("limitId").asText())
+                    && window.path("windowDurationMins").asInt() == 10_080
+                    && consumed.isNumber()
+                    && Double.isFinite(consumed.asDouble())) {
+                    total += consumed.asDouble();
+                    measured = true;
+                }
+            }
+            return measured ? total : null;
+        } catch (JsonProcessingException ignored) {
+            // A malformed historical snapshot must not make the dashboard unavailable.
+            return null;
+        }
     }
 
     private CodexDashboardMetrics.CodexSalesImpactScore buildSalesImpactScore(Instant start, CodexIntegrationProfile profile) {
@@ -718,6 +730,22 @@ public class CodexRequestService {
             accumulate(monthly, createdDate.withDayOfMonth(1), interactions, duration, totalTokens);
         }
 
+        List<Object[]> quotaRows = profile == null
+            ? codexRequestRepository.findQuotaUsageRowsSince(start)
+            : codexRequestRepository.findQuotaUsageRowsSinceAndProfile(start, profile);
+        for (Object[] row : quotaRows == null ? List.<Object[]>of() : quotaRows) {
+            Instant createdAt = aggregateInstant(row, 0);
+            Double consumed = row.length > 1 && row[1] instanceof String quotaUsage ? weeklyQuotaConsumption(quotaUsage) : null;
+            if (createdAt == null || consumed == null) {
+                continue;
+            }
+            ZonedDateTime createdDateTime = createdAt.atZone(zone);
+            LocalDate createdDate = createdDateTime.toLocalDate();
+            accumulateQuota(daily, operationalDate(createdDateTime), consumed);
+            accumulateQuota(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), consumed);
+            accumulateQuota(monthly, createdDate.withDayOfMonth(1), consumed);
+        }
+
         return new CodexDashboardMetrics.CodexDashboardMetricSeries(
             toDailyMetricWindows(daily, zone),
             toMetricWindows(weekly, zone),
@@ -761,6 +789,12 @@ public class CodexRequestService {
         accumulator.totalTokens += totalTokens;
     }
 
+    private void accumulateQuota(Map<LocalDate, MetricAccumulator> buckets, LocalDate startsAt, double consumedPercentagePoints) {
+        MetricAccumulator accumulator = buckets.computeIfAbsent(startsAt, ignored -> new MetricAccumulator());
+        accumulator.weeklyQuotaConsumedPercentagePoints = (accumulator.weeklyQuotaConsumedPercentagePoints == null ? 0 : accumulator.weeklyQuotaConsumedPercentagePoints)
+            + consumedPercentagePoints;
+    }
+
     private List<CodexDashboardMetrics.CodexDashboardMetricWindow> toMetricWindows(Map<LocalDate, MetricAccumulator> buckets, ZoneId zone) {
         return buckets.entrySet().stream()
             .map(entry -> new CodexDashboardMetrics.CodexDashboardMetricWindow(
@@ -769,7 +803,7 @@ public class CodexRequestService {
                 entry.getValue().interactionCount,
                 entry.getValue().durationMs,
                 entry.getValue().totalTokens,
-                null
+                entry.getValue().weeklyQuotaConsumedPercentagePoints
             ))
             .toList();
     }
@@ -782,7 +816,7 @@ public class CodexRequestService {
                 entry.getValue().interactionCount,
                 entry.getValue().durationMs,
                 entry.getValue().totalTokens,
-                null
+                entry.getValue().weeklyQuotaConsumedPercentagePoints
             ))
             .toList();
     }
@@ -809,6 +843,7 @@ public class CodexRequestService {
         private long interactionCount;
         private long durationMs;
         private long totalTokens;
+        private Double weeklyQuotaConsumedPercentagePoints;
     }
 
     private CodexRequestSummary prepareRequestSummary(CodexRequestSummary summary) {

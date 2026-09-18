@@ -254,6 +254,11 @@ class CodexRequestServiceTest {
             "{\"windows\":[{\"limitId\":\"codex\",\"windowDurationMins\":300,\"consumedPercentagePoints\":9}]}",
             "invalid-json"
         ));
+        when(codexRequestRepository.findQuotaUsageRowsSince(any(Instant.class))).thenReturn(List.of(
+            new Object[] {todayStart.plusSeconds(3_600), "{\"windows\":[{\"limitId\":\"codex\",\"windowDurationMins\":10080,\"consumedPercentagePoints\":1.25}]}"},
+            new Object[] {previousMonthStart.plusSeconds(7_200), "{\"windows\":[{\"limitId\":\"codex\",\"windowDurationMins\":10080,\"consumedPercentagePoints\":2.5}]}"},
+            new Object[] {todayStart.plusSeconds(7_200), "invalid-json"}
+        ));
 
         var metrics = buildService().dashboardMetrics();
 
@@ -272,6 +277,7 @@ class CodexRequestServiceTest {
                 assertThat(window.interactionCount()).isEqualTo(3);
                 assertThat(window.durationMs()).isEqualTo(1_000L);
                 assertThat(window.totalTokens()).isEqualTo(12_000L);
+                assertThat(window.weeklyQuotaConsumedPercentagePoints()).isEqualTo(1.25);
             });
 
         Instant thisWeekBucket = today
@@ -281,16 +287,23 @@ class CodexRequestServiceTest {
         assertThat(metrics.series().weekly())
             .filteredOn(window -> window.startsAt().equals(thisWeekBucket))
             .singleElement()
-            .satisfies(window -> assertThat(window.requestCount()).isEqualTo(1));
+            .satisfies(window -> {
+                assertThat(window.requestCount()).isEqualTo(1);
+                assertThat(window.weeklyQuotaConsumedPercentagePoints()).isEqualTo(1.25);
+            });
 
         Instant thisMonthBucket = today.withDayOfMonth(1).atStartOfDay(zone).toInstant();
         assertThat(metrics.series().monthly())
             .filteredOn(window -> window.startsAt().equals(thisMonthBucket))
             .singleElement()
-            .satisfies(window -> assertThat(window.interactionCount()).isEqualTo(3));
+            .satisfies(window -> {
+                assertThat(window.interactionCount()).isEqualTo(3);
+                assertThat(window.weeklyQuotaConsumedPercentagePoints()).isEqualTo(1.25);
+            });
 
         verify(codexRequestRepository, times(3)).summarizeMetricsSince(any(Instant.class));
         verify(codexRequestRepository).findMetricRowsSince(any(Instant.class));
+        verify(codexRequestRepository).findQuotaUsageRowsSince(any(Instant.class));
     }
 
     @Test
