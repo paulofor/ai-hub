@@ -36,9 +36,10 @@ Validação local: `npm test` inclui os contratos de resumo com App Server simul
 
 ## Política de publicação
 
-- Toda alteração de código feita pelo modelo precisa passar por um Pull Request executado pelo usuário antes de ser publicada.
-- O modelo pode editar arquivos e executar testes no sandbox quando o usuário solicitar ajuste, correção ou implementação, mas não deve abrir, publicar ou recomendar publicação direta sem pedido explícito.
+- Solicitações de implementação/correção com repositório orientam o modelo a validar localmente, criar ou atualizar o PR, revisar/aprovar quando permitido, fazer merge na `main` e acompanhar os workflows e deploys aplicáveis até sucesso, sem exigir novo clique em “Pedir PR”. Restrições explícitas do usuário continuam prevalecendo.
+- Falhas de CI/deploy devem ser diagnosticadas e corrigidas na sandbox antes de atualizar o PR; se já houve merge, usar um PR de correção. Proteções da branch e revisões obrigatórias continuam valendo. Falta de acesso/aprovação é bloqueio, nunca evidência de entrega concluída.
 - Qualquer imagem usada em produção deve ser criada obrigatoriamente pelo código, Dockerfile, Compose ou pipeline versionados neste repositório. Não use imagem de produção gerada manualmente fora do fluxo do repositório.
+- Análises sem alterações e o perfil Sandbox sem Git não iniciam publicação. Consulte os critérios, limites e matriz em [Entrega do modelo até o deploy](../../docs/entrega-modelo-github.md). A orientação não implementa um coordenador persistente de GitHub; o término de um turno não comprova deploy por si só.
 
 ## Variáveis de ambiente
 
