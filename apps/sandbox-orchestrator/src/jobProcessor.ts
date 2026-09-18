@@ -5426,7 +5426,9 @@ grep -R -n -- "$@"
     if (!(await this.isGitRepository(repoPath))) {
       return '';
     }
-    const { stdout: trackedDiff } = await this.runGitCommand(`git diff ${baseCommit ?? 'HEAD'}`, repoPath, job);
+    const { stdout: trackedDiff } = await this.runGitCommand(
+      `git diff ${baseCommit ?? 'HEAD'} -- . ':(top,exclude).ai-hub-bin' ':(top,exclude).codex'`, repoPath, job,
+    );
     const untracked = (await this.listUntrackedFiles(repoPath, job)).filter(
       (file) => !this.isInternalWorkspacePath(file),
     );
@@ -5551,9 +5553,12 @@ grep -R -n -- "$@"
       } else {
         this.log(job, `branch de trabalho criada: ${branchName}`);
       }
-      await exec('git add -A', { cwd: repoPath });
-      const statusLines = await this.getStatusLines(repoPath, job);
-      if (statusLines.length > 0) {
+      // Runner tools and attachments are not source changes, even when a model
+      // has staged them. Keep them on disk, but out of the automatic commit.
+      await execFile('git', ['reset', '--quiet', 'HEAD', '--', '.ai-hub-bin', '.codex'], { cwd: repoPath });
+      await execFile('git', ['add', '-A', '--', '.', ':(top,exclude).ai-hub-bin', ':(top,exclude).codex'], { cwd: repoPath });
+      const { stdout: stagedChanges } = await execFile('git', ['diff', '--cached', '--name-only', '-z'], { cwd: repoPath });
+      if (stagedChanges.length > 0) {
         await exec('git commit -m "Correção automática do AI Hub"', { cwd: repoPath });
       } else {
         this.log(job, 'nenhuma alteração nova para commitar; mantendo commits existentes da branch de trabalho');

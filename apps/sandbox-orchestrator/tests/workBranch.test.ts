@@ -44,6 +44,10 @@ async function fixture(t: TestContext, existing = true, github?: (remote: string
   const processor = new SandboxJobProcessor(undefined, 'test-model', {} as any, github?.(remote) ?? (async () => {
     assert.fail('No GitHub HTTP request is allowed in this fixture');
   }));
+  // Exercise the real preflight fallback independently of the host's packages.
+  const available = (processor as any).isCommandAvailable.bind(processor);
+  (processor as any).isCommandAvailable = (command: string) => command === 'rg' ? false : available(command);
+  (processor as any).cleanupDockerHomologation = async () => {};
   t.after(async () => {
     if (job.sandboxPath) await fs.rm(job.sandboxPath, { recursive: true, force: true });
     await fs.rm(directory, { recursive: true, force: true });
@@ -285,6 +289,27 @@ test('creates exactly one PR after comparing new remote changes', async (t) => {
   assert.equal(f.job.status, 'COMPLETED', f.job.error);
   assert.equal(f.job.pullRequestUrl, 'https://github.com/example/recovery-test/pull/1');
   assert.deepEqual(api.calls.map(call => call.method), ['GET', 'GET', 'POST']);
+});
+
+test('publishes real changes without staging internal fallback tools or attachments', async (t) => {
+  const api = githubFixture();
+  const f = await fixture(t, false, api.fetch);
+  f.job.createPullRequest = true;
+  f.model(async (repo) => {
+    const fallback = path.join(repo, '.ai-hub-bin/rg');
+    execFileSync('bash', ['-n', fallback]);
+    execFileSync('shellcheck', [fallback]);
+    await fs.mkdir(path.join(repo, '.codex/attachments'), { recursive: true });
+    await fs.writeFile(path.join(repo, '.codex/attachments/test.txt'), 'synthetic attachment\n');
+    await fs.writeFile(path.join(repo, 'new file.txt'), 'new source\n');
+    // Internal files may already have been staged by a model command.
+    git(repo, 'add', '-A');
+  });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(git(f.remote, 'ls-tree', '-r', '--name-only', branch), 'base.txt\nnew file.txt');
+  assert.ok(!f.job.patch?.includes('.ai-hub-bin'));
+  assert.ok(!f.job.changedFiles?.some(file => file.startsWith('.codex/')));
 });
 
 test('rechecks a merge racing with PR creation instead of failing the job', async (t) => {

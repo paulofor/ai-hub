@@ -41,6 +41,7 @@ workspace preservado.
 | 422 distinto ou inconsistência após 422 | Job FAILED, erro preservado, sem retry cego |
 | 401/403, transporte ou resposta inválida nas consultas | Não criar PR; preservar workspace e diagnóstico sem token |
 | Publicação automática desativada | Publicar somente a branch; não consultar/criar PR |
+| Runner sem rg; ferramentas e anexos internos já staged | Executar o fallback real; não incluir `.ai-hub-bin`/`.codex` no patch ou commit automático, nem criar diferença artificial |
 | Push rejeitado, remoto concorrente e teste local falhando | Manter proteções existentes e código recuperável |
 | Observabilidade e segregação | Logs diferenciam reutilização/ausência/erro; patch preservado; Git bare temporário e GitHub/modelo simulados, sem métricas de produção nem APIs pagas |
 | Navegadores e dispositivos | Não aplicável: contrato/UI inalterados; decisão comum do orquestrador cobre todos os perfis com repositório |
@@ -48,3 +49,19 @@ workspace preservado.
 Validação: testes de integração do processador com Git local e respostas HTTP
 simuladas, seguidos pela suíte do orquestrador e revisão do diff. Publicação
 somente após esses critérios, por PR, CI, merge e pipeline versionada.
+
+## Diferença de ambiente identificada no CI
+
+O primeiro CI do PR #726 encontrou ausência de `rg` no runner. O preflight
+criava `.ai-hub-bin/rg`; embora arquivos internos não rastreados fossem excluídos
+do patch, o estágio automático usava `git add -A` sem exclusões. Isso gerava um
+commit artificial e invalidava a ausência de mudanças. A condição foi reproduzida
+na sandbox forçando somente a detecção de `rg` indisponível e executando o fallback
+real. O teste passou a cobrir também anexos internos previamente staged.
+
+Alternativas: instalar rg apenas no CI (baixo esforço, deixa o bug em outros
+runners), modificar `.gitignore` de cada repositório (esforço médio, altera arquivos
+do usuário e não cobre índice já staged), ou alinhar patch/estágio com os caminhos
+internos já excluídos pela coleta (esforço médio, cobre todas as máquinas).
+Escolhida a terceira: manter arquivos no disco, retirar alterações internas do
+índice antes do estágio seletivo e decidir o commit pelo diff realmente staged.
