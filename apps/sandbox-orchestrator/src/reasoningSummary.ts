@@ -7,6 +7,21 @@ function object(value: unknown): JsonObject | undefined {
 /** Collect only public summaries, never raw reasoning/content. */
 export class ReasoningSummaryCollector {
   private readonly items = new Map<string, { parts: Map<number, string>; completed: boolean }>();
+  private readonly plans = new Map<string, string>();
+
+  addPlanUpdate(turnId: string, params: unknown): void {
+    const event = object(params);
+    if (!event || !Array.isArray(event.plan)) return;
+    const steps = event.plan.flatMap((entry: unknown) => {
+      const step = object(entry);
+      if (!step || typeof step.step !== 'string' || !step.step.trim()) return [];
+      const marker = step.status === 'completed' ? 'x' : ' ';
+      return [`- [${marker}] ${step.step.trim()}`];
+    });
+    const explanation = typeof event.explanation === 'string' ? event.explanation.trim() : '';
+    const text = [explanation, ...steps].filter(Boolean).join('\n');
+    if (text) this.plans.set(turnId, `**Objetivos**\n${text}`);
+  }
 
   addDelta(turnId: string, params: unknown): void {
     const event = object(params);
@@ -35,10 +50,10 @@ export class ReasoningSummaryCollector {
   }
 
   text(): string | undefined {
-    const text = [...this.items.values()]
+    const summaries = [...this.items.values()]
       .flatMap((item) => [...item.parts.entries()].sort(([a], [b]) => a - b).map(([, text]) => text.trim()))
-      .filter(Boolean)
-      .join('\n\n');
+      .filter(Boolean);
+    const text = [...this.plans.values(), ...summaries].join('\n\n');
     return text || undefined;
   }
 

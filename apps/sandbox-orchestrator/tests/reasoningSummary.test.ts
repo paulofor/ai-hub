@@ -92,6 +92,28 @@ test('resumo final é autoritativo, separa partes/itens e não duplica eventos c
   assert.equal(response, 'Resposta final preservada.');
 });
 
+test('inclui os objetivos publicados pelo update_plan no resumo visível', async () => {
+  const { client } = appServerDouble((_params, emit) => {
+    emit('turn/plan/updated', {
+      ...scope,
+      explanation: 'Plano atualizado após localizar a causa raiz.',
+      plan: [
+        { step: 'Reproduzir o problema', status: 'completed' },
+        { step: 'Validar a correção', status: 'in_progress' },
+      ],
+    });
+    emit('item/completed', reasoning(['A coleta do resumo continua preservada.']));
+    finish(emit);
+  });
+  const job = makeJob();
+  const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
+  await (processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra');
+  assert.equal(
+    job.reasoningSummary,
+    '**Objetivos**\nPlano atualizado após localizar a causa raiz.\n- [x] Reproduzir o problema\n- [ ] Validar a correção\n\nA coleta do resumo continua preservada.',
+  );
+});
+
 test('ignora outra thread, conteúdo bruto e eventos inválidos; ausência continua vazia', async () => {
   const { client } = appServerDouble((_params, emit) => {
     emit('item/reasoning/summaryTextDelta', { ...delta('OUTRA_SOLICITACAO'), threadId: 'thread-other' });
