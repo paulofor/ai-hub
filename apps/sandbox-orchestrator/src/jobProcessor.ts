@@ -1396,6 +1396,11 @@ export class SandboxJobProcessor implements JobProcessor {
         // summaryIndex on each delta defines the boundary, including providers without partAdded events.
         markActivity();
       }),
+      onThreadNotification('turn/plan/updated', (params) => {
+        markActivity();
+        reasoningSummaries.addPlanUpdate(reasoningTurnId(params), params);
+        job.reasoningSummary = reasoningSummaries.text();
+      }),
       onThreadNotification('item/agentMessage/delta', (params) => {
         markActivity();
         const delta = this.extractCodexText(params) ?? '';
