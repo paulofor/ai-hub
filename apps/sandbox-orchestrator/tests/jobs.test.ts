@@ -121,8 +121,8 @@ test('job payload exposes the running wait in the matching maximum without leaki
   assert.equal(payload.activeWaitStartedAt, undefined);
 });
 
-test('uses adaptive inactivity defaults for Codex requests', async () => {
-  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 43_200_000);
+test('uses three-day total timeout with adaptive inactivity defaults for Codex requests', async () => {
+  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 259_200_000);
   assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
   assert.equal(DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS, 7_200_000);
   assert.equal(DEFAULT_CODEX_REASONING_EFFORT, 'high');
@@ -131,7 +131,7 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
     fs.readFile('README.md', 'utf8'),
     fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
   ]);
-  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000$/m);
+  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=259200000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
@@ -139,12 +139,14 @@ test('uses adaptive inactivity defaults for Codex requests', async () => {
   assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`2700000`/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
   assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
-  assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`43200000` \(12 horas\)/);
+  assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`259200000` \(3 dias\)/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS[^\n]+`300000` \(5 minutos\)/);
-  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
+  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=259200000'/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
   assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=604800000'/);
   assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_REASONING_EFFORT=high'/);
 });
@@ -1036,6 +1038,9 @@ test('configura prompt cache retention e chave estável na Responses API', async
     assert.equal(fakeOpenAI.calls[0].prompt_cache_retention, '24h');
     assert.equal(fakeOpenAI.calls[0].prompt_cache_key, 'acme:ai-hub:main:STANDARD:gpt-5-codex');
     assert.deepEqual(fakeOpenAI.calls[0].reasoning, { effort: 'medium', summary: 'auto' });
+    const systemPrompt = fakeOpenAI.calls[0].input?.[0]?.content?.[0]?.text ?? '';
+    assert.match(systemPrompt, /acrescente em cada ponto uma frase curta no formato "Objetivo: \.\.\."/);
+    assert.match(systemPrompt, /Não exponha raciocínio interno/);
   } finally {
     if (originalRetention === undefined) {
       delete process.env.OPENAI_PROMPT_CACHE_RETENTION;
@@ -1126,6 +1131,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
     assert.ok(input?.[0]?.text?.includes('Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
+    assert.ok(input?.[0]?.text?.includes('acrescente em cada ponto uma frase curta no formato "Objetivo: ..."'));
+    assert.ok(input?.[0]?.text?.includes('Não exponha raciocínio interno'));
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
     assert.ok(input?.[0]?.text?.includes('já autoriza todas as correções locais causalmente relacionadas'));
     assert.ok(input?.[0]?.text?.includes('não interrompa a execução para pedir nova autorização a cada defeito descoberto'));

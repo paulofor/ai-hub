@@ -54,8 +54,12 @@ export default function CodexRequestDetailPage() {
   const feedbackDirtyRef = useRef(false);
   const { pushToast } = useToasts();
 
-  const handleCopyPrompt = useCallback(
-    async (text: string, successMessage = 'Prompt copiado para a área de transferência.') => {
+  const handleCopyText = useCallback(
+    async (
+      text: string,
+      successMessage = 'Prompt copiado para a área de transferência.',
+      errorMessage = 'Não foi possível copiar o prompt.'
+    ) => {
       try {
         if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(text);
@@ -72,7 +76,7 @@ export default function CodexRequestDetailPage() {
         }
         pushToast(successMessage);
       } catch (err) {
-        pushToast('Não foi possível copiar o prompt.', 'error');
+        pushToast(errorMessage, 'error');
       }
     },
     [pushToast]
@@ -666,7 +670,7 @@ export default function CodexRequestDetailPage() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => handleCopyPrompt(request.prompt)}
+                      onClick={() => handleCopyText(request.prompt)}
                       className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
                     >
                       Copiar prompt
@@ -685,7 +689,7 @@ export default function CodexRequestDetailPage() {
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => handleCopyPrompt(lastUserMessage, 'Mensagem copiada para a área de transferência.')}
+                        onClick={() => handleCopyText(lastUserMessage, 'Mensagem copiada para a área de transferência.', 'Não foi possível copiar a mensagem.')}
                         className="text-xs font-semibold text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
                       >
                         Copiar mensagem
@@ -718,11 +722,26 @@ export default function CodexRequestDetailPage() {
                 </div>
               </div>
               <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-900 dark:bg-violet-950/30">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <h4 className="text-sm font-semibold text-violet-800 dark:text-violet-200">Resumo do raciocínio</h4>
-                  <span className="text-xs text-slate-500">
-                    {request.reasoningSummary ? `${request.reasoningSummary.length.toLocaleString('pt-BR')} caracteres` : 'Não disponibilizado pelo modelo'}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {request.reasoningSummary ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(
+                          request.reasoningSummary!,
+                          'Resumo do raciocínio copiado para a área de transferência.',
+                          'Não foi possível copiar o resumo do raciocínio.'
+                        )}
+                        className="text-xs font-semibold text-violet-700 hover:text-violet-800 dark:text-violet-300 dark:hover:text-violet-200"
+                      >
+                        Copiar resumo
+                      </button>
+                    ) : null}
+                    <span className="text-xs text-slate-500">
+                      {request.reasoningSummary ? `${request.reasoningSummary.length.toLocaleString('pt-BR')} caracteres` : 'Não disponibilizado pelo modelo'}
+                    </span>
+                  </div>
                 </div>
                 <div data-testid="codex-reasoning-summary" className="rounded-md border border-violet-200 bg-white/70 p-4 text-sm leading-relaxed text-slate-800 dark:border-violet-900 dark:bg-slate-950/40 dark:text-slate-100">
                   {request.reasoningSummary ? <CodexResponseBody content={request.reasoningSummary} /> : '—'}
