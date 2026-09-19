@@ -4031,3 +4031,35 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** Além do fluxo automático já corrigido no orquestrador, o pedido manual de PR avaliava somente a lista `files` retornada pela comparação do GitHub. Ele não exigia que a branch estivesse efetivamente à frente da `main`; portanto uma resposta inconsistente ou um estado de branch sem commits novos ainda poderia alcançar o `POST /pulls` e receber o mesmo 422.
 - Ajuste na causa: a inspeção compartilhada pelo endpoint manual agora valida `ahead_by` e considera publicável somente uma branch com ao menos um commit à frente. Resposta sem contador válido falha de forma fechada; `ahead_by <= 0` resulta em lote sem alteração publicável e evita chamar a criação do PR.
 - Proteção contra regressão: testes unitários reproduzem uma comparação com arquivo listado, mas zero commits à frente, e uma resposta sem `ahead_by`; ambos impedem que dados ambíguos sejam tratados como branch pronta para PR.
+
+## 2026-09-19 — Cópia do resumo de raciocínio
+
+- Solicitação: adicionar na tela de detalhe da solicitação uma ação para copiar o resumo de raciocínio para a área de transferência do Windows.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** O card já renderizava o resumo recebido do backend, mas seu cabeçalho continha somente o título e a contagem de caracteres; a rotina de clipboard da própria página estava ligada apenas ao prompt e à última mensagem do usuário. Portanto, não havia nenhuma ação que entregasse `reasoningSummary` à API de área de transferência.
+- Correção na causa: a rotina local foi generalizada para copiar textos com mensagens de sucesso e erro específicas, e o card passou a mostrar `Copiar resumo` quando existe conteúdo. A ação envia o texto integral ao clipboard e confirma o resultado por toast; quando o modelo não disponibiliza resumo, o botão não é exibido.
+- Proteção contra regressão: o E2E concede permissões de clipboard, aciona o botão, lê de volta o conteúdo copiado e compara-o com o resumo original em Desktop Chrome e iPhone 15 Pro; também confirma a ausência do botão sem resumo e seu surgimento após o polling.
+- Validação: `npm run lint`, `npm run build` e `npx playwright test tests/e2e/reasoningSummary.spec.ts` aprovados (4/4). As capturas geradas pelo cenário foram inspecionadas, incluindo a visualização móvel, e confirmam o botão alinhado ao contador sem sobreposição. Avisos preexistentes de configuração npm, Browserslist desatualizado, bundle acima de 500 kB e chamadas não simuladas de navegação anterior/próxima não impediram os testes.
+
+## 2026-09-19 — Objetivo em cada ponto do resumo de raciocínio
+
+- Solicitação: pedir ao modelo que, além de descrever cada ponto do fluxo de raciocínio, informe também o objetivo daquela etapa.
+- Pergunta explícita de causa raiz: **“por que o objetivo não aparecia?”** O orquestrador solicitava ao Codex App Server e à Responses API apenas o resumo público automático (`summary: "auto"`). Os prompts descreviam auditoria, execução e resposta final, mas não davam nenhuma orientação sobre a estrutura semântica dos pontos do resumo; por isso o provedor retornava títulos de ações como “Investigating...” sem explicar para que cada ação servia.
+- Correção na causa: criada uma orientação única, aplicada aos dois caminhos de modelo, que preserva a ação já resumida e pede em cada ponto uma frase curta `Objetivo: ...`. A instrução delimita explicitamente que somente o resumo público deve ser produzido, sem cadeia de pensamento ou conteúdo interno.
+- Proteção contra regressão: os testes verificam que a mesma orientação chega ao prompt de sistema da Responses API e ao primeiro `turn/start` do Codex App Server, além de manter `summary: "auto"` nos contratos do provedor.
+- Validação: build TypeScript e os dois cenários direcionados de prompt aprovados. A primeira rodada completa revelou que o `shellcheck` não estava instalado na sandbox e falhou em duas verificações ambientais do checklist; após instalar a dependência de teste, a suíte completa passou com 178/178 testes, sem falhas ou skips.
+- Consulta documental: a tentativa de habilitar o MCP oficial de documentação OpenAI não pôde ser concluída porque o binário `codex` não existe nesta sandbox, e a busca oficial alternativa respondeu HTTP 401. A implementação, portanto, não altera nem presume novos parâmetros do provedor: mantém o contrato `summary: "auto"` já testado e faz apenas a orientação de formato pelo prompt.
+
+## 2026-09-19 — Timeout total de solicitação ampliado para uma semana
+
+- Solicitação: ampliar de 12 horas para uma semana o timeout máximo das solicitações executadas pelo Codex App Server.
+- Pergunta explícita de causa raiz: **“por que a solicitação ainda era limitada a 12 horas?”** O valor padrão do turno era calculado no orquestrador como `12 * 60 * 60 * 1000`, e o mesmo limite de `43200000` ms era gravado pelo deploy em `.env`; portanto, alterar somente documentação ou uma das fontes não mudaria de forma consistente o runtime publicado.
+- Correção na causa: o padrão do código, o exemplo de ambiente e a configuração gerada pelo workflow foram alinhados em `604800000` ms (7 dias). A documentação operacional e o teste de contrato também foram atualizados. Permanecem independentes os limites adaptativos de 45 minutos sem atividade e 2 horas sem atividade durante comando ativo, que continuam encerrando turnos realmente parados antes do teto total.
+- Proteção contra regressão: o teste confirma o valor numérico de uma semana no código, `.env.example`, README e workflow de deploy, e rejeita explicitamente o valor antigo de 12 horas no workflow.
+- Validação: build TypeScript e teste direcionado `uses one-week total timeout with adaptive inactivity defaults for Codex requests` aprovados. A suíte completa executou 178 testes, com 176 aprovações e duas falhas ambientais fora do escopo porque o processo de teste não encontrou o executável `shellcheck`; nenhum cenário do timeout falhou.
+
+## 2026-09-19 — Ajuste do timeout total para três dias
+
+- Solicitação: reduzir para 3 dias o timeout total que havia sido configurado em uma semana.
+- Pergunta explícita de causa raiz: **“por que o sistema ainda usaria uma semana?”** O valor de 7 dias estava repetido no fallback do orquestrador, no exemplo de ambiente, no workflow de deploy, na documentação e no teste de contrato; sem atualizar todas essas fontes, uma configuração antiga poderia voltar a ser aplicada em runtime ou deixar a validação incoerente.
+- Correção na causa: todas as fontes ativas foram alinhadas em `259200000` ms (3 dias), preservando os timeouts adaptativos menores de inatividade. O teste agora rejeita tanto o valor anterior de 12 horas quanto o valor intermediário de 7 dias no workflow.
+- Validação: build TypeScript, teste direcionado `uses three-day total timeout with adaptive inactivity defaults for Codex requests` e `git diff --check` aprovados.

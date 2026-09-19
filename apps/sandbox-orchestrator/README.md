@@ -30,6 +30,8 @@ O orquestrador solicita `summary: "auto"` em cada `turn/start` do Codex App Serv
 
 O campo `reasoningSummary` contém somente o resumo público retornado pelo provedor. Os deltas são agrupados por turno, item e índice da seção; o item concluído substitui os trechos provisórios, sem duplicação. Eventos de outras threads são ignorados. Polling e callback transportam o campo para o detalhe da solicitação, separadamente da resposta final e das métricas de uso.
 
+Os prompts enviados tanto ao Codex App Server quanto à Responses API pedem que cada ponto desse resumo público preserve a descrição da ação e acrescente `Objetivo: ...`, explicando de forma curta para que a etapa serve. A orientação não solicita nem expõe cadeia de pensamento: o conteúdo persistido continua limitado ao resumo público produzido pelo provedor.
+
 O provedor pode não disponibilizar texto mesmo com o resumo solicitado. Nesse caso a interface mantém “Não disponibilizado pelo modelo”; o sistema não cria um resumo artificial nem recupera automaticamente resumos de solicitações antigas.
 
 Validação local: `npm test` inclui os contratos de resumo com App Server simulado por JSON-RPC e Responses API. `CodexReasoningSummaryIntegrationTest` valida callback, persistência em H2 e leitura pela API; `tests/e2e/reasoningSummary.spec.ts` no frontend valida desktop e celular. Para encadear o mesmo dado sintético nos três módulos, defina `REASONING_SUMMARY_E2E_PAYLOAD` (arquivo gravado pelo teste do orquestrador e lido pelo backend) e `REASONING_SUMMARY_E2E_DETAIL` (arquivo gravado pelo backend e lido pelo Playwright) com caminhos absolutos temporários e execute os módulos nessa ordem.
@@ -54,7 +56,7 @@ Validação local: `npm test` inclui os contratos de resumo com App Server simul
 | `SANDBOX_ORCHESTRATOR_MEMORY_SWAP_LIMIT` | Soma máxima de RAM e swap do orquestrador. Igual ao limite de RAM por padrão para impedir degradação global por swap. | `8g` |
 | `CODEX_APP_SERVER_ENABLED` | Quando `true`, inicia o supervisor local do `codex app-server --listen stdio://` e inclui seu estado no healthcheck. | `false` |
 | `CODEX_HOME` | Diretório persistente do Codex App Server para cache de autenticação gerenciado pelo próprio Codex. Deve ser tratado como segredo quando usar storage em arquivo. | `/var/lib/ai-hub/codex` na imagem |
-| `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX`/`CHATGPT_CODEX_MKT` via App Server. | `43200000` (12 horas) |
+| `CODEX_APP_SERVER_TURN_TIMEOUT_MS` | Timeout máximo para aguardar `turn/completed` em execuções `CHATGPT_CODEX`/`CHATGPT_CODEX_MKT` via App Server. | `259200000` (3 dias) |
 | `CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS` | Timeout para o App Server reconhecer `turn/start`. Usa uma janela separada e maior para retomadas de threads extensas sem ampliar requests de controle. | `300000` (5 minutos) |
 | `CODEX_APP_SERVER_SANDBOX_MODE` | Modo de sandbox enviado ao `thread/start` do Codex App Server. Aceita apenas `read-only`, `workspace-write` ou `danger-full-access`; o padrão evita o sandbox Linux interno (`bwrap`) porque o job já roda dentro do sandbox-orchestrator/container do AI Hub. | `danger-full-access` |
 | `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` | Tempo máximo sem evento útil quando não existe comando ativo conhecido. Encerra mais cedo turnos que perderam o fluxo sem sacrificar ferramentas longas identificadas. | `2700000` (45 minutos) |

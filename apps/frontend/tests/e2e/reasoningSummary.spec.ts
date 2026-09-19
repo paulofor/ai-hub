@@ -17,14 +17,18 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
       deviceScaleFactor: device.deviceScaleFactor, isMobile: device.isMobile, hasTouch: device.hasTouch
     });
 
-    test('exibe o mesmo resumo recebido pelo callback e persistido no backend', async ({ page }, testInfo) => {
+    test('exibe e copia o mesmo resumo recebido pelo callback e persistido no backend', async ({ page, context }, testInfo) => {
       const errors: string[] = [];
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:8082' });
       page.on('pageerror', (error) => errors.push(error.message));
       await page.route('**/api/codex/requests/*/previous', (route) => route.fulfill({ status: 404, json: {} }));
       await page.route(`**/api/codex/requests/${detail.id}`, (route) => route.fulfill({ json: detail }));
       await page.goto(`/codex/requests/${detail.id}`);
       const summary = page.getByTestId('codex-reasoning-summary');
       await expect(summary).toHaveText(detail.reasoningSummary);
+      await page.getByRole('button', { name: 'Copiar resumo' }).click();
+      await expect(page.getByText('Resumo do raciocínio copiado para a área de transferência.')).toBeVisible();
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(detail.reasoningSummary);
       await expect(page.getByTestId('codex-response')).toContainText(detail.responseText);
       await summary.scrollIntoViewIfNeeded();
       const box = await summary.boundingBox();
@@ -45,10 +49,12 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
       await page.goto('/codex/requests/990002');
       await expect(page.getByTestId('codex-reasoning-summary')).toHaveText('—');
       await expect(page.getByText('Não disponibilizado pelo modelo')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Copiar resumo' })).toHaveCount(0);
       completed = true;
       await page.clock.fastForward(16_000);
       await expect(page.getByTestId('codex-reasoning-summary')).toContainText('Primeira seção.');
       await expect(page.getByTestId('codex-reasoning-summary')).toContainText('Segunda seção.');
+      await expect(page.getByRole('button', { name: 'Copiar resumo' })).toBeVisible();
       await expect(page.getByTestId('codex-response')).toContainText(detail.responseText);
     });
   });
