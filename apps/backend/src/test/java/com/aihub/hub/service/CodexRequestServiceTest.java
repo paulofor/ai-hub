@@ -21,6 +21,7 @@ import com.aihub.hub.repository.ProblemRepository;
 import com.aihub.hub.repository.ProcessRepository;
 import com.aihub.hub.repository.ResponseRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -648,6 +649,67 @@ class CodexRequestServiceTest {
         assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
         assertThat(request.getFinishedAt()).isEqualTo(Instant.parse("2024-01-01T00:06:00Z"));
         verify(codexRequestRepository).save(request);
+    }
+
+    @Test
+    void finalizationFailurePreservesMarkdownSummaryAndErrorWithoutDuplicatingOnRetry() throws Exception {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-finalization-failure");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        when(codexRequestRepository.findByExternalId(request.getExternalId())).thenReturn(Optional.of(request));
+        var response = SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(new ObjectMapper().readTree("""
+            {"jobId":"job-finalization-failure","status":"FAILED","summary":"Entrega realizada pelo PR #123.",
+             "error":"Falha ao publicar a branch; código local preservado.","totalTokens":42}
+            """));
+        var service = buildService();
+        service.handleSandboxCallback(response);
+        String text = request.getResponseText();
+        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(text).contains("Entrega realizada pelo PR #123.", "Falha ao publicar a branch", "Falha no encerramento");
+        assertThat(request.getTotalTokens()).isEqualTo(42);
+        service.handleSandboxCallback(response);
+        assertThat(request.getResponseText()).isEqualTo(text);
+        assertThat(request.getTotalTokens()).isEqualTo(42);
+    }
+
+    @Test
+    void finalizationFailurePreservesStructuredMarketingResponse() throws Exception {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "fix things");
+        request.setExternalId("job-mkt-finalization");
+        request.setStatus(CodexRequestStatus.RUNNING);
+        when(codexRequestRepository.findByExternalId(request.getExternalId())).thenReturn(Optional.of(request));
+        ObjectMapper mapper = new ObjectMapper();
+        String summary = """
+            {"titulo":"Entrega realizada","comentario":"Implementação integrada.","impactoAumentoVendas":"medio",
+             "alterouCodigoRepositorio":true,"resumoCodigoPr":"Corrige fluxo.","sugestaoMelhoriaAmbiente":""}
+            """;
+        var response = SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(mapper.valueToTree(Map.of(
+            "jobId", request.getExternalId(), "status", "FAILED", "summary", summary, "error", "Falha de push"
+        )));
+        var service = buildService();
+        service.handleSandboxCallback(response);
+        JsonNode result = mapper.readTree(request.getResponseText());
+        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(result.path("comentario").asText()).contains("Implementação integrada.", "Falha de push", "Falha no encerramento");
+        assertThat(result.path("titulo").asText()).isEqualTo("Entrega realizada");
+        assertThat(result.path("alterouCodigoRepositorio").asBoolean()).isTrue();
+        assertThat(result.path("impactoAumentoVendas").asText()).isEqualTo("medio");
+        String first = request.getResponseText();
+        service.handleSandboxCallback(response);
+        assertThat(request.getResponseText()).isEqualTo(first);
+    }
+
+    @Test
+    void failureBeforeModelSummaryKeepsOriginalError() throws Exception {
+        CodexRequest request = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.STANDARD, "fix things");
+        request.setExternalId("job-model-failure");
+        when(codexRequestRepository.findByExternalId(request.getExternalId())).thenReturn(Optional.of(request));
+        var response = SandboxOrchestratorClient.SandboxOrchestratorJobResponse.from(new ObjectMapper().readTree("""
+            {"jobId":"job-model-failure","status":"FAILED","error":"Modelo indisponível"}
+            """));
+        buildService().handleSandboxCallback(response);
+        assertThat(request.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(request.getResponseText()).isEqualTo("Modelo indisponível");
     }
 
     @Test

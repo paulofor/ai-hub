@@ -24,6 +24,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.aihub.hub.github.GithubAppAuth;
 import com.aihub.hub.github.GithubApiClient;
 import com.aihub.hub.repository.CodexDocumentAccessRepository;
@@ -2072,7 +2073,30 @@ public class CodexRequestService {
         }
 
         if (StringUtils.hasText(response.error())) {
-            return Optional.of(response.error().trim());
+            String error = response.error().trim();
+            if (!StringUtils.hasText(response.summary())) {
+                return Optional.of(error);
+            }
+            String summary = response.summary().trim();
+            String warning = "**Falha no encerramento:** " + error
+                + "\n\nA solicitação permanece com falha. Confira o resultado do modelo abaixo antes de repetir ações já executadas.";
+            // Keep MKT's structured contract intact: the frontend reads the
+            // comentario field and would hide a warning appended outside JSON.
+            String json = summary.replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
+            try {
+                JsonNode parsed = objectMapper.readTree(json);
+                if (parsed instanceof ObjectNode object) {
+                    for (String field : List.of("comentario", "comentário", "comment", "resposta")) {
+                        if (object.path(field).isTextual()) {
+                            object.put(field, warning + "\n\n" + object.path(field).asText());
+                            return Optional.of(objectMapper.writeValueAsString(object));
+                        }
+                    }
+                }
+            } catch (JsonProcessingException ignored) {
+                // Plain Markdown and malformed JSON still retain the original.
+            }
+            return Optional.of(warning + "\n\n" + summary);
         }
 
         if (StringUtils.hasText(response.summary())) {

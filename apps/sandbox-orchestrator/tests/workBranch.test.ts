@@ -101,6 +101,7 @@ test('publishes a new work branch without rewriting the model commit', async (t)
 
 test('keeps both revisions and reports failure when another job advances the remote', async (t) => {
   const f = await fixture(t);
+  f.job.repoUrl = `file://${f.remote}`;
   let modelCommit = '';
   let concurrentCommit = '';
   f.model(async (repo) => {
@@ -118,6 +119,8 @@ test('keeps both revisions and reports failure when another job advances the rem
   assert.equal(git(repo, 'rev-parse', 'HEAD'), modelCommit);
   assert.equal(await fs.readFile(path.join(repo, 'model.txt'), 'utf8'), 'validated model commit\n');
   assert.ok(f.job.patch?.includes('validated model commit'));
+  assert.equal(f.job.summary, 'Synthetic code ready');
+  assert.match(f.job.error!, /avançou ou divergiu/);
 });
 
 test('does not treat remote unavailability as an absent work branch', async (t) => {
@@ -244,7 +247,7 @@ for (const profile of profiles) {
     assert.ok(f.job.patch?.includes('later.txt'), 'historical diff must remain available');
     assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
     assert.equal(git(f.remote, 'rev-parse', 'main'), main);
-    assert.ok(f.job.logs.some(line => line.includes('sem commits novos')));
+    assert.ok(f.job.logs.some(line => line.includes('já integrado')));
     await assert.rejects(fs.stat(f.job.sandboxPath!), { code: 'ENOENT' });
   });
 }
@@ -265,6 +268,113 @@ test('does not create a second PR when the model merges during the job', async (
   assert.equal(f.job.status, 'COMPLETED', f.job.error);
   assert.ok(f.job.patch?.includes('model.txt'));
   assert.equal(api.calls.filter(call => call.method === 'POST').length, 0);
+});
+
+for (const ending of ['main', 'delivery-branch', 'detached', 'squash', 'main-advanced']) {
+  test(`recognizes a model delivery in a shallow clone ending on ${ending} without publishing again`, async (t) => {
+    const f = await fixture(t);
+    f.job.repoUrl = `file://${f.remote}`;
+    f.job.createPullRequest = true;
+    const originalWorkHead = git(f.remote, 'rev-parse', branch);
+    f.model(async (repo) => {
+      assert.equal(git(repo, 'rev-parse', '--is-shallow-repository'), 'true');
+      git(repo, 'checkout', '-b', 'codex/delivery');
+      await f.commit(repo);
+      git(repo, 'push', 'origin', 'HEAD:refs/heads/codex/delivery');
+      git(f.seed, 'fetch', 'origin', 'codex/delivery');
+      git(f.seed, 'checkout', 'main');
+      if (ending === 'squash') {
+        git(f.seed, 'merge', '--squash', 'FETCH_HEAD');
+        git(f.seed, 'commit', '-m', 'fixture squash merged PR');
+      } else {
+        git(f.seed, 'merge', '--no-ff', 'FETCH_HEAD', '-m', 'fixture merged PR');
+      }
+      if (ending === 'main-advanced') {
+        await fs.writeFile(path.join(f.seed, 'later.txt'), 'subsequent main change\n');
+        git(f.seed, 'add', 'later.txt');
+        git(f.seed, 'commit', '-m', 'fixture later main');
+      }
+      git(f.seed, 'push', 'origin', 'main');
+      if (ending === 'main') {
+        git(repo, 'fetch', '--depth', '1', 'origin', 'main');
+        git(repo, 'checkout', '-B', 'main', 'FETCH_HEAD');
+      } else if (ending === 'detached') {
+        git(repo, 'checkout', '--detach');
+      }
+      // Any redundant push would be rejected; GitHub HTTP is also forbidden.
+      await fs.writeFile(path.join(f.remote, 'hooks/pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    });
+    await f.processor.process(f.job);
+    assert.equal(f.job.status, 'COMPLETED', f.job.error);
+    assert.equal(f.job.summary, 'Synthetic code ready');
+    assert.ok(f.job.patch?.includes('validated model commit'));
+    assert.equal(git(f.remote, 'rev-parse', branch), originalWorkHead);
+    assert.ok(f.job.logs.some(line => line.includes('já integrado')));
+    await assert.rejects(fs.stat(f.job.sandboxPath!), { code: 'ENOENT' });
+  });
+}
+
+test('hydrates shallow history before publishing new work descended from the shared branch', async (t) => {
+  const f = await fixture(t);
+  git(f.seed, 'checkout', 'main');
+  git(f.seed, 'merge', '--ff-only', branch);
+  await f.commit(f.seed);
+  git(f.seed, 'push', 'origin', 'main');
+  f.job.repoUrl = `file://${f.remote}`;
+  let validated = '';
+  f.model(async (repo) => {
+    git(repo, 'checkout', '-B', 'codex/new-work', 'origin/main');
+    await fs.writeFile(path.join(repo, 'additional.txt'), 'new validated work\n');
+    git(repo, 'config', 'user.email', 'test@sandbox.local');
+    git(repo, 'config', 'user.name', 'Sandbox test');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-m', 'fixture new work after main');
+    validated = git(repo, 'rev-parse', 'HEAD');
+  });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'COMPLETED', f.job.error);
+  assert.equal(git(f.remote, 'rev-parse', branch), validated);
+});
+
+for (const pending of ['staged', 'unstaged', 'untracked']) {
+  test(`does not discard ${pending} work after a delivered commit`, async (t) => {
+    const f = await fixture(t);
+    f.job.repoUrl = `file://${f.remote}`;
+    f.model(async (repo) => {
+      await f.commit(repo);
+      git(repo, 'push', 'origin', 'HEAD:refs/heads/codex/delivery');
+      git(f.seed, 'fetch', 'origin', 'codex/delivery');
+      git(f.seed, 'checkout', 'main');
+      git(f.seed, 'merge', '--ff-only', 'FETCH_HEAD');
+      git(f.seed, 'push', 'origin', 'main');
+      const file = pending === 'untracked' ? 'pending.txt' : 'model.txt';
+      await fs.writeFile(path.join(repo, file), 'pending validated work\n');
+      if (pending === 'staged') git(repo, 'add', file);
+    });
+    await f.processor.process(f.job);
+    assert.equal(f.job.status, 'COMPLETED', f.job.error);
+    assert.equal(git(f.remote, 'show', `${branch}:${pending === 'untracked' ? 'pending.txt' : 'model.txt'}`), 'pending validated work');
+    assert.ok(!f.job.logs.some(line => line.includes('já integrado')));
+  });
+}
+
+test('keeps a failure explicit when the remote cannot supply complete history', async (t) => {
+  const f = await fixture(t);
+  git(f.seed, 'checkout', 'main');
+  git(f.seed, 'merge', '--ff-only', branch);
+  git(f.seed, 'push', 'origin', 'main');
+  const shallowRemote = path.join(f.directory, 'shallow.git');
+  git(f.directory, 'clone', '--bare', '--depth', '1', '--branch', 'main', `file://${f.remote}`, shallowRemote);
+  f.job.repoUrl = `file://${shallowRemote}`;
+  let validated = '';
+  f.model(async (repo) => { validated = await f.commit(repo); });
+  await f.processor.process(f.job);
+  assert.equal(f.job.status, 'FAILED');
+  assert.match(f.job.error!, /completar o histórico Git/);
+  assert.equal(git(path.join(f.job.sandboxPath!, 'repo'), 'rev-parse', 'HEAD'), validated);
+  assert.equal(f.job.summary, 'Synthetic code ready');
+  assert.ok(f.job.patch?.includes('validated model commit'));
+  assert.ok(!f.job.logs.join('\n').includes('synthetic-token'));
 });
 
 test('reuses an open PR without attempting a duplicate POST', async (t) => {
