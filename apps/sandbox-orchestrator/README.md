@@ -4,6 +4,8 @@ As respostas de polling e callback omitem dados volumosos exclusivos da execuç�
 
 Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox temporário (clone do repositório) e orquestrar o loop de tool-calling com o modelo `gpt-5-codex` via Responses API.
 
+Os perfis `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX` usam o Codex App Server. Cada `thread/start` habilita explicitamente `config: { "tools.update_plan.enabled": true }`, pois o checklist nativo passou a ser opt-in no Codex 0.152.0. A instrução de publicar o plano antes da primeira ação depende dessa configuração. As notificações `turn/plan/updated` atualizam a seção **Objetivos** do resumo público, preservando somente o checklist mais recente de cada turno. A ativação vale para novas execuções, inclusive a próxima solicitação em uma conversa existente; não modifica o catálogo de ferramentas de turnos já iniciados.
+
 ## Scripts disponíveis
 
 - `npm start`: inicia o servidor em modo de produção.

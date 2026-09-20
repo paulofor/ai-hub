@@ -67,6 +67,10 @@ for (const profile of ['CHATGPT_CODEX', 'CHATGPT_CODEX_MKT', 'CHATGPT_CODEX_SAND
     assert.equal(job.reasoningSummary, 'Verifiquei a integração.');
     assert.equal(job.summary, 'Resposta final preservada.');
     assert.equal(calls.find((call) => call.method === 'turn/start')?.params.summary, 'auto');
+    const threadParams = calls.find((call) => call.method === 'thread/start')?.params;
+    assert.equal(threadParams.config?.['tools.update_plan.enabled'], true);
+    const threadAudit = JSON.parse(job.interactions.find((entry) => entry.direction === 'OUTBOUND' && entry.content.includes('thread/start'))!.content);
+    assert.deepEqual(JSON.parse(threadAudit.transcript).params, threadParams);
     assert.equal(buildJobPayload(job).reasoningSummary, job.reasoningSummary);
     const audit = JSON.parse(job.interactions.find((entry) => entry.direction === 'OUTBOUND' && entry.content.includes('turn/start'))!.content);
     assert.equal(JSON.parse(audit.transcript).params.summary, 'auto');
@@ -95,11 +99,15 @@ test('resumo final é autoritativo, separa partes/itens e não duplica eventos c
 test('inclui os objetivos publicados pelo update_plan no resumo visível', async () => {
   const { client } = appServerDouble((_params, emit) => {
     emit('turn/plan/updated', {
+      ...scope, plan: [{ step: 'Reproduzir o problema', status: 'inProgress' }],
+    });
+    assert.equal(buildJobPayload(job).reasoningSummary, '**Objetivos**\n- [ ] Reproduzir o problema');
+    emit('turn/plan/updated', {
       ...scope,
       explanation: 'Plano atualizado após localizar a causa raiz.',
       plan: [
         { step: 'Reproduzir o problema', status: 'completed' },
-        { step: 'Validar a correção', status: 'in_progress' },
+        { step: 'Validar a correção', status: 'inProgress' },
       ],
     });
     emit('item/completed', reasoning(['A coleta do resumo continua preservada.']));
@@ -118,6 +126,8 @@ test('ignora outra thread, conteúdo bruto e eventos inválidos; ausência conti
   const { client } = appServerDouble((_params, emit) => {
     emit('item/reasoning/summaryTextDelta', { ...delta('OUTRA_SOLICITACAO'), threadId: 'thread-other' });
     emit('item/completed', { ...reasoning(['OUTRA_SOLICITACAO']), threadId: 'thread-other' });
+    emit('turn/plan/updated', { ...scope, threadId: 'thread-other', plan: [{ step: 'OUTRA_SOLICITACAO', status: 'completed' }] });
+    emit('turn/plan/updated', { ...scope, plan: [null, {}, { step: '' }] });
     emit('item/reasoning/textDelta', { ...scope, itemId: 'reasoning-1', delta: 'RAW_CONTENT' });
     emit('item/reasoning/summaryTextDelta', delta('invalid', -1));
     emit('item/reasoning/summaryTextDelta', { ...delta('invalid'), delta: {} });
@@ -179,15 +189,44 @@ test('coleta resumo com cliente JSON-RPC e processo App Server local', async () 
   }
 });
 
-test('preserva resumo recebido quando o turno falha e remove os listeners', async () => {
+test('publica e atualiza update_plan via JSON-RPC até o polling HTTP', async () => {
+  const client = new CodexAppServerClient({
+    command: process.execPath, args: [path.resolve('tests/fixtures/fake-codex-app-server.cjs')],
+    env: { FAKE_CODEX_APP_SERVER_MODE: 'update-plan' }, autoRestart: false,
+    logger: { info() {}, warn() {}, error() {} },
+  });
+  const plans: unknown[] = [];
+  const stop = client.onNotification('turn/plan/updated', (event) => plans.push(event));
+  try {
+    await client.start();
+    const job = makeJob('CHATGPT_CODEX_MKT');
+    const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client);
+    job.summary = await (processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra');
+    job.status = 'COMPLETED';
+    const app = createApp({ jobRegistry: new Map([[job.jobId, job]]), processor });
+    const { body } = await request(app).get(`/jobs/${job.jobId}`).expect(200);
+    assert.equal(plans.length, 2);
+    assert.equal(body.reasoningSummary, '**Objetivos**\n- [x] Validar o checklist. Objetivo: acompanhar a execução.\n\nResumo público validado por JSON-RPC.');
+    assert.equal(body.summary, 'Resumo Codex App Server');
+    assert.equal(body.status, 'COMPLETED');
+    assert.equal(body.quotaUsage.status, 'unavailable');
+    assert.equal(job.timeoutCount, 0);
+  } finally {
+    stop();
+    await client.stop();
+  }
+});
+
+test('preserva resumo e plano recebidos quando o turno falha e remove os listeners', async () => {
   const { client, events } = appServerDouble((_params, emit) => {
+    emit('turn/plan/updated', { ...scope, plan: [{ step: 'Validar a correção', status: 'inProgress' }] });
     emit('item/completed', reasoning(['Verificação antes da falha.']));
     emit('turn/completed', { ...scope, turn: { id: 'turn-1', status: 'failed', error: { message: 'quota exhausted' } } });
   });
   const job = makeJob();
   const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
   await assert.rejects((processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra'), /quota exhausted/);
-  assert.equal(job.reasoningSummary, 'Verificação antes da falha.');
+  assert.equal(job.reasoningSummary, '**Objetivos**\n- [ ] Validar a correção\n\nVerificação antes da falha.');
   assert.equal(events.eventNames().length, 0);
 });
 

@@ -1333,17 +1333,17 @@ export class SandboxJobProcessor implements JobProcessor {
     if (!account.executable) {
       throw new Error(account.blockReason || 'CODEX_NOT_AUTHENTICATED');
     }
-    this.recordInteraction(job, 'OUTBOUND', this.safeStringify({
-      method: 'thread/start',
-      params: { model, cwd: repoPath, approvalPolicy: 'never', sandbox: this.codexAppServerSandboxMode, serviceName: 'ai_hub' },
-    }));
-    const thread = await client.request<Record<string, unknown>>('thread/start', {
+    const threadParams = {
       model,
       cwd: repoPath,
       approvalPolicy: 'never',
       sandbox: this.codexAppServerSandboxMode,
       serviceName: 'ai_hub',
-    });
+      // Codex 0.152+ makes the checklist tool opt-in; the prompt alone cannot enable it.
+      config: { 'tools.update_plan.enabled': true },
+    };
+    this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'thread/start', params: threadParams }));
+    const thread = await client.request<Record<string, unknown>>('thread/start', threadParams);
     const threadId = this.extractCodexId(thread, ['threadId', 'id'], 'thread.id');
     if (!threadId) {
       throw new Error('CODEX_THREAD_START_FAILED');
