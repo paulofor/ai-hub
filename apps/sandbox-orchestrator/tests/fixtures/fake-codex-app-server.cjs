@@ -2,6 +2,7 @@ const readline = require('node:readline');
 
 const mode = process.env.FAKE_CODEX_APP_SERVER_MODE || 'normal';
 const rl = readline.createInterface({ input: process.stdin });
+let updatePlanEnabled = false;
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -38,6 +39,7 @@ rl.on('line', (line) => {
     return;
   }
   if (message.method === 'thread/start') {
+    updatePlanEnabled = message.params?.config?.['tools.update_plan.enabled'] === true;
     send({ id: message.id, result: { id: 'thread-123' } });
     return;
   }
@@ -48,7 +50,15 @@ rl.on('line', (line) => {
     } else {
       sendTurnStarted();
     }
-    if (mode === 'reasoning-summary' && message.params?.summary === 'auto') {
+    if (mode === 'update-plan' && updatePlanEnabled) {
+      for (const status of ['inProgress', 'completed']) {
+        send({ method: 'turn/plan/updated', params: {
+          threadId: message.params.threadId, turnId: 'turn-123', explanation: null,
+          plan: [{ step: 'Validar o checklist. Objetivo: acompanhar a execução.', status }],
+        } });
+      }
+    }
+    if (['reasoning-summary', 'update-plan'].includes(mode) && message.params?.summary === 'auto') {
       setTimeout(() => send({ method: 'item/completed', params: {
         threadId: message.params.threadId, turnId: 'turn-123',
         item: { type: 'reasoning', id: 'reasoning-123', summary: ['Resumo público validado por JSON-RPC.'], content: [] },
