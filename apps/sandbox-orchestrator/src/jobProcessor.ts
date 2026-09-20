@@ -5552,6 +5552,10 @@ grep -R -n -- "$@"
 
     const branchName = this.resolveWorkBranch(job);
     try {
+      if (await this.isWorkAlreadyIntegrated(repoPath, job)) {
+        this.log(job, `Código do HEAD já integrado em ${job.branch}, sem alterações locais pendentes; encerrando sem republicar a branch ou criar PR`);
+        return true;
+      }
       await exec('git config user.email "ai-hub-bot@example.com"', { cwd: repoPath });
       await exec('git config user.name "AI Hub Bot"', { cwd: repoPath });
       const existingRemoteBranch = await this.checkoutWorkBranch(repoPath, branchName, job);
@@ -5631,17 +5635,68 @@ grep -R -n -- "$@"
 
   private async checkoutWorkBranch(repoPath: string, branchName: string, job: SandboxJob): Promise<boolean> {
     const exists = await this.fetchWorkBranch(repoPath, branchName, job);
-    if (exists) {
-      try {
-        await execFile('git', ['merge-base', '--is-ancestor', `refs/remotes/origin/${branchName}`, 'HEAD'], { cwd: repoPath });
-      } catch {
-        throw new Error(`A branch remota ${branchName} avançou ou divergiu durante a tarefa. Código local preservado; integre as revisões e valide novamente antes de publicar.`);
-      }
+    if (exists && !(await this.isGitAncestor(repoPath, `refs/remotes/origin/${branchName}`, 'HEAD', job))) {
+      throw new Error(`A branch remota ${branchName} avançou ou divergiu durante a tarefa. Código local preservado; integre as revisões e valide novamente antes de publicar.`);
     }
     // Keep the exact commits and working tree that were validated. Resetting to
     // origin here used to silently abandon commits made during model execution.
     await execFile('git', ['checkout', '-B', branchName], { cwd: repoPath });
     return exists;
+  }
+
+  private async isWorkAlreadyIntegrated(repoPath: string, job: SandboxJob): Promise<boolean> {
+    const { stdout: pending } = await execFile('git', [
+      'status', '--porcelain=v1', '--untracked-files=all', '--', '.',
+      ':(top,exclude).ai-hub-bin', ':(top,exclude).codex',
+    ], { cwd: repoPath });
+    if (pending.trim()) return false;
+    if (!job.branch || !(await this.fetchWorkBranch(repoPath, job.branch, job))) return false;
+    const baseRef = `refs/remotes/origin/${job.branch}`;
+    // Squash/rebase merges can have different SHAs with the same source tree.
+    // Equality proves there is no remaining source change to publish.
+    try {
+      await execFile('git', ['diff', '--quiet', 'HEAD', baseRef, '--', '.',
+        ':(top,exclude).ai-hub-bin', ':(top,exclude).codex'], { cwd: repoPath });
+      return true;
+    } catch (error) {
+      if ((error as { code?: number }).code !== 1) {
+        throw new Error('Não foi possível comparar o código com a branch base; código local preservado.');
+      }
+    }
+    // Compare actual commits, never the model's claim of success or an old patch.
+    // Only a clean tree whose HEAD is already in the base can skip publication.
+    return this.isGitAncestor(repoPath, 'HEAD', baseRef, job);
+  }
+
+  private async isGitAncestor(repoPath: string, ancestor: string, descendant: string, job: SandboxJob): Promise<boolean> {
+    const check = async () => {
+      try {
+        await execFile('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: repoPath });
+        return true;
+      } catch (error) {
+        if ((error as { code?: number }).code === 1) return false;
+        throw new Error('Não foi possível verificar a ancestralidade Git; código local preservado.');
+      }
+    };
+    if (await check()) return true;
+    const { stdout } = await execFile('git', ['rev-parse', '--is-shallow-repository'], { cwd: repoPath });
+    if (stdout.trim() !== 'true') return false;
+
+    // Exit 1 is inconclusive at a shallow boundary. Hydrate before deciding
+    // that validated work diverged, without resetting the HEAD or working tree.
+    const command = 'git fetch --unshallow --no-tags origin';
+    const startedAt = new Date().toISOString();
+    this.recordDownload(job, { source: 'git', command, startedAt, note: 'completar histórico para verificar ancestralidade' });
+    try {
+      await execFile('git', ['fetch', '--unshallow', '--no-tags', 'origin'], { cwd: repoPath });
+      const { stdout: shallow } = await execFile('git', ['rev-parse', '--is-shallow-repository'], { cwd: repoPath });
+      if (shallow.trim() === 'true') throw new Error('histórico ainda incompleto');
+    } catch {
+      this.recordDownload(job, { source: 'git', command, startedAt, finishedAt: new Date().toISOString(), success: false });
+      throw new Error('Não foi possível completar o histórico Git para verificar a entrega; código local preservado.');
+    }
+    this.recordDownload(job, { source: 'git', command, startedAt, finishedAt: new Date().toISOString(), success: true });
+    return check();
   }
 
   private async fetchWorkBranch(repoPath: string, branchName: string, job: SandboxJob): Promise<boolean> {

@@ -104,4 +104,51 @@ class CodexReasoningSummaryIntegrationTest {
         String detailPath = System.getenv("REASONING_SUMMARY_E2E_DETAIL");
         if (detailPath != null) Files.writeString(Path.of(detailPath), detail);
     }
+
+    @Test
+    void callbackPersistsFinalizationOutcomeAndPreservesResultForTheFrontend() throws Exception {
+        List<ObjectNode> details = new ArrayList<>();
+        for (String outcome : List.of("COMPLETED", "FAILED")) {
+            String answer = mapper.writeValueAsString(mapper.createObjectNode()
+                .put("titulo", "Resultado local de teste")
+                .put("comentario", "Implementação integrada pelo PR de teste.")
+                .put("impactoAumentoVendas", "medio").put("alterouCodigoRepositorio", true)
+                .put("resumoCodigoPr", "Corrige encerramento.").put("sugestaoMelhoriaAmbiente", ""));
+            CodexRequest request = new CodexRequest("sandbox.local", "gpt-6-astra", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "Teste de encerramento");
+            request.setExternalId("finalization-test-" + outcome);
+            request.setStatus(CodexRequestStatus.RUNNING);
+            repository.saveAndFlush(request);
+            requestIds.add(request.getId());
+            ObjectNode payload = mapper.createObjectNode().put("jobId", request.getExternalId())
+                .put("status", outcome).put("summary", answer).put("promptTokens", 30)
+                .put("completionTokens", 12).put("totalTokens", 42)
+                .put("startedAt", "2026-09-20T12:00:00Z").put("finishedAt", "2026-09-20T12:01:00Z");
+            if (outcome.equals("FAILED")) payload.put("error", "A branch remota divergiu; código local preservado.");
+
+            for (int attempt = 0; attempt < 2; attempt++) {
+                mvc.perform(post("/api/codex/requests/callbacks/sandbox")
+                        .header("X-Sandbox-Callback-Token", "synthetic-summary-callback")
+                        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(payload)))
+                    .andExpect(status().isAccepted());
+            }
+            CodexRequest saved = repository.findById(request.getId()).orElseThrow();
+            assertThat(saved.getStatus().name()).isEqualTo(outcome);
+            assertThat(saved.getTotalTokens()).isEqualTo(42);
+            assertThat(saved.getDurationMs()).isEqualTo(60_000L);
+            String comment = mapper.readTree(saved.getResponseText()).path("comentario").asText();
+            assertThat(comment).contains("Implementação integrada pelo PR de teste.");
+            if (outcome.equals("FAILED")) {
+                assertThat(comment).contains("Falha no encerramento", "A branch remota divergiu");
+                assertThat(comment.indexOf("Falha no encerramento")).isEqualTo(comment.lastIndexOf("Falha no encerramento"));
+            } else {
+                assertThat(saved.getResponseText()).isEqualTo(answer);
+            }
+            String body = mvc.perform(get("/api/codex/requests/{id}", request.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value(outcome))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            details.add((ObjectNode) mapper.readTree(body));
+        }
+        String detailPath = System.getenv("FINALIZATION_E2E_DETAIL");
+        if (detailPath != null) Files.writeString(Path.of(detailPath), mapper.writeValueAsString(details));
+    }
 }
