@@ -1131,6 +1131,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('monte um ambiente local'));
     assert.ok(input?.[0]?.text?.includes('Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução'));
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
+    assert.ok(input?.[0]?.text?.includes('use obrigatoriamente update_plan para publicar um checklist curto com os objetivos concretos'));
+    assert.ok(input?.[0]?.text?.includes('não substitua o plano por títulos do resumo automático de raciocínio'));
     assert.ok(input?.[0]?.text?.includes('acrescente em cada ponto uma frase curta no formato "Objetivo: ..."'));
     assert.ok(input?.[0]?.text?.includes('Não exponha raciocínio interno'));
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
