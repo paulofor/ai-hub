@@ -89,6 +89,7 @@ export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
 const REASONING_SUMMARY_OBJECTIVE_INSTRUCTION = 'Ao produzir o resumo público do raciocínio, mantenha os pontos que descrevem o que está sendo feito e acrescente em cada ponto uma frase curta no formato "Objetivo: ...", explicando para que aquela etapa serve no atendimento da solicitação. Não exponha raciocínio interno, conteúdo oculto ou cadeia de pensamento; registre somente a ação resumida e seu objetivo.';
+const CODEX_PLAN_OBJECTIVE_INSTRUCTION = 'Antes da primeira ação da solicitação, use obrigatoriamente update_plan para publicar um checklist curto com os objetivos concretos da execução. Atualize esse mesmo plano quando o escopo mudar e ao concluir etapas; não substitua o plano por títulos do resumo automático de raciocínio.';
 export const DEFAULT_CODEX_TRANSIENT_TURN_MAX_ATTEMPTS = 2;
 export const DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS = 5_000;
 export const DEFAULT_DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS = 120_000;
@@ -1708,7 +1709,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
-    const taskDescriptionWithValidationGate = `${REASONING_SUMMARY_OBJECTIVE_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
+    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_OBJECTIVE_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
     return [
       { type: 'text', text: taskDescriptionWithValidationGate },
       ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
