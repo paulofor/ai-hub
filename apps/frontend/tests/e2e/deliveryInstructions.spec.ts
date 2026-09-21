@@ -46,6 +46,10 @@ for (const mobile of [false, true]) {
           expect(submittedPrompt).toContain('criar ou atualizar o Pull Request');
           expect(submittedPrompt).toContain('revisar e aprovar o PR quando a identidade autenticada tiver permissão');
           expect(submittedPrompt).toContain('merge na branch main');
+          expect(submittedPrompt).toContain('Consulte as revisões reais no GitHub');
+          expect(submittedPrompt).toContain('evite push ou PR redundante de uma entrega confirmada');
+          expect(submittedPrompt).toContain('vínculo específico entre solicitação e PR');
+          expect(submittedPrompt).toContain('nem declare sucesso sem evidências');
           expect(submittedPrompt).toContain('revise o diff e os critérios de aceite antes de commit/push');
           expect(submittedPrompt).toContain('deploys encadeados');
           expect(submittedPrompt).toContain('se já houve merge, abra um PR de correção');

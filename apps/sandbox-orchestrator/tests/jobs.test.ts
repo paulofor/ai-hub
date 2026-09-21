@@ -37,6 +37,10 @@ function assertGithubDeliveryInstruction(prompt: string) {
   assert.match(prompt, /revisar e aprovar o PR quando a identidade autenticada tiver permissão/);
   assert.match(prompt, /merge na branch main/);
   assert.match(prompt, /checks do HEAD atual/);
+  assert.match(prompt, /Consulte as revisões reais no GitHub/);
+  assert.match(prompt, /evite push ou PR redundante de uma entrega confirmada/);
+  assert.match(prompt, /vínculo específico entre solicitação e PR/);
+  assert.match(prompt, /nem declare sucesso sem evidências/);
   assert.match(prompt, /não tente aprovar o próprio PR como autor/);
   assert.match(prompt, /deploys encadeados/);
   assert.match(prompt, /reconsulte a lista/);

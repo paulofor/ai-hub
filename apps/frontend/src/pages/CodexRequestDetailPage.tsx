@@ -393,15 +393,15 @@ export default function CodexRequestDetailPage() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-2xl font-semibold">Detalhe da solicitação</h2>
             {statusBadge}
           </div>
           <p className="text-sm text-slate-600 dark:text-slate-300">Veja o prompt, a resposta, o merge e registre melhorias.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => fetchRequest()}
@@ -546,7 +546,7 @@ export default function CodexRequestDetailPage() {
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   <li>Priorize arquivos .md com relatórios, resultados, campanhas, canais, funis e aprendizados.</li>
                   <li>Relacione recomendações a evidências encontradas no repositório sempre que possível.</li>
-                  <li>Prepare alterações para PR somente quando o usuário solicitar explicitamente.</li>
+                  <li>Pedidos de implementação incluem PR, revisão permitida, merge e acompanhamento até os deploys concluírem com sucesso.</li>
                 </ul>
               </div>
             )}
@@ -774,14 +774,14 @@ export default function CodexRequestDetailPage() {
                   >
                     {downloadingInteractions ? 'Gerando ZIP...' : 'Baixar interações (.zip)'}
                   </button>
-                  <button
+                  {!request.pullRequestUrl && <button
                     type="button"
                     onClick={handleCreatePullRequest}
-                    disabled={creatingPr}
+                    disabled={creatingPr || request.status !== 'COMPLETED'}
                     className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {creatingPr ? 'Criando PR...' : 'Criar novo PR no GitHub'}
-                  </button>
+                    {creatingPr ? 'Criando PR...' : 'Criar PR no GitHub'}
+                  </button>}
                 </div>
               </div>
 
@@ -799,7 +799,7 @@ export default function CodexRequestDetailPage() {
 
       {request && (
         <div className="rounded-xl border border-slate-200 bg-white/70 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-lg font-semibold">Comentários sobre a execução</h3>
             </div>

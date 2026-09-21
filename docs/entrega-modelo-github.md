@@ -25,6 +25,11 @@ Esta orientação é injetada no frontend, na retomada pós-PR e nos prompts do 
 | Prompts App Server e Responses API | Mesma política de entrega e manutenção da validação local anterior à publicação |
 | Continuação após PR | Reutilizar o PR e prosseguir até deploy, preservando ambiente e contexto |
 | Falhas/checks pendentes/revisão obrigatória | Orientar diagnóstico, correção local, bloqueio honesto e respeito às proteções |
+| Retomada de entrega já integrada | Consultar revisões reais, SHA e deploys; evitar publicação redundante e preservar resposta e falhas reais |
+| Solicitação com PR próprio em branch compartilhada reutilizada | Repetir o pedido de PR retorna somente o vínculo da solicitação; não substitui PRs de outros lotes |
+| Novo lote e histórico com PR, inclusive com falha de encerramento | Fechar somente solicitações sem PR; vínculos existentes e métricas permanecem intactos |
+| Associação conflitante | Rejeitar troca de PR já registrado, sem alterar o histórico |
+| API → persistência → interface | Exercitar pedidos repetidos com H2, verificar links/estado/métricas e renderizar detalhes sintéticos em desktop e mobile |
 | Análise sem alteração, restrição explícita e Sandbox sem Git | Não iniciar publicação fora do escopo |
 | Integrações e observabilidade | Provedores e API simulados, preservar logs/métricas existentes e exigir evidência por SHA/run/deploy na orientação |
 | Segregação | Somente repositórios temporários e fixtures sintéticas nos testes; sem gasto ou deploy de teste |
