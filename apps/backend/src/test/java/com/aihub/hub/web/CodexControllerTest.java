@@ -309,6 +309,25 @@ class CodexControllerTest {
     }
 
     @Test
+    void createPrPrioritizesTheRequestsOwnPullRequestOverHistoricalBatchLinks() {
+        CodexRequestService service = mock(CodexRequestService.class);
+        PullRequestService publisher = mock(PullRequestService.class);
+        CodexController controller = new CodexController(service, publisher, new ObjectMapper());
+        CodexRequest current = new CodexRequest("owner/repo@main", "gpt-5", null, "entrega atual");
+        current.setStatus(CodexRequestStatus.COMPLETED);
+        current.setPullRequestUrl("https://github.com/owner/repo/pull/11");
+        CodexRequest old = new CodexRequest("owner/repo@main", "gpt-5", null, "entrega anterior");
+        old.setPullRequestUrl("https://github.com/owner/repo/pull/10");
+        when(service.find(731L)).thenReturn(current);
+        when(service.listBatch(current)).thenReturn(List.of(old, current));
+
+        assertThat(controller.createPr(731L, "owner", "codex-ui").get("url"))
+            .isEqualTo("https://github.com/owner/repo/pull/11");
+        verify(service, never()).listBatch(current);
+        verify(service).markPullRequestCreatedForBatch(current, "https://github.com/owner/repo/pull/11");
+    }
+
+    @Test
     void createPrReturnsBadRequestWhenGithubRejectsBatchBranch() {
         CodexRequestService codexRequestService = mock(CodexRequestService.class);
         PullRequestService pullRequestService = mock(PullRequestService.class);

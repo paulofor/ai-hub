@@ -966,15 +966,14 @@ public class CodexRequestService {
         if (request == null) {
             return List.of();
         }
-        if (!StringUtils.hasText(request.getWorkBatchKey())) {
+        // A shared branch is reused across deliveries. A recorded PR identifies
+        // this request's delivery, not every request that once used the branch.
+        if (StringUtils.hasText(request.getPullRequestUrl()) || !StringUtils.hasText(request.getWorkBatchKey())) {
             return List.of(request);
         }
-        List<CodexRequest> requests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(request.getWorkBatchKey());
-        if (!StringUtils.hasText(request.getPullRequestUrl())) {
-            requests = requests.stream()
-                .filter(item -> !isClosedBatchRequest(item))
-                .toList();
-        }
+        List<CodexRequest> requests = codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc(request.getWorkBatchKey()).stream()
+            .filter(item -> !StringUtils.hasText(item.getPullRequestUrl()))
+            .toList();
         applyInteractionCounts(requests);
         return requests;
     }
@@ -996,6 +995,10 @@ public class CodexRequestService {
             return;
         }
         String trimmedUrl = pullRequestUrl.trim();
+        if (StringUtils.hasText(request.getPullRequestUrl())
+            && !request.getPullRequestUrl().trim().equals(trimmedUrl)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A solicitação já está vinculada a outro PR; vínculo preservado");
+        }
         if (StringUtils.hasText(request.getWorkBatchKey())) {
             listBatch(request).forEach(item -> {
                 item.setPullRequestUrl(trimmedUrl);
@@ -1009,14 +1012,6 @@ public class CodexRequestService {
         request.setWorkBranch(null);
         request.setWorkBatchKey(null);
         saveRequest(request);
-    }
-
-    private boolean isClosedBatchRequest(CodexRequest request) {
-        if (request == null) {
-            return false;
-        }
-        CodexRequestStatus status = Optional.ofNullable(request.getStatus()).orElse(CodexRequestStatus.PENDING);
-        return status == CodexRequestStatus.COMPLETED && StringUtils.hasText(request.getPullRequestUrl());
     }
 
     @Transactional

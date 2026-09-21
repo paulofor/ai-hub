@@ -1502,6 +1502,58 @@ class CodexRequestServiceTest {
     }
 
     @Test
+    void listBatchKeepsAnExistingDeliverySeparateFromReusedWorkBranch() {
+        CodexRequestService service = buildService(true);
+        CodexRequest delivered = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "entregue");
+        delivered.setStatus(CodexRequestStatus.COMPLETED);
+        delivered.setWorkBatchKey("shared-branch");
+        delivered.setPullRequestUrl("https://github.com/owner/repo/pull/11");
+        CodexRequest old = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "antigo");
+        old.setPullRequestUrl("https://github.com/owner/repo/pull/10");
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc("shared-branch"))
+            .thenReturn(List.of(old, delivered));
+
+        assertThat(service.listBatch(delivered)).containsExactly(delivered);
+    }
+
+    @Test
+    void closingNewBatchPreservesPullRequestEvenWhenPreviousDeliveryHasFailedStatus() {
+        CodexRequestService service = buildService(true);
+        CodexRequest previous = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "falha no encerramento");
+        previous.setStatus(CodexRequestStatus.FAILED);
+        previous.setWorkBatchKey("shared-branch");
+        previous.setPullRequestUrl("https://github.com/owner/repo/pull/10");
+        CodexRequest current = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "novo");
+        current.setStatus(CodexRequestStatus.COMPLETED);
+        current.setWorkBatchKey("shared-branch");
+        when(codexRequestRepository.findByWorkBatchKeyOrderByCreatedAtAsc("shared-branch"))
+            .thenReturn(List.of(previous, current));
+        when(codexRequestRepository.save(any(CodexRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.markPullRequestCreatedForBatch(current, "https://github.com/owner/repo/pull/11");
+
+        assertThat(previous.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/10");
+        assertThat(previous.getStatus()).isEqualTo(CodexRequestStatus.FAILED);
+        assertThat(previous.getWorkBatchKey()).isEqualTo("shared-branch");
+        assertThat(current.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/11");
+        verify(codexRequestRepository, never()).save(previous);
+    }
+
+    @Test
+    void rejectsReplacingAPullRequestAlreadyAssociatedWithARequest() {
+        CodexRequestService service = buildService(true);
+        CodexRequest delivered = new CodexRequest("owner/repo@main", "gpt-5", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "entregue");
+        delivered.setStatus(CodexRequestStatus.COMPLETED);
+        delivered.setPullRequestUrl("https://github.com/owner/repo/pull/11");
+
+        assertThatThrownBy(() -> service.markPullRequestCreatedForBatch(delivered, "https://github.com/owner/repo/pull/10"))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                ex -> assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(delivered.getPullRequestUrl()).isEqualTo("https://github.com/owner/repo/pull/11");
+        verify(codexRequestRepository, never()).save(any());
+    }
+
+    @Test
     void markPullRequestCreatedForBatchClosesOpenBatchRequests() {
         CodexRequestService service = buildService(true);
         String workBranch = "ai-hub/codex-owner-repo-main-chatgpt_codex_mkt";

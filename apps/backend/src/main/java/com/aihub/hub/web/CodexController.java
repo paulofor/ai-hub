@@ -332,6 +332,13 @@ public class CodexController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ambiente da solicitação não está no formato owner/repo");
         }
 
+        if (StringUtils.hasText(request.getPullRequestUrl())) {
+            String pullRequestUrl = request.getPullRequestUrl().trim();
+            codexRequestService.markPullRequestCreatedForBatch(request, pullRequestUrl);
+            return Map.of("url", pullRequestUrl, "title", "AI Hub: solicitação já possui PR",
+                "createdAt", Instant.now().toString());
+        }
+
         List<CodexRequest> batchRequests = codexRequestService.listBatch(request);
         Optional<String> existingBatchPr = batchRequests.stream()
             .map(CodexRequest::getPullRequestUrl)

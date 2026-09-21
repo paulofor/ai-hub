@@ -106,6 +106,46 @@ class CodexReasoningSummaryIntegrationTest {
     }
 
     @Test
+    void repeatedPrRequestsPreserveSeparateDeliveriesAndTheirMetrics() throws Exception {
+        List<CodexRequest> requests = new ArrayList<>();
+        for (int number : List.of(10, 11, 12)) {
+            CodexRequest request = new CodexRequest("test/delivery@main", "gpt-6-astra", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "Entrega sintética " + number);
+            request.setStatus(CodexRequestStatus.COMPLETED);
+            request.setResponseText("Entrega sintética confirmada " + number);
+            request.setWorkBranch("shared-delivery-branch");
+            request.setWorkBatchKey("shared-delivery-branch");
+            request.setPullRequestUrl("https://github.com/test/delivery/pull/" + number);
+            request.setTotalTokens(42);
+            request.setDurationMs(60_000L);
+            repository.saveAndFlush(request);
+            requestIds.add(request.getId());
+            requests.add(request);
+        }
+        CodexRequest current = requests.get(1);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(post("/api/codex/requests/{id}/create-pr", current.getId()).header("X-Role", "owner"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value(current.getPullRequestUrl()));
+        }
+        List<ObjectNode> details = new ArrayList<>();
+        for (CodexRequest original : requests) {
+            CodexRequest saved = repository.findById(original.getId()).orElseThrow();
+            assertThat(saved.getPullRequestUrl()).isEqualTo(original.getPullRequestUrl());
+            assertThat(saved.getStatus()).isEqualTo(CodexRequestStatus.COMPLETED);
+            assertThat(saved.getTotalTokens()).isEqualTo(42);
+            assertThat(saved.getDurationMs()).isEqualTo(60_000L);
+            assertThat(saved.getResponseText()).isEqualTo(original.getResponseText());
+            assertThat(saved.getWorkBatchKey()).isEqualTo(original == current ? null : "shared-delivery-branch");
+            String detail = mvc.perform(get("/api/codex/requests/{id}", saved.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.pullRequestUrl").value(original.getPullRequestUrl()))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            details.add((ObjectNode) mapper.readTree(detail));
+        }
+        String detailPath = System.getenv("DELIVERY_HISTORY_E2E_DETAIL");
+        if (detailPath != null) Files.writeString(Path.of(detailPath), mapper.writeValueAsString(details));
+    }
+
+    @Test
     void callbackPersistsFinalizationOutcomeAndPreservesResultForTheFrontend() throws Exception {
         List<ObjectNode> details = new ArrayList<>();
         for (String outcome : List.of("COMPLETED", "FAILED")) {
