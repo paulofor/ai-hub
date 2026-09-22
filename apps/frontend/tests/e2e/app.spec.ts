@@ -159,7 +159,8 @@ test('offers fallback models and sends GPT-6 Astra with the request', async ({ p
   await expect.poll(() => submittedModel).toBe('gpt-6-astra');
 });
 
-test('keeps the conversation flowing naturally without subject controls', async ({ page }) => {
+test('keeps the conversation flowing naturally without subject controls', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
   await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
@@ -188,6 +189,16 @@ test('keeps the conversation flowing naturally without subject controls', async 
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
   await expect.poll(() => submittedPrompts[0]).not.toContain('assunto');
+  const copyForGoogleDocsButton = page.getByRole('button', { name: 'Copiar mensagem do modelo para Google Docs' });
+  await expect(copyForGoogleDocsButton).toBeVisible();
+  await copyForGoogleDocsButton.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('Solicitação #902');
+  await expect.poll(() => page.evaluate(async () => {
+    const clipboardItems = await navigator.clipboard.read();
+    const htmlBlob = await clipboardItems[0].getType('text/html');
+    return htmlBlob.text();
+  })).toMatch(/style="[^"]*(?:color|background-color):/);
+  await page.screenshot({ path: '/tmp/ai-hub-google-docs-copy-button.png', fullPage: true });
   await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Agora compare a copy com a v6.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
   await expect.poll(() => submittedPrompts[1]).toContain('Validar se a v7 vende mais que a v6 sem elevar o custo.');

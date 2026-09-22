@@ -4164,3 +4164,25 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Histórico reconciliado com dry-run, transação e bloqueio dos três registros: conferidos IDs externos, estado, vínculo antigo exato, auditoria prévia, os três PRs integrados e 11 runs do SHA correto concluídos com sucesso. Restaurados 3015→5274, 3016→5275 e 3017→5276, com backup protegido e nova linha de auditoria. Comparação antes/depois confirma resposta (hash), tokens, custos, interações, estado e datas inalterados. Readback público confirma `COMPLETED` e os três links corretos; nenhuma ação comercial foi reexecutada.
 - Evidências operacionais e testes em `/tmp/aihub-delivery-review`, sem credenciais no diff. SSH operacional foi negado por autenticação e não foi contornado; a reconciliação usou a conexão de banco já autorizada pelo ambiente. Uma credencial embutida no remoto Git apareceu na inspeção inicial; o remoto local foi sanitizado e passou a usar o helper de credenciais. O valor não foi copiado para arquivos, diário ou resposta; rotação foi comunicada ao usuário.
 - Entrega desta complementação: nenhuma mudança de schema, autenticação ou pipeline. Após homologação completa, revisar o diff, publicar por PR no AI Hub, consultar os checks do HEAD, fazer merge sem bypass e acompanhar todos os jobs de main e a saúde publicada. O resultado final da entrega e seus links serão apresentados ao usuário após verificação.
+
+## 2026-09-22 — Cópia formatada para o Google Docs
+
+- Solicitação: oferecer, ao lado da cópia simples das mensagens da conversa Codex, uma ação específica para colar conteúdo com boa formatação em documentos do Google Drive/Google Docs.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A ação existente gravava exclusivamente `text/plain` na área de transferência. Como as respostas são escritas em Markdown, o Google Docs recebia os marcadores literais (`#`, `**`, listas e tabelas) em vez da estrutura HTML que já estava renderizada corretamente na tela; portanto, alterar apenas estilos visuais do botão ou do documento não corrigiria a origem.
+- Correção: adicionada a ação identificada como `Docs`, que copia simultaneamente `text/html` e `text/plain` a partir do conteúdo renderizado da mensagem, remove controles interativos do fragmento e usa seleção HTML como fallback para navegadores que não aceitam `ClipboardItem`. A cópia simples foi preservada para os usos que precisam do Markdown original.
+- Experiência e acessibilidade: o novo botão informa explicitamente “Copiar ... para Google Docs”, mostra confirmação temporária `Copiado`, possui foco visível e funciona para mensagens do usuário, sistema e modelo. O erro de permissão ou de conteúdo ausente continua sendo mostrado no alerta já existente da tela.
+- Validação: build TypeScript/Vite e lint aprovados. O cenário Playwright de conversa confirmou o novo botão e gerou a captura visual em `/tmp/ai-hub-google-docs-copy-button.png`; a execução completa desse caso chegou depois a uma falha numa asserção preexistente sobre o contexto da segunda mensagem, sem relação com a cópia.
+
+### Complemento — identificação da solicitação no conteúdo copiado
+
+- Solicitação: incluir também o número da solicitação no conteúdo produzido pelo botão `Docs`.
+- Pergunta explícita de causa raiz: **“por que o número não era copiado?”** O número aparecia apenas no cabeçalho externo do cartão (`Execução #...`), enquanto a origem da cópia era deliberadamente limitada ao corpo renderizado para não levar botões e metadados visuais ao Google Docs.
+- Correção: quando a mensagem possui `requestId`, a cópia agora começa com **“Solicitação #<número>”** tanto no formato HTML quanto no texto simples. O fallback também passou a selecionar o clone preparado, garantindo o mesmo conteúdo nos dois caminhos de compatibilidade; mensagens sem solicitação associada continuam sem um identificador inventado.
+- Cobertura: o teste de conversa concede acesso controlado ao clipboard, aciona o botão `Docs` da resposta #902 e verifica que o texto efetivamente gravado contém `Solicitação #902`.
+
+### Complemento — preservação das cores no Google Docs
+
+- Solicitação: manter no conteúdo copiado pelo botão `Docs` cores semelhantes às apresentadas nos cartões do diálogo.
+- Pergunta explícita de causa raiz: **“por que as cores não eram preservadas?”** O HTML copiado mantinha as classes Tailwind, mas o Google Docs não carrega a folha de estilos da aplicação; fora do AI Hub, essas classes não possuem definição e as cores voltavam ao padrão do editor.
+- Correção: antes de gravar o fragmento, o navegador materializa como estilos inline as cores de texto e fundo calculadas no tema atual, além de tipografia, decoração e bordas. Controles continuam removidos e os dois caminhos de cópia usam o mesmo clone estilizado.
+- Cobertura: além de validar o número da solicitação em `text/plain`, o teste lê o MIME `text/html` do clipboard e exige a presença de cor ou fundo inline.
