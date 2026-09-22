@@ -179,6 +179,56 @@ const copyTextToClipboard = async (text: string) => {
   }
 };
 
+const copyRichTextToClipboard = async (source: HTMLElement, requestId?: number) => {
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('button, input, label, svg, [aria-hidden="true"]').forEach((element) => element.remove());
+  const requestLabel = requestId ? `Solicitação #${requestId}` : '';
+  if (requestLabel) {
+    const requestHeading = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = requestLabel;
+    requestHeading.appendChild(strong);
+    clone.prepend(requestHeading);
+  }
+  const contentText = (source.innerText || source.textContent || '').trim();
+  const plainText = [requestLabel, contentText].filter(Boolean).join('\n\n');
+  const html = `<div>${clone.innerHTML}</div>`;
+
+  if (navigator.clipboard?.write && window.ClipboardItem && window.isSecureContext) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([plainText], { type: 'text/plain' })
+      })]);
+      return;
+    } catch {
+      // A selecao do DOM abaixo preserva HTML mesmo quando o navegador bloqueia ClipboardItem.
+    }
+  }
+
+  const selection = window.getSelection();
+  const previousRanges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    : [];
+  const range = document.createRange();
+  const stagingContainer = document.createElement('div');
+  stagingContainer.style.position = 'fixed';
+  stagingContainer.style.left = '-9999px';
+  stagingContainer.style.top = '0';
+  stagingContainer.appendChild(clone);
+  document.body.appendChild(stagingContainer);
+  range.selectNodeContents(clone);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  const copied = document.execCommand('copy');
+  selection?.removeAllRanges();
+  previousRanges.forEach((previousRange) => selection?.addRange(previousRange));
+  document.body.removeChild(stagingContainer);
+  if (!copied) {
+    throw new Error('document.execCommand(copy) retornou falso');
+  }
+};
+
 const readCommentsStorageKey = (profile: CodexProfile) => `${READ_COMMENTS_STORAGE_PREFIX}${profile}`;
 const hiddenRequestsStorageKey = (profile: CodexProfile) => `${HIDDEN_REQUESTS_STORAGE_PREFIX}${profile}`;
 const pendingPrStorageKey = (profile: CodexProfile) => `aihub:codex:pending-pr:${profile}`;
@@ -1600,6 +1650,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [editingDraft, setEditingDraft] = useState('');
   const [savingEditRequestId, setSavingEditRequestId] = useState<number | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [copiedGoogleDocsMessageId, setCopiedGoogleDocsMessageId] = useState<string | null>(null);
   const [savedConversations, setSavedConversations] = useState<SavedConversation[]>([]);
   const [selectedSavedConversationId, setSelectedSavedConversationId] = useState<number | ''>('');
   const [selectedSavedConversationMessages, setSelectedSavedConversationMessages] = useState<SavedConversationMessage[]>([]);
@@ -2665,6 +2716,27 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, []);
 
+  const handleCopyConversationMessageForGoogleDocs = useCallback(async (message: ChatMessage) => {
+    const messageElement = conversationMessageRefs.current.get(message.id);
+    const contentElement = messageElement?.querySelector<HTMLElement>('[data-google-docs-copy-source]');
+    if (!contentElement) {
+      setError('Não foi possível localizar o conteúdo formatado da mensagem.');
+      return;
+    }
+
+    try {
+      await copyRichTextToClipboard(contentElement, message.requestId);
+      setCopiedGoogleDocsMessageId(message.id);
+      setError(null);
+      if (copiedMessageTimeoutRef.current) {
+        window.clearTimeout(copiedMessageTimeoutRef.current);
+      }
+      copiedMessageTimeoutRef.current = window.setTimeout(() => setCopiedGoogleDocsMessageId(null), 2000);
+    } catch {
+      setError('Não foi possível copiar para o Google Docs. Verifique a permissão da área de transferência do navegador.');
+    }
+  }, []);
+
   const isOrientationRequested = useCallback((orientation: string) => requestedOrientations.has(orientation), [requestedOrientations]);
 
   const handleRequestOrientation = useCallback((orientation: string) => {
@@ -3156,6 +3228,16 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   >
                     {copiedMessageId === message.id ? '✓' : '⧉'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyConversationMessageForGoogleDocs(message)}
+                    className="inline-flex h-7 items-center justify-center gap-1 rounded-full border border-blue-300 bg-white/70 px-2 text-[10px] font-bold normal-case tracking-normal text-blue-700 transition hover:border-blue-500 hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-800 dark:bg-slate-950/70 dark:text-blue-300 dark:hover:border-blue-500 dark:hover:text-blue-100"
+                    title="Copiar com formatação para colar no Google Docs"
+                    aria-label={`Copiar mensagem do ${message.role === 'user' ? 'usuário' : message.role === 'system' ? 'sistema' : 'modelo'} para Google Docs`}
+                  >
+                    <span aria-hidden="true">{copiedGoogleDocsMessageId === message.id ? '✓' : '▤'}</span>
+                    <span>{copiedGoogleDocsMessageId === message.id ? 'Copiado' : 'Docs'}</span>
+                  </button>
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleStartEditPendingRequest(message.requestId!)} disabled={savingEditRequestId === message.requestId} className="normal-case text-sky-700 hover:underline disabled:opacity-50">Editar solicitação</button> : null}
                   {message.requestId && message.status === 'PENDING' ? <button type="button" onClick={() => handleDeletePendingRequest(message.requestId!)} disabled={deletingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">Apagar antes do envio</button> : null}
                   {message.requestId && isCancellableRequestStatus(message.status) ? <button type="button" onClick={() => handleCancelRequest(message.requestId!)} disabled={cancellingRequestId === message.requestId} className="normal-case text-rose-600 hover:underline disabled:opacity-50">{cancellingRequestId === message.requestId ? 'Cancelando...' : 'Cancelar solicitação'}</button> : null}
@@ -3167,21 +3249,23 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 {messageModel ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Modelo usado:</strong> {messageModel}</span> : null}
                 {messageReasoningEffort ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Tipo de raciocínio:</strong> {formatReasoningEffort(messageReasoningEffort)}</span> : null}
               </div> : null}
-              {isEditingUserMessage ? <div className="space-y-2">
-                <textarea value={editingDraft} onChange={(event) => setEditingDraft(event.target.value)} rows={4} className="w-full rounded-md border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100" />
-                <div className="flex flex-wrap justify-end gap-2 text-xs">
-                  <button type="button" onClick={handleCancelEditPendingRequest} disabled={savingEditRequestId === editingRequestId} className="rounded-md border border-slate-300 px-3 py-1 font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Cancelar</button>
-                  <button type="button" onClick={() => editingRequestId ? handleSaveEditPendingRequest(editingRequestId) : undefined} disabled={!editingRequestId || savingEditRequestId === editingRequestId} className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white disabled:opacity-50">Salvar edição</button>
-                </div>
-              </div> : <AssistantMessageBody
-                content={message.content}
-                structuredResponse={message.role === 'assistant'}
-                commentRead={readCommentIds.has(message.id)}
-                onCommentReadChange={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
-                onDismissRequest={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' && message.requestId && readCommentIds.has(message.id) ? () => handleDismissConversationRequest(message.requestId!) : undefined}
-                isOrientationRequested={isOrientationRequested}
-                onRequestOrientation={handleRequestOrientation}
-              />}
+              <div data-google-docs-copy-source>
+                {isEditingUserMessage ? <div className="space-y-2">
+                  <textarea value={editingDraft} onChange={(event) => setEditingDraft(event.target.value)} rows={4} className="w-full rounded-md border border-emerald-200 bg-white/90 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-800 dark:bg-slate-900 dark:text-slate-100" />
+                  <div className="flex flex-wrap justify-end gap-2 text-xs">
+                    <button type="button" onClick={handleCancelEditPendingRequest} disabled={savingEditRequestId === editingRequestId} className="rounded-md border border-slate-300 px-3 py-1 font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">Cancelar</button>
+                    <button type="button" onClick={() => editingRequestId ? handleSaveEditPendingRequest(editingRequestId) : undefined} disabled={!editingRequestId || savingEditRequestId === editingRequestId} className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white disabled:opacity-50">Salvar edição</button>
+                  </div>
+                </div> : <AssistantMessageBody
+                  content={message.content}
+                  structuredResponse={message.role === 'assistant'}
+                  commentRead={readCommentIds.has(message.id)}
+                  onCommentReadChange={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
+                  onDismissRequest={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' && message.requestId && readCommentIds.has(message.id) ? () => handleDismissConversationRequest(message.requestId!) : undefined}
+                  isOrientationRequested={isOrientationRequested}
+                  onRequestOrientation={handleRequestOrientation}
+                />}
+              </div>
             </article>;
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
