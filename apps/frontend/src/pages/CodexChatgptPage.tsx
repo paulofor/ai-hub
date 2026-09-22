@@ -179,8 +179,35 @@ const copyTextToClipboard = async (text: string) => {
   }
 };
 
+const applyClipboardStyles = (source: HTMLElement, clone: HTMLElement) => {
+  const sourceElements = [source, ...Array.from(source.querySelectorAll<HTMLElement>('*'))];
+  const cloneElements = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))];
+
+  sourceElements.forEach((sourceElement, index) => {
+    const cloneElement = cloneElements[index];
+    if (!cloneElement) return;
+    const computedStyle = window.getComputedStyle(sourceElement);
+    cloneElement.style.color = computedStyle.color;
+    cloneElement.style.fontFamily = computedStyle.fontFamily;
+    cloneElement.style.fontSize = computedStyle.fontSize;
+    cloneElement.style.fontStyle = computedStyle.fontStyle;
+    cloneElement.style.fontWeight = computedStyle.fontWeight;
+    cloneElement.style.textDecoration = computedStyle.textDecoration;
+
+    if (computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+      cloneElement.style.backgroundColor = computedStyle.backgroundColor;
+    }
+    if (computedStyle.borderTopStyle !== 'none') {
+      cloneElement.style.borderColor = computedStyle.borderColor;
+      cloneElement.style.borderStyle = computedStyle.borderStyle;
+      cloneElement.style.borderWidth = computedStyle.borderWidth;
+    }
+  });
+};
+
 const copyRichTextToClipboard = async (source: HTMLElement, requestId?: number) => {
   const clone = source.cloneNode(true) as HTMLElement;
+  applyClipboardStyles(source, clone);
   clone.querySelectorAll('button, input, label, svg, [aria-hidden="true"]').forEach((element) => element.remove());
   const requestLabel = requestId ? `Solicitação #${requestId}` : '';
   if (requestLabel) {

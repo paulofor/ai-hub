@@ -4179,3 +4179,10 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Pergunta explícita de causa raiz: **“por que o número não era copiado?”** O número aparecia apenas no cabeçalho externo do cartão (`Execução #...`), enquanto a origem da cópia era deliberadamente limitada ao corpo renderizado para não levar botões e metadados visuais ao Google Docs.
 - Correção: quando a mensagem possui `requestId`, a cópia agora começa com **“Solicitação #<número>”** tanto no formato HTML quanto no texto simples. O fallback também passou a selecionar o clone preparado, garantindo o mesmo conteúdo nos dois caminhos de compatibilidade; mensagens sem solicitação associada continuam sem um identificador inventado.
 - Cobertura: o teste de conversa concede acesso controlado ao clipboard, aciona o botão `Docs` da resposta #902 e verifica que o texto efetivamente gravado contém `Solicitação #902`.
+
+### Complemento — preservação das cores no Google Docs
+
+- Solicitação: manter no conteúdo copiado pelo botão `Docs` cores semelhantes às apresentadas nos cartões do diálogo.
+- Pergunta explícita de causa raiz: **“por que as cores não eram preservadas?”** O HTML copiado mantinha as classes Tailwind, mas o Google Docs não carrega a folha de estilos da aplicação; fora do AI Hub, essas classes não possuem definição e as cores voltavam ao padrão do editor.
+- Correção: antes de gravar o fragmento, o navegador materializa como estilos inline as cores de texto e fundo calculadas no tema atual, além de tipografia, decoração e bordas. Controles continuam removidos e os dois caminhos de cópia usam o mesmo clone estilizado.
+- Cobertura: além de validar o número da solicitação em `text/plain`, o teste lê o MIME `text/html` do clipboard e exige a presença de cor ou fundo inline.
