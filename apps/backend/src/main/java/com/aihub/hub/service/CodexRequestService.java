@@ -189,6 +189,7 @@ public class CodexRequestService {
 
         codexRequest.setProfile(profile);
         codexRequest.setUserMessage(resolveUserMessage(request.getUserMessage(), effectivePrompt));
+        codexRequest.setProductName(StringUtils.hasText(request.getProductName()) ? request.getProductName().trim() : null);
         codexRequest.setReasoningEffort(request.getReasoningEffort());
         codexRequest.setVersion(CodexRequest.DEFAULT_VERSION);
         codexRequest.setStatus(CodexRequestStatus.PENDING);

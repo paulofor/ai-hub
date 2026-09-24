@@ -25,6 +25,7 @@ export interface CodexRequest {
   problemTitle?: string;
   processNumber?: string;
   processText?: string;
+  productName?: string;
   requestTitle?: string;
   resolutionDifficulty?: string;
   executionLog?: string;
@@ -316,6 +317,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
   const problemTitle = problemTitleRaw && problemTitleRaw.trim() ? problemTitleRaw.trim() : undefined;
   const processNumber = typeof item.processNumber === 'string' ? item.processNumber.trim() : undefined;
   const processText = typeof item.processText === 'string' ? item.processText.trim() : undefined;
+  const productName = typeof item.productName === 'string' ? item.productName.trim() : undefined;
   const requestTitleRaw = typeof item.requestTitle === 'string'
     ? item.requestTitle
     : typeof (item as Record<string, unknown>).request_title === 'string'
@@ -428,6 +430,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     problemTitle: problemTitle ?? undefined,
     processNumber: processNumber || undefined,
     processText: processText || undefined,
+    productName: productName || undefined,
     requestTitle: requestTitle ?? undefined
   };
 };

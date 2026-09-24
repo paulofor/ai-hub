@@ -9,6 +9,7 @@ RUN npm run build
 FROM node:20-bookworm-slim AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
+ARG GH_CLI_VERSION=2.101.0
 ARG CODEX_VERSION=0.153.4
 ARG PLAYWRIGHT_VERSION=1.54.2
 RUN apt-get update \
@@ -29,22 +30,27 @@ RUN apt-get update \
   && echo "deb http://deb.debian.org/debian bookworm-backports main" \
     > /etc/apt/sources.list.d/bookworm-backports.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends git gh openssh-client python3 python3-pip patch jq ffmpeg dnsutils shellcheck temurin-21-jdk maven ripgrep docker-ce-cli docker-buildx-plugin docker-compose-plugin bash google-cloud-cli awscli chromium \
+  && apt-get install -y --no-install-recommends git openssh-client python3 python3-pip patch jq ffmpeg dnsutils shellcheck temurin-21-jdk maven ripgrep docker-ce-cli docker-buildx-plugin docker-compose-plugin bash google-cloud-cli awscli chromium \
   && case "$(dpkg --print-architecture)" in \
-    amd64) actionlint_arch=amd64 ;; \
-    arm64) actionlint_arch=arm64 ;; \
+    amd64) actionlint_arch=amd64; gh_arch=amd64 ;; \
+    arm64) actionlint_arch=arm64; gh_arch=arm64 ;; \
     *) echo "Arquitetura sem actionlint precompilado: $(dpkg --print-architecture)" >&2; exit 1 ;; \
   esac \
   && curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${actionlint_arch}.tar.gz" \
     | tar -xz -C /usr/local/bin actionlint \
   && chmod +x /usr/local/bin/actionlint \
+  && curl -fsSLo /tmp/gh-checksums.txt "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_checksums.txt" \
+  && curl -fsSLo "/tmp/gh_${GH_CLI_VERSION}_linux_${gh_arch}.tar.gz" "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_${gh_arch}.tar.gz" \
+  && (cd /tmp && checksum_line="$(grep " gh_${GH_CLI_VERSION}_linux_${gh_arch}.tar.gz$" gh-checksums.txt)" && test -n "$checksum_line" && printf '%s\n' "$checksum_line" | sha256sum -c -) \
+  && tar -xzf "/tmp/gh_${GH_CLI_VERSION}_linux_${gh_arch}.tar.gz" -C /usr/local/bin --strip-components=2 "gh_${GH_CLI_VERSION}_linux_${gh_arch}/bin/gh" \
+  && chmod +x /usr/local/bin/gh \
   && gh --version \
   && shellcheck --version \
   && actionlint --version \
   && docker buildx version \
   && command -v nslookup \
   && ssh -V \
-  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /var/lib/apt/lists/* /tmp/gh-checksums.txt /tmp/gh_*.tar.gz \
   && cat <<'EOF' >/usr/local/bin/apply_patch
 #!/bin/sh
 set -euo pipefail

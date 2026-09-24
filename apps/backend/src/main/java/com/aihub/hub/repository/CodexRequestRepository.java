@@ -42,7 +42,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.cloneDurationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, process.processNumber, process.processText,
+            problem.id, problem.title, process.processNumber, process.processText, cr.productName,
             (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
             cr.responseText, '', cr.quotaUsage
         )
@@ -62,7 +62,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
             cr.promptCost, cr.cachedPromptCost, cr.completionCost, cr.cost,
             cr.timeoutCount, cr.httpGetCount, cr.httpGetSuccessCount, cr.dbQueryCount,
             cr.startedAt, cr.finishedAt, cr.durationMs, cr.cloneDurationMs, cr.createdAt, cr.interactionCount,
-            problem.id, problem.title, process.processNumber, process.processText,
+            problem.id, problem.title, process.processNumber, process.processText, cr.productName,
             (select count(distinct log.documentPath) from CodexDocumentAccessLog log where log.codexRequest = cr),
             cr.responseText, '', cr.quotaUsage
         )

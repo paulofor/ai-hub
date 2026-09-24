@@ -399,10 +399,14 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /sandbox-media-player <arquivo-video-ou-audio> \[saida\.html\]/);
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
+  assert.match(dockerfile, /GH_CLI_VERSION=2\.101\.0/);
   assert.match(dockerfile, /CODEX_VERSION=0\.153\.4/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
+  assert.match(dockerfile, /cli\/cli\/releases\/download\/v\$\{GH_CLI_VERSION\}/);
+  assert.match(dockerfile, /gh-checksums\.txt.*test -n "\$checksum_line".*sha256sum -c -/s);
+  assert.doesNotMatch(dockerfile, /apt-get install[^\n]*\bgh\b/);
   assert.match(dockerfile, /shellcheck --version/);
   assert.match(dockerfile, /docker buildx version/);
   assert.match(dockerfile, /@openai\/codex@\$\{CODEX_VERSION\}/);
@@ -4418,6 +4422,74 @@ test('retoma a mesma thread após falha transitória de conexão do Codex App Se
   } finally {
     if (previousDelay === undefined) delete process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS;
     else process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS = previousDelay;
+  }
+});
+
+test('mantém a solicitação ativa e retoma a mesma thread quando o modelo está sem capacidade', async () => {
+  const previousAttempts = process.env.CODEX_APP_SERVER_CAPACITY_TURN_MAX_ATTEMPTS;
+  const previousDelay = process.env.CODEX_APP_SERVER_CAPACITY_TURN_RETRY_DELAY_MS;
+  process.env.CODEX_APP_SERVER_CAPACITY_TURN_MAX_ATTEMPTS = '3';
+  process.env.CODEX_APP_SERVER_CAPACITY_TURN_RETRY_DELAY_MS = '0';
+  const listeners = new Map<string, Array<(params: unknown) => void>>();
+  const calls: Array<{ method: string; params?: any }> = [];
+  let turnAttempt = 0;
+  const fakeCodexAppServerClient = {
+    isReady: () => true,
+    request: async (method: string, params?: any) => {
+      calls.push({ method, params });
+      if (method === 'account/read') return { authMode: 'chatgpt', planType: 'plus' };
+      if (method === 'thread/start') return { id: 'thread-capacity' };
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        const currentAttempt = turnAttempt;
+        if (currentAttempt === 1) throw new Error('Selected model is at capacity. Please try a different model.');
+        setTimeout(() => {
+          if (currentAttempt === 2) {
+            for (const listener of listeners.get('turn/completed') ?? []) {
+              listener({ status: 'failed', error: { message: 'Selected model is at capacity. Please try a different model.' } });
+            }
+          } else {
+            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ delta: 'resultado após capacidade voltar' });
+            for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed' });
+          }
+        }, 5);
+        return { id: `turn-capacity-${currentAttempt}` };
+      }
+      if (method === 'thread/archive') return {};
+      throw new Error(`unexpected method ${method}`);
+    },
+    onNotification: (method: string, listener: (params: unknown) => void) => {
+      const current = listeners.get(method) ?? [];
+      current.push(listener);
+      listeners.set(method, current);
+      return () => listeners.set(method, (listeners.get(method) ?? []).filter((item) => item !== listener));
+    },
+  } as any;
+
+  try {
+    const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
+    const job: SandboxJob = {
+      jobId: 'job-chatgpt-codex-capacity', taskDescription: 'aguarde a capacidade do modelo',
+      profile: 'CHATGPT_CODEX_SANDBOX', status: 'PENDING', logs: [], interactions: [], interactionSequence: 0,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), timeoutCount: 0,
+    } as SandboxJob;
+
+    await processor.process(job);
+
+    assert.equal(job.status, 'COMPLETED');
+    assert.equal(job.summary, 'resultado após capacidade voltar');
+    const turnCalls = calls.filter((call) => call.method === 'turn/start');
+    assert.equal(turnCalls.length, 3);
+    assert.ok(turnCalls.every((call) => call.params.threadId === 'thread-capacity'));
+    assert.match(turnCalls[1].params.input[0].text, /temporariamente sem capacidade/);
+    assert.match(turnCalls[2].params.input[0].text, /temporariamente sem capacidade/);
+    assert.ok(job.logs.filter((entry) => entry.includes('mantendo a solicitação ativa')).length === 2);
+    assert.equal(calls.filter((call) => call.method === 'thread/archive').length, 1);
+  } finally {
+    if (previousAttempts === undefined) delete process.env.CODEX_APP_SERVER_CAPACITY_TURN_MAX_ATTEMPTS;
+    else process.env.CODEX_APP_SERVER_CAPACITY_TURN_MAX_ATTEMPTS = previousAttempts;
+    if (previousDelay === undefined) delete process.env.CODEX_APP_SERVER_CAPACITY_TURN_RETRY_DELAY_MS;
+    else process.env.CODEX_APP_SERVER_CAPACITY_TURN_RETRY_DELAY_MS = previousDelay;
   }
 });
 

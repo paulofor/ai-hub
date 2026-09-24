@@ -92,6 +92,8 @@ const REASONING_SUMMARY_OBJECTIVE_INSTRUCTION = 'Ao produzir o resumo público d
 const CODEX_PLAN_OBJECTIVE_INSTRUCTION = 'Antes da primeira ação da solicitação, use obrigatoriamente update_plan para publicar um checklist curto com os objetivos concretos da execução. Atualize esse mesmo plano quando o escopo mudar e ao concluir etapas; não substitua o plano por títulos do resumo automático de raciocínio.';
 export const DEFAULT_CODEX_TRANSIENT_TURN_MAX_ATTEMPTS = 2;
 export const DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS = 5_000;
+export const DEFAULT_CODEX_CAPACITY_TURN_MAX_ATTEMPTS = 13;
+export const DEFAULT_CODEX_CAPACITY_TURN_RETRY_DELAY_MS = 5 * 60 * 1000;
 export const DEFAULT_DOCKER_HOMOLOGATION_CLEANUP_TIMEOUT_MS = 120_000;
 
 export function dockerHomologationProjectName(jobId: string): string {
@@ -387,6 +389,8 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly codexAppServerSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
   private readonly codexTransientTurnMaxAttempts: number;
   private readonly codexTransientTurnRetryDelayMs: number;
+  private readonly codexCapacityTurnMaxAttempts: number;
+  private readonly codexCapacityTurnRetryDelayMs: number;
   private readonly dockerHomologationCleanupEnabled: boolean;
   private readonly dockerHomologationCleanupTimeoutMs: number;
   private activeJobs = 0;
@@ -425,6 +429,14 @@ export class SandboxJobProcessor implements JobProcessor {
     this.codexTransientTurnRetryDelayMs = this.parseNonNegativeInteger(
       process.env.CODEX_APP_SERVER_TRANSIENT_TURN_RETRY_DELAY_MS,
       DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS,
+    );
+    this.codexCapacityTurnMaxAttempts = this.parsePositiveInteger(
+      process.env.CODEX_APP_SERVER_CAPACITY_TURN_MAX_ATTEMPTS,
+      DEFAULT_CODEX_CAPACITY_TURN_MAX_ATTEMPTS,
+    );
+    this.codexCapacityTurnRetryDelayMs = this.parseNonNegativeInteger(
+      process.env.CODEX_APP_SERVER_CAPACITY_TURN_RETRY_DELAY_MS,
+      DEFAULT_CODEX_CAPACITY_TURN_RETRY_DELAY_MS,
     );
     this.dockerHomologationCleanupEnabled = (process.env.DOCKER_HOMOLOGATION_CLEANUP_ENABLED ?? 'true').toLowerCase() === 'true';
     this.dockerHomologationCleanupTimeoutMs = this.parsePositiveInteger(
@@ -1470,7 +1482,12 @@ export class SandboxJobProcessor implements JobProcessor {
     ];
 
     try {
-      for (let attempt = 1; attempt <= this.codexTransientTurnMaxAttempts; attempt += 1) {
+      let attempt = 0;
+      let transientAttempts = 0;
+      let capacityAttempts = 0;
+      let previousFailureWasCapacity = false;
+      while (true) {
+        attempt += 1;
         currentTurnId = `attempt-${attempt}`;
         completed = false;
         failedReason = undefined;
@@ -1486,25 +1503,27 @@ export class SandboxJobProcessor implements JobProcessor {
             ? this.buildCodexAppServerInput(job)
             : [{
                 type: 'text',
-                text: 'A tentativa anterior foi encerrada por uma falha transitória de conexão. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.',
+                text: previousFailureWasCapacity
+                  ? 'A tentativa anterior aguardou porque o modelo estava temporariamente sem capacidade. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.'
+                  : 'A tentativa anterior foi encerrada por uma falha transitória de conexão. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.',
               }],
           effort: job.reasoningEffort ?? this.codexReasoningEffort,
           summary: 'auto',
         };
         this.recordInteraction(job, 'OUTBOUND', this.safeStringify({ method: 'turn/start', params: turnParams }));
-        const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
-        this.transitionWaitCategory(job, 'MODEL_REASONING');
-        const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
-        currentTurnId = turnId;
-        collectCompletedReasoning(turn);
-        this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}/${this.codexTransientTurnMaxAttempts}`);
-        const immediateStatus = this.extractCodexStatus(turn);
-        const immediateText = this.extractCodexText(turn);
-        this.addCodexAppServerUsageMetrics(job, turn);
-        if (immediateText) summary = immediateText;
-        if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) completed = true;
-
         try {
+          const turn = await client.request<Record<string, unknown>>('turn/start', turnParams);
+          this.transitionWaitCategory(job, 'MODEL_REASONING');
+          const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
+          currentTurnId = turnId;
+          collectCompletedReasoning(turn);
+          this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}`);
+          const immediateStatus = this.extractCodexStatus(turn);
+          const immediateText = this.extractCodexText(turn);
+          this.addCodexAppServerUsageMetrics(job, turn);
+          if (immediateText) summary = immediateText;
+          if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) completed = true;
+
           await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt, () => activeCommandItems.size > 0);
           if (failedReason) throw new Error(failedReason);
           const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
@@ -1512,12 +1531,20 @@ export class SandboxJobProcessor implements JobProcessor {
           return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          if (attempt >= this.codexTransientTurnMaxAttempts || !this.isRetryableCodexTurnFailure(reason)) throw err;
+          previousFailureWasCapacity = this.isCodexCapacityFailure(reason);
+          if (previousFailureWasCapacity) {
+            capacityAttempts += 1;
+            if (capacityAttempts >= this.codexCapacityTurnMaxAttempts) throw err;
+            this.log(job, `modelo Codex temporariamente sem capacidade (${reason}); mantendo a solicitação ativa e retomando a mesma thread em ${this.codexCapacityTurnRetryDelayMs}ms`);
+            await this.sleep(this.codexCapacityTurnRetryDelayMs);
+            continue;
+          }
+          transientAttempts += 1;
+          if (transientAttempts >= this.codexTransientTurnMaxAttempts || !this.isRetryableCodexTurnFailure(reason)) throw err;
           this.log(job, `falha transitória no turno Codex (${reason}); retomando a mesma thread em ${this.codexTransientTurnRetryDelayMs}ms`);
           await this.sleep(this.codexTransientTurnRetryDelayMs);
         }
       }
-      throw new Error('CODEX_TURN_FAILED: tentativas transitórias esgotadas');
     } finally {
       this.finishActiveWait(job);
       unsubscribeCallbacks.forEach((unsubscribe) => unsubscribe());
@@ -1594,6 +1621,14 @@ export class SandboxJobProcessor implements JobProcessor {
       'connection', 'conexão', 'connect', 'reconnect', 'network', 'socket', 'stream disconnected',
       'transport', 'econnreset', 'etimedout', 'eai_again', 'temporarily unavailable',
     ].some((fragment) => normalized.includes(fragment));
+  }
+
+  private isCodexCapacityFailure(reason: string): boolean {
+    const normalized = reason.toLowerCase();
+    return normalized.includes('selected model is at capacity')
+      || normalized.includes('model is at capacity')
+      || normalized.includes('model capacity')
+      || normalized.includes('overloaded');
   }
 
 

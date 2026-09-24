@@ -9,11 +9,4 @@ public interface ProductRepository extends JpaRepository<ProductRecord, Long> {
 
     List<ProductRecord> findAllByOrderByNameAsc();
 
-    boolean existsBySlugIgnoreCase(String slug);
-
-    boolean existsBySlugIgnoreCaseAndIdNot(String slug, Long id);
-
-    boolean existsByExternalIdIgnoreCase(String externalId);
-
-    boolean existsByExternalIdIgnoreCaseAndIdNot(String externalId, Long id);
 }
