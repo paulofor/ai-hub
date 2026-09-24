@@ -9,11 +9,12 @@ spring:
       # aguardando por um minuto apenas multiplica a fila durante uma pane do DB.
       connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:10000}
       validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT_MS:5000}
-      # O timeout do pool cobre somente a espera por uma conexão. Estes limites
-      # do driver interrompem também conexões/consultas MySQL presas no socket.
+      # O timeout do pool cobre somente a espera por uma conexão. O connectTimeout
+      # protege a abertura; socketTimeout=0 deixa DDLs longos do Flyway terminarem.
+      # Consultas JPA continuam limitadas por jakarta.persistence.query.timeout.
       data-source-properties:
         connectTimeout: ${DB_CONNECT_TIMEOUT_MS:5000}
-        socketTimeout: ${DB_SOCKET_TIMEOUT_MS:30000}
+        socketTimeout: ${DB_SOCKET_TIMEOUT_MS:0}
         tcpKeepAlive: true
       leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD_MS:60000}
   jpa:
