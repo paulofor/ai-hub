@@ -3,6 +3,7 @@ package com.aihub.hub.dto;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexReasoningEffort;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,6 +28,9 @@ public class CreateCodexRequest {
 
     private Long processId;
 
+    @Size(max = 150, message = "O nome do produto pode ter no máximo 150 caracteres")
+    private String productName;
+
     private Integer promptTokens;
 
     private Integer cachedPromptTokens;
@@ -48,6 +52,14 @@ public class CreateCodexRequest {
     private List<ScreenPromptItem> screenPromptItems;
 
     public CreateCodexRequest() {
+    }
+
+    public String getProductName() {
+        return productName;
+    }
+
+    public void setProductName(String productName) {
+        this.productName = productName;
     }
 
     public List<ImageAttachment> getImageAttachments() {

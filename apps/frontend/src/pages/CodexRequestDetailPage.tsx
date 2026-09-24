@@ -589,6 +589,7 @@ export default function CodexRequestDetailPage() {
                 label="Processo"
                 value={request.processNumber ? `${request.processNumber} — ${request.processText}` : '—'}
               />
+              <InfoItem label="Produto" value={request.productName || '—'} />
               <InfoItem
                 label="Problema vinculado"
                 value={request.problemTitle ? `#${request.problemId} — ${request.problemTitle}` : '—'}

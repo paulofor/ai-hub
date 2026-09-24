@@ -22,12 +22,6 @@ public class ProductRecord {
     @Column(nullable = false, length = 150)
     private String name;
 
-    @Column(nullable = false, length = 150, unique = true)
-    private String slug;
-
-    @Column(name = "external_id", nullable = false, length = 150, unique = true)
-    private String externalId;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -63,22 +57,6 @@ public class ProductRecord {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getSlug() {
-        return slug;
-    }
-
-    public void setSlug(String slug) {
-        this.slug = slug;
-    }
-
-    public String getExternalId() {
-        return externalId;
-    }
-
-    public void setExternalId(String externalId) {
-        this.externalId = externalId;
     }
 
     public Instant getCreatedAt() {

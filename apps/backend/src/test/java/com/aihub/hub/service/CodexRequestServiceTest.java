@@ -475,7 +475,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
-            request.getInteractionCount(), null, null, null, null, 2L, null, null, null
+            request.getInteractionCount(), null, null, null, null, null, 2L, null, null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -511,7 +511,7 @@ class CodexRequestServiceTest {
             request.getTotalTokens(), request.getPromptCost(), request.getCachedPromptCost(), request.getCompletionCost(), request.getCost(),
             request.getTimeoutCount(), request.getHttpGetCount(), request.getHttpGetSuccessCount(), request.getDbQueryCount(),
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
-            request.getInteractionCount(), null, null, null, null, 1L, request.getResponseText(), null, null
+            request.getInteractionCount(), null, null, null, null, null, 1L, request.getResponseText(), null, null
         );
         when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
@@ -1100,6 +1100,7 @@ class CodexRequestServiceTest {
         payload.setEnvironment("owner/repo@main");
         payload.setPrompt("ajuste simples");
         payload.setUserMessage("Ajuste somente a mensagem do usuário.");
+        payload.setProductName("  Produto informativo  ");
         payload.setProfile(CodexIntegrationProfile.SMART_ECONOMY);
         payload.setTotalTokens(900_000);
         payload.setScreenPromptItems(List.of(
@@ -1110,6 +1111,8 @@ class CodexRequestServiceTest {
         assertThat(created.getModel()).isEqualTo("gpt-4.1-mini");
         assertThat(created.getVersion()).isEqualTo(CodexRequest.DEFAULT_VERSION);
         assertThat(created.getUserMessage()).isEqualTo("Ajuste somente a mensagem do usuário.");
+        assertThat(created.getProductName()).isEqualTo("Produto informativo");
+        assertThat(created.getPrompt()).isEqualTo("ajuste simples");
         assertThat(created.getScreenPromptItems()).containsExactly(
             new CodexRequest.ScreenPromptItemSnapshot(7L, "Contexto visual", "Texto exibido na tela.")
         );

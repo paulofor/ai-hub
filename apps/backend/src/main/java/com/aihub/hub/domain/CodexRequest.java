@@ -64,6 +64,9 @@ public class CodexRequest {
     @Column(name = "user_message", columnDefinition = "LONGTEXT")
     private String userMessage;
 
+    @Column(name = "product_name", length = 150)
+    private String productName;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private CodexRequestStatus status = CodexRequestStatus.PENDING;
@@ -277,6 +280,14 @@ public class CodexRequest {
 
     public void setUserMessage(String userMessage) {
         this.userMessage = userMessage;
+    }
+
+    public String getProductName() {
+        return productName;
+    }
+
+    public void setProductName(String productName) {
+        this.productName = productName;
     }
 
     public CodexRequestStatus getStatus() {

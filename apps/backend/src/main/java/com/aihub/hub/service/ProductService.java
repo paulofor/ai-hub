@@ -29,14 +29,9 @@ public class ProductService {
     @Transactional
     public ProductView create(CreateProductRequest request) {
         String name = request.name().trim();
-        String slug = request.slug().trim();
-        String externalId = request.externalId().trim();
-        validateUnique(slug, externalId, null);
 
         ProductRecord record = new ProductRecord();
         record.setName(name);
-        record.setSlug(slug);
-        record.setExternalId(externalId);
 
         return toView(productRepository.save(record));
     }
@@ -47,13 +42,8 @@ public class ProductService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Produto não encontrado"));
 
         String name = request.name().trim();
-        String slug = request.slug().trim();
-        String externalId = request.externalId().trim();
-        validateUnique(slug, externalId, id);
 
         record.setName(name);
-        record.setSlug(slug);
-        record.setExternalId(externalId);
         record.touchUpdatedAt();
 
         return toView(productRepository.save(record));
@@ -67,28 +57,10 @@ public class ProductService {
         productRepository.deleteById(id);
     }
 
-    private void validateUnique(String slug, String externalId, Long currentId) {
-        boolean slugExists = currentId == null
-            ? productRepository.existsBySlugIgnoreCase(slug)
-            : productRepository.existsBySlugIgnoreCaseAndIdNot(slug, currentId);
-        if (slugExists) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Já existe um produto com este slug");
-        }
-
-        boolean externalIdExists = currentId == null
-            ? productRepository.existsByExternalIdIgnoreCase(externalId)
-            : productRepository.existsByExternalIdIgnoreCaseAndIdNot(externalId, currentId);
-        if (externalIdExists) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Já existe um produto com este id externo");
-        }
-    }
-
     private ProductView toView(ProductRecord record) {
         return new ProductView(
             record.getId(),
             record.getName(),
-            record.getSlug(),
-            record.getExternalId(),
             record.getCreatedAt(),
             record.getUpdatedAt()
         );
