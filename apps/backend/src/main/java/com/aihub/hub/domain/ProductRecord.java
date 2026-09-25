@@ -22,6 +22,12 @@ public class ProductRecord {
     @Column(nullable = false, length = 150)
     private String name;
 
+    @Column(name = "model_name", length = 150)
+    private String modelName;
+
+    @Column(name = "reasoning_effort", length = 16)
+    private String reasoningEffort;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -57,6 +63,22 @@ public class ProductRecord {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getModelName() {
+        return modelName;
+    }
+
+    public void setModelName(String modelName) {
+        this.modelName = modelName;
+    }
+
+    public String getReasoningEffort() {
+        return reasoningEffort;
+    }
+
+    public void setReasoningEffort(String reasoningEffort) {
+        this.reasoningEffort = reasoningEffort;
     }
 
     public Instant getCreatedAt() {

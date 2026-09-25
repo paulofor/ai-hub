@@ -79,6 +79,8 @@ interface ProcessOption { id: number; number: string; text: string; parentProces
 
 interface ProductOption {
   name: string;
+  modelName?: string;
+  reasoningEffort?: CodexReasoningEffort;
 }
 
 interface PromptHintOption {
@@ -1206,7 +1208,11 @@ const parseProductOption = (value: unknown): ProductOption | null => {
   if (!name) {
     return null;
   }
-  return { name };
+  const modelName = typeof record.modelName === 'string' && record.modelName.trim() ? record.modelName.trim() : undefined;
+  const reasoningEffort = typeof record.reasoningEffort === 'string' && ['low', 'medium', 'high', 'xhigh', 'max'].includes(record.reasoningEffort.toLowerCase())
+    ? record.reasoningEffort.toLowerCase() as CodexReasoningEffort
+    : undefined;
+  return { name, modelName, reasoningEffort };
 };
 
 const sortProductOptions = (items: ProductOption[]) =>
@@ -2502,6 +2508,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setPrompt('');
       setFileAttachments([]);
       setSelectedPromptHintIds([]);
+      setSelectedProcessId('');
+      setSelectedProductName('');
       await loadRequests();
       registerTelemetry('execution_success', `Execução enviada com profile ${config.profile}.`);
       setError(null);
@@ -2512,6 +2520,18 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setActionLoading(false);
     }
   }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, selectedEnvironment, selectedProcessId, selectedProductName, selectedPromptHints]);
+
+  const handleProductChange = useCallback((productName: string) => {
+    setSelectedProductName(productName);
+    const selectedProduct = products.find((product) => product.name === productName);
+    if (!selectedProduct) return;
+    if (selectedProduct.modelName && models.some((item) => item.modelName === selectedProduct.modelName)) {
+      setModel(selectedProduct.modelName);
+    }
+    if (selectedProduct.reasoningEffort) {
+      setReasoningEffort(selectedProduct.reasoningEffort);
+    }
+  }, [models, products]);
 
 
   useEffect(() => {
@@ -3207,6 +3227,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             const messageRequest = message.requestId ? requestById.get(message.requestId) : undefined;
             const messageModel = message.model ?? messageRequest?.model;
             const messageReasoningEffort = message.reasoningEffort ?? messageRequest?.reasoningEffort;
+            const messageProcess = messageRequest?.processNumber
+              ? `${messageRequest.processNumber}${messageRequest.processText ? ` — ${messageRequest.processText}` : ''}`
+              : undefined;
+            const messageProduct = messageRequest?.productName;
             const structuredAssistantResponse = message.role === 'assistant' ? parseMarketingStructuredResponse(message.content) : null;
             const canDismissTerminalFailure = config.profile === 'CHATGPT_CODEX_MKT'
               && message.role === 'assistant'
@@ -3262,9 +3286,11 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   {message.requestId ? <Link to={`/codex/requests/${message.requestId}`} className="normal-case text-emerald-700 hover:underline">Execução #{message.requestId}</Link> : null}
                 </span>
               </div>
-              {message.role === 'assistant' && message.requestId && (messageModel || messageReasoningEffort) ? <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+              {message.role === 'assistant' && message.requestId && (messageModel || messageReasoningEffort || messageProcess || messageProduct) ? <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                 {messageModel ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Modelo usado:</strong> {messageModel}</span> : null}
                 {messageReasoningEffort ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Tipo de raciocínio:</strong> {formatReasoningEffort(messageReasoningEffort)}</span> : null}
+                {messageProcess ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Processo:</strong> {messageProcess}</span> : null}
+                {messageProduct ? <span><strong className="font-semibold text-slate-700 dark:text-slate-300">Produto:</strong> {messageProduct}</span> : null}
               </div> : null}
               <div data-google-docs-copy-source>
                 {isEditingUserMessage ? <div className="space-y-2">
@@ -3319,7 +3345,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           <option value="">Sem processo selecionado</option>
           {processes.map((item) => <option key={item.id} value={item.id}>{item.parentProcessId ? '↳ Subprocesso ' : 'Processo '}{item.number} — {item.text}</option>)}
         </select>
-        {showProductSelector ? <select value={selectedProductName} onChange={(e) => setSelectedProductName(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
+        {showProductSelector ? <select aria-label="Produto" value={selectedProductName} onChange={(e) => handleProductChange(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
           {products.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
         </select> : null}
