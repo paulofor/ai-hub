@@ -32,6 +32,7 @@ public class ProductService {
 
         ProductRecord record = new ProductRecord();
         record.setName(name);
+        applyExecutionDefaults(record, request.modelName(), request.reasoningEffort());
 
         return toView(productRepository.save(record));
     }
@@ -44,6 +45,7 @@ public class ProductService {
         String name = request.name().trim();
 
         record.setName(name);
+        applyExecutionDefaults(record, request.modelName(), request.reasoningEffort());
         record.touchUpdatedAt();
 
         return toView(productRepository.save(record));
@@ -61,8 +63,23 @@ public class ProductService {
         return new ProductView(
             record.getId(),
             record.getName(),
+            record.getModelName(),
+            record.getReasoningEffort(),
             record.getCreatedAt(),
             record.getUpdatedAt()
         );
+    }
+
+    private void applyExecutionDefaults(ProductRecord record, String modelName, String reasoningEffort) {
+        record.setModelName(normalizeOptional(modelName));
+        String normalizedReasoning = normalizeOptional(reasoningEffort);
+        record.setReasoningEffort(normalizedReasoning == null ? null : normalizedReasoning.toLowerCase());
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

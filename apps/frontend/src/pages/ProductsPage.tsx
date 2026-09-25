@@ -5,9 +5,13 @@ import ConfirmButton from '../components/ConfirmButton';
 interface ProductRecord {
   id: number;
   name: string;
+  modelName?: string | null;
+  reasoningEffort?: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+interface ModelOption { id: string | number; modelName: string; displayName?: string }
 
 const sortProducts = (items: ProductRecord[]) =>
   [...items].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
@@ -17,6 +21,9 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
+  const [formModelName, setFormModelName] = useState('');
+  const [formReasoningEffort, setFormReasoningEffort] = useState('');
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -32,8 +39,16 @@ export default function ProductsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    client.get<ModelOption[]>('/codex/models')
+      .then((response) => setModels(response.data))
+      .catch(() => setModels([]));
+  }, []);
+
   const resetForm = () => {
     setFormName('');
+    setFormModelName('');
+    setFormReasoningEffort('');
     setEditingProduct(null);
   };
 
@@ -49,7 +64,11 @@ export default function ProductsPage() {
     setFormError(null);
     setFormSuccess(null);
 
-    const payload = { name };
+    const payload = {
+      name,
+      modelName: formModelName || null,
+      reasoningEffort: formReasoningEffort || null
+    };
 
     try {
       if (editingProduct) {
@@ -74,6 +93,8 @@ export default function ProductsPage() {
   const handleEdit = (product: ProductRecord) => {
     setEditingProduct(product);
     setFormName(product.name);
+    setFormModelName(product.modelName ?? '');
+    setFormReasoningEffort(product.reasoningEffort ?? '');
     setFormError(null);
     setFormSuccess(null);
   };
@@ -123,6 +144,23 @@ export default function ProductsPage() {
               />
             </div>
 
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                Modelo associado
+                <select value={formModelName} onChange={(event) => setFormModelName(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-900">
+                  <option value="">Sem modelo associado</option>
+                  {models.map((model) => <option key={model.id} value={model.modelName}>{model.displayName ?? model.modelName}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                Tipo de raciocínio associado
+                <select value={formReasoningEffort} onChange={(event) => setFormReasoningEffort(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-900">
+                  <option value="">Sem raciocínio associado</option>
+                  <option value="low">Low — econômico</option><option value="medium">Medium — equilibrado</option><option value="high">High — aprofundado</option><option value="xhigh">XHigh — muito alto</option><option value="max">Max — raciocínio máximo</option>
+                </select>
+              </label>
+            </div>
+
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -155,6 +193,7 @@ export default function ProductsPage() {
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Nome</th>
+                <th className="px-4 py-3 text-left font-semibold">Modelo / raciocínio</th>
                 <th className="px-4 py-3 text-left font-semibold">Atualizado em</th>
                 <th className="px-4 py-3 text-left font-semibold">Ações</th>
               </tr>
@@ -162,21 +201,21 @@ export default function ProductsPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-center text-slate-500">
+                  <td colSpan={4} className="px-4 py-3 text-center text-slate-500">
                     Carregando produtos cadastrados...
                   </td>
                 </tr>
               )}
               {error && !loading && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-center text-red-500">
+                  <td colSpan={4} className="px-4 py-3 text-center text-red-500">
                     {error}
                   </td>
                 </tr>
               )}
               {!loading && !error && products.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-center text-slate-500">
+                  <td colSpan={4} className="px-4 py-3 text-center text-slate-500">
                     Nenhum produto cadastrado até o momento.
                   </td>
                 </tr>
@@ -184,6 +223,7 @@ export default function ProductsPage() {
               {!loading && !error && products.map((product) => (
                 <tr key={product.id}>
                   <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{product.name}</td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{product.modelName ?? 'Sem modelo'}<br/><span className="text-xs text-slate-500">{product.reasoningEffort?.toUpperCase() ?? 'Sem raciocínio'}</span></td>
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
                     {new Date(product.updatedAt).toLocaleString()}
                   </td>
