@@ -4291,3 +4291,17 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Pergunta explícita de causa raiz: **“por que o início da execução não aparecia?”** O contrato e o parser do frontend já recebiam `startedAt`, mas o cartão renderizava exclusivamente `createdAt`, sem rótulo, e descartava visualmente o instante que representa quando o processamento realmente começou.
 - Correção na origem da apresentação: o horário existente passou a ser identificado como `Solicitada em`, e uma linha independente mostra `Início da execução` a partir de `startedAt`. Solicitações ainda pendentes e sem início exibem `Aguardando início`, evitando confundir criação com execução.
 - Cobertura: o E2E do histórico valida tanto a formatação do início em São Paulo quanto o estado de uma solicitação ainda não iniciada.
+
+## 2026-09-27 — Diagnóstico da ausência dos modelos GPT-5.6 no cadastro
+
+- Solicitação recebida: esclarecer por que os modelos GPT-5.6 não aparecem na tela **Modelos Codex**.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A tela não descobre modelos diretamente no Codex App Server; ela lista exclusivamente os registros persistidos em `codex_model_pricing`. A migration V57 consolidou esse cadastro como fonte de verdade das combinações de solicitação, inseriu/ativou apenas GPT-6 Astra, GPT-6 Sol e GPT-6 Luna e desativou todos os outros registros. Além disso, as variantes GPT-5.6 nunca receberam uma migration de preços nessa tabela (apenas GPT-5.5 possuía seed); antes da V57 elas apareciam no diálogo por descoberta da conta e fallback do frontend, caminhos que foram removidos da seleção operacional.
+- Conclusão: a ausência observada é consequência direta da regra introduzida na V57 — registrada no próprio diário como requisito para oferecer somente os três GPT-6 ativos — e não uma falha de renderização da página. Para voltar a disponibilizar GPT-5.6, é necessário definir quais IDs e preços devem ser oficiais, cadastrá-los em `codex_model_pricing` e marcá-los como ativos; isso altera a política operacional atual e não foi realizado sem confirmação do usuário.
+- Validação: inspecionados as migrations V36/V57, o endpoint `/api/codex/models/active`, os consumidores do frontend e o teste E2E que exige explicitamente a ausência de GPT-5.6 Sol.
+
+## 2026-09-27 — Ativação dos modelos GPT-5.6
+
+- Solicitação recebida: colocar os modelos GPT-5.6 novamente no cadastro e nas combinações de solicitação.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A V57 havia transformado o cadastro persistido na fonte de verdade e ativado exclusivamente GPT-6 Astra, Sol e Luna. Como os IDs GPT-5.6 existiam apenas na antiga descoberta/fallback da conta e não em `codex_model_pricing`, a troca de fonte os removeu das combinações e também da tela de cadastro.
+- Correção na origem: criada a migration V58, nas variantes H2, MySQL e PostgreSQL, cadastrando e ativando `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra` e `gpt-5.6-luna`. Novos registros recebem como base os preços já adotados para GPT-5.5 (US$ 5,00 input, US$ 0,50 input cacheado e US$ 30,00 output por 1 milhão de tokens); em instalações que já possuam algum desses IDs, a migration preserva os preços administrados e apenas normaliza o nome exibido e ativa o modelo.
+- Proteção contra regressão: o cenário E2E da seleção de modelos agora exige as quatro opções GPT-5.6, seleciona GPT-5.6 Sol e confirma esse identificador no payload enviado, preservando também as três opções GPT-6.
