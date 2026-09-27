@@ -123,10 +123,14 @@ test('shows the request detail as a conversation card with only the three execut
   await page.screenshot({ path: '/tmp/ai-hub-request-detail-comments.png', fullPage: true });
 });
 
-test('offers fallback models and sends GPT-6 Astra with the request', async ({ page }) => {
+test('offers only active GPT-6 models and sends GPT-6 Sol with the request', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [
+    { id: 1, modelName: 'gpt-6-astra', displayName: 'GPT-6 Astra', active: true },
+    { id: 2, modelName: 'gpt-6-sol', displayName: 'GPT-6 Sol', active: true },
+    { id: 3, modelName: 'gpt-6-luna', displayName: 'GPT-6 Luna', active: true }
+  ] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-08-02T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -150,13 +154,15 @@ test('offers fallback models and sends GPT-6 Astra with the request', async ({ p
   await page.goto('/codex-chatgpt');
   const modelSelect = page.locator('select').filter({ has: page.locator('option[value="gpt-6-astra"]') });
   await expect(modelSelect.getByRole('option', { name: 'GPT-6 Astra', exact: true })).toHaveCount(1);
-  await expect(modelSelect.getByRole('option', { name: 'GPT Daybreak Blue', exact: true })).toHaveCount(1);
-  await modelSelect.selectOption('gpt-6-astra');
-  await page.screenshot({ path: '/tmp/ai-hub-gpt-6-astra-model-option.png', fullPage: true });
-  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo GPT-6 Astra nesta solicitação.');
+  await expect(modelSelect.getByRole('option', { name: 'GPT-6 Sol', exact: true })).toHaveCount(1);
+  await expect(modelSelect.getByRole('option', { name: 'GPT-6 Luna', exact: true })).toHaveCount(1);
+  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6 Sol', exact: true })).toHaveCount(0);
+  await modelSelect.selectOption('gpt-6-sol');
+  await page.screenshot({ path: '/tmp/ai-hub-gpt-6-model-options.png', fullPage: true });
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo GPT-6 Sol nesta solicitação.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => submittedModel).toBe('gpt-6-astra');
+  await expect.poll(() => submittedModel).toBe('gpt-6-sol');
 });
 
 test('keeps the conversation flowing naturally without subject controls', async ({ page, context }) => {
@@ -238,8 +244,8 @@ test('warns on the request PR button when a batch has accumulated code', async (
   await page.route('**/api/environments', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'produção' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
-    await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
+  await page.route('**/api/codex/models/active', async (route) => {
+    await route.fulfill({ json: [{ id: 'gpt-6-sol', modelName: 'gpt-6-sol', displayName: 'GPT-6 Sol' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
     await route.fulfill({ json: { day: { startsAt: '2026-07-24T00:00:00Z', requestCount: 1, interactionCount: 1, durationMs: 1000 } } });
@@ -291,6 +297,7 @@ test('warns on the request PR button when a batch has accumulated code', async (
             prompt: 'Execução recente fora do lote aberto',
             status: 'COMPLETED',
             createdAt: '2026-07-24T11:59:00Z',
+            startedAt: '2026-07-24T12:05:00Z',
             pullRequestUrl: 'https://github.com/example/repository/pull/526'
           }
         ]
@@ -302,6 +309,9 @@ test('warns on the request PR button when a batch has accumulated code', async (
 
   await expect(page.getByRole('link', { name: 'Abrir detalhes' })).toHaveCount(3);
   await expect(page.locator('a[href="/codex/requests/526"]', { hasText: 'Abrir detalhes' })).toBeVisible();
+  await expect(page.getByText('Início da execução: 24/07/2026, 09:05')).toBeVisible();
+  await expect(page.getByText('Início da execução: Aguardando início')).toHaveCount(2);
+  await page.screenshot({ path: '/tmp/ai-hub-request-history-started-at.png', fullPage: true });
   const accumulatedCodeNotice = page.getByText('Código acumulado para merge: 1 solicitação(ões) concluída(s) neste lote ainda precisam passar por PR antes do merge.');
   const requestPrButton = page.getByRole('button', { name: /Pedir PR Código pendente/ });
   await expect(accumulatedCodeNotice).toBeVisible();

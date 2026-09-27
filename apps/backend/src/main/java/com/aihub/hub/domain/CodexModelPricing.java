@@ -41,6 +41,9 @@ public class CodexModelPricing {
     @Column(name = "output_price_per_million", precision = 19, scale = 6, nullable = false)
     private BigDecimal outputPricePerMillion;
 
+    @Column(name = "active", nullable = false)
+    private boolean active;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -101,6 +104,14 @@ public class CodexModelPricing {
 
     public void setOutputPricePerMillion(BigDecimal outputPricePerMillion) {
         this.outputPricePerMillion = outputPricePerMillion;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 
     public Instant getCreatedAt() {

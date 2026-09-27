@@ -99,29 +99,29 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     @Query("""
         select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0), coalesce(sum(cr.totalTokens), 0)
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
         """)
     Object[] summarizeMetricsSince(@Param("start") Instant start);
     @Query("""
         select count(cr), coalesce(sum(cr.interactionCount), 0), coalesce(sum(cr.durationMs), 0), coalesce(sum(cr.totalTokens), 0)
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
           and cr.profile = :profile
         """)
     Object[] summarizeMetricsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     @Query("""
-        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0), coalesce(cr.totalTokens, 0)
+        select cr.startedAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0), coalesce(cr.totalTokens, 0)
         from CodexRequest cr
-        where cr.createdAt >= :start
-        order by cr.createdAt asc
+        where cr.startedAt >= :start
+        order by cr.startedAt asc
         """)
     List<Object[]> findMetricRowsSince(@Param("start") Instant start);
     @Query("""
-        select cr.createdAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0), coalesce(cr.totalTokens, 0)
+        select cr.startedAt, coalesce(cr.interactionCount, 0), coalesce(cr.durationMs, 0), coalesce(cr.totalTokens, 0)
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
           and cr.profile = :profile
-        order by cr.createdAt asc
+        order by cr.startedAt asc
         """)
     List<Object[]> findMetricRowsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     @Query("""
@@ -142,33 +142,33 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     @Query("""
         select cr.quotaUsage
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
           and cr.quotaUsage is not null
         """)
     List<String> findQuotaUsagesSince(@Param("start") Instant start);
     @Query("""
         select cr.quotaUsage
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
           and cr.profile = :profile
           and cr.quotaUsage is not null
         """)
     List<String> findQuotaUsagesSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     @Query("""
-        select cr.createdAt, cr.quotaUsage
+        select cr.startedAt, cr.quotaUsage
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
           and cr.quotaUsage is not null
-        order by cr.createdAt asc
+        order by cr.startedAt asc
         """)
     List<Object[]> findQuotaUsageRowsSince(@Param("start") Instant start);
     @Query("""
-        select cr.createdAt, cr.quotaUsage
+        select cr.startedAt, cr.quotaUsage
         from CodexRequest cr
-        where cr.createdAt >= :start
+        where cr.startedAt >= :start
           and cr.profile = :profile
           and cr.quotaUsage is not null
-        order by cr.createdAt asc
+        order by cr.startedAt asc
         """)
     List<Object[]> findQuotaUsageRowsSinceAndProfile(@Param("start") Instant start, @Param("profile") CodexIntegrationProfile profile);
     @Query("""

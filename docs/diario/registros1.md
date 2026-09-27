@@ -4262,3 +4262,32 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Solicitação: exibir o produto e o processo selecionados na área de metadados da resposta do modelo no diálogo MKT, junto de modelo e tipo de raciocínio.
 - Pergunta explícita de causa raiz: **“por que essas informações não apareciam nessa parte do diálogo?”** Embora `processNumber`, `processText` e `productName` já fossem persistidos e exibidos no histórico geral, o cartão da conversa renderizava somente os campos de modelo e raciocínio. A causa era uma condição de apresentação restrita, não ausência dos dados no backend.
 - Correção na origem da apresentação: o cartão agora deriva produto e processo da solicitação vinculada pelo `requestId` e os inclui na mesma faixa de metadados. Cada informação aparece somente quando existe; o processo combina número e descrição, enquanto solicitações antigas ou sem seleção permanecem sem rótulos vazios.
+
+## 2026-09-26 — Gráficos por início da execução
+
+- Solicitação: manter o corte operacional diário às 02:00 de São Paulo, mas atribuir as métricas dos gráficos ao momento em que a execução começou, em vez do momento de criação da solicitação.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** As consultas que alimentavam contagens, interações, duração, tokens e consumo de cota filtravam, ordenavam e devolviam `createdAt`. Assim, uma solicitação criada antes das 02:00 e iniciada depois desse corte era contabilizada no dia anterior, ainda que todo o trabalho tivesse começado no novo dia operacional.
+- Correção na origem: todas as consultas de métricas e cota passaram a usar `startedAt`. A montagem das séries também nomeia e trata explicitamente esse instante como início da execução. O cálculo do dia operacional permanece inalterado, com corte às 02:00 em `America/Sao_Paulo`; solicitações ainda não iniciadas, portanto sem `startedAt`, não entram nos gráficos.
+- Cobertura: o teste protege o contrato das oito consultas, exigindo `startedAt` e rejeitando regressão para `createdAt`, enquanto os testes existentes continuam validando a janela operacional às 02:00 e a agregação das séries.
+
+## 2026-09-27 — GPT-6 Sol e GPT-6 Luna no AI Hub
+
+- Solicitação: disponibilizar `gpt-6-sol` e `gpt-6-luna` no seletor de modelos da tela de solicitações do AI Hub.
+- Pergunta explícita de causa raiz: **“por que esses modelos não apareciam?”** A tela combina a lista devolvida pelo Codex App Server com uma lista local de fallback, mas essa lista possuía apenas o GPT-6 Astra. Assim, enquanto o endpoint da conta não devolvesse Sol e Luna durante o rollout, o frontend não tinha registros locais para exibi-los.
+- Correção na origem: GPT-6 Sol e GPT-6 Luna foram incluídos como opções estruturadas no fallback do perfil ChatGPT Codex. A mesclagem existente continua eliminando duplicidades quando o App Server também devolver os mesmos modelos.
+- Cobertura: o cenário E2E com endpoint de modelos vazio agora exige Astra, Sol e Luna no seletor, seleciona Sol, envia a solicitação e confirma que o payload contém exatamente `gpt-6-sol`.
+
+## 2026-09-27 — Ativação de modelos para solicitações
+
+- Solicitação: criar uma flag de ativo no cadastro de modelos e mostrar nas combinações de solicitação somente GPT-6 Astra, GPT-6 Sol e GPT-6 Luna.
+- Pergunta explícita de causa raiz: **“por que modelos que não deveriam ser usados continuavam aparecendo?”** As telas de solicitação obtinham modelos de fontes diferentes — cadastro de preços, Codex App Server e fallback fixo no frontend — sem um atributo persistido que expressasse a decisão operacional de disponibilizá-los. Portanto, não existia uma fonte de verdade única capaz de ocultar um modelo sem removê-lo e perder seu histórico de preços.
+- Correção na origem: `codex_model_pricing` passou a armazenar `active`; o cadastro permite editar a flag e um endpoint dedicado entrega somente registros ativos, em ordem. Todas as combinações de modelo usadas para criar solicitações ou configurar produtos passaram a consumir esse endpoint, sem fallback local que pudesse reintroduzir opções inativas.
+- Estado inicial: a migration V57 cria/atualiza GPT-6 Astra, Sol e Luna com seus preços publicados e os marca como ativos; todos os demais modelos ficam inativos. As variantes H2, MySQL e PostgreSQL preservam a mesma regra.
+- Cobertura: testes unitários validam a consulta de ativos e a persistência da flag; a suíte Maven completa valida entidade e migrations. O E2E confirma que somente os três GPT-6 ativos são oferecidos, que GPT-5.6 Sol não aparece e que GPT-6 Sol segue corretamente no payload da solicitação.
+
+## 2026-09-27 — Horário de início nos cartões do histórico
+
+- Solicitação: exibir o horário de início da execução nas informações dos cartões do histórico de solicitações.
+- Pergunta explícita de causa raiz: **“por que o início da execução não aparecia?”** O contrato e o parser do frontend já recebiam `startedAt`, mas o cartão renderizava exclusivamente `createdAt`, sem rótulo, e descartava visualmente o instante que representa quando o processamento realmente começou.
+- Correção na origem da apresentação: o horário existente passou a ser identificado como `Solicitada em`, e uma linha independente mostra `Início da execução` a partir de `startedAt`. Solicitações ainda pendentes e sem início exibem `Aguardando início`, evitando confundir criação com execução.
+- Cobertura: o E2E do histórico valida tanto a formatação do início em São Paulo quanto o estado de uma solicitação ainda não iniciada.

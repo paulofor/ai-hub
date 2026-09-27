@@ -264,7 +264,7 @@ export default function CodexPage() {
 
   useEffect(() => {
     client
-      .get<CodexModelOption[]>('/codex/models')
+      .get<CodexModelOption[]>('/codex/models/active')
       .then((response) => {
         setModelOptions(response.data);
         setModel((current) => {

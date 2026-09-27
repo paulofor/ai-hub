@@ -27,6 +27,11 @@ public class CodexModelPricingService {
     }
 
     @Transactional(readOnly = true)
+    public List<CodexModelPricing> findActive() {
+        return repository.findByActiveTrueOrderByModelNameAsc();
+    }
+
+    @Transactional(readOnly = true)
     public Optional<CodexModelPricing> findByModelName(String modelName) {
         if (!StringUtils.hasText(modelName)) {
             return Optional.empty();
@@ -63,5 +68,6 @@ public class CodexModelPricingService {
         entity.setInputPricePerMillion(request.getInputPricePerMillion());
         entity.setCachedInputPricePerMillion(request.getCachedInputPricePerMillion());
         entity.setOutputPricePerMillion(request.getOutputPricePerMillion());
+        entity.setActive(request.isActive());
     }
 }

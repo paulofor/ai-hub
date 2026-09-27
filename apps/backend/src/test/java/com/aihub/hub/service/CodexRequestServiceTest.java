@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -36,6 +37,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -97,6 +99,25 @@ class CodexRequestServiceTest {
 
     private CodexRequestService buildService() {
         return buildService(false);
+    }
+
+    @Test
+    void dashboardMetricQueriesUseExecutionStartInsteadOfRequestCreation() throws NoSuchMethodException {
+        List<Method> metricQueries = List.of(
+            CodexRequestRepository.class.getMethod("summarizeMetricsSince", Instant.class),
+            CodexRequestRepository.class.getMethod("summarizeMetricsSinceAndProfile", Instant.class, CodexIntegrationProfile.class),
+            CodexRequestRepository.class.getMethod("findMetricRowsSince", Instant.class),
+            CodexRequestRepository.class.getMethod("findMetricRowsSinceAndProfile", Instant.class, CodexIntegrationProfile.class),
+            CodexRequestRepository.class.getMethod("findQuotaUsagesSince", Instant.class),
+            CodexRequestRepository.class.getMethod("findQuotaUsagesSinceAndProfile", Instant.class, CodexIntegrationProfile.class),
+            CodexRequestRepository.class.getMethod("findQuotaUsageRowsSince", Instant.class),
+            CodexRequestRepository.class.getMethod("findQuotaUsageRowsSinceAndProfile", Instant.class, CodexIntegrationProfile.class)
+        );
+
+        assertThat(metricQueries)
+            .allSatisfy(method -> assertThat(method.getAnnotation(Query.class).value())
+                .contains("cr.startedAt")
+                .doesNotContain("cr.createdAt"));
     }
 
     private CodexRequestService buildService(boolean codexAppServerEnabled) {

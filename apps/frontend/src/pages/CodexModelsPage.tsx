@@ -8,6 +8,7 @@ interface CodexModel {
   inputPricePerMillion: number;
   cachedInputPricePerMillion: number;
   outputPricePerMillion: number;
+  active: boolean;
   createdAt: string;
   updatedAt?: string | null;
 }
@@ -18,6 +19,7 @@ interface FormState {
   inputPricePerMillion: string;
   cachedInputPricePerMillion: string;
   outputPricePerMillion: string;
+  active: boolean;
 }
 
 const initialFormState: FormState = {
@@ -25,7 +27,8 @@ const initialFormState: FormState = {
   displayName: '',
   inputPricePerMillion: '',
   cachedInputPricePerMillion: '',
-  outputPricePerMillion: ''
+  outputPricePerMillion: '',
+  active: false
 };
 
 const parsePrice = (value: string): number | null => {
@@ -103,7 +106,8 @@ export default function CodexModelsPage() {
       displayName: form.displayName.trim() || undefined,
       inputPricePerMillion: inputPrice,
       cachedInputPricePerMillion: cachedInputPrice,
-      outputPricePerMillion: outputPrice
+      outputPricePerMillion: outputPrice,
+      active: form.active
     };
 
     setSaving(true);
@@ -131,7 +135,8 @@ export default function CodexModelsPage() {
       displayName: model.displayName ?? '',
       inputPricePerMillion: model.inputPricePerMillion.toString(),
       cachedInputPricePerMillion: model.cachedInputPricePerMillion.toString(),
-      outputPricePerMillion: model.outputPricePerMillion.toString()
+      outputPricePerMillion: model.outputPricePerMillion.toString(),
+      active: model.active
     });
     setSuccessMessage(null);
     setError(null);
@@ -182,6 +187,7 @@ export default function CodexModelsPage() {
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold">Modelo</th>
                   <th className="px-4 py-3 text-left font-semibold">Nome Exibido</th>
+                  <th className="px-4 py-3 text-left font-semibold">Ativo</th>
                   <th className="px-4 py-3 text-right font-semibold">Input (1M)</th>
                   <th className="px-4 py-3 text-right font-semibold">Input Cacheado (1M)</th>
                   <th className="px-4 py-3 text-right font-semibold">Output (1M)</th>
@@ -197,6 +203,9 @@ export default function CodexModelsPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
                       {model.displayName || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
+                      {model.active ? 'Sim' : 'Não'}
                     </td>
                     <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-200">
                       {formatCurrency(model.inputPricePerMillion)}
@@ -234,7 +243,7 @@ export default function CodexModelsPage() {
                 ))}
                 {!loading && sortedModels.length === 0 && (
                   <tr>
-                    <td className="px-4 py-4 text-center text-sm text-slate-500" colSpan={7}>
+                    <td className="px-4 py-4 text-center text-sm text-slate-500" colSpan={8}>
                       Nenhum modelo cadastrado até o momento.
                     </td>
                   </tr>
@@ -265,6 +274,16 @@ export default function CodexModelsPage() {
                 />
               </label>
             </div>
+
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(event) => setForm((prev) => ({ ...prev, active: event.target.checked }))}
+                disabled={saving}
+              />
+              Ativo nas listas de seleção de solicitações
+            </label>
 
             <div className="space-y-2">
               <label className="flex flex-col text-sm font-medium text-slate-700 dark:text-slate-200">

@@ -29,6 +29,8 @@ public class CodexModelPricingRequest {
     @Digits(integer = 13, fraction = 6)
     private BigDecimal outputPricePerMillion;
 
+    private boolean active;
+
     public CodexModelPricingRequest() {
     }
 
@@ -70,5 +72,13 @@ public class CodexModelPricingRequest {
 
     public void setOutputPricePerMillion(BigDecimal outputPricePerMillion) {
         this.outputPricePerMillion = outputPricePerMillion;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }
