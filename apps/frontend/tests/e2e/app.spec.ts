@@ -123,13 +123,17 @@ test('shows the request detail as a conversation card with only the three execut
   await page.screenshot({ path: '/tmp/ai-hub-request-detail-comments.png', fullPage: true });
 });
 
-test('offers only active GPT-6 models and sends GPT-6 Sol with the request', async ({ page }) => {
+test('offers active GPT-5.6 and GPT-6 models and sends GPT-5.6 Sol with the request', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
   await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [
     { id: 1, modelName: 'gpt-6-astra', displayName: 'GPT-6 Astra', active: true },
     { id: 2, modelName: 'gpt-6-sol', displayName: 'GPT-6 Sol', active: true },
-    { id: 3, modelName: 'gpt-6-luna', displayName: 'GPT-6 Luna', active: true }
+    { id: 3, modelName: 'gpt-6-luna', displayName: 'GPT-6 Luna', active: true },
+    { id: 4, modelName: 'gpt-5.6', displayName: 'GPT-5.6', active: true },
+    { id: 5, modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol', active: true },
+    { id: 6, modelName: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra', active: true },
+    { id: 7, modelName: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna', active: true }
   ] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-08-02T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
@@ -156,13 +160,16 @@ test('offers only active GPT-6 models and sends GPT-6 Sol with the request', asy
   await expect(modelSelect.getByRole('option', { name: 'GPT-6 Astra', exact: true })).toHaveCount(1);
   await expect(modelSelect.getByRole('option', { name: 'GPT-6 Sol', exact: true })).toHaveCount(1);
   await expect(modelSelect.getByRole('option', { name: 'GPT-6 Luna', exact: true })).toHaveCount(1);
-  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6 Sol', exact: true })).toHaveCount(0);
-  await modelSelect.selectOption('gpt-6-sol');
-  await page.screenshot({ path: '/tmp/ai-hub-gpt-6-model-options.png', fullPage: true });
-  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo GPT-6 Sol nesta solicitação.');
+  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6', exact: true })).toHaveCount(1);
+  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6 Sol', exact: true })).toHaveCount(1);
+  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6 Terra', exact: true })).toHaveCount(1);
+  await expect(modelSelect.getByRole('option', { name: 'GPT-5.6 Luna', exact: true })).toHaveCount(1);
+  await modelSelect.selectOption('gpt-5.6-sol');
+  await page.screenshot({ path: '/tmp/ai-hub-gpt-5-6-model-options.png', fullPage: true });
+  await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('Use o modelo GPT-5.6 Sol nesta solicitação.');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => submittedModel).toBe('gpt-6-sol');
+  await expect.poll(() => submittedModel).toBe('gpt-5.6-sol');
 });
 
 test('keeps the conversation flowing naturally without subject controls', async ({ page, context }) => {
