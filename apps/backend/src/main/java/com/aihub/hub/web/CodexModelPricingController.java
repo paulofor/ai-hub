@@ -32,6 +32,11 @@ public class CodexModelPricingController {
         return service.findAll();
     }
 
+    @GetMapping("/active")
+    public List<CodexModelPricing> listActive() {
+        return service.findActive();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CodexModelPricing create(@Valid @RequestBody CodexModelPricingRequest request) {

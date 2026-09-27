@@ -1160,17 +1160,6 @@ const AssistantMessageBody = ({ content, structuredResponse, commentRead = false
   </div>;
 };
 
-const CHATGPT_CODEX_MODELS: ModelOption[] = [
-  { id: 'gpt-6-astra', modelName: 'gpt-6-astra', displayName: 'GPT-6 Astra' },
-  { id: 'gpt-daybreak-blue-latest', modelName: 'gpt-daybreak-blue-latest', displayName: 'GPT Daybreak Blue' },
-  { id: 'gpt-5.6', modelName: 'gpt-5.6', displayName: 'GPT-5.6' },
-  { id: 'gpt-5.6-sol', modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' },
-  { id: 'gpt-5.6-terra', modelName: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra' },
-  { id: 'gpt-5.6-luna', modelName: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' },
-  { id: 'gpt-5.5', modelName: 'gpt-5.5' },
-  { id: 'gpt-5.4', modelName: 'gpt-5.4' }
-];
-
 const normalizeModelOption = (value: unknown): ModelOption | null => {
   if (!value || typeof value !== 'object') {
     return null;
@@ -1187,16 +1176,6 @@ const normalizeModelOption = (value: unknown): ModelOption | null => {
   const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : modelName;
   const displayName = typeof record.displayName === 'string' && record.displayName.trim() ? record.displayName.trim() : undefined;
   return { id, modelName, displayName };
-};
-
-const mergeModelOptions = (primary: ModelOption[], fallback: ModelOption[]): ModelOption[] => {
-  const byModel = new Map<string, ModelOption>();
-  [...primary, ...fallback].forEach((item) => {
-    if (!byModel.has(item.modelName)) {
-      byModel.set(item.modelName, item);
-    }
-  });
-  return Array.from(byModel.values());
 };
 
 const parseProductOption = (value: unknown): ProductOption | null => {
@@ -1936,7 +1915,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         client.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
         client.get<EnvironmentOption[]>('/environments')
       ]);
-      const modelResponse = await client.get('/account/models')
+      const modelResponse = await client.get('/codex/models/active')
         .then((response) => Array.isArray(response.data) ? response.data.map(normalizeModelOption).filter((item): item is ModelOption => item !== null) : [])
         .catch(() => []);
       if (accountResult.ok) {
@@ -1951,7 +1930,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         throw accountResult.error;
       }
       setEnvironments(envResponse.data);
-      const nextModels = mergeModelOptions(modelResponse, CHATGPT_CODEX_MODELS);
+      const nextModels = modelResponse;
       setModels(nextModels);
       setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
@@ -3563,7 +3542,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               </p>
               {item.processNumber && <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Processo: {item.processNumber} — {item.processText}</p>}
               {item.productName && <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Produto: {item.productName}</p>}
-              <p className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              <p className="text-xs text-slate-500">Solicitada em: {formatDateTime(item.createdAt)}</p>
+              <p className="text-xs text-slate-500">Início da execução: {item.startedAt ? formatDateTime(item.startedAt) : 'Aguardando início'}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
                 <span className="mx-2 text-slate-300 dark:text-slate-700">|</span>

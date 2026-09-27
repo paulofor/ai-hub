@@ -40,7 +40,7 @@ export default function ProductsPage() {
   }, []);
 
   useEffect(() => {
-    client.get<ModelOption[]>('/codex/models')
+    client.get<ModelOption[]>('/codex/models/active')
       .then((response) => setModels(response.data))
       .catch(() => setModels([]));
   }, []);

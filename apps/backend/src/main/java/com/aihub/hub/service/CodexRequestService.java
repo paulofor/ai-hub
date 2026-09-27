@@ -716,36 +716,36 @@ public class CodexRequestService {
             rows = List.of();
         }
         for (Object[] row : rows) {
-            Instant createdAt = aggregateInstant(row, 0);
-            if (createdAt == null) {
+            Instant startedAt = aggregateInstant(row, 0);
+            if (startedAt == null) {
                 continue;
             }
-            ZonedDateTime createdDateTime = createdAt.atZone(zone);
-            LocalDate createdDate = createdDateTime.toLocalDate();
-            LocalDate createdOperationalDate = operationalDate(createdDateTime);
+            ZonedDateTime startedDateTime = startedAt.atZone(zone);
+            LocalDate startedDate = startedDateTime.toLocalDate();
+            LocalDate startedOperationalDate = operationalDate(startedDateTime);
             long interactions = aggregateLong(row, 1);
             long duration = aggregateLong(row, 2);
             long totalTokens = aggregateLong(row, 3);
 
-            accumulate(daily, createdOperationalDate, interactions, duration, totalTokens);
-            accumulate(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), interactions, duration, totalTokens);
-            accumulate(monthly, createdDate.withDayOfMonth(1), interactions, duration, totalTokens);
+            accumulate(daily, startedOperationalDate, interactions, duration, totalTokens);
+            accumulate(weekly, startedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), interactions, duration, totalTokens);
+            accumulate(monthly, startedDate.withDayOfMonth(1), interactions, duration, totalTokens);
         }
 
         List<Object[]> quotaRows = profile == null
             ? codexRequestRepository.findQuotaUsageRowsSince(start)
             : codexRequestRepository.findQuotaUsageRowsSinceAndProfile(start, profile);
         for (Object[] row : quotaRows == null ? List.<Object[]>of() : quotaRows) {
-            Instant createdAt = aggregateInstant(row, 0);
+            Instant startedAt = aggregateInstant(row, 0);
             Double consumed = row.length > 1 && row[1] instanceof String quotaUsage ? weeklyQuotaConsumption(quotaUsage) : null;
-            if (createdAt == null || consumed == null) {
+            if (startedAt == null || consumed == null) {
                 continue;
             }
-            ZonedDateTime createdDateTime = createdAt.atZone(zone);
-            LocalDate createdDate = createdDateTime.toLocalDate();
-            accumulateQuota(daily, operationalDate(createdDateTime), consumed);
-            accumulateQuota(weekly, createdDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), consumed);
-            accumulateQuota(monthly, createdDate.withDayOfMonth(1), consumed);
+            ZonedDateTime startedDateTime = startedAt.atZone(zone);
+            LocalDate startedDate = startedDateTime.toLocalDate();
+            accumulateQuota(daily, operationalDate(startedDateTime), consumed);
+            accumulateQuota(weekly, startedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)), consumed);
+            accumulateQuota(monthly, startedDate.withDayOfMonth(1), consumed);
         }
 
         return new CodexDashboardMetrics.CodexDashboardMetricSeries(
