@@ -32,7 +32,7 @@ O orquestrador solicita `summary: "auto"` em cada `turn/start` do Codex App Serv
 
 O campo `reasoningSummary` contém somente o resumo público retornado pelo provedor. Os deltas são agrupados por turno, item e índice da seção; o item concluído substitui os trechos provisórios, sem duplicação. Eventos de outras threads são ignorados. Polling e callback transportam o campo para o detalhe da solicitação, separadamente da resposta final e das métricas de uso.
 
-Os prompts enviados tanto ao Codex App Server quanto à Responses API pedem que cada ponto desse resumo público preserve a descrição da ação e acrescente `Objetivo: ...`, explicando de forma curta para que a etapa serve. A orientação não solicita nem expõe cadeia de pensamento: o conteúdo persistido continua limitado ao resumo público produzido pelo provedor.
+Os prompts enviados tanto ao Codex App Server quanto à Responses API pedem que o resumo público descreva naturalmente as ações realizadas, sem campos ou rótulos de objetivo. Os objetivos concretos pertencem exclusivamente ao checklist estruturado de `update_plan`. A orientação não solicita nem expõe cadeia de pensamento: o conteúdo persistido continua limitado ao resumo público produzido pelo provedor.
 
 O provedor pode não disponibilizar texto mesmo com o resumo solicitado. Nesse caso a interface mantém “Não disponibilizado pelo modelo”; o sistema não cria um resumo artificial nem recupera automaticamente resumos de solicitações antigas.
 
