@@ -88,7 +88,7 @@ export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 3 * 24 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
-const REASONING_SUMMARY_OBJECTIVE_INSTRUCTION = 'Ao produzir o resumo público do raciocínio, mantenha os pontos que descrevem o que está sendo feito e acrescente em cada ponto uma frase curta no formato "Objetivo: ...", explicando para que aquela etapa serve no atendimento da solicitação. Não exponha raciocínio interno, conteúdo oculto ou cadeia de pensamento; registre somente a ação resumida e seu objetivo.';
+const REASONING_SUMMARY_INSTRUCTION = 'Ao produzir o resumo público do raciocínio, descreva naturalmente as ações que estão sendo realizadas. Não inclua o rótulo "Objetivo: ..." nem outro campo de objetivo nesse resumo: os objetivos concretos da execução pertencem exclusivamente ao checklist publicado por update_plan. Não exponha raciocínio interno, conteúdo oculto ou cadeia de pensamento; registre somente ações resumidas.';
 const CODEX_PLAN_OBJECTIVE_INSTRUCTION = 'Antes da primeira ação da solicitação, use obrigatoriamente update_plan para publicar um checklist curto com os objetivos concretos da execução. Atualize esse mesmo plano quando o escopo mudar e ao concluir etapas; não substitua o plano por títulos do resumo automático de raciocínio.';
 export const DEFAULT_CODEX_TRANSIENT_TURN_MAX_ATTEMPTS = 2;
 export const DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS = 5_000;
@@ -1744,7 +1744,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
-    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_OBJECTIVE_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
+    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
     return [
       { type: 'text', text: taskDescriptionWithValidationGate },
       ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
@@ -2082,7 +2082,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
         content: [
           {
             type: 'input_text',
-            text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. ${REASONING_SUMMARY_OBJECTIVE_INSTRUCTION} Test command sugerido: ${
+            text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. ${REASONING_SUMMARY_INSTRUCTION} Test command sugerido: ${
               job.testCommand ?? 'n/d'
             }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} ${this.buildGithubDeliveryInstruction(job)} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 

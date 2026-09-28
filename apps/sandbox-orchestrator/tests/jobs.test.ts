@@ -1047,7 +1047,7 @@ test('configura prompt cache retention e chave estável na Responses API', async
     assert.equal(fakeOpenAI.calls[0].prompt_cache_key, 'acme:ai-hub:main:STANDARD:gpt-5-codex');
     assert.deepEqual(fakeOpenAI.calls[0].reasoning, { effort: 'medium', summary: 'auto' });
     const systemPrompt = fakeOpenAI.calls[0].input?.[0]?.content?.[0]?.text ?? '';
-    assert.match(systemPrompt, /acrescente em cada ponto uma frase curta no formato "Objetivo: \.\.\."/);
+    assert.match(systemPrompt, /Não inclua o rótulo "Objetivo: \.\.\." nem outro campo de objetivo/);
     assert.match(systemPrompt, /Não exponha raciocínio interno/);
   } finally {
     if (originalRetention === undefined) {
@@ -1141,7 +1141,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('ajuste iterativamente até conseguir o funcionamento desejado'));
     assert.ok(input?.[0]?.text?.includes('use obrigatoriamente update_plan para publicar um checklist curto com os objetivos concretos'));
     assert.ok(input?.[0]?.text?.includes('não substitua o plano por títulos do resumo automático de raciocínio'));
-    assert.ok(input?.[0]?.text?.includes('acrescente em cada ponto uma frase curta no formato "Objetivo: ..."'));
+    assert.ok(input?.[0]?.text?.includes('Não inclua o rótulo "Objetivo: ..." nem outro campo de objetivo'));
     assert.ok(input?.[0]?.text?.includes('Não exponha raciocínio interno'));
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
     assert.ok(input?.[0]?.text?.includes('já autoriza todas as correções locais causalmente relacionadas'));
