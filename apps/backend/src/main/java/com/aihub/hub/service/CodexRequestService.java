@@ -177,8 +177,14 @@ public class CodexRequestService {
     public CodexRequest create(CreateCodexRequest request) {
         CodexIntegrationProfile profile = resolveProfile(request.getProfile());
         String effectivePrompt = request.getPrompt().trim();
-        String model = resolveModel(profile, request.getModel(), request);
         String normalizedEnvironment = request.getEnvironment().trim();
+        environmentRepository.findByNameIgnoreCase(normalizedEnvironment)
+            .filter(environment -> !environment.isActive())
+            .ifPresent(environment -> {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "O ambiente está inativo. Ative-o em Ambientes ou selecione outro ambiente.");
+            });
+        String model = resolveModel(profile, request.getModel(), request);
         log.info("Criando CodexRequest para ambiente {} com modelo {} (perfil {})", request.getEnvironment(), model, profile);
         CodexRequest codexRequest = new CodexRequest(
             normalizedEnvironment,

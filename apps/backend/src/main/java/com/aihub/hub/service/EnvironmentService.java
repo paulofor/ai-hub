@@ -7,8 +7,10 @@ import com.aihub.hub.dto.UpdateEnvironmentRequest;
 import com.aihub.hub.repository.EnvironmentRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -28,6 +30,21 @@ public class EnvironmentService {
             .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<EnvironmentView> listActiveEnvironments() {
+        return environmentRepository.findByActiveTrue(Sort.by(Sort.Direction.ASC, "name")).stream()
+            .map(EnvironmentView::from)
+            .toList();
+    }
+
+    @Transactional
+    public EnvironmentView setActive(Long id, boolean active) {
+        EnvironmentRecord record = environmentRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ambiente não encontrado."));
+        record.setActive(active);
+        return EnvironmentView.from(environmentRepository.save(record));
+    }
+
     @Transactional
     public EnvironmentView createEnvironment(CreateEnvironmentRequest request) {
         String normalizedName = request.name().trim();
@@ -36,6 +53,7 @@ public class EnvironmentService {
         }
 
         EnvironmentRecord record = new EnvironmentRecord();
+        record.setActive(request.active() == null || request.active());
         record.setName(normalizedName);
         record.setDescription(normalizeNullable(request.description()));
         applyConnectionData(record, request.dbHost(), request.dbPort(), request.dbName(), request.dbUser(), request.dbPassword());
@@ -56,6 +74,9 @@ public class EnvironmentService {
 
         record.setName(normalizedName);
         record.setDescription(normalizeNullable(request.description()));
+        if (request.active() != null) {
+            record.setActive(request.active());
+        }
         applyConnectionData(record, request.dbHost(), request.dbPort(), request.dbName(), request.dbUser(), request.dbPassword());
 
         EnvironmentRecord saved = environmentRepository.save(record);

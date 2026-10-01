@@ -75,6 +75,12 @@ jobs:
         run: npm --prefix apps/frontend ci
       - name: Lint
         run: npm --prefix apps/frontend run lint
+      - name: Build frontend
+        run: npm --prefix apps/frontend run build
+      - name: Install Chromium for environment selection tests
+        run: npm --prefix apps/frontend exec -- playwright install --with-deps chromium
+      - name: Test environment activation in desktop and mobile
+        run: npm --prefix apps/frontend run test:e2e -- environmentActivation.spec.ts
 
   sandbox:
     runs-on: ubuntu-latest

@@ -231,9 +231,12 @@ export default function CodexPage() {
   }, [requestsByPage, fetchRequests]);
 
   useEffect(() => {
-    client
-      .get<EnvironmentOption[]>('/environments')
+    let initialized = false;
+    const loadEnvironments = () => client
+      .get<EnvironmentOption[]>('/environments/active')
       .then((response) => {
+        const initialLoad = !initialized;
+        initialized = true;
         setEnvironmentOptions(response.data);
         if (response.data.length === 0) {
           setEnvironment('');
@@ -244,7 +247,7 @@ export default function CodexPage() {
         }
         setEnvironment((current) => {
           const hasCurrent = current && response.data.some((item) => item.name === current);
-          const resolved = hasCurrent ? current : response.data[0]?.name ?? '';
+          const resolved = hasCurrent ? current : initialLoad ? response.data[0]?.name ?? '' : '';
           const matched = response.data.find((item) => item.name === resolved) ?? null;
           setSelectedEnvironmentId(matched ? matched.id : null);
           if (!matched) {
@@ -260,6 +263,10 @@ export default function CodexPage() {
         setSelectedProblemId('');
         setActiveProblems([]);
       });
+    void loadEnvironments();
+    const refresh = () => { void loadEnvironments(); };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
   }, []);
 
   useEffect(() => {
@@ -413,7 +420,7 @@ export default function CodexPage() {
     const trimmedEnvironment = environment.trim();
     const trimmedModel = model.trim();
 
-    if (!trimmedPrompt || !trimmedEnvironment) {
+    if (!trimmedPrompt || !environmentOptions.some((item) => item.name === trimmedEnvironment)) {
       setError('Informe o prompt e o ambiente antes de enviar.');
       return;
     }
@@ -532,16 +539,13 @@ export default function CodexPage() {
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
               disabled={environmentOptions.length === 0}
             >
-              {environmentOptions.length === 0 ? (
-                <option value="">Nenhum ambiente cadastrado</option>
-              ) : (
-                environmentOptions.map((option) => (
-                  <option key={option.id} value={option.name}>
-                    {option.name}
-                    {option.description ? ` — ${option.description}` : ''}
-                  </option>
-                ))
-              )}
+              <option value="">{environmentOptions.length === 0 ? 'Nenhum ambiente ativo disponível' : 'Selecione um ambiente'}</option>
+              {environmentOptions.map((option) => (
+                <option key={option.id} value={option.name}>
+                  {option.name}
+                  {option.description ? ` — ${option.description}` : ''}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -836,7 +840,7 @@ export default function CodexPage() {
           <div className="flex items-center gap-4">
             <button
               type="submit"
-              disabled={loading || environmentOptions.length === 0 || modelOptions.length === 0}
+              disabled={loading || !environment || environmentOptions.length === 0 || modelOptions.length === 0}
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading ? 'Enviando...' : 'Enviar para o Codex'}

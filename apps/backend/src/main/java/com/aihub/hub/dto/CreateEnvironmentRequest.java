@@ -21,6 +21,7 @@ public record CreateEnvironmentRequest(
     @Size(max = 128, message = "O usuário pode ter no máximo 128 caracteres")
     String dbUser,
     @Size(max = 255, message = "A senha pode ter no máximo 255 caracteres")
-    String dbPassword
+    String dbPassword,
+    Boolean active
 ) {
 }

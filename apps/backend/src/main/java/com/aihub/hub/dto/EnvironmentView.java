@@ -13,7 +13,8 @@ public record EnvironmentView(
     Integer dbPort,
     String dbName,
     String dbUser,
-    String dbPassword
+    String dbPassword,
+    boolean active
 ) {
     public static EnvironmentView from(EnvironmentRecord record) {
         return new EnvironmentView(
@@ -25,7 +26,8 @@ public record EnvironmentView(
             record.getDbPort(),
             record.getDbName(),
             record.getDbUser(),
-            record.getDbPassword()
+            record.getDbPassword(),
+            record.isActive()
         );
     }
 }

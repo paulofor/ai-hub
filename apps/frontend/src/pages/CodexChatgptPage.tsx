@@ -1951,12 +1951,28 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [config.profile]);
 
+  const activeEnvironmentsLoaded = useRef(false);
+  const loadActiveEnvironments = useCallback(async () => {
+    const response = await client.get<EnvironmentOption[]>('/environments/active');
+    const initialLoad = !activeEnvironmentsLoaded.current;
+    activeEnvironmentsLoaded.current = true;
+    setEnvironments(response.data);
+    setEnvironment((current) => response.data.some((item) => item.name === current)
+      ? current : initialLoad ? response.data[0]?.name ?? '' : '');
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => { void loadActiveEnvironments().catch((err: Error) => setError(err.message)); };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [loadActiveEnvironments]);
+
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
     try {
-      const [accountResult, envResponse] = await Promise.all([
+      const [accountResult] = await Promise.all([
         client.get('/account/read').then((response) => ({ ok: true as const, data: response.data })).catch((err) => ({ ok: false as const, error: err as Error })),
-        client.get<EnvironmentOption[]>('/environments')
+        loadActiveEnvironments()
       ]);
       const modelResponse = await client.get('/codex/models/active')
         .then((response) => Array.isArray(response.data) ? response.data.map(normalizeModelOption).filter((item): item is ModelOption => item !== null) : [])
@@ -1972,10 +1988,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       } else {
         throw accountResult.error;
       }
-      setEnvironments(envResponse.data);
       const nextModels = modelResponse;
       setModels(nextModels);
-      setEnvironment((current) => current || envResponse.data[0]?.name || '');
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
       await Promise.all([loadRequests(), loadSavedConversations(), loadProducts(), loadDailyMetrics()]);
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
@@ -1986,7 +2000,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setLoading(false);
     }
-  }, [loadDailyMetrics, loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
+  }, [loadActiveEnvironments, loadDailyMetrics, loadProducts, loadRequests, loadSavedConversations, registerTelemetry]);
 
   useEffect(() => {
     loadBootstrap().catch(() => undefined);
@@ -2017,7 +2031,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     let timeoutId: number | undefined;
     const pollSupportingData = async () => {
       if (document.visibilityState === 'visible') {
-        await Promise.all([loadAccount(), loadDailyMetrics()])
+        await Promise.all([loadAccount(), loadDailyMetrics(), loadActiveEnvironments()])
           .then(() => registerTelemetry('poll_success', 'Polling de conta e métricas concluído.'))
           .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling de conta e métricas: ${err.message}`));
       }
@@ -2030,7 +2044,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       cancelled = true;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [loadAccount, loadDailyMetrics, registerTelemetry]);
+  }, [loadAccount, loadActiveEnvironments, loadDailyMetrics, registerTelemetry]);
 
   useEffect(() => {
     const trimmedEnvironment = selectedEnvironment.trim();
@@ -2501,6 +2515,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       setError('Conta ChatGPT não executável pelo Codex App Server. Reconecte para executar.');
       return;
     }
+    if (!selectedEnvironment || (!sandboxOnly && !environments.some((item) => item.name === selectedEnvironment))) {
+      setError('Selecione um ambiente ativo antes de enviar.');
+      return;
+    }
     const userPrompt = prompt.trim();
     if (!userPrompt) {
       setError('Digite a solicitação antes de enviar.');
@@ -2555,7 +2573,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, selectedEnvironment, selectedProcessId, selectedProductName, selectedPromptHints]);
+  }, [buildConversationPrompt, config.profile, environments, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, sandboxOnly, selectedEnvironment, selectedProcessId, selectedProductName, selectedPromptHints]);
 
   const handleProductChange = useCallback((productName: string) => {
     setSelectedProductName(productName);
@@ -3379,7 +3397,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               Ambiente temporário: sandbox
             </div>
           ) : (
-            <select value={environment} onChange={(e) => setEnvironment(e.target.value)} className="rounded-md border px-3 py-2 text-sm">
+            <select aria-label="Ambiente" value={environment} onChange={(e) => setEnvironment(e.target.value)} disabled={environments.length === 0} className="rounded-md border px-3 py-2 text-sm">
+              <option value="">{environments.length === 0 ? 'Nenhum ambiente ativo disponível' : 'Selecione um ambiente'}</option>
               {environments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
             </select>
           )}

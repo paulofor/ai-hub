@@ -3,10 +3,12 @@ package com.aihub.hub.web;
 import com.aihub.hub.dto.CreateEnvironmentRequest;
 import com.aihub.hub.dto.EnvironmentView;
 import com.aihub.hub.dto.UpdateEnvironmentRequest;
+import com.aihub.hub.dto.UpdateEnvironmentStatusRequest;
 import com.aihub.hub.service.EnvironmentService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,6 +30,19 @@ public class EnvironmentController {
     @GetMapping
     public List<EnvironmentView> listEnvironments() {
         return environmentService.listEnvironments();
+    }
+
+    @GetMapping("/active")
+    public List<EnvironmentView> listActiveEnvironments() {
+        return environmentService.listActiveEnvironments();
+    }
+
+    @PatchMapping("/{environmentId}/status")
+    public EnvironmentView updateStatus(
+        @PathVariable Long environmentId,
+        @Valid @RequestBody UpdateEnvironmentStatusRequest request
+    ) {
+        return environmentService.setActive(environmentId, request.active());
     }
 
     @PostMapping

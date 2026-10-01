@@ -31,6 +31,9 @@ class CodexRequestMaxWaitMigrationTest {
             .locations("classpath:db/migration/h2")
             .baselineOnMigrate(true)
             .baselineVersion(MigrationVersion.fromVersion("47"))
+            // This fixture contains only codex_requests; test its migration,
+            // rather than running future migrations for unrelated tables.
+            .target(MigrationVersion.fromVersion("48"))
             .load();
 
         var result = flyway.migrate();

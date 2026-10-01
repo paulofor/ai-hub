@@ -125,7 +125,7 @@ test('shows the request detail as a conversation card with only the three execut
 
 test('offers active GPT-5.6 and GPT-6 models and sends GPT-5.6 Sol with the request', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
   await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [
     { id: 1, modelName: 'gpt-6-astra', displayName: 'GPT-6 Astra', active: true },
     { id: 2, modelName: 'gpt-6-sol', displayName: 'GPT-6 Sol', active: true },
@@ -175,8 +175,8 @@ test('offers active GPT-5.6 and GPT-6 models and sends GPT-5.6 Sol with the requ
 test('keeps the conversation flowing naturally without subject controls', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-07-31T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -248,7 +248,7 @@ test('warns on the request PR button when a batch has accumulated code', async (
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'produção' }] });
   });
   await page.route('**/api/codex/models/active', async (route) => {
@@ -400,8 +400,8 @@ test('shows requests ranked by processing time', async ({ page }) => {
 
 test('explains why old history does not enable trimming the open batch', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { requestCount: 6, interactionCount: 6, durationMs: 1000 } } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -429,8 +429,8 @@ test('explains why old history does not enable trimming the open batch', async (
 
 test('cuts old dialog messages out of subsequent model prompts', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: {} } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -466,11 +466,11 @@ test('cuts old dialog messages out of subsequent model prompts', async ({ page }
 
 test('only includes history from the selected environment in a new request prompt', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [
     { id: 1, name: 'ambiente-a' },
     { id: 2, name: 'ambiente-b' }
   ] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: {} } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -509,10 +509,10 @@ test('renders structured model JSON as cards in the default ChatGPT dialog', asy
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/ai-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5.5', modelName: 'gpt-5.5', displayName: 'GPT-5.5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -563,10 +563,10 @@ test('request PR stays available for an idle batch even when no execution model 
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -650,10 +650,10 @@ test('default dialog does not enable PR from a marketing-only batch', async ({ p
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -697,10 +697,10 @@ test('sandbox dialog does not render the request PR button', async ({ page }) =>
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -726,10 +726,10 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
-  await page.route('**/api/environments', (route) => route.fulfill({
+  await page.route('**/api/environments/active', (route) => route.fulfill({
     json: [{ id: 1, name: 'paulofor/marketing-hub@main' }]
   }));
-  await page.route('**/api/account/models', (route) => route.fulfill({
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
@@ -821,10 +821,10 @@ test('formats markdown file references with a readable filename chip', async ({ 
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'produção' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -865,8 +865,8 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
@@ -955,8 +955,8 @@ test('keeps the running-token inactivity alert on the weekly-consumption card', 
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
@@ -1005,8 +1005,8 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({
     json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }]
   }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
@@ -1063,7 +1063,7 @@ test('filters the marketing dialog by product', async ({ page }, testInfo) => {
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
   await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' }] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
     json: { day: { startsAt: '2026-09-28T05:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 0 } }
@@ -1117,8 +1117,8 @@ test('dismisses failed and cancelled marketing requests without requiring a stru
   await page.route('**/api/account/read', (route) => route.fulfill({
     json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
   }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
   await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { startsAt: '2026-08-15T00:00:00Z', requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
@@ -1152,10 +1152,10 @@ test('scrolls from the marketing prompt editor to the first unread model respons
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -1225,10 +1225,10 @@ test('disables the marketing prompt composer only when all 20 request positions 
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -1329,10 +1329,10 @@ test('shows a code generation icon on marketing comment cards with repository ch
       json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
     });
   });
-  await page.route('**/api/environments', async (route) => {
+  await page.route('**/api/environments/active', async (route) => {
     await route.fulfill({ json: [{ id: 1, name: 'paulofor/marketing-hub@main' }] });
   });
-  await page.route('**/api/account/models', async (route) => {
+  await page.route('**/api/codex/models/active', async (route) => {
     await route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] });
   });
   await page.route('**/api/codex/requests/metrics?**', async (route) => {
@@ -1439,8 +1439,8 @@ test('shows a code generation icon on marketing comment cards with repository ch
 
 test('shows the operational-day sales impact scoreboard', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
-  await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5' }] }));
+  await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5' }] }));
   await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
