@@ -16,6 +16,7 @@ const item = (profile: Profile, id = 990101, status = 'COMPLETED', responseText 
 async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) {
   const requests = [...initial];
   const calls: string[] = [];
+  const requestQueries: URL[] = [];
   const submissions: Record<string, unknown>[] = [];
   let failSubmission = false;
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
@@ -23,6 +24,7 @@ async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) 
     const url = new URL(request.url());
     const path = url.pathname;
     calls.push(path);
+    if (path === '/api/codex/requests' && request.method() === 'GET') requestQueries.push(url);
     let json: unknown = [];
     if (path === '/api/account/read') json = { connected: true, status: 'connected', executable: true };
     if (path === '/api/environments/active') json = [{ id: 1, name: environment }];
@@ -50,7 +52,7 @@ async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) 
     };
     return route.fulfill({ json });
   });
-  return { calls, submissions, fail: () => { failSubmission = true; } };
+  return { calls, requestQueries, submissions, fail: () => { failSubmission = true; } };
 }
 
 for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
@@ -65,6 +67,9 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
         page.on('pageerror', error => errors.push(error.message));
         const api = await mockApi(page, profile);
         await page.goto(profile === 'CHATGPT_CODEX' ? '/codex-chatgpt' : '/codex-chatgpt-mkt');
+        // A consulta deve recortar no servidor antes da paginação; caso contrário,
+        // solicitações de outros perfis podem ocupar as vinte posições da Mira.
+        await expect.poll(() => api.requestQueries.at(0)?.searchParams.get('profile')).toBe(profile);
         await expect(page.getByRole('heading', { name: 'Estado da conta (tempo real)' })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Lote atual' })).toBeVisible();
         await expect(page.getByLabel('Conversa salva para contexto')).toBeVisible();

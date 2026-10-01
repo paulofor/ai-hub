@@ -498,17 +498,21 @@ class CodexRequestServiceTest {
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
             request.getInteractionCount(), null, null, null, null, null, 2L, null, null, null
         );
-        when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
+        when(codexRequestRepository.findSummariesByProfileOrderByCreatedAtDesc(
+            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
 
         CodexRequestService service = buildService();
 
-        List<CodexRequestSummary> summaries = service.listPage(0, 5, null).getContent();
+        List<CodexRequestSummary> summaries = service.listPage(
+            0, 5, null, CodexIntegrationProfile.CHATGPT_CODEX_MKT).getContent();
         assertThat(summaries).hasSize(1);
         assertThat(summaries.get(0).requestTitle())
             .isEqualTo("coloque para aparecer os titulos das solicitações nos historico");
         assertThat(summaries.get(0).documentAccessCount()).isEqualTo(2L);
         assertThat(summaries.get(0).prompt()).hasSizeLessThanOrEqualTo(2000);
+        verify(codexRequestRepository).findSummariesByProfileOrderByCreatedAtDesc(
+            eq(CodexIntegrationProfile.CHATGPT_CODEX_MKT), any(Pageable.class));
         verify(sandboxOrchestratorClient, never()).getJob("job-running-page");
         verify(codexRequestRepository, never()).save(any(CodexRequest.class));
     }
@@ -534,7 +538,7 @@ class CodexRequestServiceTest {
             request.getStartedAt(), request.getFinishedAt(), request.getDurationMs(), request.getCloneDurationMs(), request.getCreatedAt(),
             request.getInteractionCount(), null, null, null, null, null, 1L, request.getResponseText(), null, null
         );
-        when(codexRequestRepository.findSummariesByOrderByCreatedAtDesc(any(Pageable.class)))
+        when(codexRequestRepository.findSummariesByProfileOrderByCreatedAtDesc(eq(null), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(summary)));
 
         CodexRequestService service = buildService();

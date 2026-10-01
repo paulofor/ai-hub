@@ -439,10 +439,15 @@ public class CodexRequestService {
 
     @Transactional(readOnly = true)
     public Page<CodexRequestSummary> listPage(int page, int size, Integer rating) {
+        return listPage(page, size, rating, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<CodexRequestSummary> listPage(int page, int size, Integer rating, CodexIntegrationProfile profile) {
         PageRequest pageRequest = PageRequest.of(page, size);
         Page<CodexRequestSummary> summaries = rating == null
-            ? codexRequestRepository.findSummariesByOrderByCreatedAtDesc(pageRequest)
-            : codexRequestRepository.findSummariesByRatingOrderByCreatedAtDesc(rating, pageRequest);
+            ? codexRequestRepository.findSummariesByProfileOrderByCreatedAtDesc(profile, pageRequest)
+            : codexRequestRepository.findSummariesByProfileAndRatingOrderByCreatedAtDesc(profile, rating, pageRequest);
         return summaries.map(this::prepareRequestSummary);
     }
 
