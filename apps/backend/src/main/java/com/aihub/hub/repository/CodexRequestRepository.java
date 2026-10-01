@@ -5,6 +5,7 @@ import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
 import com.aihub.hub.domain.CodexReasoningEffort;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexDialogueRequest;
 import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import jakarta.persistence.LockModeType;
@@ -43,6 +44,17 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         CodexIntegrationProfile profile, Collection<CodexRequestStatus> statuses);
 
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
+
+    @Query("""
+        select new com.aihub.hub.dto.CodexDialogueRequest(
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.profile, cr.status,
+            cr.userMessage, cr.responseText, cr.productName, cr.createdAt, cr.finishedAt
+        )
+        from CodexRequest cr
+        where cr.profile = :profile
+        order by cr.createdAt desc, cr.id desc
+        """)
+    List<CodexDialogueRequest> findRecentDialogue(@Param("profile") CodexIntegrationProfile profile, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select cr from CodexRequest cr where cr.externalId = :externalId")

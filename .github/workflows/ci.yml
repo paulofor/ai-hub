@@ -85,6 +85,8 @@ jobs:
         run: npm --prefix apps/frontend run test:e2e -- codexChatgptLayout.spec.ts
       - name: Test backend queue visibility across independent browser sessions
         run: npm --prefix apps/frontend run test:e2e -- codexRequestQueue.spec.ts
+      - name: Test ten recent dialogue requests with the public API contract
+        run: npm --prefix apps/frontend run test:e2e -- codexRecentDialogue.spec.ts
 
   sandbox:
     runs-on: ubuntu-latest
