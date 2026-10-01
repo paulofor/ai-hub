@@ -81,6 +81,8 @@ jobs:
         run: npm --prefix apps/frontend exec -- playwright install --with-deps chromium
       - name: Test environment activation in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- environmentActivation.spec.ts
+      - name: Test Codex ChatGPT layout and preserve MKT in desktop and mobile
+        run: npm --prefix apps/frontend run test:e2e -- codexChatgptLayout.spec.ts
 
   sandbox:
     runs-on: ubuntu-latest

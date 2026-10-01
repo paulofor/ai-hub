@@ -1018,6 +1018,7 @@ const CommentReadStatusBadge = ({ read }: { read: boolean }) => (
 interface AssistantMessageBodyProps {
   content: string;
   structuredResponse: boolean;
+  commentFallback?: boolean;
   commentRead?: boolean;
   onCommentReadChange?: (read: boolean) => void;
   onDismissRequest?: () => void;
@@ -1025,8 +1026,9 @@ interface AssistantMessageBodyProps {
   onRequestOrientation: (orientation: string) => void;
 }
 
-const AssistantMessageBody = ({ content, structuredResponse, commentRead = false, onCommentReadChange, onDismissRequest, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
-  const structured = structuredResponse ? parseMarketingStructuredResponse(content) : null;
+const AssistantMessageBody = ({ content, structuredResponse, commentFallback = false, commentRead = false, onCommentReadChange, onDismissRequest, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
+  const structured: MarketingStructuredResponse | null = (structuredResponse ? parseMarketingStructuredResponse(content) : null)
+    ?? (commentFallback ? { titulo: '', comentario: content, resumoCodigoPr: '', orientacaoProximaAcao: '', sugestaoMelhoriaAmbiente: '' } : null);
   const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
   const copiedTimeoutRef = useRef<number | null>(null);
   const orientationRequested = structured?.orientacaoProximaAcao ? isOrientationRequested(structured.orientacaoProximaAcao) : false;
@@ -1544,7 +1546,8 @@ const DEFAULT_VARIANT_CONFIG: CodexChatgptVariantConfig = {
     PRODUCTION_PUBLICATION_INSTRUCTION,
     CODEX_OPERATIONAL_INSTRUCTION,
     CODEX_CHATGPT_MEDIA_TOOLS_INSTRUCTION,
-    CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION
+    CODEX_CHATGPT_BROWSER_TESTING_INSTRUCTION,
+    'Na resposta final do Codex ChatGPT técnico, responda somente com JSON válido no formato {"titulo":"<título curto>","comentario":"<resposta principal em Markdown>","alterouCodigoRepositorio":false,"resumoCodigoPr":"","sugestaoMelhoriaAmbiente":""}. Informe alterouCodigoRepositorio como true somente quando alterar arquivos versionados e descreva essas alterações em resumoCodigoPr; caso contrário use false e resumoCodigoPr vazio. Inclua orientacaoProximaAcao somente quando uma ação efetiva do usuário for necessária para concluir a solicitação. Use sugestaoMelhoriaAmbiente somente para melhorias do ambiente de execução. Preserve o contexto técnico do ambiente selecionado.'
   ]
 };
 
@@ -1662,7 +1665,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [processes, setProcesses] = useState<ProcessOption[]>([]);
   const [selectedProcessId, setSelectedProcessId] = useState('');
   const showProductSelector = config.profile === 'CHATGPT_CODEX_MKT';
+  const technicalChat = config.profile === 'CHATGPT_CODEX';
+  const showProcessSelector = !technicalChat;
   const sandboxOnly = config.profile === 'CHATGPT_CODEX_SANDBOX';
+  const hasResponseReadControls = !sandboxOnly;
   const selectedEnvironment = sandboxOnly ? SANDBOX_ONLY_ENVIRONMENT : environment;
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProductName, setSelectedProductName] = useState('');
@@ -1926,8 +1932,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   }, [config.profile]);
 
   useEffect(() => {
+    if (!showProcessSelector) return;
     client.get<ProcessOption[]>('/processes').then(response => setProcesses(response.data)).catch(() => setProcesses([]));
-  }, []);
+  }, [showProcessSelector]);
 
   const loadProducts = useCallback(async () => {
     if (config.profile !== 'CHATGPT_CODEX_MKT') {
@@ -2366,16 +2373,17 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const visibleConversation = productFilteredConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
   const hiddenConversationMessages = Math.max(0, productFilteredConversationPool.length - visibleConversation.length);
   const firstUnreadModelResponseId = useMemo(() => {
-    if (config.profile !== 'CHATGPT_CODEX_MKT') {
+    if (!hasResponseReadControls) {
       return null;
     }
     const firstUnreadMessage = visibleConversation.find((message) =>
       message.role === 'assistant'
       && !readCommentIds.has(message.id)
-      && Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+      && (Boolean(parseMarketingStructuredResponse(message.content)?.comentario)
+        || (technicalChat && message.status === 'COMPLETED' && Boolean(message.content.trim())))
     );
     return firstUnreadMessage?.id ?? null;
-  }, [config.profile, readCommentIds, visibleConversation]);
+  }, [hasResponseReadControls, readCommentIds, technicalChat, visibleConversation]);
   const activeConversationRequestCount = useMemo(() => new Set(conversation
     .filter((message) => message.role === 'assistant'
       && message.requestId
@@ -2386,7 +2394,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     () => new Map(requests.map((item) => [item.id, item.environment])),
     [requests]
   );
-  const promptComposerDisabled = config.profile === 'CHATGPT_CODEX_MKT'
+  const promptComposerDisabled = hasResponseReadControls
     && activeConversationRequestCount >= MAX_ACTIVE_CONVERSATION_REQUESTS;
   const promptComposerDisabledReason = promptComposerDisabled
     ? `Aguarde: as ${MAX_ACTIVE_CONVERSATION_REQUESTS} posições estão ocupadas por solicitações pendentes ou em processamento.`
@@ -2536,7 +2544,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         model,
         reasoningEffort,
         profile: config.profile,
-        processId: selectedProcessId ? Number(selectedProcessId) : undefined,
+        processId: showProcessSelector && selectedProcessId ? Number(selectedProcessId) : undefined,
         productName: selectedProductName || undefined,
         screenPromptItems: selectedPromptHints
           .filter((hint) => normalizePromptHintType(hint.type) === 'text')
@@ -2573,7 +2581,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     } finally {
       setActionLoading(false);
     }
-  }, [buildConversationPrompt, config.profile, environments, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, sandboxOnly, selectedEnvironment, selectedProcessId, selectedProductName, selectedPromptHints]);
+  }, [buildConversationPrompt, config.profile, environments, extractAssistantContent, fileAttachments, isExecutable, loadRequests, model, prompt, promptComposerDisabled, promptComposerDisabledReason, reasoningEffort, registerTelemetry, sandboxOnly, selectedEnvironment, selectedProcessId, selectedProductName, selectedPromptHints, showProcessSelector]);
 
   const handleProductChange = useCallback((productName: string) => {
     setSelectedProductName(productName);
@@ -3083,7 +3091,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        {operationalSummaryVisible ? <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
+        {!technicalChat && operationalSummaryVisible ? <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <div className="flex items-start justify-between gap-3">
             {config.profile === 'CHATGPT_CODEX_MKT' ? (
               <div className="min-w-[78px] rounded border border-slate-200 bg-slate-50 px-2 py-1 text-center dark:border-slate-700 dark:bg-slate-800/80" title="Média das notas de impacto estimado em vendas no dia operacional">
@@ -3311,7 +3319,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               : undefined;
             const messageProduct = messageRequest?.productName;
             const structuredAssistantResponse = message.role === 'assistant' ? parseMarketingStructuredResponse(message.content) : null;
-            const canDismissTerminalFailure = config.profile === 'CHATGPT_CODEX_MKT'
+            const canDismissTerminalFailure = hasResponseReadControls
               && message.role === 'assistant'
               && Boolean(message.requestId)
               && (message.status === 'FAILED' || message.status === 'CANCELLED')
@@ -3381,9 +3389,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                 </div> : <AssistantMessageBody
                   content={message.content}
                   structuredResponse={message.role === 'assistant'}
+                  commentFallback={technicalChat && message.role === 'assistant' && message.status === 'COMPLETED'}
                   commentRead={readCommentIds.has(message.id)}
-                  onCommentReadChange={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
-                  onDismissRequest={config.profile === 'CHATGPT_CODEX_MKT' && message.role === 'assistant' && message.requestId && readCommentIds.has(message.id) ? () => handleDismissConversationRequest(message.requestId!) : undefined}
+                  onCommentReadChange={hasResponseReadControls && message.role === 'assistant' ? (read) => handleCommentReadChange(message.id, read) : undefined}
+                  onDismissRequest={hasResponseReadControls && message.role === 'assistant' && message.requestId && readCommentIds.has(message.id) ? () => handleDismissConversationRequest(message.requestId!) : undefined}
                   isOrientationRequested={isOrientationRequested}
                   onRequestOrientation={handleRequestOrientation}
                 />}
@@ -3421,15 +3430,15 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </select>
           </label>
         </div>
-        <select aria-label="Processo" value={selectedProcessId} onChange={(event) => setSelectedProcessId(event.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
+        {showProcessSelector ? <select aria-label="Processo" value={selectedProcessId} onChange={(event) => setSelectedProcessId(event.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
           <option value="">Sem processo selecionado</option>
           {processes.map((item) => <option key={item.id} value={item.id}>{item.parentProcessId ? '↳ Subprocesso ' : 'Processo '}{item.number} — {item.text}</option>)}
-        </select>
+        </select> : null}
         {showProductSelector ? <select aria-label="Produto" value={selectedProductName} onChange={(e) => handleProductChange(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" disabled={productsLoading}>
           <option value="">{productsLoading ? 'Carregando produtos...' : 'Sem produto selecionado'}</option>
           {products.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
         </select> : null}
-        {config.profile === 'CHATGPT_CODEX_MKT' && conversation.length > 0 ? (
+        {hasResponseReadControls && conversation.length > 0 ? (
           <div className="flex justify-end">
             <button
               type="button"
@@ -3692,7 +3701,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         {!requestsLoading && requests.length === 0 ? <p className="text-sm text-slate-500">Nenhuma execução ainda.</p> : null}
       </div>
       {requests.some((item) => !isTerminalStatus(item.status)) ? <p className="text-xs text-slate-500">Monitoramento ativo a cada 5 segundos.</p> : null}
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+      {error ? <p role={technicalChat ? 'alert' : undefined} className="text-sm text-rose-600">{error}</p> : null}
     </section>
   );
 }
