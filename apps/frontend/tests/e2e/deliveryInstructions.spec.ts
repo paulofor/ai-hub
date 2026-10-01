@@ -24,8 +24,8 @@ for (const mobile of [false, true]) {
         // No request can reach a real backend or use production data.
         await page.route(/^http:\/\/127\.0\.0\.1:8082\/api\//, (route) => route.fulfill({ json: [] }));
         await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
-        await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'test/delivery@main' }] }));
-        await page.route('**/api/account/models', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
+        await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'test/delivery@main' }] }));
+        await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
         await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({ json: { day: { requestCount: 0, interactionCount: 0, durationMs: 0 } } }));
         let submittedPrompt = '';
         await page.route('**/api/codex/requests', (route) => {

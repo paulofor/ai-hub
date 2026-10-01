@@ -6,6 +6,7 @@ interface Environment {
   name: string;
   description?: string | null;
   createdAt: string;
+  active: boolean;
   dbHost?: string | null;
   dbPort?: number | null;
   dbName?: string | null;
@@ -28,6 +29,9 @@ const parsePortOrThrow = (value: string): number | undefined => {
 export default function EnvironmentsPage() {
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [name, setName] = useState('');
+  const [active, setActive] = useState(true);
+  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [dbHost, setDbHost] = useState('');
   const [dbPort, setDbPort] = useState('');
@@ -108,6 +112,7 @@ export default function EnvironmentsPage() {
     try {
       const response = await client.post<Environment>('/environments', {
         name: trimmedName,
+        active,
         description: trimmedDescription || undefined,
         dbHost: trimmedDbHost || undefined,
         dbPort: parsedPort,
@@ -117,6 +122,7 @@ export default function EnvironmentsPage() {
       });
       setEnvironments((prev) => [...prev, response.data]);
       setName('');
+      setActive(true);
       setDescription('');
       setDbHost('');
       setDbPort('');
@@ -128,6 +134,19 @@ export default function EnvironmentsPage() {
       setCreationError((err as Error).message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleToggleActive = async (environment: Environment) => {
+    setUpdatingStatusId(environment.id);
+    setStatusError(null);
+    try {
+      const response = await client.patch<Environment>(`/environments/${environment.id}/status`, { active: !environment.active });
+      setEnvironments((prev) => prev.map((item) => item.id === response.data.id ? response.data : item));
+    } catch (err) {
+      setStatusError((err as Error).message);
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -213,6 +232,12 @@ export default function EnvironmentsPage() {
             />
           </div>
 
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />
+            Ambiente ativo
+          </label>
+          <p className="text-xs text-slate-500">Ambientes inativos continuam cadastrados, mas não aparecem nos seletores de envio de solicitações.</p>
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-2">
               <label htmlFor="environment-db-host" className="text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -296,11 +321,13 @@ export default function EnvironmentsPage() {
 
       <div className="space-y-3">
         <h3 className="text-lg font-semibold">Ambientes cadastrados</h3>
-        <div className="rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
+        {statusError && <p role="alert" className="text-sm text-red-600">{statusError}</p>}
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
           <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Nome</th>
+                <th className="px-4 py-3 text-left font-semibold">Status</th>
                 <th className="px-4 py-3 text-left font-semibold">Descrição</th>
                 <th className="px-4 py-3 text-left font-semibold">Conexão MySQL</th>
                 <th className="px-4 py-3 text-left font-semibold">Criado em</th>
@@ -311,6 +338,7 @@ export default function EnvironmentsPage() {
               {sortedEnvironments.map((environment) => (
                 <tr key={environment.id}>
                   <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-100">{environment.name}</td>
+                  <td className="px-4 py-3">{environment.active ? 'Ativo' : 'Inativo'}</td>
                   <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                     {environment.description ? (
                       <p className="whitespace-pre-line">{environment.description}</p>
@@ -342,7 +370,16 @@ export default function EnvironmentsPage() {
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
                     {new Date(environment.createdAt).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(environment)}
+                      disabled={updatingStatusId !== null || connectionLoading}
+                      aria-label={`${environment.active ? 'Desativar' : 'Ativar'} ${environment.name}`}
+                      className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold disabled:opacity-50 dark:border-slate-700"
+                    >
+                      {updatingStatusId === environment.id ? 'Salvando...' : environment.active ? 'Desativar' : 'Ativar'}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setEditingEnvironment(environment)}
@@ -454,7 +491,7 @@ export default function EnvironmentsPage() {
             <div className="flex flex-wrap items-center gap-4">
               <button
                 type="submit"
-                disabled={connectionLoading}
+                disabled={connectionLoading || updatingStatusId !== null}
                 className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {connectionLoading ? 'Atualizando...' : 'Salvar alterações'}
