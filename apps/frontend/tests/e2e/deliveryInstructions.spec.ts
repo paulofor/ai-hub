@@ -35,6 +35,7 @@ for (const mobile of [false, true]) {
           return route.fulfill({ json: { id: 9901, profile: profile.profile, status: 'PENDING', createdAt: '2026-09-18T12:00:00Z' } });
         });
         await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [] } }));
+        await page.route('**/api/codex/requests/queue?**', (route) => route.fulfill({ json: { profile: profile.profile, updatedAt: '2026-10-01T00:00:00Z', requests: [] } }));
         await page.goto(profile.route);
         await page.getByPlaceholder(profile.placeholder).fill('Implemente a alteração solicitada.');
         await page.getByRole('button', { name: 'Enviar mensagem' }).click();

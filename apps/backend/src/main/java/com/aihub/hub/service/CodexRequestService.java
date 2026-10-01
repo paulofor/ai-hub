@@ -14,6 +14,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexQueueSnapshot;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
@@ -413,6 +414,27 @@ public class CodexRequestService {
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
         applyInteractionCounts(requests);
         return requests;
+    }
+
+    @Transactional(readOnly = true)
+    public CodexQueueSnapshot queue(CodexIntegrationProfile profile) {
+        if (profile == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o perfil da fila.");
+        }
+        var active = codexRequestRepository.findByProfileAndStatusInOrderByCreatedAtAscIdAsc(
+            profile, ACTIVE_QUEUE_STATUSES);
+        List<CodexQueueSnapshot.Item> items = new ArrayList<>();
+        int pendingPosition = 0;
+        for (var request : active) {
+            int position = request.getStatus() == CodexRequestStatus.PENDING ? ++pendingPosition : 0;
+            String title = buildRequestTitle(request.getUserMessage());
+            items.add(new CodexQueueSnapshot.Item(
+                request.getId(), request.getEnvironment(), request.getModel(), request.getReasoningEffort(),
+                request.getStatus(), StringUtils.hasText(title) ? title : "Solicitação #" + request.getId(),
+                request.getCreatedAt(), request.getStartedAt(), position
+            ));
+        }
+        return new CodexQueueSnapshot(profile, Instant.now(), List.copyOf(items));
     }
 
     @Transactional(readOnly = true)

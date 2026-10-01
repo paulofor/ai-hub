@@ -35,6 +35,7 @@ async function mockApi(page: Page, environments: Environment[], options: { failS
       } else json = { content: [], totalPages: 0, totalElements: 0 };
     }
     if (path === '/api/codex/requests/metrics') json = { day: { requestCount: 0, interactionCount: 0, durationMs: 0 } };
+    if (path === '/api/codex/requests/queue') json = { profile: new URL(request.url()).searchParams.get('profile'), updatedAt: '2026-10-01T00:00:00Z', requests: [] };
     return route.fulfill({ json });
   });
   return submissions;

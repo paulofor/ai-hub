@@ -10,6 +10,7 @@ import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexQueueSnapshot;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
 import com.aihub.hub.dto.SaveCodexCommentRequest;
@@ -21,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ContentDisposition;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -97,6 +99,12 @@ public class CodexController {
     @GetMapping("/metrics")
     public CodexDashboardMetrics metrics(@RequestParam(required = false) String profile) {
         return codexRequestService.dashboardMetrics(resolveProfileParam(profile));
+    }
+
+    @GetMapping("/queue")
+    public ResponseEntity<CodexQueueSnapshot> queue(@RequestParam String profile) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+            .body(codexRequestService.queue(resolveProfileParam(profile)));
     }
 
     @GetMapping("/open-batch")
