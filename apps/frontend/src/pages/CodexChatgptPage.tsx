@@ -1254,6 +1254,39 @@ const loadPersistedChatConversation = (profile: CodexProfile): ChatMessage[] => 
   }
 };
 
+const assistantContentFromRequest = (request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED'
+  ? 'A execução falhou. Abra os detalhes para ver os logs.'
+  : request.status === 'CANCELLED'
+    ? `Solicitação #${request.id} cancelada. Nenhuma nova resposta será gerada para esta mensagem.`
+    : 'Resposta ainda não disponível.');
+
+const restoreConversationFromRequests = (requests: CodexRequest[]): ChatMessage[] => [...requests]
+  .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+  .flatMap((request): ChatMessage[] => {
+    const userContent = request.userMessage?.trim();
+    if (!userContent) return [];
+    const assistantContent = isTerminalStatus(request.status)
+      ? assistantContentFromRequest(request)
+      : `Aguardando resposta do modelo... (${formatStatus(request.status)})`;
+    return [{
+      id: `request-${request.id}-user`,
+      role: 'user',
+      content: userContent,
+      environment: request.environment,
+      createdAt: request.createdAt
+    }, {
+      id: `request-${request.id}-assistant`,
+      role: 'assistant',
+      content: assistantContent,
+      requestId: request.id,
+      environment: request.environment,
+      model: request.model,
+      reasoningEffort: request.reasoningEffort,
+      status: request.status,
+      createdAt: resolveAssistantMessageTimestamp(request)
+    }];
+  });
+
 const filterPromptHistoryByEnvironment = (messages: ChatMessage[], environment: string): ChatMessage[] => {
   const normalizedEnvironment = environment.trim();
   if (!normalizedEnvironment) return [];
@@ -1633,12 +1666,14 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const selectedEnvironment = sandboxOnly ? SANDBOX_ONLY_ENVIRONMENT : environment;
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProductName, setSelectedProductName] = useState('');
+  const [conversationProductFilter, setConversationProductFilter] = useState('');
   const [promptHints, setPromptHints] = useState<PromptHintOption[]>([]);
   const [selectedPromptHintIds, setSelectedPromptHintIds] = useState<number[]>([]);
   const [promptHintsError, setPromptHintsError] = useState<string | null>(null);
   const [loadingPromptHints, setLoadingPromptHints] = useState(false);
   const [requests, setRequests] = useState<ReturnType<typeof parseCodexRequests>>([]);
   const [dailyMetrics, setDailyMetrics] = useState<CodexDashboardMetrics | null>(null);
+  const [operationalSummaryVisible, setOperationalSummaryVisible] = useState(true);
   const [runningTokensAreStale, setRunningTokensAreStale] = useState(false);
   const [, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [accountApiAvailable, setAccountApiAvailable] = useState(true);
@@ -1668,6 +1703,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
   const [hiddenRequestIds, setHiddenRequestIds] = useState<Set<number>>(() => loadHiddenRequestIds(config.profile));
   const conversationPollInFlight = useRef(false);
+  const conversationHydrationAttemptedRef = useRef(conversation.length > 0);
 
   useEffect(() => {
     if (pendingPrRequest) {
@@ -1838,6 +1874,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       }
 
       setRequests((current) => mergeCodexRequestList(current, nextRequests));
+      if (!conversationHydrationAttemptedRef.current) {
+        conversationHydrationAttemptedRef.current = true;
+        const restoredConversation = restoreConversationFromRequests(nextRequests);
+        if (restoredConversation.length > 0) {
+          setConversation((current) => current.length > 0 ? current : restoredConversation);
+        }
+      }
       const runningRequest = nextRequests.find((item) => item.status === 'RUNNING' && Number.isFinite(item.totalTokens));
       if (!runningRequest || runningRequest.totalTokens === undefined) {
         runningTokenActivityRef.current = null;
@@ -2254,11 +2297,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
-  const extractAssistantContent = useCallback((request: CodexRequest) => request.responseText || request.executionLog || (request.status === 'FAILED'
-    ? 'A execução falhou. Abra os detalhes para ver os logs.'
-    : request.status === 'CANCELLED'
-      ? `Solicitação #${request.id} cancelada. Nenhuma nova resposta será gerada para esta mensagem.`
-      : 'Resposta ainda não disponível.'), []);
+  const extractAssistantContent = useCallback(assistantContentFromRequest, []);
 
   const hiddenConversationMessageIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2274,10 +2313,32 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
     return ids;
   }, [conversation, hiddenRequestIds]);
+  const requestById = useMemo(
+    () => new Map(requests.map((item) => [item.id, item])),
+    [requests]
+  );
   const visibleConversationPool = useMemo(
     () => conversation.filter((message) => !hiddenConversationMessageIds.has(message.id)),
     [conversation, hiddenConversationMessageIds]
   );
+  const conversationProductNames = useMemo(() => [...new Set(conversation
+    .filter((message) => message.role === 'assistant' && message.requestId)
+    .map((message) => requestById.get(message.requestId!)?.productName?.trim())
+    .filter((productName): productName is string => Boolean(productName)))]
+    .sort((left, right) => left.localeCompare(right, 'pt-BR')), [conversation, requestById]);
+  const productFilteredConversationPool = useMemo(() => {
+    if (!conversationProductFilter) return visibleConversationPool;
+    return visibleConversationPool.filter((message, index) => {
+      const associatedRequestId = message.requestId ?? (
+        message.role === 'user' && visibleConversationPool[index + 1]?.role === 'assistant'
+          ? visibleConversationPool[index + 1].requestId
+          : undefined
+      );
+      return associatedRequestId
+        ? requestById.get(associatedRequestId)?.productName?.trim() === conversationProductFilter
+        : false;
+    });
+  }, [conversationProductFilter, requestById, visibleConversationPool]);
   const dismissedConversationMessageCount = conversation.length - visibleConversationPool.length;
   const dismissedRequestCount = useMemo(() => {
     const requestIds = new Set<number>();
@@ -2288,8 +2349,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
     return requestIds.size;
   }, [conversation, hiddenRequestIds]);
-  const visibleConversation = visibleConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
-  const hiddenConversationMessages = Math.max(0, visibleConversationPool.length - visibleConversation.length);
+  const visibleConversation = productFilteredConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
+  const hiddenConversationMessages = Math.max(0, productFilteredConversationPool.length - visibleConversation.length);
   const firstUnreadModelResponseId = useMemo(() => {
     if (config.profile !== 'CHATGPT_CODEX_MKT') {
       return null;
@@ -2309,10 +2370,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     .map((message) => message.requestId as number)).size, [conversation]);
   const requestEnvironmentById = useMemo(
     () => new Map(requests.map((item) => [item.id, item.environment])),
-    [requests]
-  );
-  const requestById = useMemo(
-    () => new Map(requests.map((item) => [item.id, item])),
     [requests]
   );
   const promptComposerDisabled = config.profile === 'CHATGPT_CODEX_MKT'
@@ -3008,7 +3065,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
+        {operationalSummaryVisible ? <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <div className="flex items-start justify-between gap-3">
             {config.profile === 'CHATGPT_CODEX_MKT' ? (
               <div className="min-w-[78px] rounded border border-slate-200 bg-slate-50 px-2 py-1 text-center dark:border-slate-700 dark:bg-slate-800/80" title="Média das notas de impacto estimado em vendas no dia operacional">
@@ -3069,8 +3126,19 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               <RecentSalesImpactChart points={dailyMetrics?.recentSalesImpact} />
             </div>
           ) : null}
-          <p className="mt-1 text-[10px] leading-3 text-slate-500">Corte às 02:00 · São Paulo</p>
-        </div>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setOperationalSummaryVisible(false)}
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-slate-300 bg-white text-[10px] font-semibold leading-none text-slate-500 transition hover:border-rose-400 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-rose-500 dark:hover:text-rose-300"
+              title="Fechar quadro de indicadores"
+              aria-label="Fechar quadro de indicadores"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+            <p className="text-[10px] leading-3 text-slate-500">Corte às 02:00 · São Paulo</p>
+          </div>
+        </div> : null}
       </div>
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-4">
@@ -3183,9 +3251,23 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
           </p> : <p className="mt-2 text-xs text-slate-500">Salve apenas os diálogos que precisar retomar depois.</p>}
         </div>
         {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-          <p className="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">
-            Exibimos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} mensagens para evitar peso no navegador; ao salvar, a conversa completa da sessão é preservada{hiddenConversationMessages > 0 ? ` (${hiddenConversationMessages} mensagem(ns) antiga(s) fora do recorte).` : '.'}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">
+            <p className="min-w-0 flex-1">
+              Exibimos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} mensagens para evitar peso no navegador. Em outro computador, o diálogo recente é restaurado pelo histórico de solicitações do servidor; ao salvar, a conversa completa da sessão é preservada{hiddenConversationMessages > 0 ? ` (${hiddenConversationMessages} mensagem(ns) antiga(s) fora do recorte).` : '.'}
+            </p>
+            {showProductSelector && conversationProductNames.length > 0 ? <label className="flex shrink-0 items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
+              <span>Filtrar diálogo por produto</span>
+              <select
+                aria-label="Filtrar diálogo por produto"
+                value={conversationProductFilter}
+                onChange={(event) => setConversationProductFilter(event.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-normal text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="">Todos os produtos</option>
+                {conversationProductNames.map((productName) => <option key={productName} value={productName}>{productName}</option>)}
+              </select>
+            </label> : null}
+          </div>
           {dismissedRequestCount > 0 ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-white/80 px-3 py-2 text-xs text-slate-600 dark:border-emerald-900 dark:bg-slate-900/70 dark:text-slate-300">
             <span>
               {dismissedRequestCount.toLocaleString('pt-BR')} solicitação(ões) retirada(s) da tela

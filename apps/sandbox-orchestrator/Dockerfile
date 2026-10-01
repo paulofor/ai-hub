@@ -10,7 +10,7 @@ FROM node:20-bookworm-slim AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
 ARG GH_CLI_VERSION=2.101.0
-ARG CODEX_VERSION=0.153.4
+ARG CODEX_VERSION=0.159.2
 ARG PLAYWRIGHT_VERSION=1.54.2
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
