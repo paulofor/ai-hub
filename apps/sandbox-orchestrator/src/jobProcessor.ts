@@ -84,7 +84,6 @@ function logOpenAIExchange(direction: 'outbound' | 'inbound' | 'error', operatio
 const exec = promisify(execCallback);
 const execFile = promisify(execFileCallback);
 
-export const DEFAULT_CODEX_TURN_TIMEOUT_MS = 3 * 24 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
@@ -382,7 +381,6 @@ export class SandboxJobProcessor implements JobProcessor {
   private readonly investigationStates: WeakMap<SandboxJob, InvestigationProgressState> = new WeakMap();
   private readonly runnerEnvironmentStates: WeakMap<SandboxJob, RunnerEnvironmentState> = new WeakMap();
   private readonly codexAppServerClient?: CodexAppServerClient;
-  private readonly codexTurnTimeoutMs: number;
   private readonly codexTurnNoActivityTimeoutMs: number;
   private readonly codexTurnActiveItemTimeoutMs: number;
   private readonly codexReasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -411,7 +409,6 @@ export class SandboxJobProcessor implements JobProcessor {
     }
     this.fetchImpl = fetchImpl;
     this.codexAppServerClient = codexAppServerClient;
-    this.codexTurnTimeoutMs = this.parsePositiveInteger(process.env.CODEX_APP_SERVER_TURN_TIMEOUT_MS, DEFAULT_CODEX_TURN_TIMEOUT_MS);
     this.codexTurnNoActivityTimeoutMs = this.parsePositiveInteger(
       process.env.CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS,
       DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
@@ -1714,6 +1711,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'Regra obrigatória para todos os perfis: quando a tarefa envolver código, faça toda a investigação, implementação, execução de testes e ajustes iterativos primeiro no ambiente local da sandbox. O pedido do usuário para investigar, corrigir, implementar ou fazer um fluxo funcionar já autoriza todas as correções locais causalmente relacionadas necessárias para concluir esse escopo: não interrompa a execução para pedir nova autorização a cada defeito descoberto, não devolva ao usuário como próxima ação uma investigação ou correção que você pode realizar na própria sandbox e não transforme cada defeito em um ciclo separado de PR e deploy. Se houver vários módulos, agentes ou workers envolvidos, simule-os com dependências locais ou test doubles e resolva um por vez quando isso facilitar o diagnóstico, continuando até o fluxo ponta a ponta funcionar; só peça uma decisão quando existirem alternativas de produto realmente ambíguas, credencial/acesso ausente, ação externa irreversível, gasto ou publicação que exija consentimento. Não use commit, push, Pull Request, pipeline, deploy ou publicação como mecanismo de teste e não envie uma correção parcial ao repositório para descobrir o próximo erro no ambiente publicado. Antes de qualquer commit ou publicação, valide localmente a solução completa com os testes relevantes, revise o diff e confirme que os critérios da solicitação foram atendidos; somente então consolide a solução validada para publicação. Falhas reais de CI/deploy descobertas após essa validação devem ser corrigidas localmente e publicadas pelo mesmo fluxo de PR, acompanhando novamente os workflows afetados. Para produto ou fluxo novo, defina antes de testar uma matriz de homologação ponta a ponta que cubra caminho feliz, validações e falhas, integrações e observabilidade, métricas e segregação de dados de teste, além dos navegadores e dispositivos relevantes. Execute uma rodada local dos testes relevantes; se ela revelar um defeito, investigue a causa raiz, corrija e repita apenas as validações necessárias para confirmar a correção e evitar regressões relacionadas. Não repita toda a matriz apenas para atingir uma quantidade mínima e não avance para PR, merge ou deploy enquanto algum critério local de aceite estiver pendente. Se uma validação essencial não puder ser executada localmente por limitação real do ambiente, declare a limitação e a evidência disponível em vez de publicar apenas para testar.';
   }
 
+  private buildAgentHarnessImprovementInstruction(): string {
+    return 'Em toda solicitação, examine o harness dos agentes do sistema trabalhado e procure deixá-lo melhor do que encontrou. Considere instruções versionadas como AGENTS.md, prompts e contratos, seleção e descrição de tools, skills, fixtures, evals, testes, observabilidade, recuperação de falhas e ciclos de feedback. Primeiro identifique uma lacuna concreta observada durante o trabalho; quando houver uma melhoria segura, proporcional e relacionada à solicitação, implemente-a e valide-a junto com a entrega. Não crie infraestrutura especulativa, não duplique mecanismos existentes e não amplie o escopo sem evidência: quando nenhuma melhoria de harness for pertinente, registre que avaliou essa possibilidade e preserve o foco da solicitação.';
+  }
+
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const localDevelopmentInstruction = 'Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local.';
@@ -1731,6 +1732,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const browserTestingInstruction = this.buildBrowserTestingInstruction();
     const shellCheckInstruction = this.buildShellCheckInstruction();
     const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
+    const agentHarnessImprovementInstruction = this.buildAgentHarnessImprovementInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
       ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português; quando houver pedido de implementação ou correção, execute também a entrega de código conforme a orientação de entrega. ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
@@ -1744,7 +1746,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
-    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
+    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${agentHarnessImprovementInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
     return [
       { type: 'text', text: taskDescriptionWithValidationGate },
       ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
@@ -1797,9 +1799,6 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       }
       if (lastActivity && now - lastActivity > inactivityTimeoutMs) {
         throw new Error('CODEX_TURN_STALLED');
-      }
-      if (now - startedAt > this.codexTurnTimeoutMs) {
-        throw new Error('CODEX_TURN_INTERRUPTED');
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -2040,6 +2039,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
     const sshClientInstruction = this.buildSshClientInstruction();
     const repositoryModuleTestInstruction = `Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis. ${shellCheckInstruction}`;
     const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
+    const agentHarnessImprovementInstruction = this.buildAgentHarnessImprovementInstruction();
     const codexChatgptOperationalInstruction = this.buildCodexChatgptOperationalInstruction(job);
 
     const tools = this.buildTools(repoPath);
@@ -2084,7 +2084,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. ${REASONING_SUMMARY_INSTRUCTION} Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} ${this.buildGithubDeliveryInstruction(job)} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} ${agentHarnessImprovementInstruction} ${this.buildGithubDeliveryInstruction(job)} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.

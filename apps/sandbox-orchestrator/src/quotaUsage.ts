@@ -19,7 +19,9 @@ export interface QuotaUsage {
   start: QuotaSnapshot;
   end?: QuotaSnapshot;
   eventsObserved: number;
+  firstEvent?: { capturedAt: string; windows: QuotaWindow[] };
   lastEvent?: { capturedAt: string; windows: QuotaWindow[] };
+  baselineSource?: 'start' | 'first_event';
   concurrentObserved: boolean;
   accountChanged: boolean;
   windows: Array<QuotaWindow & { finalUsedPercent?: number; consumedPercentagePoints?: number; reason?: string }>;
@@ -65,7 +67,19 @@ export async function readQuotaSnapshot(client: CodexAppServerClient): Promise<Q
 
 export function finishQuotaUsage(usage: QuotaUsage, end: QuotaSnapshot): void {
   usage.end = end;
-  usage.windows = usage.start.windows.map((start) => {
+  const sameAccount = Boolean(usage.start.accountKey && end.accountKey
+    && !usage.accountChanged && usage.start.accountKey === end.accountKey);
+  const hasCompatibleFirstEventWindow = usage.firstEvent?.windows.some((start) => {
+    const final = end.windows.find((value) => value.limitId === start.limitId && value.window === start.window);
+    return Boolean(final && start.windowDurationMins === final.windowDurationMins && start.resetsAt === final.resetsAt
+      && Date.parse(end.capturedAt) < start.resetsAt * 1000);
+  });
+  const useFirstEvent = usage.start.windows.length === 0
+    && Boolean(hasCompatibleFirstEventWindow)
+    && sameAccount;
+  const baselineWindows = useFirstEvent ? usage.firstEvent!.windows : usage.start.windows;
+  usage.baselineSource = useFirstEvent ? 'first_event' : 'start';
+  usage.windows = baselineWindows.map((start) => {
     const final = end.windows.find((value) => value.limitId === start.limitId && value.window === start.window);
     let reason: string | undefined;
     if (!usage.start.accountKey || !end.accountKey) reason = 'account_unavailable';
@@ -91,7 +105,9 @@ export function observeQuota(client: CodexAppServerClient, usage: QuotaUsage): (
   active.set(client, peers);
   const offLimits = client.onNotification('account/rateLimits/updated', (payload) => {
     usage.eventsObserved += 1;
-    usage.lastEvent = { capturedAt: new Date().toISOString(), windows: quotaWindows(payload) };
+    const event = { capturedAt: new Date().toISOString(), windows: quotaWindows(payload) };
+    if (!usage.firstEvent && event.windows.length > 0) usage.firstEvent = event;
+    usage.lastEvent = event;
   });
   const offAccount = client.onNotification('account/updated', () => { usage.accountChanged = true; });
   return () => { peers.delete(usage); offLimits(); offAccount(); };
