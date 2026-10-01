@@ -120,7 +120,8 @@ const SALES_IMPACT_MOVING_AVERAGE_SIZE = 6;
 const TELEMETRY_WINDOW_SIZE = 30;
 const MAX_FILE_ATTACHMENTS = 5;
 const MAX_FILE_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const MAX_VISIBLE_CONVERSATION_MESSAGES = 20;
+const MAX_VISIBLE_CONVERSATION_REQUESTS = 10;
+const MAX_VISIBLE_CONVERSATION_MESSAGES = MAX_VISIBLE_CONVERSATION_REQUESTS * 2;
 const MAX_ACTIVE_CONVERSATION_REQUESTS = 20;
 const CHAT_CONVERSATION_STORAGE_PREFIX = 'ai-hub:codex-chat-conversation:';
 const READ_COMMENTS_STORAGE_PREFIX = 'ai-hub:codex-chat-read-comments:';
@@ -1264,10 +1265,9 @@ const assistantContentFromRequest = (request: CodexRequest) => request.responseT
     : 'Resposta ainda não disponível.');
 
 const restoreConversationFromRequests = (requests: CodexRequest[]): ChatMessage[] => [...requests]
-  .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+  .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime() || left.id - right.id)
   .flatMap((request): ChatMessage[] => {
-    const userContent = request.userMessage?.trim();
-    if (!userContent) return [];
+    const userContent = request.userMessage?.trim() || `Solicitação #${request.id}: mensagem original indisponível.`;
     const assistantContent = isTerminalStatus(request.status)
       ? assistantContentFromRequest(request)
       : `Aguardando resposta do modelo... (${formatStatus(request.status)})`;
@@ -1289,6 +1289,66 @@ const restoreConversationFromRequests = (requests: CodexRequest[]): ChatMessage[
       createdAt: resolveAssistantMessageTimestamp(request)
     }];
   });
+
+interface ChatMessageGroup {
+  requestId?: number;
+  createdAt: string;
+  messages: ChatMessage[];
+}
+
+const groupConversationMessages = (messages: ChatMessage[]): ChatMessageGroup[] => {
+  const groups: ChatMessageGroup[] = [];
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    const next = messages[index + 1];
+    if (message.role === 'user' && next?.role === 'assistant' && next.requestId) {
+      groups.push({ requestId: next.requestId, createdAt: message.createdAt, messages: [message, next] });
+      index++;
+    } else {
+      groups.push({ requestId: message.requestId, createdAt: message.createdAt, messages: [message] });
+    }
+  }
+  return groups;
+};
+
+const mergeRecentDialogue = (current: ChatMessage[], requests: CodexRequest[], requestIdsToAdd: Set<number>): ChatMessage[] => {
+  const groups = groupConversationMessages(current);
+  const groupByRequestId = new Map(groups.filter((group) => group.requestId).map((group) => [group.requestId, group]));
+  const requestById = new Map(requests.map((request) => [request.id, request]));
+  for (const restored of groupConversationMessages(restoreConversationFromRequests(requests))) {
+    const requestId = restored.requestId!;
+    const existing = groupByRequestId.get(requestId);
+    if (existing) {
+      existing.createdAt = restored.createdAt;
+      existing.messages = existing.messages.map((message) => {
+        const updated = restored.messages.find((candidate) => candidate.role === message.role);
+        const request = requestById.get(requestId)!;
+        if (!updated || (message.role === 'user' && !request.userMessage?.trim())) return message;
+        // An older polling response must not move a completed request back into the queue.
+        if (message.status && isTerminalStatus(message.status) && updated.status && !isTerminalStatus(updated.status)) return message;
+        const next = { ...updated, id: message.id, createdAt: message.role === 'assistant'
+          ? resolveAssistantMessageTimestamp(request, message.createdAt) : updated.createdAt };
+        return Object.keys(next).every((key) => next[key as keyof ChatMessage] === message[key as keyof ChatMessage]) ? message : next;
+      });
+    } else if (requestIdsToAdd.has(requestId)) {
+      groups.push(restored);
+    }
+  }
+  const merged = groups
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      || (left.requestId ?? 0) - (right.requestId ?? 0))
+    .flatMap((group) => group.messages);
+  return merged.length === current.length && merged.every((message, index) => message === current[index]) ? current : merged;
+};
+
+const recentVisibleConversation = (messages: ChatMessage[], recentRequestIds: Set<number> | null): ChatMessage[] => {
+  const groups = groupConversationMessages(messages)
+    .filter((group) => !recentRequestIds || !group.requestId || recentRequestIds.has(group.requestId));
+  const requestGroups = groups.filter((group) => group.requestId);
+  if (requestGroups.length === 0) return groups.flatMap((group) => group.messages).slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
+  const firstVisibleGroup = requestGroups[Math.max(0, requestGroups.length - MAX_VISIBLE_CONVERSATION_REQUESTS)];
+  return groups.slice(groups.indexOf(firstVisibleGroup)).flatMap((group) => group.messages);
+};
 
 const filterPromptHistoryByEnvironment = (messages: ChatMessage[], environment: string): ChatMessage[] => {
   const normalizedEnvironment = environment.trim();
@@ -1688,6 +1748,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [deviceLogin, setDeviceLogin] = useState<DeviceLoginState | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const [conversation, setConversation] = useState<ChatMessage[]>(() => loadPersistedChatConversation(config.profile));
+  const [recentDialogueError, setRecentDialogueError] = useState<string | null>(null);
+  const [recentDialogueRequestIds, setRecentDialogueRequestIds] = useState<Set<number> | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const [pendingPrRequest, setPendingPrRequest] = useState<PendingPrRequest | null>(() => loadPendingPrRequest(config.profile));
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
@@ -1711,7 +1773,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [readCommentIds, setReadCommentIds] = useState<Set<string>>(() => loadReadCommentIds(config.profile));
   const [hiddenRequestIds, setHiddenRequestIds] = useState<Set<number>>(() => loadHiddenRequestIds(config.profile));
   const conversationPollInFlight = useRef(false);
-  const conversationHydrationAttemptedRef = useRef(conversation.length > 0);
+  const hydratedConversationRequestIdsRef = useRef(new Set<number>());
 
   useEffect(() => {
     if (pendingPrRequest) {
@@ -1858,15 +1920,25 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     if (refreshQueue) setQueueRefreshKey(value => value + 1);
     setRequestsLoading(true);
     try {
-      const [response, openBatchResponse] = await Promise.all([
+      const [response, openBatchResponse, recentDialogueResponse] = await Promise.all([
         client.get('/codex/requests', { params: { page: 0, size: 20, profile: config.profile } }),
         selectedEnvironment
           ? client.get('/codex/requests/open-batch', { params: { environment: selectedEnvironment, profile: config.profile } })
               .catch(() => ({ data: [] }))
-          : Promise.resolve({ data: [] })
+          : Promise.resolve({ data: [] }),
+        client.get('/codex/requests/recent-dialogue', { params: { profile: config.profile }, timeout: 10_000 })
+          .then((result) => {
+            setRecentDialogueError(null);
+            return result;
+          })
+          .catch(() => {
+            setRecentDialogueError('Não foi possível atualizar as 10 solicitações mais recentes. O diálogo já carregado foi preservado.');
+            return { data: null };
+          })
       ]);
       const parsed = parseCodexRequests(response.data).filter((item) => item.profile === config.profile);
       const openBatch = parseCodexRequests(openBatchResponse.data).filter((item) => item.profile === config.profile);
+      const recentDialogue = parseCodexRequests(recentDialogueResponse.data).filter((item) => item.profile === config.profile);
       let nextRequests = combineCodexRequestLists(parsed, openBatch);
       const activeRequests = parsed.filter((item) => !isTerminalStatus(item.status) && item.externalId);
       if (activeRequests.length > 0) {
@@ -1883,12 +1955,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       }
 
       setRequests((current) => mergeCodexRequestList(current, nextRequests));
-      if (!conversationHydrationAttemptedRef.current) {
-        conversationHydrationAttemptedRef.current = true;
-        const restoredConversation = restoreConversationFromRequests(nextRequests);
-        if (restoredConversation.length > 0) {
-          setConversation((current) => current.length > 0 ? current : restoredConversation);
-        }
+      if (recentDialogueResponse.data !== null) {
+        setRecentDialogueRequestIds(new Set(recentDialogue.map((request) => request.id)));
+        const requestIdsToAdd = new Set(recentDialogue
+          .filter((request) => !hydratedConversationRequestIdsRef.current.has(request.id))
+          .map((request) => request.id));
+        recentDialogue.forEach((request) => hydratedConversationRequestIdsRef.current.add(request.id));
+        setConversation((current) => mergeRecentDialogue(current, recentDialogue, requestIdsToAdd));
       }
       const runningRequest = nextRequests.find((item) => item.status === 'RUNNING' && Number.isFinite(item.totalTokens));
       if (!runningRequest || runningRequest.totalTokens === undefined) {
@@ -2373,7 +2446,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     });
     return requestIds.size;
   }, [conversation, hiddenRequestIds]);
-  const visibleConversation = productFilteredConversationPool.slice(-MAX_VISIBLE_CONVERSATION_MESSAGES);
+  const visibleConversation = recentVisibleConversation(productFilteredConversationPool, recentDialogueRequestIds);
   const hiddenConversationMessages = Math.max(0, productFilteredConversationPool.length - visibleConversation.length);
   const firstUnreadModelResponseId = useMemo(() => {
     if (!hasResponseReadControls) {
@@ -2387,12 +2460,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     );
     return firstUnreadMessage?.id ?? null;
   }, [hasResponseReadControls, readCommentIds, technicalChat, visibleConversation]);
-  const activeConversationRequestCount = useMemo(() => new Set(conversation
-    .filter((message) => message.role === 'assistant'
-      && message.requestId
-      && message.status
-      && !isTerminalStatus(message.status))
-    .map((message) => message.requestId as number)).size, [conversation]);
+  const activeConversationRequestCount = useMemo(() => new Set([
+    ...conversation.filter((message) => message.role === 'assistant'
+      && message.requestId && message.status && !isTerminalStatus(message.status))
+      .map((message) => message.requestId as number),
+    ...requests.filter((request) => !isTerminalStatus(request.status)).map((request) => request.id)
+  ]).size, [conversation, requests]);
   const requestEnvironmentById = useMemo(
     () => new Map(requests.map((item) => [item.id, item.environment])),
     [requests]
@@ -2558,17 +2631,22 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       if (created) {
         const createdContent = isTerminalStatus(created.status) ? extractAssistantContent(created) : `Aguardando resposta do modelo... (${formatStatus(created.status)})`;
         setPrResult(null);
-        setConversation((current) => [...current, {
-          id: `${Date.now()}-assistant`,
-          role: 'assistant',
-          content: createdContent,
-          requestId: created.id,
-          environment: created.environment,
-          model: created.model,
-          reasoningEffort: created.reasoningEffort,
-          status: created.status,
-          createdAt: resolveAssistantMessageTimestamp(created)
-        }]);
+        setConversation((current) => {
+          // A concurrent refresh may have restored this accepted request before POST returns.
+          const groups = groupConversationMessages(current);
+          const existingAssistant = current.find((message) => message.role === 'assistant' && message.requestId === created.id);
+          const assistantMessage: ChatMessage = existingAssistant?.status && isTerminalStatus(existingAssistant.status) && !isTerminalStatus(created.status)
+            ? existingAssistant
+            : {
+              id: existingAssistant?.id ?? `${Date.now()}-assistant`, role: 'assistant', content: createdContent,
+              requestId: created.id, environment: created.environment, model: created.model,
+              reasoningEffort: created.reasoningEffort, status: created.status,
+              createdAt: resolveAssistantMessageTimestamp(created, existingAssistant?.createdAt)
+            };
+          const remaining = groups.filter((group) => group.requestId !== created.id)
+            .flatMap((group) => group.messages).filter((message) => message.id !== userMessage.id);
+          return [...remaining, { ...userMessage, createdAt: created.createdAt || userMessage.createdAt }, assistantMessage];
+        });
       }
       setPrompt('');
       setFileAttachments([]);
@@ -3279,10 +3357,18 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             O próximo envio incluirá essa conversa salva no prompt do modelo; o diálogo antigo não precisa ser renderizado na tela.
           </p> : <p className="mt-2 text-xs text-slate-500">Salve apenas os diálogos que precisar retomar depois.</p>}
         </div>
-        {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <span>O diálogo carrega as 10 solicitações mais recentes deste perfil, inclusive as feitas em outro computador.</span>
+          <button type="button" onClick={() => { void loadRequests(false).catch((err: Error) => setError(err.message)); }}
+            disabled={requestsLoading} className="rounded-md border border-slate-300 px-3 py-2 font-medium disabled:opacity-50 dark:border-slate-700">
+            Atualizar diálogo
+          </button>
+        </div>
+        {recentDialogueError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{recentDialogueError}</p> : null}
+        {conversation.length > 0 ? <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40" aria-label="Diálogo recente">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/60">
             <p className="min-w-0 flex-1">
-              Exibimos somente as últimas {MAX_VISIBLE_CONVERSATION_MESSAGES} mensagens para evitar peso no navegador. Em outro computador, o diálogo recente é restaurado pelo histórico de solicitações do servidor; ao salvar, a conversa completa da sessão é preservada{hiddenConversationMessages > 0 ? ` (${hiddenConversationMessages} mensagem(ns) antiga(s) fora do recorte).` : '.'}
+              Exibimos as últimas {MAX_VISIBLE_CONVERSATION_REQUESTS} solicitações com mensagem e resposta. Os filtros e as solicitações retiradas da tela continuam respeitados; ao salvar, a conversa completa da sessão é preservada{hiddenConversationMessages > 0 ? ` (${hiddenConversationMessages} mensagem(ns) antiga(s) fora do recorte).` : '.'}
             </p>
             {showProductSelector && conversationProductNames.length > 0 ? <label className="flex shrink-0 items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
               <span>Filtrar diálogo por produto</span>

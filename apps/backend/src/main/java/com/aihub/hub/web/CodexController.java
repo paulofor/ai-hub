@@ -10,6 +10,7 @@ import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexDialogueRequest;
 import com.aihub.hub.dto.CodexQueueSnapshot;
 import com.aihub.hub.dto.CodexSalesImpactRequest;
 import com.aihub.hub.dto.RateCodexRequest;
@@ -107,6 +108,12 @@ public class CodexController {
     public ResponseEntity<CodexQueueSnapshot> queue(@RequestParam String profile) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
             .body(codexRequestService.queue(resolveProfileParam(profile)));
+    }
+
+    @GetMapping("/recent-dialogue")
+    public ResponseEntity<List<CodexDialogueRequest>> recentDialogue(@RequestParam String profile) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+            .body(codexRequestService.recentDialogue(resolveProfileParam(profile)));
     }
 
     @GetMapping("/open-batch")

@@ -14,6 +14,7 @@ import com.aihub.hub.domain.ResponseRecord;
 import com.aihub.hub.dto.CreateCodexRequest;
 import com.aihub.hub.dto.CodexDashboardMetrics;
 import com.aihub.hub.dto.CodexRequestSummary;
+import com.aihub.hub.dto.CodexDialogueRequest;
 import com.aihub.hub.dto.CodexQueueSnapshot;
 import com.aihub.hub.dto.CodexTokenRankingItem;
 import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
@@ -414,6 +415,14 @@ public class CodexRequestService {
         List<CodexRequest> requests = codexRequestRepository.findAllByOrderByCreatedAtDesc();
         applyInteractionCounts(requests);
         return requests;
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodexDialogueRequest> recentDialogue(CodexIntegrationProfile profile) {
+        if (profile == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o perfil do diálogo.");
+        }
+        return codexRequestRepository.findRecentDialogue(profile, PageRequest.of(0, 10));
     }
 
     @Transactional(readOnly = true)

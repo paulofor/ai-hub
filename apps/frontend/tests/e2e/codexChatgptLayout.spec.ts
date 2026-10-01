@@ -39,8 +39,12 @@ async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) 
         const created = { ...item(profile, 990102, 'PENDING', ''), ...payload };
         requests.unshift(created);
         json = created;
-      } else json = { content: requests, totalPages: 1, totalElements: requests.length };
+      } else json = { content: requests.map(row => ({ ...row, userMessage: undefined, responseText: undefined })),
+        totalPages: 1, totalElements: requests.length };
     }
+    if (path === '/api/codex/requests/recent-dialogue') json = [...requests].sort((a, b) => b.id - a.id).slice(0, 10)
+      .map(({ id, environment, model, reasoningEffort, profile, status, userMessage, responseText, createdAt, finishedAt }) =>
+        ({ id, environment, model, reasoningEffort, profile, status, userMessage, responseText, createdAt, finishedAt }));
     if (path === '/api/codex/requests/open-batch') json = requests;
     if (path === '/api/codex/requests/queue') json = { profile, updatedAt: timestamp, requests: requests
       .filter(row => row.status === 'PENDING' || row.status === 'RUNNING')
