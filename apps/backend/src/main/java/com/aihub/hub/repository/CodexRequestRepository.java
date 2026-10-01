@@ -3,6 +3,7 @@ package com.aihub.hub.repository;
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
 import com.aihub.hub.domain.CodexRequestStatus;
+import com.aihub.hub.domain.CodexReasoningEffort;
 import com.aihub.hub.dto.CodexRequestSummary;
 import com.aihub.hub.dto.CodexProcessingTimeRankingItem;
 import com.aihub.hub.dto.CodexTokenRankingItem;
@@ -25,6 +26,21 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         CodexIntegrationProfile getProfile();
         Instant getCreatedAt();
     }
+
+    // Read the durable queue without loading prompts, logs, attachments or responses.
+    interface ActiveQueueRequestView {
+        Long getId();
+        String getEnvironment();
+        String getModel();
+        CodexReasoningEffort getReasoningEffort();
+        CodexRequestStatus getStatus();
+        String getUserMessage();
+        Instant getCreatedAt();
+        Instant getStartedAt();
+    }
+
+    List<ActiveQueueRequestView> findByProfileAndStatusInOrderByCreatedAtAscIdAsc(
+        CodexIntegrationProfile profile, Collection<CodexRequestStatus> statuses);
 
     List<CodexRequest> findAllByOrderByCreatedAtDesc();
 
