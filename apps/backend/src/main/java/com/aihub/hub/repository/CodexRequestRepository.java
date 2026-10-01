@@ -65,9 +65,11 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         from CodexRequest cr
         left join cr.problem problem
         left join cr.processSnapshot process
+        where (:profile is null or cr.profile = :profile)
         order by cr.createdAt desc
         """)
-    Page<CodexRequestSummary> findSummariesByOrderByCreatedAtDesc(Pageable pageable);
+    Page<CodexRequestSummary> findSummariesByProfileOrderByCreatedAtDesc(
+        @Param("profile") CodexIntegrationProfile profile, Pageable pageable);
 
     @Query("""
         select new com.aihub.hub.dto.CodexRequestSummary(
@@ -86,9 +88,11 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
         left join cr.problem problem
         left join cr.processSnapshot process
         where cr.rating = :rating
+          and (:profile is null or cr.profile = :profile)
         order by cr.createdAt desc
         """)
-    Page<CodexRequestSummary> findSummariesByRatingOrderByCreatedAtDesc(Integer rating, Pageable pageable);
+    Page<CodexRequestSummary> findSummariesByProfileAndRatingOrderByCreatedAtDesc(
+        @Param("profile") CodexIntegrationProfile profile, @Param("rating") Integer rating, Pageable pageable);
 
     @Query("""
         select new com.aihub.hub.dto.CodexTokenRankingItem(

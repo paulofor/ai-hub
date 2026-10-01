@@ -1859,7 +1859,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     setRequestsLoading(true);
     try {
       const [response, openBatchResponse] = await Promise.all([
-        client.get('/codex/requests', { params: { page: 0, size: 20 } }),
+        client.get('/codex/requests', { params: { page: 0, size: 20, profile: config.profile } }),
         selectedEnvironment
           ? client.get('/codex/requests/open-batch', { params: { environment: selectedEnvironment, profile: config.profile } })
               .catch(() => ({ data: [] }))

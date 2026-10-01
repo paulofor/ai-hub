@@ -77,7 +77,8 @@ public class CodexController {
     @GetMapping
     public Object list(@RequestParam(required = false) Integer page,
                        @RequestParam(required = false) Integer size,
-                       @RequestParam(required = false) Integer rating) {
+                       @RequestParam(required = false) Integer rating,
+                       @RequestParam(required = false) String profile) {
         if (rating != null && (rating < 1 || rating > 5)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rating deve estar entre 1 e 5");
         }
@@ -92,7 +93,8 @@ public class CodexController {
         }
         int resolvedPage = page != null ? page : 0;
         int resolvedSize = size != null ? size : 5;
-        Page<CodexRequestSummary> result = codexRequestService.listPage(resolvedPage, resolvedSize, rating);
+        Page<CodexRequestSummary> result = codexRequestService.listPage(
+            resolvedPage, resolvedSize, rating, profile == null ? null : resolveProfileParam(profile));
         return result;
     }
 
