@@ -30,7 +30,29 @@ test('buckets não são duplicados; payload inválido não vira zero', () => {
   assert.equal(quotaWindows({ ...limits(), rateLimitsByLimitId: { codex: limits().rateLimits, other: { primary: { usedPercent: 3, resetsAt: reset, windowDurationMins: 300 } } } }).length, 2);
   for (const usedPercent of [null, '6', NaN, -1, 101]) assert.deepEqual(quotaWindows({ rateLimits: { secondary: { usedPercent, resetsAt: reset, windowDurationMins: 10080 } } }), []);
 });
-function fixture(outcome: 'success' | 'failure' | 'cancel' | 'thread-failure' | 'unavailable' = 'success') {
+test('usa primeiro evento válido como baseline quando leitura inicial não traz janelas', () => {
+  const usage = measurement();
+  usage.start.windows = [];
+  usage.firstEvent = { capturedAt: new Date().toISOString(), windows: quotaWindows(limits(6)) };
+  finishQuotaUsage(usage, { capturedAt: new Date().toISOString(), accountKey: 'account-test', windows: quotaWindows(limits(8)) });
+  assert.equal(usage.baselineSource, 'first_event');
+  assert.equal(usage.windows[0].consumedPercentagePoints, 2);
+  assert.equal(usage.status, 'estimated');
+});
+test('não usa evento como baseline quando conta ou janela de renovação mudou', () => {
+  for (const incompatibleEnd of [
+    { capturedAt: new Date().toISOString(), accountKey: 'other-account', windows: quotaWindows(limits(8)) },
+    { capturedAt: new Date().toISOString(), accountKey: 'account-test', windows: quotaWindows(limits(8, reset + 86400)) }
+  ]) {
+    const usage = measurement();
+    usage.start.windows = [];
+    usage.firstEvent = { capturedAt: new Date().toISOString(), windows: quotaWindows(limits(6)) };
+    finishQuotaUsage(usage, incompatibleEnd);
+    assert.equal(usage.status, 'unavailable');
+    assert.equal(usage.baselineSource, 'start');
+  }
+});
+function fixture(outcome: 'success' | 'failure' | 'cancel' | 'thread-failure' | 'unavailable' | 'initial-empty' = 'success') {
   const events = new EventEmitter();
   const calls: string[] = [];
   let readCount = 0;
@@ -42,7 +64,9 @@ function fixture(outcome: 'success' | 'failure' | 'cancel' | 'thread-failure' | 
       if (method === 'account/read') return { account: { type: 'chatgpt', email: 'synthetic@sandbox.local', planType: 'plus' } };
       if (method === 'account/rateLimits/read') {
         if (outcome === 'unavailable') throw new Error('SECRET_PROVIDER_ERROR');
-        return limits(++readCount === 1 ? 6 : 8);
+        readCount += 1;
+        if (outcome === 'initial-empty' && readCount === 1) return { rateLimits: {} };
+        return limits(readCount === 1 ? 6 : 8);
       }
       if (method === 'thread/start') {
         if (outcome === 'thread-failure') throw new Error('thread failed');
@@ -65,7 +89,7 @@ function job(profile: SandboxJob['profile']): SandboxJob {
   return { jobId: `quota-test-${profile}`, profile, status: 'RUNNING', taskDescription: 'Synthetic quota test', logs: [], interactions: [], interactionSequence: 0, timeoutCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 }
 for (const profile of ['CHATGPT_CODEX', 'CHATGPT_CODEX_MKT', 'CHATGPT_CODEX_SANDBOX'] as const) {
-  for (const outcome of ['success', 'failure', 'cancel', 'thread-failure', 'unavailable'] as const) {
+  for (const outcome of ['success', 'failure', 'cancel', 'thread-failure', 'unavailable', 'initial-empty'] as const) {
     test(`coleta completa ${profile}: ${outcome}`, async () => {
       const { client, calls, events } = fixture(outcome);
       const task = job(profile);
@@ -76,7 +100,8 @@ for (const profile of ['CHATGPT_CODEX', 'CHATGPT_CODEX_MKT', 'CHATGPT_CODEX_SAND
       assert.equal(calls.filter((method) => method === 'account/rateLimits/read').length, 2);
       assert.equal(calls[1], 'account/rateLimits/read');
       assert.equal(task.quotaUsage?.status, outcome === 'unavailable' ? 'unavailable' : 'estimated');
-      assert.equal(task.quotaUsage?.windows[0]?.consumedPercentagePoints, outcome === 'unavailable' ? undefined : 2);
+      assert.equal(task.quotaUsage?.windows[0]?.consumedPercentagePoints, outcome === 'unavailable' ? undefined : outcome === 'initial-empty' ? 1 : 2);
+      if (outcome === 'initial-empty') assert.equal(task.quotaUsage?.baselineSource, 'first_event');
       assert.ok(task.quotaUsage?.end);
       assert.equal(events.eventNames().length, 0);
       const payload = buildJobPayload(task);

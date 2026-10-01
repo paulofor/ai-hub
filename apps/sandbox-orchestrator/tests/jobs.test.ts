@@ -12,7 +12,6 @@ import {
   DEFAULT_CODEX_REASONING_EFFORT,
   DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS,
   DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS,
-  DEFAULT_CODEX_TURN_TIMEOUT_MS,
   dockerHomologationProjectName,
   openAIClientConfigForTests,
   SandboxJobProcessor,
@@ -125,8 +124,7 @@ test('job payload exposes the running wait in the matching maximum without leaki
   assert.equal(payload.activeWaitStartedAt, undefined);
 });
 
-test('uses three-day total timeout with adaptive inactivity defaults for Codex requests', async () => {
-  assert.equal(DEFAULT_CODEX_TURN_TIMEOUT_MS, 259_200_000);
+test('uses adaptive inactivity guards without a total timeout for Codex requests', async () => {
   assert.equal(DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS, 2_700_000);
   assert.equal(DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS, 7_200_000);
   assert.equal(DEFAULT_CODEX_REASONING_EFFORT, 'high');
@@ -135,7 +133,7 @@ test('uses three-day total timeout with adaptive inactivity defaults for Codex r
     fs.readFile('README.md', 'utf8'),
     fs.readFile('../../.github/workflows/ci.yml', 'utf8'),
   ]);
-  assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=259200000$/m);
+  assert.doesNotMatch(environmentExample, /^CODEX_APP_SERVER_TURN_TIMEOUT_MS=/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=2700000$/m);
   assert.match(environmentExample, /^CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS=7200000$/m);
@@ -143,14 +141,11 @@ test('uses three-day total timeout with adaptive inactivity defaults for Codex r
   assert.match(readme, /CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS[^\n]+`2700000`/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_ACTIVE_ITEM_TIMEOUT_MS[^\n]+`7200000`/);
   assert.match(readme, /CODEX_APP_SERVER_REASONING_EFFORT[^\n]+`high`/);
-  assert.match(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS[^\n]+`259200000` \(3 dias\)/);
+  assert.doesNotMatch(readme, /CODEX_APP_SERVER_TURN_TIMEOUT_MS/);
   assert.match(readme, /CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS[^\n]+`300000` \(5 minutos\)/);
-  assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=259200000'/);
+  assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_TURN_TIMEOUT_MS=\/d' \.env/);
+  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=\d+'/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_START_REQUEST_TIMEOUT_MS=300000'/);
-  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=21600000'/);
-  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000'/);
-  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=43200000'/);
-  assert.doesNotMatch(deploymentWorkflow, /'CODEX_APP_SERVER_TURN_TIMEOUT_MS=604800000'/);
   assert.match(deploymentWorkflow, /sed -i '\/\^CODEX_APP_SERVER_REASONING_EFFORT=\/d' \.env/);
   assert.match(deploymentWorkflow, /'CODEX_APP_SERVER_REASONING_EFFORT=high'/);
 });
@@ -400,7 +395,7 @@ test('imagem da sandbox instala ferramentas de execução e validação do runne
   assert.match(dockerfile, /chmod \+x \/usr\/local\/bin\/sandbox-media-player/);
   assert.match(dockerfile, /ACTIONLINT_VERSION=1\.7\.12/);
   assert.match(dockerfile, /GH_CLI_VERSION=2\.101\.0/);
-  assert.match(dockerfile, /CODEX_VERSION=0\.153\.4/);
+  assert.match(dockerfile, /CODEX_VERSION=0\.159\.2/);
   assert.match(dockerfile, /PLAYWRIGHT_VERSION=1\.54\.2/);
   assert.match(dockerfile, /rhysd\/actionlint\/releases\/download\/v\$\{ACTIONLINT_VERSION\}/);
   assert.match(dockerfile, /actionlint --version/);
@@ -1144,6 +1139,10 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('Não inclua o rótulo "Objetivo: ..." nem outro campo de objetivo'));
     assert.ok(input?.[0]?.text?.includes('Não exponha raciocínio interno'));
     assert.ok(input?.[0]?.text?.includes('Regra obrigatória para todos os perfis'));
+    assert.ok(input?.[0]?.text?.includes('examine o harness dos agentes do sistema trabalhado'));
+    assert.ok(input?.[0]?.text?.includes('AGENTS.md, prompts e contratos'));
+    assert.ok(input?.[0]?.text?.includes('quando houver uma melhoria segura, proporcional e relacionada à solicitação, implemente-a e valide-a'));
+    assert.ok(input?.[0]?.text?.includes('Não crie infraestrutura especulativa'));
     assert.ok(input?.[0]?.text?.includes('já autoriza todas as correções locais causalmente relacionadas'));
     assert.ok(input?.[0]?.text?.includes('não interrompa a execução para pedir nova autorização a cada defeito descoberto'));
     assert.ok(input?.[0]?.text?.includes('simule-os com dependências locais ou test doubles e resolva um por vez'));
@@ -3300,6 +3299,10 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /não apresente a ativação de Docker local como melhoria necessária/i);
     assert.match(promptText, /Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução/i);
     assert.match(promptText, /Regra obrigatória para todos os perfis/i);
+    assert.match(promptText, /examine o harness dos agentes do sistema trabalhado/i);
+    assert.match(promptText, /AGENTS\.md, prompts e contratos/i);
+    assert.match(promptText, /quando houver uma melhoria segura, proporcional e relacionada à solicitação, implemente-a e valide-a/i);
+    assert.match(promptText, /Não crie infraestrutura especulativa/i);
     assertGithubDeliveryInstruction(promptText);
     assert.match(promptText, /já autoriza todas as correções locais causalmente relacionadas/i);
     assert.match(promptText, /não interrompa a execução para pedir nova autorização a cada defeito descoberto/i);

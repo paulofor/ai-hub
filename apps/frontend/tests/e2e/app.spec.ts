@@ -915,6 +915,8 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   await expect(operationalDayCard.getByText('últimas 100/100')).toBeVisible();
   await expect(operationalDayCard.locator('svg circle')).toHaveCount(95);
   await expect(operationalDayCard).toHaveCSS('position', 'fixed');
+  const closeOperationalDayCard = operationalDayCard.getByRole('button', { name: 'Fechar quadro de indicadores' });
+  await expect(closeOperationalDayCard).toBeVisible();
 
   const cardBoxBeforeScroll = await operationalDayCard.evaluate((element) => {
     const box = element.getBoundingClientRect();
@@ -929,6 +931,8 @@ test('marks a marketing comment as read and keeps the choice after reload', asyn
   });
   expect(Math.abs(cardBoxAfterScroll.top - cardBoxBeforeScroll.top)).toBeLessThan(1);
   expect(Math.abs(cardBoxAfterScroll.right - cardBoxBeforeScroll.right)).toBeLessThan(1);
+  await closeOperationalDayCard.click();
+  await expect(operationalDayCard).toHaveCount(0);
 
   const commentCard = page.getByText('Comentário que precisa ser acompanhado.').locator('xpath=ancestor::section[1]');
   const readCheckbox = page.getByRole('checkbox', { name: 'Lido' });
@@ -1053,6 +1057,60 @@ test('dismisses a read marketing request from the dialog and restores it', async
   await page.getByRole('button', { name: 'Mostrar novamente' }).click();
   await expect(page.getByText('Analise a campanha de remarketing já revisada.')).toBeVisible();
   await expect(page.getByText('Comentário lido que pode sair da tela.')).toBeVisible();
+});
+
+test('filters the marketing dialog by product', async ({ page }, testInfo) => {
+  await page.route('**/api/account/read', (route) => route.fulfill({
+    json: { connected: true, status: 'connected', executable: true, authMode: 'chatgpt', planType: 'plus' }
+  }));
+  await page.route('**/api/environments', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
+  await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ modelName: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' }] }));
+  await page.route('**/api/codex/requests/metrics?**', (route) => route.fulfill({
+    json: { day: { startsAt: '2026-09-28T05:00:00Z', requestCount: 2, interactionCount: 2, durationMs: 0 } }
+  }));
+  await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/prompt-hints?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/products', (route) => route.fulfill({ json: [{ name: 'Produto Alfa' }, { name: 'Produto Beta' }] }));
+  await page.route('**/api/codex/requests/open-batch?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests?**', (route) => route.fulfill({ json: { content: [{
+    id: 1201,
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'COMPLETED',
+    environment: 'produção',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'high',
+    productName: 'Produto Alfa',
+    userMessage: 'Pergunta exclusiva do produto Alfa.',
+    responseText: 'Resposta exclusiva do produto Alfa.',
+    createdAt: '2026-09-28T12:00:00Z',
+    finishedAt: '2026-09-28T12:01:00Z'
+  }, {
+    id: 1202,
+    profile: 'CHATGPT_CODEX_MKT',
+    status: 'COMPLETED',
+    environment: 'produção',
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'high',
+    productName: 'Produto Beta',
+    userMessage: 'Pergunta exclusiva do produto Beta.',
+    responseText: 'Resposta exclusiva do produto Beta.',
+    createdAt: '2026-09-28T13:00:00Z',
+    finishedAt: '2026-09-28T13:01:00Z'
+  }] } }));
+
+  await page.goto('/codex-chatgpt-mkt');
+
+  await expect(page.getByText('Pergunta exclusiva do produto Alfa.')).toBeVisible();
+  await expect(page.getByText('Pergunta exclusiva do produto Beta.')).toBeVisible();
+  const productFilter = page.getByRole('combobox', { name: 'Filtrar diálogo por produto' });
+  await expect(productFilter).toBeVisible();
+  await expect(productFilter.locator('option')).toHaveText(['Todos os produtos', 'Produto Alfa', 'Produto Beta']);
+  await productFilter.selectOption('Produto Alfa');
+  await expect(page.getByText('Pergunta exclusiva do produto Alfa.')).toBeVisible();
+  await expect(page.getByText('Resposta exclusiva do produto Alfa.')).toBeVisible();
+  await expect(page.getByText('Pergunta exclusiva do produto Beta.')).toHaveCount(0);
+  await expect(page.getByText('Resposta exclusiva do produto Beta.')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('dialog-product-filter.png'), fullPage: true });
 });
 
 test('dismisses failed and cancelled marketing requests without requiring a structured response', async ({ page }) => {

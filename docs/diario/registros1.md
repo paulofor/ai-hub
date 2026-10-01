@@ -4320,3 +4320,79 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Alternativas avaliadas: (1) remover a instrução sem substituição elimina o rótulo, mas deixa o contrato de segurança do resumo menos explícito; (2) substituir a regra por orientação de texto natural que veda campos de objetivo e reserva-os ao `update_plan`; (3) alterar somente a interface. A alternativa 2 foi escolhida por eliminar a causa nos dois caminhos de modelo, preservar a proteção contra exposição de conteúdo interno e não alterar o contrato visual do checklist.
 - Implementação: a instrução comum agora pede descrições naturais das ações, proíbe `Objetivo: ...` e outros campos de objetivo no resumo automático, e reserva objetivos concretos exclusivamente ao checklist de `update_plan`. Os testes de contratos e a documentação foram atualizados para esse comportamento.
 - Validação local: `git diff --check` e `npm test` em `apps/sandbox-orchestrator` passaram; a suíte compilou o TypeScript e executou 191 testes, todos aprovados.
+
+## 2026-09-28 — Restauração do diálogo em outro computador
+
+- Solicitação recebida: fazer as mensagens antigas do diálogo aparecerem quando a tela é aberta em outro computador.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A conversa ativa era inicializada e atualizada exclusivamente no `localStorage` do navegador. Embora cada solicitação já fosse persistida no backend com a mensagem original do usuário, resposta, status e metadados, a tela usava esses registros somente no histórico geral e nunca os convertia de volta no diálogo quando não encontrava o cache local. Por isso, trocar de computador produzia um diálogo vazio.
+- Correção na origem: na primeira carga sem conversa local, a tela agora reconstrói o diálogo a partir das solicitações recentes devolvidas pelo servidor, em ordem cronológica, preservando os IDs das solicitações, ambiente, modelo, esforço de raciocínio, status e horários. A hidratação ocorre somente uma vez e não substitui mensagens que tenham surgido localmente durante a requisição, evitando corrida com um novo envio.
+- Comunicação na interface: o aviso do diálogo informa que as mensagens recentes são restauradas pelo histórico do servidor em outro computador e mantém explícito o limite visual das últimas 20 mensagens.
+- Validação local: o build de produção do frontend passou (`npm run build`).
+
+## 2026-09-28 — Filtro do diálogo por produto
+
+- Solicitação recebida: disponibilizar na tela de diálogo de marketing uma forma de filtrar as mensagens por produto.
+- Pergunta explícita de causa raiz: **“por que esse filtro não existia?”** O produto já era persistido em cada solicitação e exibido no cartão da resposta, mas a coleção visual do diálogo era filtrada apenas por solicitações ocultadas e pelo limite das 20 mensagens mais recentes. Não havia estado de seleção nem associação do par pergunta/resposta ao `productName` da solicitação para limitar a renderização.
+- Correção na origem da apresentação: a tela agora deriva os produtos efetivamente presentes no diálogo a partir das solicitações vinculadas, oferece a opção `Todos os produtos` e filtra conjuntamente a mensagem do usuário e a resposta do modelo pelo produto selecionado. O filtro afeta somente a visualização e não remove mensagens nem altera o contexto enviado ao modelo.
+- Cobertura: adicionado cenário E2E com dois produtos que valida as opções em ordem, seleciona um produto, mantém seu par de mensagens visível, oculta o outro par e gera uma captura visual do resultado.
+- Validação local: `npm run build`, `npm run lint` e o teste Playwright direcionado passaram.
+
+## 2026-09-29 — Remoção do timeout total das solicitações Codex
+
+- Solicitação recebida: excluir o timeout de solicitação, pois esse limite não é mais necessário.
+- Pergunta explícita de causa raiz: **“por que esse limite ainda existia?”** O `sandbox-orchestrator` mantinha um limite total legado de três dias para cada turno do Codex App Server por meio de `CODEX_APP_SERVER_TURN_TIMEOUT_MS`. Mesmo com atividade válida e progresso contínuo, ao ultrapassar essa duração o laço `waitForCodexTurn` encerrava a solicitação com `CODEX_TURN_INTERRUPTED`. A proteção permaneceu no código, na configuração de exemplo e no deploy porque havia sido criada antes das proteções adaptativas de inatividade.
+- Correção na origem: removidos a constante, a propriedade, a leitura da variável e a condição de interrupção por duração total. Uma solicitação ativa agora pode continuar sem prazo máximo global; permanecem somente as proteções de inatividade (`CODEX_TURN_NO_ACTIVITY` e `CODEX_TURN_STALLED`), que detectam perda real de progresso, além dos timeouts técnicos isolados das ferramentas e do handshake `turn/start`.
+- Deploy e documentação: a variável foi removida do exemplo e da tabela do orquestrador. O workflow continua apagando `CODEX_APP_SERVER_TURN_TIMEOUT_MS` do `.env` da VPS, mas não grava outro valor, garantindo que overrides legados também desapareçam na publicação.
+- Cobertura: o teste de contrato agora exige ausência do timeout total no runtime, exemplo, documentação e atribuições do deploy, preservando os limites adaptativos de inatividade.
+- Validação local: build e teste direcionado passaram. Após disponibilizar o binário `shellcheck` exigido pelo runner de testes, a suíte completa compilou e executou 191 testes, todos aprovados.
+
+## 2026-09-29 — Melhoria contínua do harness de agentes
+
+- Solicitação recebida: incentivar o AI Hub a tentar aprimorar, em cada solicitação, o harness dos agentes dos sistemas trabalhados.
+- Pergunta explícita de causa raiz: **“por que esse aprimoramento não acontecia de forma sistemática?”** Os prompts operacionais exigiam investigação, correção causal, validação local e entrega, mas não pediam que o agente examinasse o próprio ambiente agentic do sistema-alvo. Assim, melhorias percebidas em instruções, prompts, tools, skills, fixtures, evals, observabilidade, recuperação e feedback dependiam de iniciativa ocasional do modelo e normalmente ficavam fora da entrega.
+- Correção na origem: criada uma instrução compartilhada por todos os perfis e pelos dois caminhos de execução, Codex App Server e Responses API. Em toda solicitação, o agente deve avaliar o harness existente, identificar uma lacuna concreta e implementar uma melhoria segura, proporcional, relacionada e validável quando houver evidência.
+- Proteção de escopo: a instrução proíbe infraestrutura especulativa e duplicação de mecanismos existentes. Quando não houver melhoria pertinente, o agente deve registrar que avaliou a oportunidade e preservar o foco da solicitação, em vez de produzir alterações artificiais.
+- Documentação e cobertura: o README descreve a política e os testes de contrato verificam a injeção da instrução tanto no modo MKT via App Server quanto no runner da Responses API.
+- Validação local: `npm test` compilou o orquestrador e aprovou os 191 testes.
+
+## 2026-09-30 — Verificação da versão do Codex
+
+- Solicitação recebida: identificar a versão do Codex usada pelo AI Hub e confirmar se é a mais recente.
+- Evidência local: a imagem do `sandbox-orchestrator` fixa `CODEX_VERSION=0.153.4`, instala globalmente `@openai/codex@${CODEX_VERSION}` e executa `codex --version` durante o build. Um teste de contrato também exige literalmente a versão `0.153.4`.
+- Verificação de atualização: `npm view @openai/codex version` retornou `0.159.2` em 30/09/2026. Portanto, a versão configurada no repositório não é a mais recente publicada no npm; está seis releases patch atrás (`0.153.4` → `0.159.2`).
+- Escopo: esta verificação trata do Codex CLI/App Server embarcado na imagem, não do pacote SDK `openai` usado separadamente pelo orquestrador nem do modelo escolhido em cada solicitação. Nenhuma versão foi atualizada nesta etapa.
+
+## 2026-09-30 — Atualização do Codex CLI/App Server para 0.159.2
+
+- Solicitação recebida: atualizar o Codex usado pelo AI Hub para a versão estável mais recente.
+- Pergunta explícita de causa raiz: **“por que o AI Hub ainda usava uma versão anterior?”** A imagem do `sandbox-orchestrator` fixa deliberadamente o pacote por `CODEX_VERSION`, e o teste de contrato repetia o valor `0.153.4`; portanto novas publicações do npm não são adotadas automaticamente. Essa fixação evita upgrades imprevisíveis, mas exige uma alteração versionada para cada atualização.
+- Verificação da origem: em 30/09/2026, `npm view @openai/codex version` e o dist-tag `latest` retornaram `0.159.2`; versões `0.160.0-alpha.*` existem apenas no canal alpha e não foram tratadas como estáveis.
+- Atualização aplicada: o argumento `CODEX_VERSION` da imagem e seu teste de contrato passaram de `0.153.4` para `0.159.2`. A instalação continua pinada, reprodutível e validada por `codex --version` durante o build da imagem.
+- Validação local: a instalação isolada de `@openai/codex@0.159.2` respondeu `codex-cli 0.159.2`; o build TypeScript, o contrato do Dockerfile e os 11 testes do cliente Codex App Server passaram.
+
+## 2026-09-30 — Diagnóstico da cota semanal ausente na solicitação 3114
+
+- Solicitação recebida: explicar por que a solicitação 3114 ficou sem medição de cota semanal.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** O registro público da 3114 contém `quotaUsage.status=unavailable`: a leitura inicial, capturada em `2026-09-28T15:36:46.186Z`, identificou a conta, mas retornou `windows=[]`. Durante a execução foram observados 6.035 eventos de cota, e tanto o último evento quanto a leitura final continham a janela primária semanal (`10080` minutos) com `usedPercent=63`, porém não havia um valor inicial equivalente do qual subtrair.
+- Cadeia causal: `finishQuotaUsage` constrói o resultado exclusivamente percorrendo `usage.start.windows`. Como a coleção inicial estava vazia, a janela encontrada posteriormente nunca entrou em `usage.windows`; sem qualquer `consumedPercentagePoints`, o estado final tornou-se `unavailable`. O frontend, por sua vez, mostra `Indisponível` quando não existe uma janela semanal calculada.
+- Por que não é correto preencher retroativamente: 63% é apenas a leitura final, não o consumo da solicitação. Sem baseline inicial, atribuir os 63 pontos à 3114 inventaria consumo e poderia incluir uso anterior da conta. O registro também marca `concurrentObserved=false`, então concorrência interna não causou esta ausência.
+- Lacuna do harness: o observador preserva somente `lastEvent`; apesar dos 6.035 eventos, não persiste o primeiro snapshot válido que poderia servir de baseline de recuperação quando `account/rateLimits/read` falha ou volta vazio no início. Nenhuma correção funcional foi aplicada nesta etapa de diagnóstico.
+- Evidências: `GET https://iahub.xyz/api/codex/requests/3114` e inspeção de `apps/sandbox-orchestrator/src/quotaUsage.ts`, `jobProcessor.ts` e `apps/frontend/src/components/CodexQuotaUsage.tsx`.
+
+## 2026-09-30 — Recuperação do baseline de cota pelo primeiro evento válido
+
+- Solicitação recebida: implementar a correção recomendada após o diagnóstico da cota semanal ausente na solicitação 3114.
+- Pergunta explícita de causa raiz: **“por que esse erro aconteceu?”** A leitura inicial podia identificar a conta e ainda retornar `windows=[]`; embora o App Server emitisse janelas válidas em seguida, o observador sobrescrevia somente `lastEvent` e o fechamento calculava deltas exclusivamente a partir de `start.windows`. Assim, toda a telemetria posterior era descartada como baseline e a medição terminava `unavailable`.
+- Correção na origem: o observador agora preserva também o primeiro evento que contenha ao menos uma janela válida. Quando a leitura inicial vier vazia, o fechamento usa esse primeiro evento como baseline somente se as leituras inicial e final identificarem a mesma conta, não houver evento de troca de conta e existir ao menos uma janela final com mesmo identificador, tipo, duração e instante de renovação ainda vigente.
+- Segurança da estimativa: leituras iniciais normais continuam prioritárias; evento inválido ou vazio não vira baseline; conta diferente, conta desconhecida, troca de conta, renovação ou expiração da janela impedem o fallback. O payload registra `baselineSource` como `start` ou `first_event`, permitindo auditar como a estimativa foi obtida sem expor a identidade da conta.
+- Cobertura: testes unitários validam recuperação bem-sucedida, bloqueio por conta incompatível, bloqueio por renovação e o fluxo completo dos três perfis Codex quando `account/rateLimits/read` começa vazio e o primeiro evento válido chega durante o turno.
+- Validação local: o build TypeScript passou e os 33 testes de `quotaUsage.test.ts` foram aprovados.
+
+## 2026-09-30 — Fechamento do quadro flutuante de indicadores
+
+- Solicitação recebida: adicionar, na área inferior esquerda indicada pelo usuário, um botão/ícone para fechar o quadro flutuante de indicadores operacionais.
+- Pergunta explícita de causa raiz: **“por que o quadro não podia ser fechado?”** O cartão era renderizado incondicionalmente como elemento `fixed`; não existia estado de visibilidade nem controle acessível de dispensa. Como consequência, ele permanecia sobre o conteúdo durante toda a navegação e a única forma de removê-lo era sair da tela.
+- Correção na origem: adicionada visibilidade controlada por estado e um botão compacto `×` no rodapé esquerdo do cartão, exatamente ao lado oposto do texto de corte. O controle possui `title` e `aria-label` “Fechar quadro de indicadores”, estados de hover/foco e remove imediatamente o cartão da tela sem afetar métricas ou demais conteúdos.
+- Preservação visual: o ícone usa 16×16 px para manter o quadro dentro do limite de altura existente e o layout continua fixo e responsivo.
+- Cobertura: o E2E existente agora confirma a presença do botão, preserva a verificação de posição durante scroll, aciona o fechamento e exige que o quadro seja removido. A captura visual do teste confirmou o ícone na área solicitada.
+- Validação local: `npm run build`, `npm run lint` e o teste Playwright direcionado passaram.
