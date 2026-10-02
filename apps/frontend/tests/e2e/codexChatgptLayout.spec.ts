@@ -46,9 +46,6 @@ async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) 
       .map(({ id, environment, model, reasoningEffort, profile, status, userMessage, responseText, createdAt, finishedAt }) =>
         ({ id, environment, model, reasoningEffort, profile, status, userMessage, responseText, createdAt, finishedAt }));
     if (path === '/api/codex/requests/open-batch') json = requests;
-    if (path === '/api/codex/requests/queue') json = { profile, updatedAt: timestamp, requests: requests
-      .filter(row => row.status === 'PENDING' || row.status === 'RUNNING')
-      .map((row, index) => ({ ...row, requestTitle: row.userMessage, queuePosition: index + 1 })) };
     if (/^\/api\/codex\/requests\/\d+$/.test(path)) json = requests.find(row => row.id === Number(path.split('/').at(-1)));
     if (path === '/api/codex/requests/metrics') json = {
       day: { startsAt: timestamp, requestCount: 1, interactionCount: 2, durationMs: 1_000 },

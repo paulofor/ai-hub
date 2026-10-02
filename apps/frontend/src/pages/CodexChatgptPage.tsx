@@ -1,6 +1,5 @@
 import { buildPostPrContinuationPrompt, GITHUB_DELIVERY_INSTRUCTION, PRODUCTION_PUBLICATION_INSTRUCTION, CODEX_OPERATIONAL_INSTRUCTION, SANDBOX_OPERATIONAL_INSTRUCTION } from '../lib/deliveryInstructions';
 import { CodexQuotaUsage } from '../components/CodexQuotaUsage';
-import CodexRequestQueue from '../components/CodexRequestQueue';
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
@@ -1715,7 +1714,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [requestsLoading, setRequestsLoading] = useState(false);
-  const [queueRefreshKey, setQueueRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
@@ -1916,8 +1914,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [accountApiAvailable, registerTelemetry]);
 
-  const loadRequests = useCallback(async (refreshQueue = true) => {
-    if (refreshQueue) setQueueRefreshKey(value => value + 1);
+  const loadRequests = useCallback(async () => {
     setRequestsLoading(true);
     try {
       const [response, openBatchResponse, recentDialogueResponse] = await Promise.all([
@@ -2074,7 +2071,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       const nextModels = modelResponse;
       setModels(nextModels);
       setModel((current) => nextModels.some((item) => item.modelName === current) ? current : nextModels[0]?.modelName ?? '');
-      await Promise.all([loadRequests(false), loadSavedConversations(), loadProducts(), loadDailyMetrics()]);
+      await Promise.all([loadRequests(), loadSavedConversations(), loadProducts(), loadDailyMetrics()]);
       registerTelemetry('poll_success', 'Leitura de conta e execuções atualizada com sucesso.');
       setError(null);
     } catch (err) {
@@ -2094,7 +2091,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     let timeoutId: number | undefined;
     const pollRequests = async () => {
       if (document.visibilityState === 'visible') {
-        await loadRequests(false)
+        await loadRequests()
           .then(() => registerTelemetry('poll_success', 'Polling de solicitações concluído.'))
           .catch((err: Error) => registerTelemetry('poll_error', `Falha no polling de solicitações: ${err.message}`));
       }
@@ -3359,7 +3356,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>O diálogo carrega as 10 solicitações mais recentes deste perfil, inclusive as feitas em outro computador.</span>
-          <button type="button" onClick={() => { void loadRequests(false).catch((err: Error) => setError(err.message)); }}
+          <button type="button" onClick={() => { void loadRequests().catch((err: Error) => setError(err.message)); }}
             disabled={requestsLoading} className="rounded-md border border-slate-300 px-3 py-2 font-medium disabled:opacity-50 dark:border-slate-700">
             Atualizar diálogo
           </button>
@@ -3489,7 +3486,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             </article>;
           })}
         </div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500 dark:border-slate-700">A conversa aparecerá aqui após a primeira mensagem.</p>}
-        <CodexRequestQueue profile={config.profile} refreshKey={queueRefreshKey} />
         <div className="grid gap-3 md:grid-cols-3">
           {sandboxOnly ? (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">

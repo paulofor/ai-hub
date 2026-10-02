@@ -57,9 +57,6 @@ async function mockApi(page: Page, state: Server) {
       if (state.failRecent) return route.fulfill({ status: 503, json: { error: 'Falha sintética de consulta' } });
       json = recent.slice(0, 10);
     }
-    if (path === '/api/codex/requests/queue') json = { profile: requestedProfile, updatedAt: timestamp,
-      requests: recent.filter(item => item.status === 'PENDING' || item.status === 'RUNNING')
-        .map((item, index) => ({ ...item, requestTitle: item.userMessage, queuePosition: index + 1 })) };
     if (/^\/api\/codex\/requests\/\d+$/.test(path)) json = state.rows.find(item => item.id === Number(path.split('/').at(-1)));
     return route.fulfill({ json });
   });
