@@ -83,7 +83,7 @@ jobs:
         run: npm --prefix apps/frontend run test:e2e -- environmentActivation.spec.ts
       - name: Test Codex ChatGPT layout and preserve MKT in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- codexChatgptLayout.spec.ts
-      - name: Test backend queue visibility across independent browser sessions
+      - name: Test dialogues without queue polling across independent browser sessions
         run: npm --prefix apps/frontend run test:e2e -- codexRequestQueue.spec.ts
       - name: Test ten recent dialogue requests with the public API contract
         run: npm --prefix apps/frontend run test:e2e -- codexRecentDialogue.spec.ts
