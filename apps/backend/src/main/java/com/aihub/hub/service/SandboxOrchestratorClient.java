@@ -237,7 +237,8 @@ public class SandboxOrchestratorClient {
         List<HttpRequest> httpRequests,
         List<DocumentAccess> documentAccesses,
         String workBranch,
-        String quotaUsage
+        String quotaUsage,
+        String executionTrace
     ) {
         public SandboxOrchestratorJobResponse(
             String jobId,
@@ -293,6 +294,7 @@ public class SandboxOrchestratorClient {
                 interactions,
                 httpRequests,
                 documentAccesses,
+                null,
                 null,
                 null
             );
@@ -419,7 +421,8 @@ public class SandboxOrchestratorClient {
                 httpRequests,
                 documentAccesses,
                 readText(node, "workBranch", "work_branch"),
-                node.path("quotaUsage").isObject() ? node.path("quotaUsage").toString() : null
+                node.path("quotaUsage").isObject() ? node.path("quotaUsage").toString() : null,
+                ExecutionTracePayload.normalize(node.has("executionTrace") ? node.path("executionTrace") : node.path("execution_trace"))
             );
         }
 

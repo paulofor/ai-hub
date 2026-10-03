@@ -1,5 +1,7 @@
 export type CodexProfile = 'STANDARD' | 'ECONOMY' | 'SMART_ECONOMY' | 'ECO_1' | 'ECO_2' | 'ECO_3' | 'ECO_30' | 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
 
+import { parseExecutionTrace, type ExecutionTrace } from './executionTrace';
+
 export type CodexStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -14,6 +16,7 @@ export interface CodexRequest {
   userMessage?: string;
   responseText?: string;
   reasoningSummary?: string;
+  executionTrace?: ExecutionTrace;
   quotaUsage?: string;
   externalId?: string;
   pullRequestUrl?: string;
@@ -393,6 +396,7 @@ export const parseCodexRequest = (value: unknown): CodexRequest | null => {
     rating,
     responseText: (item.responseText as string) ?? undefined,
     reasoningSummary,
+    executionTrace: parseExecutionTrace(item.executionTrace ?? item.execution_trace),
     quotaUsage: typeof item.quotaUsage === 'string' ? item.quotaUsage : undefined,
     externalId: (item.externalId as string) ?? undefined,
     pullRequestUrl: pullRequestUrl ?? undefined,

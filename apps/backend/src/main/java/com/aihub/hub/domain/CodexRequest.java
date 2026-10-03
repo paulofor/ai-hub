@@ -83,6 +83,10 @@ public class CodexRequest {
     private String reasoningSummary;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "execution_trace", columnDefinition = "LONGTEXT")
+    private String executionTrace;
+
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "quota_usage", columnDefinition = "LONGTEXT")
     private String quotaUsage;
 
@@ -328,6 +332,10 @@ public class CodexRequest {
     public void setReasoningSummary(String reasoningSummary) {
         this.reasoningSummary = reasoningSummary;
     }
+
+    public String getExecutionTrace() { return executionTrace; }
+
+    public void setExecutionTrace(String executionTrace) { this.executionTrace = executionTrace; }
 
     public String getModelTranscript() {
         return modelTranscript;

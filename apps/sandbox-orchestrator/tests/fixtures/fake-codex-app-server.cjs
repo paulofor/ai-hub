@@ -3,6 +3,7 @@ const readline = require('node:readline');
 const mode = process.env.FAKE_CODEX_APP_SERVER_MODE || 'normal';
 const rl = readline.createInterface({ input: process.stdin });
 let updatePlanEnabled = false;
+let traceAttempts = 0;
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -44,6 +45,38 @@ rl.on('line', (line) => {
     return;
   }
   if (message.method === 'turn/start') {
+    if (mode === 'execution-trace') {
+      const attempt = ++traceAttempts;
+      const turnId = `turn-trace-${attempt}`;
+      const scope = { threadId: message.params.threadId, turnId };
+      const emit = (method, params) => send({ method, params: { ...scope, ...params } });
+      const plan = (status) => emit('turn/plan/updated', { plan: [
+        { step: 'Validar o fluxo completo', status }, { step: 'Revisar a entrega', status: 'pending' },
+      ] });
+      send({ id: message.id, result: { turn: { id: turnId } } });
+      plan('inProgress');
+      emit('item/started', { item: { id: 'test-command', type: 'commandExecution', command: 'npm test', status: 'inProgress' } });
+      setTimeout(() => {
+        const item = { id: 'test-command', type: 'commandExecution', command: 'npm test', status: 'completed',
+          exitCode: attempt === 1 ? 1 : 0, durationMs: 1200,
+          aggregatedOutput: attempt === 1 ? 'Teste falhou. token=ghp_syntheticTraceSecret0123456789' : '12 testes aprovados. https://github.com/paulofor/ai-hub/actions/runs/123' };
+        emit('item/completed', { item });
+        emit('item/completed', { item }); // Retransmission cannot duplicate the result.
+        emit('item/completed', { threadId: 'other-thread', item: { ...item, aggregatedOutput: 'OTHER_REQUEST' } });
+        if (attempt === 1) {
+          emit('turn/completed', { turn: { id: turnId, status: 'failed', error: { message: 'stream disconnected' } } });
+          return;
+        }
+        emit('item/started', { item: { id: 'file-change', type: 'fileChange', status: 'inProgress', changes: [{ path: 'apps/frontend/src/lib/executionTrace.ts' }] } });
+        emit('item/completed', { item: { id: 'file-change', type: 'fileChange', status: 'completed', changes: [{ path: 'apps/frontend/src/lib/executionTrace.ts', diff: 'PRIVATE_DIFF_IGNORED' }] } });
+        emit('item/completed', { item: { id: 'commentary', type: 'agentMessage', phase: 'commentary', text: 'Validei os testes locais e a recuperação da execução.' } });
+        plan('completed');
+        emit('item/completed', { item: { id: 'reasoning', type: 'reasoning', summary: ['Resumo público validado por JSON-RPC.'], content: ['RAW_REASONING_IGNORED'] } });
+        emit('item/completed', { item: { id: 'answer', type: 'agentMessage', phase: 'final_answer', text: 'Resumo Codex App Server' } });
+        emit('turn/completed', { turn: { id: turnId, status: 'completed' } });
+      }, 5);
+      return;
+    }
     const sendTurnStarted = () => send({ id: message.id, result: { id: 'turn-123' } });
     if (mode === 'slow-turn-start') {
       setTimeout(sendTurnStarted, 80);
@@ -54,7 +87,7 @@ rl.on('line', (line) => {
       for (const status of ['inProgress', 'completed']) {
         send({ method: 'turn/plan/updated', params: {
           threadId: message.params.threadId, turnId: 'turn-123', explanation: null,
-          plan: [{ step: 'Validar o checklist. Objetivo: acompanhar a execução.', status }],
+          plan: [{ step: 'Validar o checklist e acompanhar a execução.', status }],
         } });
       }
     }

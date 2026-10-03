@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
 import CodexResponseBody from '../components/CodexResponseBody';
+import CodexExecutionTrace from '../components/CodexExecutionTrace';
+import { legacyChecklist } from '../lib/executionTrace';
 import ScreenPromptItems from '../components/ScreenPromptItems';
 import { useToasts } from '../components/ToastContext';
 import {
@@ -34,6 +36,7 @@ const formatMaximumWait = (milliseconds?: number) => {
 export default function CodexRequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [request, setRequest] = useState<CodexRequest | null>(null);
+  const publicReasoning = legacyChecklist(request?.reasoningSummary);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
@@ -722,15 +725,17 @@ export default function CodexRequestDetailPage() {
                   ) : '—'}
                 </div>
               </div>
-              <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-900 dark:bg-violet-950/30">
+              <CodexExecutionTrace key={request.id} trace={request.executionTrace} legacySteps={publicReasoning.steps} />
+              <details open={request.executionTrace ? undefined : true} className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-900 dark:bg-violet-950/30">
+                <summary className="cursor-pointer text-sm font-semibold text-violet-800 dark:text-violet-200">Resumo público complementar</summary>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-violet-800 dark:text-violet-200">Resumo do raciocínio</h4>
+                  <p className="mt-2 text-xs text-slate-500">Resumo fornecido pelo modelo; os resultados observados aparecem na linha do tempo.</p>
                   <div className="flex items-center gap-3">
-                    {request.reasoningSummary ? (
+                    {publicReasoning.summary ? (
                       <button
                         type="button"
                         onClick={() => handleCopyText(
-                          request.reasoningSummary!,
+                          publicReasoning.summary!,
                           'Resumo do raciocínio copiado para a área de transferência.',
                           'Não foi possível copiar o resumo do raciocínio.'
                         )}
@@ -740,14 +745,14 @@ export default function CodexRequestDetailPage() {
                       </button>
                     ) : null}
                     <span className="text-xs text-slate-500">
-                      {request.reasoningSummary ? `${request.reasoningSummary.length.toLocaleString('pt-BR')} caracteres` : 'Não disponibilizado pelo modelo'}
+                      {publicReasoning.summary ? `${publicReasoning.summary.length.toLocaleString('pt-BR')} caracteres` : 'Não disponibilizado pelo modelo'}
                     </span>
                   </div>
                 </div>
                 <div data-testid="codex-reasoning-summary" className="rounded-md border border-violet-200 bg-white/70 p-4 text-sm leading-relaxed text-slate-800 dark:border-violet-900 dark:bg-slate-950/40 dark:text-slate-100">
-                  {request.reasoningSummary ? <CodexResponseBody content={request.reasoningSummary} /> : '—'}
+                  {publicReasoning.summary ? <CodexResponseBody content={publicReasoning.summary} /> : '—'}
                 </div>
-              </div>
+              </details>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">

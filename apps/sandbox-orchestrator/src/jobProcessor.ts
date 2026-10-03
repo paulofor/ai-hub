@@ -24,6 +24,7 @@ import { readCodexAccount } from './codexAppServerAuth.js';
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
 import { buildJobPayload } from './jobPayload.js';
 import { ReasoningSummaryCollector, requestsReasoningSummary } from './reasoningSummary.js';
+import { ExecutionTraceCollector } from './executionTrace.js';
 import {
   JobProcessor,
   SandboxJob,
@@ -87,7 +88,7 @@ const execFile = promisify(execFileCallback);
 export const DEFAULT_CODEX_TURN_NO_ACTIVITY_TIMEOUT_MS = 45 * 60 * 1000;
 export const DEFAULT_CODEX_TURN_ACTIVE_ITEM_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_CODEX_REASONING_EFFORT = 'high';
-const REASONING_SUMMARY_INSTRUCTION = 'Ao produzir o resumo público do raciocínio, descreva naturalmente as ações que estão sendo realizadas. Não inclua o rótulo "Objetivo: ..." nem outro campo de objetivo nesse resumo: os objetivos concretos da execução pertencem exclusivamente ao checklist publicado por update_plan. Não exponha raciocínio interno, conteúdo oculto ou cadeia de pensamento; registre somente ações resumidas.';
+const REASONING_SUMMARY_INSTRUCTION = 'Ao produzir o resumo público do raciocínio, descreva naturalmente as ações que estão sendo realizadas. Use português e atualizações curtas sobre ações, achados, resultados observados e bloqueios; deixe comandos, saídas e detalhes técnicos nas evidências das ferramentas. Não inclua o rótulo "Objetivo: ..." nem outro campo de objetivo nesse resumo: os objetivos concretos da execução pertencem exclusivamente ao checklist publicado por update_plan. Não exponha raciocínio interno, conteúdo oculto ou cadeia de pensamento; registre somente ações resumidas.';
 const CODEX_PLAN_OBJECTIVE_INSTRUCTION = 'Antes da primeira ação da solicitação, use obrigatoriamente update_plan para publicar um checklist curto com os objetivos concretos da execução. Atualize esse mesmo plano quando o escopo mudar e ao concluir etapas; não substitua o plano por títulos do resumo automático de raciocínio.';
 export const DEFAULT_CODEX_TRANSIENT_TURN_MAX_ATTEMPTS = 2;
 export const DEFAULT_CODEX_TRANSIENT_TURN_RETRY_DELAY_MS = 5_000;
@@ -1146,6 +1147,23 @@ export class SandboxJobProcessor implements JobProcessor {
     return [
       {
         type: 'function' as const,
+        name: 'update_plan',
+        description: 'Publica ou atualiza o checklist da solicitação. Use antes da primeira ação e ao concluir etapas.',
+        parameters: {
+          type: 'object',
+          properties: {
+            explanation: { type: ['string', 'null'] },
+            plan: { type: 'array', items: {
+              type: 'object', properties: { step: { type: 'string' }, status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] } },
+              required: ['step', 'status'], additionalProperties: false,
+            } },
+          },
+          required: ['explanation', 'plan'], additionalProperties: false,
+        },
+        strict: true,
+      },
+      {
+        type: 'function' as const,
         name: 'run_shell',
         parameters: {
           type: 'object',
@@ -1374,26 +1392,35 @@ export class SandboxJobProcessor implements JobProcessor {
       lastActivityAt = now;
     };
     const startedAt = Date.now();
-    const reasoningSummaries = new ReasoningSummaryCollector();
+    const trace = this.createExecutionTraceCollector(job, repoPath);
+    const reasoningSummaries = new ReasoningSummaryCollector(this.traceSecrets(job));
+    const publishTrace = (): void => { job.executionTrace = trace.snapshot(); };
     let currentTurnId = 'attempt-1';
     const reasoningTurnId = (params: unknown): string =>
       this.extractCodexId(params, ['turnId'], 'turn.id') ?? currentTurnId;
-    const collectCompletedReasoning = (params: unknown): void => {
+    const collectCompletedReasoning = (params: unknown, terminal = true): void => {
       if (!params || typeof params !== 'object') return;
       const record = params as Record<string, unknown>;
       const turnId = reasoningTurnId(params);
-      reasoningSummaries.completeItem(turnId, record.item);
+      if (terminal) reasoningSummaries.completeItem(turnId, record.item);
+      trace.item(turnId, record.item, terminal);
       const turn = record.turn as { items?: unknown[] } | undefined;
       if (Array.isArray(turn?.items)) {
-        turn.items.forEach((item) => reasoningSummaries.completeItem(turnId, item));
+        turn.items.forEach((item) => {
+          const itemStatus = this.extractCodexStatus(item);
+          const finalized = terminal && !['inprogress', 'in_progress', 'running', 'pending'].includes(itemStatus ?? '');
+          if (finalized) reasoningSummaries.completeItem(turnId, item);
+          trace.item(turnId, item, finalized);
+        });
       }
       job.reasoningSummary = reasoningSummaries.text();
+      publishTrace();
     };
     // The App Server client is shared by jobs. Scope every notification before it changes job state.
     const onThreadNotification = (method: string, listener: (params: unknown) => void) =>
       client.onNotification(method, (params) => {
         const eventThreadId = this.extractCodexId(params, ['threadId'], 'thread.id');
-        if (eventThreadId && eventThreadId !== threadId) return;
+        if (eventThreadId !== threadId) return;
         listener(params);
       });
     const unsubscribeCallbacks = [
@@ -1408,8 +1435,8 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       onThreadNotification('turn/plan/updated', (params) => {
         markActivity();
-        reasoningSummaries.addPlanUpdate(reasoningTurnId(params), params);
-        job.reasoningSummary = reasoningSummaries.text();
+        trace.addPlan(reasoningTurnId(params), params);
+        publishTrace();
       }),
       onThreadNotification('item/agentMessage/delta', (params) => {
         markActivity();
@@ -1439,6 +1466,8 @@ export class SandboxJobProcessor implements JobProcessor {
       }),
       onThreadNotification('item/started', (params) => {
         markActivity();
+        trace.item(reasoningTurnId(params), (params as Record<string, unknown>)?.item, false);
+        publishTrace();
         const item = this.extractCodexItemIdentity(params);
         if (item?.id && ['commandExecution', 'command_execution'].includes(item.type ?? '')) {
           const command = this.extractCodexCommand(params);
@@ -1460,6 +1489,8 @@ export class SandboxJobProcessor implements JobProcessor {
         collectCompletedReasoning(params);
         this.addCodexAppServerUsageMetrics(job, params);
         const status = this.extractCodexStatus(params);
+        trace.finishTurn(reasoningTurnId(params), status, this.extractCodexErrorMessage(params));
+        publishTrace();
         const text = this.extractCodexText(params);
         if (text) {
           summary = text;
@@ -1485,11 +1516,14 @@ export class SandboxJobProcessor implements JobProcessor {
       let previousFailureWasCapacity = false;
       while (true) {
         attempt += 1;
+        const previousTurnId = currentTurnId;
         currentTurnId = `attempt-${attempt}`;
         completed = false;
         failedReason = undefined;
         activeCommandItems.clear();
         if (attempt > 1) {
+          trace.retry(previousTurnId);
+          publishTrace();
           finalAgentMessage = '';
           summary = '';
           streamingAgentMessage = '';
@@ -1513,13 +1547,21 @@ export class SandboxJobProcessor implements JobProcessor {
           this.transitionWaitCategory(job, 'MODEL_REASONING');
           const turnId = this.extractCodexId(turn, ['turnId', 'id'], 'turn.id') ?? 'n/d';
           currentTurnId = turnId;
-          collectCompletedReasoning(turn);
-          this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}`);
           const immediateStatus = this.extractCodexStatus(turn);
+          const terminalSnapshot = Boolean(immediateStatus && ['completed', 'succeeded', 'success', 'ok', 'failed', 'cancelled', 'interrupted'].includes(immediateStatus));
+          collectCompletedReasoning(turn, terminalSnapshot);
+          this.log(job, `Codex App Server turn/start concluído threadId=${threadId} turnId=${turnId} tentativa=${attempt}`);
           const immediateText = this.extractCodexText(turn);
           this.addCodexAppServerUsageMetrics(job, turn);
           if (immediateText) summary = immediateText;
-          if (immediateStatus && ['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) completed = true;
+          if (terminalSnapshot) {
+            completed = true;
+            trace.finishTurn(turnId, immediateStatus, this.extractCodexErrorMessage(turn));
+            publishTrace();
+            if (immediateStatus && !['completed', 'succeeded', 'success', 'ok'].includes(immediateStatus)) {
+              failedReason = `CODEX_TURN_FAILED: ${immediateStatus}: ${this.extractCodexErrorMessage(turn) ?? 'turno interrompido'}`;
+            }
+          }
 
           await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt, () => activeCommandItems.size > 0);
           if (failedReason) throw new Error(failedReason);
@@ -1528,6 +1570,8 @@ export class SandboxJobProcessor implements JobProcessor {
           return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
+          trace.finishTurn(currentTurnId, job.status === 'CANCELLED' ? 'cancelled' : 'failed', reason);
+          publishTrace();
           previousFailureWasCapacity = this.isCodexCapacityFailure(reason);
           if (previousFailureWasCapacity) {
             capacityAttempts += 1;
@@ -1553,6 +1597,22 @@ export class SandboxJobProcessor implements JobProcessor {
         this.log(job, `Codex App Server thread/archive falhou threadId=${threadId}: ${reason}`);
       }
     }
+  }
+
+  private traceSecrets(job: SandboxJob): string[] {
+    return [job.accessToken, job.githubToken, job.callbackSecret, job.database?.password,
+      ...Object.entries(process.env).filter(([key]) => /(?:TOKEN|SECRET|PASSWORD|API_KEY|ACCESS_KEY)/i.test(key)).map(([, value]) => value)]
+      .filter((value): value is string => typeof value === 'string' && value.length >= 6);
+  }
+
+  private createExecutionTraceCollector(job: SandboxJob, repoPath: string): ExecutionTraceCollector {
+    let repoUrl: string | undefined;
+    try {
+      const url = new URL(job.repoUrl ?? '');
+      url.username = ''; url.password = ''; url.search = ''; url.hash = '';
+      repoUrl = url.href;
+    } catch { /* A repository is optional in sandbox profiles. */ }
+    return new ExecutionTraceCollector({ secrets: this.traceSecrets(job), repoUrl, repoPath, branch: job.workBranch ?? job.branch });
   }
 
   private extractCodexCommand(params: unknown): string {
@@ -1915,7 +1975,15 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
   }
 
   private sanitizeCodexEvent(value: unknown): unknown {
-    return sanitizeOpenAIExchange(value);
+    const publicEvent = (entry: unknown): unknown => {
+      if (Array.isArray(entry)) return entry.map(publicEvent);
+      if (!entry || typeof entry !== 'object') return entry;
+      const object = entry as Record<string, unknown>;
+      return Object.fromEntries(Object.entries(object)
+        .filter(([key]) => !(object.type === 'reasoning' && key === 'content'))
+        .map(([key, nested]) => [key, publicEvent(nested)]));
+    };
+    return sanitizeOpenAIExchange(publicEvent(value));
   }
 
   private recordCodexAppServerDocumentAccesses(job: SandboxJob, params: unknown, recordedKeys: Set<string>): void {
@@ -2082,7 +2150,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
         content: [
           {
             type: 'input_text',
-            text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. ${REASONING_SUMMARY_INSTRUCTION} Test command sugerido: ${
+            text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. ${CODEX_PLAN_OBJECTIVE_INSTRUCTION} ${REASONING_SUMMARY_INSTRUCTION} Test command sugerido: ${
               job.testCommand ?? 'n/d'
             }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} ${agentHarnessImprovementInstruction} ${this.buildGithubDeliveryInstruction(job)} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
@@ -2126,7 +2194,9 @@ ${profileInstruction}`,
 
     let summary = '';
     let turnCount = 0;
-    const reasoningSummaries = new ReasoningSummaryCollector();
+    const reasoningSummaries = new ReasoningSummaryCollector(this.traceSecrets(job));
+    const trace = this.createExecutionTraceCollector(job, repoPath);
+    const publishTrace = (): void => { job.executionTrace = trace.snapshot(); };
     this.log(job, 'loop do modelo iniciado; aguardando chamadas de ferramenta');
 
     while (true) {
@@ -2168,6 +2238,8 @@ ${profileInstruction}`,
         this.recordCompletedWait(job, 'MODEL_REASONING', Date.now() - reasoningStartedAt);
         logOpenAIExchange('inbound', 'responses.create', response);
       } catch (error) {
+        trace.finishTurn('responses-loop', 'failed', error instanceof Error ? error.message : String(error));
+        publishTrace();
         logOpenAIExchange('error', 'responses.create', {
           name: error instanceof Error ? error.name : typeof error,
           message: error instanceof Error ? error.message : String(error),
@@ -2226,6 +2298,8 @@ ${profileInstruction}`,
 
       const text = this.extractOutputText(assistantMessage?.content);
       if (toolCalls.length === 0) {
+        trace.finishTurn('responses-loop', 'completed');
+        publishTrace();
         summary = text ?? summary;
         if (text) {
           this.appendSummaryLine(job, `Resumo do modelo: ${this.truncate(text, 240)}`);
@@ -2253,9 +2327,25 @@ ${profileInstruction}`,
           name: call.name ?? '',
           arguments: parsedArgs ?? {},
         };
+        const traceItem = {
+          id: callId,
+          type: toolCall.name === 'run_shell' ? 'commandExecution' : toolCall.name === 'write_file' ? 'fileChange' : 'dynamicToolCall',
+          tool: toolCall.name,
+          command: Array.isArray(toolCall.arguments.command) ? toolCall.arguments.command.join(' ') : undefined,
+          changes: toolCall.name === 'write_file' ? [{ path: toolCall.arguments.path }] : undefined,
+        };
+        if (toolCall.name !== 'update_plan') { trace.item('responses-loop', traceItem, false); publishTrace(); }
+        const completeTraceTool = (value: unknown): void => {
+          const result = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+          if (toolCall.name === 'update_plan') return;
+          trace.item('responses-loop', { ...traceItem, status: 'completed', error: result.error,
+            exitCode: result.exitCode, aggregatedOutput: toolCall.name === 'run_shell' ? [result.stdout, result.stderr].filter(Boolean).join('\n') : undefined }, true);
+          publishTrace();
+        };
         const toolSignature = this.buildToolSignature(toolCall);
         const stagnationBlock = this.evaluateHypothesisStagnationBlock(job, toolCall, toolSignature);
         if (stagnationBlock) {
+          completeTraceTool(stagnationBlock.payload);
           this.log(job, stagnationBlock.logMessage);
           this.captureContextFromTool(job, toolCall, stagnationBlock.payload, { blocked: true });
           const blockOutput = this.prepareToolOutput(stagnationBlock.payload, job);
@@ -2269,6 +2359,7 @@ ${profileInstruction}`,
         }
         const loopBlock = this.evaluateEcoTwoLoopBlock(job, toolSignature, toolCall.name ?? '');
         if (loopBlock) {
+          completeTraceTool(loopBlock.payload);
           this.log(job, loopBlock.logMessage);
           this.captureContextFromTool(job, toolCall, loopBlock.payload, { blocked: true });
           const blockOutput = this.prepareToolOutput(loopBlock.payload, job);
@@ -2282,6 +2373,7 @@ ${profileInstruction}`,
         }
         const repeatedErrorBlock = this.evaluateRepeatedToolErrorBlock(job, toolSignature, toolCall.name ?? '');
         if (repeatedErrorBlock) {
+          completeTraceTool(repeatedErrorBlock.payload);
           this.log(job, repeatedErrorBlock.logMessage);
           this.captureContextFromTool(job, toolCall, repeatedErrorBlock.payload, { blocked: true });
           const blockOutput = this.prepareToolOutput(repeatedErrorBlock.payload, job);
@@ -2303,7 +2395,18 @@ ${profileInstruction}`,
           ? 'EXTERNAL_SERVICE'
           : 'COMMAND_EXECUTION';
         try {
-          const result = await this.dispatchTool(toolCall, repoPath, job);
+          let result: unknown;
+          if (toolCall.name === 'update_plan') {
+            const plan = toolCall.arguments.plan;
+            if (!Array.isArray(plan) || !plan.length || plan.length > 40 || plan.some((step) =>
+              !step || typeof step.step !== 'string' || !step.step.trim() || !['pending', 'in_progress', 'completed'].includes(step.status))) {
+              throw new Error('Checklist inválido: informe etapas e estados válidos.');
+            }
+            trace.addPlan('responses-loop', toolCall.arguments);
+            publishTrace();
+            result = { accepted: true };
+          } else result = await this.dispatchTool(toolCall, repoPath, job);
+          completeTraceTool(result);
           this.recordCompletedWait(job, toolWaitCategory, Date.now() - toolStartedAt);
           this.logJson(job, `resultado da tool ${toolCall.name} (callId=${callId})`, result);
           this.captureContextFromTool(job, toolCall, result);
@@ -2327,6 +2430,7 @@ ${profileInstruction}`,
           const message = err instanceof Error ? err.message : String(err);
           this.log(job, `erro ao executar tool ${toolCall.name}: ${message}`);
           const errorPayload = { error: message };
+          completeTraceTool(errorPayload);
           this.captureContextFromTool(job, toolCall, errorPayload, { error: true });
           const preparedOutput = this.prepareToolOutput(errorPayload, job);
           toolMessages.push({
