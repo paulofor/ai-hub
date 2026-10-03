@@ -2096,6 +2096,13 @@ public class CodexRequestService {
             updated = true;
         }
 
+        // Polling/callbacks can arrive out of order. Missing, invalid or older traces cannot erase evidence.
+        if (StringUtils.hasText(response.executionTrace())
+            && ExecutionTracePayload.revision(response.executionTrace()) > ExecutionTracePayload.revision(request.getExecutionTrace())) {
+            request.setExecutionTrace(response.executionTrace());
+            updated = true;
+        }
+
         String transcript = buildOutboundInteractionTranscript(response.interactions());
         if (StringUtils.hasText(transcript) && !Objects.equals(request.getModelTranscript(), transcript)) {
             request.setModelTranscript(transcript);

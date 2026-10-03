@@ -1079,7 +1079,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
       if (method === 'thread/start') return { id: 'thread-mkt' };
       if (method === 'turn/start') {
         setTimeout(() => {
-          for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-mkt' });
+          for (const listener of listeners.get('turn/completed') ?? []) listener({ threadId: 'thread-mkt', status: 'completed', turnId: 'turn-mkt' });
         }, 5);
         return { id: 'turn-mkt' };
       }
@@ -1588,7 +1588,7 @@ test('processes tool calls inside a sandbox', async () => {
   assert.ok(firstCall.tools, 'tools ausente na chamada inicial');
   assert.deepEqual(
     firstCall.tools.map((tool: any) => tool.name ?? tool.function?.name).filter(Boolean),
-    ['run_shell', 'read_file', 'read_image', 'fetch_image', 'write_file', 'http_get', 'WebSearch', 'db_query']
+    ['update_plan', 'run_shell', 'read_file', 'read_image', 'fetch_image', 'write_file', 'http_get', 'WebSearch', 'db_query']
   );
 
   assert.equal(job.status, 'COMPLETED', job.error);
@@ -4135,6 +4135,7 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
                 command: `sed -n '1,20p' README.md docs/briefing.md`,
                 cwd: tempRepo,
               },
+              threadId: 'thread-123', turnId: 'turn-123',
             });
           }
           for (const listener of listeners.get('item/completed') ?? []) {
@@ -4145,10 +4146,11 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
                 command: `sed -n '1,20p' README.md docs/briefing.md`,
                 cwd: tempRepo,
               },
+              threadId: 'thread-123', turnId: 'turn-123',
             });
           }
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
-            listener({ delta: 'resumo via app server' });
+            listener({ threadId: 'thread-123', delta: 'resumo via app server' });
           }
           for (const listener of listeners.get('item/reasoning/summaryTextDelta') ?? []) {
             listener({
@@ -4183,7 +4185,7 @@ test('executa CHATGPT_CODEX via Codex App Server com thread/start e turn/start',
             });
           }
           for (const listener of listeners.get('turn/completed') ?? []) {
-            listener({ status: 'completed', turnId: 'turn-123' });
+            listener({ threadId: 'thread-123', status: 'completed', turnId: 'turn-123' });
           }
         }, 5);
         return { id: 'turn-123' };
@@ -4292,10 +4294,10 @@ test('executa CHATGPT_CODEX_SANDBOX via Codex App Server sem clonar repositório
       if (method === 'turn/start') {
         setTimeout(() => {
           for (const listener of listeners.get('item/agentMessage/delta') ?? []) {
-            listener({ delta: 'resultado sandbox' });
+            listener({ threadId: 'thread-sandbox', delta: 'resultado sandbox' });
           }
           for (const listener of listeners.get('turn/completed') ?? []) {
-            listener({ status: 'completed', turnId: 'turn-sandbox' });
+            listener({ threadId: 'thread-sandbox', status: 'completed', turnId: 'turn-sandbox' });
           }
         }, 5);
         return { id: 'turn-sandbox' };
@@ -4381,11 +4383,11 @@ test('retoma a mesma thread após falha transitória de conexão do Codex App Se
         setTimeout(() => {
           if (currentAttempt === 1) {
             for (const listener of listeners.get('turn/completed') ?? []) {
-              listener({ status: 'failed', error: { message: 'stream disconnected while reconnecting' }, turnId: 'turn-failed' });
+              listener({ threadId: 'thread-recoverable', status: 'failed', error: { message: 'stream disconnected while reconnecting' }, turnId: 'turn-failed' });
             }
           } else {
-            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ delta: 'trabalho recuperado' });
-            for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-recovered' });
+            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ threadId: 'thread-recoverable', delta: 'trabalho recuperado' });
+            for (const listener of listeners.get('turn/completed') ?? []) listener({ threadId: 'thread-recoverable', status: 'completed', turnId: 'turn-recovered' });
           }
         }, 5);
         return { id: currentAttempt === 1 ? 'turn-failed' : 'turn-recovered' };
@@ -4449,11 +4451,11 @@ test('mantém a solicitação ativa e retoma a mesma thread quando o modelo est�
         setTimeout(() => {
           if (currentAttempt === 2) {
             for (const listener of listeners.get('turn/completed') ?? []) {
-              listener({ status: 'failed', error: { message: 'Selected model is at capacity. Please try a different model.' } });
+              listener({ threadId: 'thread-capacity', turnId: `turn-capacity-${currentAttempt}`, status: 'failed', error: { message: 'Selected model is at capacity. Please try a different model.' } });
             }
           } else {
-            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ delta: 'resultado após capacidade voltar' });
-            for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed' });
+            for (const listener of listeners.get('item/agentMessage/delta') ?? []) listener({ threadId: 'thread-capacity', delta: 'resultado após capacidade voltar' });
+            for (const listener of listeners.get('turn/completed') ?? []) listener({ threadId: 'thread-capacity', turnId: `turn-capacity-${currentAttempt}`, status: 'completed' });
           }
         }, 5);
         return { id: `turn-capacity-${currentAttempt}` };
@@ -4518,7 +4520,7 @@ test('permite configurar sandbox mode do Codex App Server em kebab-case', async 
       if (method === 'thread/start') return { id: 'thread-123' };
       if (method === 'turn/start') {
         setTimeout(() => {
-          for (const listener of listeners.get('turn/completed') ?? []) listener({ status: 'completed', turnId: 'turn-123' });
+          for (const listener of listeners.get('turn/completed') ?? []) listener({ threadId: 'thread-123', status: 'completed', turnId: 'turn-123' });
         }, 5);
         return { id: 'turn-123' };
       }

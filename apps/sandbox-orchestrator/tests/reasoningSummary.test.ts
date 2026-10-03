@@ -96,12 +96,13 @@ test('resumo final é autoritativo, separa partes/itens e não duplica eventos c
   assert.equal(response, 'Resposta final preservada.');
 });
 
-test('inclui os objetivos publicados pelo update_plan no resumo visível', async () => {
+test('publica o checklist separado do resumo e preserva suas versões', async () => {
   const { client } = appServerDouble((_params, emit) => {
     emit('turn/plan/updated', {
       ...scope, plan: [{ step: 'Reproduzir o problema', status: 'inProgress' }],
     });
-    assert.equal(buildJobPayload(job).reasoningSummary, '**Objetivos**\n- [ ] Reproduzir o problema');
+    assert.equal(buildJobPayload(job).reasoningSummary, undefined);
+    assert.equal(buildJobPayload(job).executionTrace?.plans[0].steps[0].status, 'running');
     emit('turn/plan/updated', {
       ...scope,
       explanation: 'Plano atualizado após localizar a causa raiz.',
@@ -116,15 +117,16 @@ test('inclui os objetivos publicados pelo update_plan no resumo visível', async
   const job = makeJob();
   const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
   await (processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra');
-  assert.equal(
-    job.reasoningSummary,
-    '**Objetivos**\nPlano atualizado após localizar a causa raiz.\n- [x] Reproduzir o problema\n- [ ] Validar a correção\n\nA coleta do resumo continua preservada.',
-  );
+  assert.equal(job.reasoningSummary, 'A coleta do resumo continua preservada.');
+  assert.equal(job.executionTrace?.plans.length, 2);
+  assert.deepEqual(job.executionTrace?.plans[1].steps.map((step) => step.status), ['completed', 'running']);
 });
 
 test('ignora outra thread, conteúdo bruto e eventos inválidos; ausência continua vazia', async () => {
   const { client } = appServerDouble((_params, emit) => {
     emit('item/reasoning/summaryTextDelta', { ...delta('OUTRA_SOLICITACAO'), threadId: 'thread-other' });
+    emit('item/reasoning/summaryTextDelta', { ...delta('SEM_THREAD'), threadId: undefined });
+    emit('turn/plan/updated', { turnId: scope.turnId, plan: [{ step: 'SEM_THREAD', status: 'completed' }] });
     emit('item/completed', { ...reasoning(['OUTRA_SOLICITACAO']), threadId: 'thread-other' });
     emit('turn/plan/updated', { ...scope, threadId: 'thread-other', plan: [{ step: 'OUTRA_SOLICITACAO', status: 'completed' }] });
     emit('turn/plan/updated', { ...scope, plan: [null, {}, { step: '' }] });
@@ -206,7 +208,9 @@ test('publica e atualiza update_plan via JSON-RPC até o polling HTTP', async ()
     const app = createApp({ jobRegistry: new Map([[job.jobId, job]]), processor });
     const { body } = await request(app).get(`/jobs/${job.jobId}`).expect(200);
     assert.equal(plans.length, 2);
-    assert.equal(body.reasoningSummary, '**Objetivos**\n- [x] Validar o checklist. Objetivo: acompanhar a execução.\n\nResumo público validado por JSON-RPC.');
+    assert.equal(body.reasoningSummary, 'Resumo público validado por JSON-RPC.');
+    assert.equal(body.executionTrace.plans.length, 2);
+    assert.equal(body.executionTrace.plans[1].steps[0].status, 'completed');
     assert.equal(body.summary, 'Resumo Codex App Server');
     assert.equal(body.status, 'COMPLETED');
     assert.equal(body.quotaUsage.status, 'unavailable');
@@ -226,7 +230,8 @@ test('preserva resumo e plano recebidos quando o turno falha e remove os listene
   const job = makeJob();
   const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
   await assert.rejects((processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra'), /quota exhausted/);
-  assert.equal(job.reasoningSummary, '**Objetivos**\n- [ ] Validar a correção\n\nVerificação antes da falha.');
+  assert.equal(job.reasoningSummary, 'Verificação antes da falha.');
+  assert.equal(job.executionTrace?.plans.at(-1)?.steps[0].status, 'failed');
   assert.equal(events.eventNames().length, 0);
 });
 
@@ -238,6 +243,47 @@ test('aproveita itens incluídos no turn/completed mesmo sem item/completed', as
   const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
   await (processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra');
   assert.equal(job.reasoningSummary, 'Resumo no turno.');
+});
+
+test('snapshot de turn/start em andamento não encerra itens antes do resultado', async () => {
+  const { client } = appServerDouble((_params, emit) => {
+    setTimeout(() => {
+      assert.equal(job.executionTrace?.events[0].status, 'running');
+      emit('item/completed', { ...scope, item: { id: 'snapshot-command', type: 'commandExecution', exitCode: 0 } });
+      finish(emit);
+    }, 5);
+  });
+  const request = client.request;
+  client.request = async (method, params) => {
+    const response = await request(method, params);
+    return method === 'turn/start' ? { turn: { id: 'turn-1', status: 'inProgress', items: [
+      { id: 'snapshot-command', type: 'commandExecution', command: 'npm test', status: 'inProgress' },
+    ] } } : response;
+  };
+  const job = makeJob();
+  const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
+  await (processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra');
+  assert.equal(job.executionTrace?.events[0].status, 'completed');
+  assert.equal(job.executionTrace?.events[0].result, 'Comando encerrado com código 0.');
+  assert.equal(job.executionTrace?.events[0].details?.command, 'npm test');
+});
+
+test('snapshot de turn/start já falho encerra a tentativa e conserva o resumo público', async () => {
+  const { client, events } = appServerDouble(() => {});
+  const request = client.request;
+  client.request = async (method, params) => {
+    const response = await request(method, params);
+    return method === 'turn/start' ? { turn: { id: 'turn-1', status: 'failed', error: { message: 'quota exhausted' },
+      items: [reasoning(['Resumo antes da falha.']).item, { id: 'unfinished', type: 'commandExecution', status: 'inProgress' }] } } : response;
+  };
+  const job = makeJob();
+  const processor = new SandboxJobProcessor(undefined, 'gpt-6-astra', undefined, globalThis.fetch, client as any);
+  await assert.rejects((processor as any).runWithCodexAppServer(job, process.cwd(), 'gpt-6-astra'), /quota exhausted/);
+  assert.equal(job.reasoningSummary, 'Resumo antes da falha.');
+  assert.equal(job.executionTrace?.events.at(-1)?.status, 'failed');
+  assert.equal(job.executionTrace?.events.find((event) => event.itemId === 'unfinished')?.status, 'failed');
+  assert.equal(job.executionTrace?.events.find((event) => event.itemId === 'unfinished')?.result, 'Turno encerrado sem confirmação de conclusão deste item.');
+  assert.equal(events.eventNames().length, 0);
 });
 
 for (const model of ['gpt-6-astra', 'gpt-5.6-sol', 'o3', 'gpt-4.1-mini']) {
@@ -281,3 +327,28 @@ for (const model of ['gpt-6-astra', 'gpt-5.6-sol', 'o3', 'gpt-4.1-mini']) {
     assert.equal(job.totalTokens, 24);
   });
 }
+
+test('perfil econômico publica update_plan e liga evidência real de shell à etapa ativa', async () => {
+  const job = makeJob('ECONOMY');
+  let calls = 0;
+  const openai = { responses: { create: async (params: any) => {
+    assert.ok(params.tools.some((tool: any) => tool.name === 'update_plan'));
+    calls++;
+    const output = calls === 1 || calls === 3 ? [{ type: 'function_call', id: `plan-${calls}`, call_id: `plan-${calls}`, name: 'update_plan', arguments: JSON.stringify({
+      explanation: null, plan: [{ step: 'Executar teste local', status: calls === 1 ? 'in_progress' : 'completed' }],
+    }) }] : calls === 2 ? [{ type: 'function_call', id: 'shell', call_id: 'shell', name: 'run_shell', arguments: JSON.stringify({
+      command: [process.execPath, '-e', 'process.stdout.write("Teste sintético aprovado")'], cwd: '.',
+    }) }] : [{ type: 'message', id: 'answer', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Resposta preservada.', annotations: [] }] }];
+    return { id: `response-${calls}`, output };
+  } } };
+  const processor = new SandboxJobProcessor(undefined, 'gpt-4.1-mini', openai as any);
+  const repoRoot = path.resolve('../..');
+  await (processor as any).runRunnerPreflight(job, repoRoot);
+  const result = await (processor as any).runCodexLoop(job, repoRoot, 'gpt-4.1-mini', openai);
+  assert.equal(result, 'Resposta preservada.');
+  const command = job.executionTrace!.events.find((event) => event.kind === 'command')!;
+  assert.equal(command.status, 'completed');
+  assert.equal(command.stepIndex, 0);
+  assert.equal(command.details?.output, 'Teste sintético aprovado');
+  assert.equal(job.executionTrace!.plans.at(-1)!.steps[0].status, 'completed');
+});

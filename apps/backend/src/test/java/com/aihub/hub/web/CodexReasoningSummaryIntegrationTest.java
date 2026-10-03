@@ -7,6 +7,7 @@ import com.aihub.hub.github.GithubApiClient;
 import com.aihub.hub.repository.CodexRequestRepository;
 import com.aihub.hub.service.SandboxOrchestratorClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:reasoning-summary-test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;NON_KEYWORDS=VALUE;DB_CLOSE_DELAY=-1",
+    "spring.flyway.enabled=true",
+    "spring.flyway.locations=classpath:db/migration/h2",
+    "spring.jpa.hibernate.ddl-auto=validate",
     "hub.sandbox.callback.secret=synthetic-summary-callback",
     "hub.codex.app-server-enabled=false"
 })
@@ -102,6 +106,50 @@ class CodexReasoningSummaryIntegrationTest {
         assertThat(repository.findById(id).orElseThrow().getResponseText()).isEqualTo(answer);
 
         String detailPath = System.getenv("REASONING_SUMMARY_E2E_DETAIL");
+        if (detailPath != null) Files.writeString(Path.of(detailPath), detail);
+    }
+
+    @Test
+    void executionTraceSurvivesCallbackReplayStalePollingAndDatabaseReload() throws Exception {
+        String payloadPath = System.getenv("EXECUTION_TRACE_E2E_PAYLOAD");
+        ObjectNode payload = payloadPath == null ? mapper.createObjectNode()
+            .put("jobId", "execution-trace-test").put("status", "COMPLETED")
+            .put("summary", "Resumo Codex App Server").put("reasoningSummary", "Resumo público validado por JSON-RPC.")
+            : (ObjectNode) mapper.readTree(Files.readString(Path.of(payloadPath)));
+        if (payloadPath == null) payload.set("executionTrace", mapper.readTree("""
+            {"version":1,"revision":3,"plans":[{"id":"plan-1","turnId":"turn-1","receivedAt":"2026-10-03T12:00:00Z",
+              "steps":[{"step":"Validar o fluxo completo","status":"running"},{"step":"Revisar a entrega","status":"pending"}]}],
+              "events":[{"id":"test","sequence":1,"turnId":"turn-1","planId":"plan-1","stepIndex":0,
+              "kind":"command","label":"Executar comando","status":"failed","receivedAt":"2026-10-03T12:00:00Z",
+              "result":"Comando encerrado com código 1.","evidence":[],"details":{"command":"npm test","output":"Teste falhou"}}]}
+            """));
+        CodexRequest request = new CodexRequest("sandbox.local", "gpt-6-astra", CodexIntegrationProfile.CHATGPT_CODEX_MKT, "Teste local do trace");
+        request.setExternalId(payload.path("jobId").asText());
+        request.setStatus(CodexRequestStatus.RUNNING);
+        repository.saveAndFlush(request);
+        requestIds.add(request.getId());
+        for (int repeat = 0; repeat < 2; repeat++) mvc.perform(post("/api/codex/requests/callbacks/sandbox")
+                .header("X-Sandbox-Callback-Token", "synthetic-summary-callback")
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(payload)))
+            .andExpect(status().isAccepted());
+        String trace = repository.findById(request.getId()).orElseThrow().getExecutionTrace();
+        assertThat(trace).contains("failed", "npm test").doesNotContain("RAW_REASONING", "OTHER_REQUEST", "ghp_syntheticTraceSecret");
+        String detail = mvc.perform(get("/api/codex/requests/{id}", request.getId()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.executionTrace").value(trace))
+            .andExpect(jsonPath("$.reasoningSummary").value(payload.path("reasoningSummary").asText()))
+            .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        for (JsonNode stale : List.of(mapper.readTree("{\"version\":1,\"revision\":1,\"plans\":[],\"events\":[]}"), mapper.createObjectNode())) {
+            ObjectNode update = mapper.createObjectNode().put("jobId", request.getExternalId()).put("status", "COMPLETED");
+            update.set("executionTrace", stale);
+            mvc.perform(post("/api/codex/requests/callbacks/sandbox")
+                    .header("X-Sandbox-Callback-Token", "synthetic-summary-callback")
+                    .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(update)))
+                .andExpect(status().isAccepted());
+        }
+        assertThat(repository.findById(request.getId()).orElseThrow().getExecutionTrace()).isEqualTo(trace);
+        assertThat(repository.findById(request.getId()).orElseThrow().getResponseText()).isEqualTo(payload.path("summary").asText());
+        String detailPath = System.getenv("EXECUTION_TRACE_E2E_DETAIL");
         if (detailPath != null) Files.writeString(Path.of(detailPath), detail);
     }
 

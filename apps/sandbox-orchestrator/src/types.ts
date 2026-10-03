@@ -84,6 +84,7 @@ export interface SandboxJob {
   status: JobStatus;
   summary?: string;
   reasoningSummary?: string;
+  executionTrace?: import('./executionTrace.js').ExecutionTrace;
   quotaUsage?: QuotaUsage;
   interactions: SandboxInteraction[];
   interactionSequence: number;
