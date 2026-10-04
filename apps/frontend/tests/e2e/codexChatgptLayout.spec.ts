@@ -1,6 +1,6 @@
 import { devices, expect, test, type Page } from '@playwright/test';
 
-type Profile = 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT';
+type Profile = 'CHATGPT_CODEX' | 'CHATGPT_CODEX_MKT' | 'CHATGPT_CODEX_SANDBOX';
 const environment = 'test/layout@main';
 const timestamp = '2026-10-01T12:00:00Z';
 const response = JSON.stringify({ titulo: 'Entrega sintética', comentario: '**Resultado local** validado.',
@@ -9,7 +9,8 @@ const response = JSON.stringify({ titulo: 'Entrega sintética', comentario: '**R
 const item = (profile: Profile, id = 990101, status = 'COMPLETED', responseText = response) => ({
   id, environment, profile, model: 'gpt-6.1-sol', reasoningEffort: 'high', status,
   userMessage: `Pedido sintético ${id}`, prompt: `Pedido sintético ${id}`, responseText,
-  createdAt: timestamp, startedAt: timestamp, finishedAt: timestamp, durationMs: 1_000,
+  createdAt: timestamp, startedAt: status === 'PENDING' ? undefined : timestamp,
+  finishedAt: ['COMPLETED', 'FAILED', 'CANCELLED'].includes(status) ? timestamp : undefined, durationMs: 1_000,
   workBatchKey: `test-layout-${profile}`, workBranch: 'test/layout', totalTokens: 100
 });
 
@@ -53,7 +54,7 @@ async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) 
     };
     return route.fulfill({ json });
   });
-  return { calls, requestQueries, submissions, fail: () => { failSubmission = true; } };
+  return { calls, requestQueries, submissions, requests, fail: () => { failSubmission = true; } };
 }
 
 for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
@@ -61,6 +62,45 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
     const device = devices[deviceName];
     test.use({ viewport: device.viewport, userAgent: device.userAgent, deviceScaleFactor: device.deviceScaleFactor,
       isMobile: device.isMobile, hasTouch: device.hasTouch, timezoneId: 'America/Sao_Paulo' });
+
+    for (const [profile, path] of [
+      ['CHATGPT_CODEX', '/codex-chatgpt'], ['CHATGPT_CODEX_MKT', '/codex-chatgpt-mkt'],
+      ['CHATGPT_CODEX_SANDBOX', '/codex-chatgpt-sandbox']
+    ] as const) {
+      test(`${profile} mostra término real, ausência histórica e conclusão por polling`, async ({ page }, testInfo) => {
+        const errors: string[] = [];
+        page.on('pageerror', error => errors.push(error.message));
+        const finishedAt = '2026-10-02T01:45:00Z';
+        const rows = ['COMPLETED', 'FAILED', 'CANCELLED', 'PENDING', 'RUNNING', 'COMPLETED']
+          .map((status, index) => item(profile, 990301 + index, status, ''));
+        rows.slice(0, 3).forEach(row => { row.finishedAt = finishedAt; });
+        rows[5].finishedAt = undefined;
+        const api = await mockApi(page, profile, rows);
+        await page.clock.install({ time: new Date(timestamp) });
+        await page.goto(path);
+        const card = (id: number) => page.locator('li').filter({ has: page.getByRole('link', { name: 'Abrir detalhes', exact: true })
+          .and(page.locator(`a[href="/codex/requests/${id}"]`)) });
+        for (const id of [990301, 990302, 990303]) {
+          await expect(card(id)).toContainText('Término da execução: 01/10/2026, 22:45');
+          await expect(card(id).locator('time')).toHaveAttribute('datetime', finishedAt);
+        }
+        for (const id of [990304, 990305]) {
+          await expect(card(id)).toContainText('Término da execução: Aguardando término');
+          await expect(card(id).locator('time')).toHaveCount(0);
+        }
+        await expect(card(990306)).toContainText('Término da execução: Não informado');
+        await expect(card(990306).locator('time')).toHaveCount(0);
+        await card(990301).screenshot({ path: testInfo.outputPath('execution-finished-at.png') });
+        const running = api.requests.find(row => row.id === 990305)!;
+        running.status = 'COMPLETED';
+        running.finishedAt = finishedAt;
+        await page.clock.runFor(5_001);
+        await expect(card(990305)).toContainText('Término da execução: 01/10/2026, 22:45');
+        await expect(card(990305).locator('time')).toHaveAttribute('datetime', finishedAt);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+        expect(errors).toEqual([]);
+      });
+    }
 
     for (const profile of ['CHATGPT_CODEX', 'CHATGPT_CODEX_MKT'] as const) {
       test(`${profile} preserva controles, contexto e envio`, async ({ page }, testInfo) => {
