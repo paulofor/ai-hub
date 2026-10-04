@@ -31,11 +31,12 @@ for (const device of ['desktop', 'mobile'] as const) {
     test('shows each stored token total without changing the duration ranking', async ({ page }, testInfo) => {
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      let rankingCalls = 0;
-      await page.route('**/api/codex/requests/processing-time-ranking', (route) => {
-        rankingCalls++;
-        return route.fulfill({ json: ranking });
+      const requestPaths: string[] = [];
+      page.on('request', (request) => {
+        const path = new URL(request.url()).pathname;
+        if (path.startsWith('/api/codex/requests')) requestPaths.push(path);
       });
+      await page.route('**/api/codex/requests/processing-time-ranking', (route) => route.fulfill({ json: ranking }));
 
       await page.goto('/codex/processing-time-ranking');
       await expect(page.getByRole('columnheader', { name: 'Total de tokens', exact: true })).toBeVisible();
@@ -50,7 +51,8 @@ for (const device of ['desktop', 'mobile'] as const) {
       await expect(rows.nth(2)).toContainText('Falhou');
       await expect(rows.nth(3)).toContainText('Cancelada');
       await expect(rows.nth(1).getByRole('cell').nth(5)).toHaveText('2h 0min');
-      expect(rankingCalls).toBe(1);
+      expect(requestPaths.length).toBeGreaterThan(0);
+      expect([...new Set(requestPaths)]).toEqual(['/api/codex/requests/processing-time-ranking']);
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       expect(overflow).toBe(false);
