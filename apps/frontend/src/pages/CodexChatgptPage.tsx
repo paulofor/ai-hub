@@ -3740,6 +3740,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
               {item.productName && <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Produto: {item.productName}</p>}
               <p className="text-xs text-slate-500">Solicitada em: {formatDateTime(item.createdAt)}</p>
               <p className="text-xs text-slate-500">Início da execução: {item.startedAt ? formatDateTime(item.startedAt) : 'Aguardando início'}</p>
+              <p className="text-xs text-slate-500">Término da execução: {item.finishedAt ? <time dateTime={item.finishedAt}>{formatDateTime(item.finishedAt)}</time> : isTerminalStatus(item.status) ? 'Não informado' : 'Aguardando término'}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">Ambiente:</span> {formatRequestEnvironment(item.environment)}
                 <span className="mx-2 text-slate-300 dark:text-slate-700">|</span>
