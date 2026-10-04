@@ -23,6 +23,7 @@ import SalesImpactRequestsPage from './pages/SalesImpactRequestsPage';
 import SalesImpactRequestDetailPage from './pages/SalesImpactRequestDetailPage';
 import TokenRankingPage from './pages/TokenRankingPage';
 import ProcessingTimeRankingPage from './pages/ProcessingTimeRankingPage';
+import ProductEvolutionPage from './pages/ProductEvolutionPage';
 
 function App() {
   return (
@@ -42,6 +43,7 @@ function App() {
         <Route path="/construir-com-persona" element={<PersonaReviewPage />} />
         <Route path="/codex-chatgpt" element={<CodexChatgptPage />} />
         <Route path="/codex-chatgpt-mkt" element={<CodexChatgptPage variant="marketing" />} />
+        <Route path="/codex-chatgpt-mkt/produtos" element={<ProductEvolutionPage />} />
         <Route path="/codex-chatgpt-mkt/nota-5-vendas" element={<SalesImpactRequestsPage />} />
         <Route path="/codex-chatgpt-mkt/nota-5-vendas/:id" element={<SalesImpactRequestDetailPage />} />
         <Route path="/codex-chatgpt-sandbox" element={<CodexChatgptPage variant="sandbox" />} />

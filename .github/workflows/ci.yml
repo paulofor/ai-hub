@@ -20,6 +20,19 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      mysql57:
+        image: mysql:5.7
+        env:
+          MYSQL_DATABASE: mkt_product_history_test
+          MYSQL_ROOT_PASSWORD: mkt-local-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
     steps:
       - uses: actions/checkout@v4
       - name: Set up Java
@@ -36,6 +49,14 @@ jobs:
           ./apps/backend/scripts/validate-migration-versions.sh
           ./apps/backend/scripts/test-public-proxy-recovery-migrations.sh
           mvn -f apps/backend -B test
+      - name: Test MKT product history on a fresh MySQL 5.7 schema
+        run: >-
+          mvn -f apps/backend -B -Dtest=CodexProductHistoryIntegrationTest
+          -Dproduct-history-test-db-url='jdbc:mysql://127.0.0.1:3306/mkt_product_history_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          -Dproduct-history-test-db-user=root
+          -Dproduct-history-test-db-password=mkt-local-only
+          -Dproduct-history-test-db-driver=com.mysql.cj.jdbc.Driver
+          -Dproduct-history-test-migrations=classpath:db/migration/mysql test
 
   mcp-server:
     # Serializa os dois consumidores do Maven Central: o backend aquece o cache
@@ -91,6 +112,8 @@ jobs:
         run: npm --prefix apps/frontend run test:e2e -- reasoningSummary.spec.ts executionTrace.spec.ts
       - name: Test token totals in the processing time ranking in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- processingTimeRanking.spec.ts
+      - name: Test MKT product histories and pagination in desktop and mobile
+        run: npm --prefix apps/frontend run test:e2e -- productEvolution.spec.ts
 
   sandbox:
     runs-on: ubuntu-latest
