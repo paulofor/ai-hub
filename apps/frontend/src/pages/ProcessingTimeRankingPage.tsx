@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
-import { CodexProfile, CodexReasoningEffort, CodexStatus, formatDuration } from '../lib/codex';
+import { CodexProfile, CodexReasoningEffort, CodexStatus, formatDuration, formatTokens } from '../lib/codex';
 
 interface ProcessingTimeRankingItem {
   id: number;
@@ -11,6 +11,7 @@ interface ProcessingTimeRankingItem {
   profile?: CodexProfile;
   status: CodexStatus;
   durationMs: number;
+  totalTokens?: number | null;
   createdAt: string;
   requestTitle?: string;
 }
@@ -56,12 +57,13 @@ export default function ProcessingTimeRankingPage() {
       {!loading && !error && items.length === 0 ? <div className="rounded-xl border bg-white p-8 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-950">Ainda não existem solicitações com tempo de processamento contabilizado.</div> : null}
 
       {!loading && !error && items.length > 0 ? <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"><div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-900"><tr><th className="px-4 py-3">Posição</th><th className="px-4 py-3">Solicitação</th><th className="px-4 py-3">Modelo e perfil</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Tempo de processamento</th></tr></thead>
+        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-900"><tr><th className="px-4 py-3">Posição</th><th className="px-4 py-3">Solicitação</th><th className="px-4 py-3">Modelo e perfil</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Total de tokens</th><th className="px-4 py-3 text-right">Tempo de processamento</th></tr></thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-900">{items.map((item, index) => <tr key={item.id} className="transition hover:bg-sky-50/60 dark:hover:bg-sky-950/20">
           <td className="px-4 py-4"><span className={`inline-flex h-9 w-9 items-center justify-center rounded-full font-bold ${index < 3 ? 'bg-sky-600 text-white shadow' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{index + 1}</span></td>
           <td className="px-4 py-4"><Link to={`/codex/requests/${item.id}`} className="font-bold text-sky-700 hover:underline dark:text-sky-400">#{item.id}</Link>{item.requestTitle ? <div className="mt-1 max-w-sm text-sm font-medium text-slate-800 dark:text-slate-100" title={item.requestTitle}>{item.requestTitle}</div> : null}<div className="mt-1 max-w-xs truncate text-sm text-slate-600 dark:text-slate-400" title={item.environment}>{item.environment}</div><div className="mt-1 text-xs text-slate-400">{dateFormatter.format(new Date(item.createdAt))}</div></td>
           <td className="px-4 py-4 text-sm"><div className="font-medium text-slate-800 dark:text-slate-100">{item.model}</div><div className="mt-1 text-xs text-slate-500">{item.profile ?? 'Sem perfil'} · raciocínio {item.reasoningEffort.toUpperCase()}</div></td>
           <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle[item.status]}`}>{statusLabel[item.status]}</span></td>
+          <td className="whitespace-nowrap px-4 py-4 text-right tabular-nums text-slate-900 dark:text-white">{item.totalTokens == null ? <span className="text-sm text-slate-500">Não informado</span> : formatTokens(item.totalTokens)}</td>
           <td className="px-4 py-4 text-right text-lg font-bold tabular-nums text-slate-900 dark:text-white">{formatDuration(item.durationMs)}</td>
         </tr>)}</tbody>
       </table></div></div> : null}

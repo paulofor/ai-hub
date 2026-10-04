@@ -121,7 +121,7 @@ public interface CodexRequestRepository extends JpaRepository<CodexRequest, Long
     @Query("""
         select new com.aihub.hub.dto.CodexProcessingTimeRankingItem(
             cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.profile, cr.status,
-            cr.durationMs, cr.createdAt, cr.prompt, cr.responseText, ''
+            cr.durationMs, cr.totalTokens, cr.createdAt, cr.prompt, cr.responseText, ''
         )
         from CodexRequest cr
         where cr.durationMs is not null

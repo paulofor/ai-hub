@@ -14,6 +14,7 @@ public record CodexProcessingTimeRankingItem(
     CodexIntegrationProfile profile,
     CodexRequestStatus status,
     Long durationMs,
+    Integer totalTokens,
     Instant createdAt,
     @JsonIgnore String prompt,
     @JsonIgnore String responseText,
@@ -22,7 +23,7 @@ public record CodexProcessingTimeRankingItem(
     public CodexProcessingTimeRankingItem withRequestTitle(String requestTitle) {
         return new CodexProcessingTimeRankingItem(
             id, environment, model, reasoningEffort, profile, status,
-            durationMs, createdAt, prompt, responseText, requestTitle
+            durationMs, totalTokens, createdAt, prompt, responseText, requestTitle
         );
     }
 }
