@@ -89,6 +89,8 @@ jobs:
         run: npm --prefix apps/frontend run test:e2e -- codexRecentDialogue.spec.ts
       - name: Test public execution trace and summary in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- reasoningSummary.spec.ts executionTrace.spec.ts
+      - name: Test token totals in the processing time ranking in desktop and mobile
+        run: npm --prefix apps/frontend run test:e2e -- processingTimeRanking.spec.ts
 
   sandbox:
     runs-on: ubuntu-latest

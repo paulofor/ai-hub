@@ -374,6 +374,7 @@ test('shows requests ranked by processing time', async ({ page }) => {
     profile: 'CHATGPT_CODEX',
     status: 'COMPLETED',
     durationMs: 7_200_000,
+    totalTokens: 12_345,
     createdAt: '2026-09-12T00:00:00Z',
     requestTitle: 'Processar lote extenso'
   }, {
@@ -385,6 +386,7 @@ test('shows requests ranked by processing time', async ({ page }) => {
     status: 'FAILED',
     durationMs: 90_000,
     createdAt: '2026-09-11T00:00:00Z',
+    totalTokens: 0,
     requestTitle: 'Validar integração'
   }] }));
 
@@ -394,6 +396,8 @@ test('shows requests ranked by processing time', async ({ page }) => {
   await expect(page.getByRole('row').nth(1)).toContainText('#2250');
   await expect(page.getByRole('row').nth(1)).toContainText('Processar lote extenso');
   await expect(page.getByRole('row').nth(1)).toContainText('2h 0min');
+  await expect(page.getByRole('row').nth(1).getByRole('cell').nth(4)).toHaveText('12.345');
+  await expect(page.getByRole('row').nth(2).getByRole('cell').nth(4)).toHaveText('0');
   await expect(page.getByRole('row').nth(2)).toContainText('1min');
   await page.screenshot({ path: '/tmp/processing-time-ranking.png', fullPage: true });
 });
