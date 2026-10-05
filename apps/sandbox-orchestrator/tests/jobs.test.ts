@@ -1096,6 +1096,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
   const processor = new SandboxJobProcessor(undefined, 'gpt-5-codex', undefined, globalThis.fetch, fakeCodexAppServerClient);
   const job: SandboxJob = {
     jobId: 'job-chatgpt-codex-mkt-app-server',
+    repoSlug: 'paulofor/marketing-hub',
     repoUrl: tempRepo,
     branch: 'main',
     taskDescription: 'avalie campanhas',
@@ -1119,6 +1120,8 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.equal((turnStartCall.params as { effort?: string }).effort, 'max');
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
+    assert.equal(input?.[0]?.text?.split('MARKETING_HUB_VALUE_FLOW_V1').length, 2);
+    assert.ok(input?.[0]?.text?.includes('resolva o caso atual e previna a mesma classe de falha em outros produtos'));
     assertGithubDeliveryInstruction(input?.[0]?.text ?? '');
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
     assert.ok(input?.[0]?.text?.includes('melhor resposta possível'));
