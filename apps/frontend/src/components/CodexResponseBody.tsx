@@ -1,4 +1,5 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { copyTextToClipboard } from '../lib/clipboard';
 import MarkdownFileReference, { isFileReferenceHref } from './MarkdownFileReference';
 
 type SalesImpactLevel = 'muito_baixo' | 'baixo' | 'medio' | 'alto' | 'muito_alto';
@@ -12,32 +13,6 @@ interface StructuredResponse {
   orientacaoProximaAcao: string;
   sugestaoMelhoriaAmbiente: string;
 }
-
-const copyTextToClipboard = async (text: string) => {
-  if (navigator.clipboard?.writeText && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // Navegadores podem expor a API e ainda negar a permissao; use o fallback abaixo.
-    }
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  textarea.style.top = '0';
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
-  if (!copied) {
-    throw new Error('document.execCommand(copy) retornou falso');
-  }
-};
 
 const stripModelThinking = (content: string): string => {
   const trimmed = content.trim();

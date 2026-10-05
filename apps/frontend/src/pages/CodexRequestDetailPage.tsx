@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../api/client';
 import CodexResponseBody from '../components/CodexResponseBody';
 import CodexExecutionTrace from '../components/CodexExecutionTrace';
+import { copyTextToClipboard } from '../lib/clipboard';
 import { legacyChecklist } from '../lib/executionTrace';
 import ScreenPromptItems from '../components/ScreenPromptItems';
 import { useToasts } from '../components/ToastContext';
@@ -64,19 +65,7 @@ export default function CodexRequestDetailPage() {
       errorMessage = 'Não foi possível copiar o prompt.'
     ) => {
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else {
-          const textarea = document.createElement('textarea');
-          textarea.value = text;
-          textarea.style.position = 'fixed';
-          textarea.style.left = '-9999px';
-          document.body.appendChild(textarea);
-          textarea.focus();
-          textarea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textarea);
-        }
+        await copyTextToClipboard(text);
         pushToast(successMessage);
       } catch (err) {
         pushToast(errorMessage, 'error');
@@ -725,7 +714,16 @@ export default function CodexRequestDetailPage() {
                   ) : '—'}
                 </div>
               </div>
-              <CodexExecutionTrace key={request.id} trace={request.executionTrace} legacySteps={publicReasoning.steps} />
+              <CodexExecutionTrace key={request.id} trace={request.executionTrace} legacySteps={publicReasoning.steps}
+                onCopy={() => handleCopyText(
+                  JSON.stringify({
+                    requestId: request.id,
+                    executionTrace: request.executionTrace ?? null,
+                    ...(!request.executionTrace ? { legacyChecklist: publicReasoning.steps } : {})
+                  }, null, 2),
+                  'Trace copiado para a área de transferência.',
+                  'Não foi possível copiar o trace. Verifique a permissão de área de transferência do navegador e tente novamente.'
+                )} />
               <details open={request.executionTrace ? undefined : true} className="rounded-lg border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-900 dark:bg-violet-950/30">
                 <summary className="cursor-pointer text-sm font-semibold text-violet-800 dark:text-violet-200">Resumo público complementar</summary>
                 <div className="mb-2 flex items-center justify-between gap-2">
