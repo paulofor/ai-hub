@@ -2,6 +2,7 @@ package com.aihub.hub.web;
 
 import com.aihub.hub.dto.CodexProductHistory;
 import com.aihub.hub.dto.CodexProductRequest;
+import com.aihub.hub.dto.CodexDialogueRequest;
 import com.aihub.hub.service.CodexProductHistoryService;
 import org.springframework.data.domain.Page;
 import org.springframework.http.CacheControl;
@@ -10,6 +11,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/codex/requests/marketing-products")
@@ -31,5 +34,10 @@ public class CodexProductHistoryController {
                                                             @RequestParam(defaultValue = "0") int page,
                                                             @RequestParam(defaultValue = "15") int size) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.requests(productName, page, size));
+    }
+
+    @GetMapping("/dialogue")
+    public ResponseEntity<List<CodexDialogueRequest>> dialogue(@RequestParam String productName) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.dialogue(productName));
     }
 }
