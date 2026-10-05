@@ -1,5 +1,6 @@
 import { buildPostPrContinuationPrompt, GITHUB_DELIVERY_INSTRUCTION, PRODUCTION_PUBLICATION_INSTRUCTION, CODEX_OPERATIONAL_INSTRUCTION, SANDBOX_OPERATIONAL_INSTRUCTION } from '../lib/deliveryInstructions';
 import { CodexQuotaUsage } from '../components/CodexQuotaUsage';
+import { isMarketingHubFlow, MARKETING_HUB_REQUEST_CONTEXT } from '../lib/marketingFlow';
 import { ChangeEvent, ClipboardEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../api/client';
@@ -1730,6 +1731,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const sandboxOnly = config.profile === 'CHATGPT_CODEX_SANDBOX';
   const hasResponseReadControls = !sandboxOnly;
   const selectedEnvironment = sandboxOnly ? SANDBOX_ONLY_ENVIRONMENT : environment;
+  const marketingHubFlow = isMarketingHubFlow(config.profile, selectedEnvironment);
   const [productsLoading, setProductsLoading] = useState(false);
   const [selectedProductName, setSelectedProductName] = useState('');
   const [conversationProductFilter, setConversationProductFilter] = useState('');
@@ -2382,12 +2384,13 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       config.promptModeLine,
       'Responda à última mensagem do usuário e mantenha contexto das mensagens anteriores.',
       ...config.promptExtraLines,
+      marketingHubFlow ? MARKETING_HUB_REQUEST_CONTEXT : '',
       selectedConversation ? `Contexto selecionado pelo usuário: conversa salva "${selectedConversation.title}" (${selectedConversation.messageCount} mensagem(ns), atualizada em ${formatDateTime(selectedConversation.updatedAt)}).` : '',
       history ? `Histórico da conversa:\n${history}` : '',
       selectedPromptHintPhrases.length > 0 ? `Contexto prioritário selecionado pelo usuário. Use estes itens para interpretar e responder a próxima mensagem:\n${selectedPromptHintPhrases.join('\n')}` : '',
       `Última mensagem do usuário:\n${message}`
     ].filter(Boolean).join('\n\n');
-  }, [config.promptExtraLines, config.promptModeLine, resolvePromptHistoryMessages, savedConversations, selectedPromptHints, selectedSavedConversationId]);
+  }, [config.promptExtraLines, config.promptModeLine, marketingHubFlow, resolvePromptHistoryMessages, savedConversations, selectedPromptHints, selectedSavedConversationId]);
 
   const buildConversationPrompt = useCallback((message: string) => buildConversationPromptFromHistory(message, conversation), [buildConversationPromptFromHistory, conversation]);
 
@@ -3302,8 +3305,10 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       </div>
 
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
-        <h3 className="text-lg font-semibold">{config.formTitle}</h3>
-        <p className="text-sm text-slate-500">{config.description}</p>
+        <h3 className="text-lg font-semibold">{marketingHubFlow ? 'Produtos, vendas e melhoria da cadeia' : config.formTitle}</h3>
+        <p className="text-sm text-slate-500">{marketingHubFlow
+          ? 'Destrave a próxima entrega de valor e aprimore o processo e os agentes para os próximos produtos. Cada avanço deve ter evidência; vendas e margem dependem de resultados reais.'
+          : config.description}</p>
         {sandboxOnly ? <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
@@ -3549,7 +3554,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             onChange={(e) => setPrompt(e.target.value)}
             onPaste={handlePromptPaste}
             rows={5}
-            placeholder={promptComposerDisabled ? promptComposerDisabledReason : config.placeholder}
+            placeholder={promptComposerDisabled ? promptComposerDisabledReason : marketingHubFlow
+              ? 'Ex.: destrave a próxima etapa deste produto e corrija a causa no processo ou agente para evitar recorrência.'
+              : config.placeholder}
             className="w-full rounded-md border px-3 py-2 pr-12 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
             required
             disabled={promptComposerDisabled}

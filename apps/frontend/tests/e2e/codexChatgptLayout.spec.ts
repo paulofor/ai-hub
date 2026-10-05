@@ -14,7 +14,7 @@ const item = (profile: Profile, id = 990101, status = 'COMPLETED', responseText 
   workBatchKey: `test-layout-${profile}`, workBranch: 'test/layout', totalTokens: 100
 });
 
-async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) {
+async function mockApi(page: Page, profile: Profile, initial = [item(profile)], environmentNames = [environment]) {
   const requests = [...initial];
   const calls: string[] = [];
   const requestQueries: URL[] = [];
@@ -28,7 +28,7 @@ async function mockApi(page: Page, profile: Profile, initial = [item(profile)]) 
     if (path === '/api/codex/requests' && request.method() === 'GET') requestQueries.push(url);
     let json: unknown = [];
     if (path === '/api/account/read') json = { connected: true, status: 'connected', executable: true };
-    if (path === '/api/environments/active') json = [{ id: 1, name: environment }];
+    if (path === '/api/environments/active') json = environmentNames.map((name, index) => ({ id: index + 1, name }));
     if (path === '/api/codex/models/active') json = [{ id: 1, modelName: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol' }];
     if (path === '/api/products') json = [{ name: 'Produto sintético', modelName: 'gpt-6.1-sol', reasoningEffort: 'high' }];
     if (path === '/api/processes') json = [{ id: 91, number: '01', text: 'Processo sintético' }];
@@ -172,6 +172,54 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
         expect(errors).toEqual([]);
       });
     }
+
+    test('MKT orienta o avanço da cadeia apenas no marketing-hub e atualiza o contexto ao trocar ambiente', async ({ page }, testInfo) => {
+      const hub = 'paulofor/marketing-hub@main';
+      const api = await mockApi(page, 'CHATGPT_CODEX_MKT', [], [hub, environment]);
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto('/codex-chatgpt-mkt');
+      const environmentSelect = page.getByLabel('Ambiente', { exact: true });
+      await environmentSelect.selectOption(hub);
+      const heading = page.getByRole('heading', { name: 'Produtos, vendas e melhoria da cadeia' });
+      await expect(heading).toBeVisible();
+      await expect(page.getByText('Cada avanço deve ter evidência', { exact: false })).toBeVisible();
+      await page.locator('textarea[required]').fill('Corrija o bloqueio da atividade e previna recorrência.');
+      await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+      await expect.poll(() => api.submissions.length).toBe(1);
+      expect(api.submissions[0].environment).toBe(hub);
+      expect(api.submissions[0].userMessage).toBe('Corrija o bloqueio da atividade e previna recorrência.');
+      expect(api.submissions[0].prompt).toContain('chainId=26');
+      expect(api.submissions[0].prompt).toContain('próximos produtos, com evidência e teste de regressão');
+      expect(api.submissions[0].prompt).toContain('preserve pedidos somente de análise e autorizações comerciais');
+      await expect(page.getByRole('button', { name: 'Enviar mensagem', exact: true })).toBeEnabled();
+      await heading.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath('marketing-hub-value-flow.png') });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+      await environmentSelect.selectOption(environment);
+      await expect(heading).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Análise de relatórios de marketing' })).toBeVisible();
+      await page.locator('textarea[required]').fill('Analise este relatório.');
+      await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+      await expect.poll(() => api.submissions.length).toBe(2);
+      expect(api.submissions[1].environment).toBe(environment);
+      expect(api.submissions[1].prompt).not.toContain('chainId=26');
+      expect(api.submissions[1].prompt).not.toContain('Corrija o bloqueio da atividade');
+      expect(errors).toEqual([]);
+    });
+
+    test('perfil técnico no marketing-hub preserva seu contrato', async ({ page }) => {
+      const hub = 'paulofor/marketing-hub';
+      const api = await mockApi(page, 'CHATGPT_CODEX', [], [hub]);
+      await page.goto('/codex-chatgpt');
+      await page.getByLabel('Ambiente', { exact: true }).selectOption(hub);
+      await expect(page.getByRole('heading', { name: 'Produtos, vendas e melhoria da cadeia' })).toHaveCount(0);
+      await page.locator('textarea[required]').fill('Verifique a integração.');
+      await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+      await expect.poll(() => api.submissions.length).toBe(1);
+      expect(api.submissions[0].prompt).not.toContain('chainId=26');
+      expect(api.submissions[0].prompt).toContain('Na resposta final do Codex ChatGPT técnico');
+    });
 
     test('resposta técnica legada recebe cartão e leitura; falha pode ser retirada', async ({ page }) => {
       await mockApi(page, 'CHATGPT_CODEX', [item('CHATGPT_CODEX', 990101, 'COMPLETED', '**Resposta antiga** preservada.'),

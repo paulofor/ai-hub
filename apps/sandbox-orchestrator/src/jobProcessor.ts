@@ -1,4 +1,5 @@
 import { GITHUB_DELIVERY_INSTRUCTION, PRODUCTION_PUBLICATION_INSTRUCTION, CODEX_OPERATIONAL_INSTRUCTION, SANDBOX_OPERATIONAL_INSTRUCTION } from './deliveryInstructions.js';
+import { buildMarketingHubFlowInstruction } from './marketingFlowInstructions.js';
 import { type QuotaUsage, readQuotaSnapshot, finishQuotaUsage, observeQuota } from './quotaUsage.js';
 import { exec as execCallback, execFile as execFileCallback, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -1776,6 +1777,10 @@ export class SandboxJobProcessor implements JobProcessor {
   }
 
   private buildCodexAppServerInput(job: SandboxJob): Array<Record<string, string>> {
+    const marketingFlowInstruction = buildMarketingHubFlowInstruction(job);
+    const marketingFocusInstruction = marketingFlowInstruction
+      ? 'Conduza o avanço autorizado do produto na cadeia de valor e melhore as capacidades reutilizáveis dos processos e agentes. Use estado atual, código, dados e arquivos Markdown como evidências para execução e decisões comerciais.'
+      : 'Baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português; quando houver pedido de implementação ou correção, execute também a entrega de código conforme a orientação de entrega.';
     const bestAnswerInstruction = 'Oriente sua execução para produzir a melhor resposta possível: investigue, valide e refine a solução sem encurtar a análise por preocupação com limites de tempo ou de interações.';
     const localDevelopmentInstruction = 'Sempre que estiver fazendo um desenvolvimento mais complexo, monte um ambiente local, execute o que pretende desenvolver e ajuste iterativamente até conseguir o funcionamento desejado. Você pode executar qualquer módulo do repositório no próprio ambiente para testar e ajustar a solução, respeitando as ferramentas e credenciais disponíveis, e deve registrar qualquer limitação real de ambiente que impeça a execução local.';
     const codexChatgptOperationalInstruction = this.buildCodexChatgptOperationalInstruction(job);
@@ -1794,7 +1799,7 @@ export class SandboxJobProcessor implements JobProcessor {
     const localValidationBeforePublicationInstruction = this.buildLocalValidationBeforePublicationInstruction();
     const agentHarnessImprovementInstruction = this.buildAgentHarnessImprovementInstruction();
     const taskDescription = this.isChatgptCodexMarketing(job)
-      ? `Modo Codex ChatGPT MKT ativo: baixe e analise o repositório como fonte de relatórios de marketing, principalmente arquivos Markdown. Priorize campanhas, estratégias, funis, canais, criativos, métricas, resultados, aprendizados e oportunidades de marketing digital. Gere orientações acionáveis de melhoria em português; quando houver pedido de implementação ou correção, execute também a entrega de código conforme a orientação de entrega. ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
+      ? `Modo Codex ChatGPT MKT ativo: ${marketingFocusInstruction} ${codexChatgptOperationalInstruction} ${marketingObjectiveInstruction} ${marketingFlowInstruction} ${bestAnswerInstruction} ${localDevelopmentInstruction} ${marketingDecisionInstruction} ${marketingStructuredResponseInstruction} ${emailTestingInstruction} ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${browserTestingInstruction}
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
       : this.isChatgptCodexSandbox(job)
