@@ -79,7 +79,8 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
       expect(errors).toEqual([]);
     });
 
-    test('polling mostra atividade atual e resultado, preservando solicitação e métricas', async ({ page }) => {
+    test('polling mostra atividade atual e resultado, preservando solicitação e métricas', async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await page.clock.install();
       let finished = false;
       const live = structuredClone(trace);
@@ -93,15 +94,20 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
       await expect(page.getByTestId('codex-execution-trace')).toContainText('Em execução: Executar comando');
       await expect(page.getByTestId('execution-checklist')).toContainText('Executando');
       await expect(page.getByTestId('execution-timeline')).toContainText('Aguardando resultado da operação.');
+      await page.getByRole('button', { name: 'Copiar trace completo' }).click();
+      expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).executionTrace.events[0].status).toBe('running');
       finished = true;
       await page.clock.fastForward(16_000);
       await expect(page.getByTestId('execution-timeline')).toContainText('Comando encerrado com código 0.');
       await expect(page.getByText('Em execução: Executar comando', { exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Copiar trace completo' }).click();
+      expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).executionTrace).toEqual(trace);
       await expect(page.getByTestId('execution-checklist')).toContainText('Concluído');
       await expect(page.getByTestId('codex-response')).toContainText(detail.responseText);
     });
 
-    test('pedidos antigos separam o prefixo de checklist sem inventar histórico', async ({ page }) => {
+    test('pedidos antigos separam o prefixo de checklist sem inventar histórico', async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await page.route('**/api/codex/requests/*/{previous,next}', (route) => route.fulfill({ status: 404, json: {} }));
       await page.route('**/api/codex/requests/990012', (route) => route.fulfill({ json: {
         ...detail, id: 990012, executionTrace: undefined,
@@ -112,9 +118,16 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
       await expect(page.getByText('Checklist antigo: o registro não distingue pendente de executando.')).toBeVisible();
       await expect(page.getByTestId('codex-execution-trace')).toContainText('Eventos estruturados indisponíveis');
       await expect(page.getByTestId('codex-reasoning-summary')).toHaveText('Resumo antigo preservado.');
+      await page.getByRole('button', { name: 'Copiar trace completo' }).click();
+      expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText()))).toEqual({
+        requestId: 990012, executionTrace: null, legacyChecklist: [
+          { step: 'Verificar a execução', status: 'completed' }, { step: 'Validar a entrega', status: 'pending' },
+        ],
+      });
     });
 
-    test('payload inválido, ausência de resumo e referência insegura não quebram o painel', async ({ page }) => {
+    test('payload inválido, ausência de resumo e referência insegura não quebram o painel', async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
       const unsafe = structuredClone(trace);
@@ -122,19 +135,25 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
         { label: 'Referência insegura', url: 'javascript:alert(1)' }, { label: 'URL com senha', url: 'https://user:pass@example.test' },
       ] }];
       await page.route('**/api/codex/requests/*/{previous,next}', (route) => route.fulfill({ status: 404, json: {} }));
-      await page.route('**/api/codex/requests/990013', (route) => route.fulfill({ json: { ...detail, id: 990013, reasoningSummary: undefined, executionTrace: unsafe } }));
+      await page.route('**/api/codex/requests/990013', (route) => route.fulfill({ json: { ...detail, id: 990013, reasoningSummary: undefined, executionTrace: { ...unsafe, privateReasoning: 'privateReasoning' } } }));
       await page.goto('/codex/requests/990013');
       await expect(page.getByTestId('execution-timeline')).toContainText('<script>alert(1)</script>');
       await expect(page.getByRole('link', { name: 'Referência insegura' })).toHaveCount(0);
       await expect(page.getByRole('link', { name: 'URL com senha' })).toHaveCount(0);
       await page.getByText('Resumo público complementar', { exact: true }).click();
       await expect(page.getByTestId('codex-reasoning-summary')).toHaveText('—');
+      await page.getByRole('button', { name: 'Copiar trace completo' }).click();
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      expect(copied).not.toContain('javascript:');
+      expect(copied).not.toContain('user:pass');
+      expect(copied).not.toContain('privateReasoning');
       expect(errors).toEqual([]);
     });
 
-    test('histórico limitado e eventos anteriores permanecem acessíveis', async ({ page }) => {
+    test('histórico limitado e eventos anteriores permanecem acessíveis e são copiados por completo', async ({ page, context }, testInfo) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       const many = structuredClone(trace);
-      many.events = Array.from({ length: 45 }, (_, index) => ({ ...many.events[0], id: `event-${index}`, sequence: index, label: `Operação ${index}` }));
+      many.events = Array.from({ length: 45 }, (_, index) => ({ ...many.events[index % many.events.length], id: `event-${index}`, sequence: index, label: `Operação ${index}` }));
       many.droppedEvents = 3;
       many.droppedPlans = 1;
       await page.route('**/api/codex/requests/*/{previous,next}', (route) => route.fulfill({ status: 404, json: {} }));
@@ -142,9 +161,69 @@ for (const deviceName of ['Desktop Chrome', 'iPhone 15 Pro']) {
       await page.goto('/codex/requests/990014');
       await expect(page.getByTestId('codex-execution-trace')).toContainText('3 evento(s) e 1 versão(ões) anterior(es) omitidos');
       await expect(page.getByTestId('execution-timeline').locator(':scope > li')).toHaveCount(40);
+      const copy = page.getByRole('button', { name: 'Copiar trace completo' });
+      await copy.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByText('Trace copiado para a área de transferência.', { exact: true })).toBeVisible();
+      expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText()))).toEqual({ requestId: 990014, executionTrace: many });
+      await expect(page.getByTestId('execution-plan-history').locator('ol')).toBeHidden();
+      await expect(page.getByTestId('execution-timeline').locator(':scope > li')).toHaveCount(40);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await copy.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath('copy-trace.png') });
       await page.getByRole('button', { name: 'Mostrar eventos anteriores (5)' }).click();
       await expect(page.getByTestId('execution-timeline').locator(':scope > li')).toHaveCount(45);
       await expect(page.getByText('Operação 0', { exact: true })).toBeVisible();
     });
+
+    for (const emptyTrace of [null, '{invalid']) {
+      test(`sem trace válido ou checklist desabilita cópia: ${emptyTrace}`, async ({ page }) => {
+        await page.route('**/api/codex/requests/*/{previous,next}', (route) => route.fulfill({ status: 404, json: {} }));
+        await page.route('**/api/codex/requests/990015', (route) => route.fulfill({ json: {
+          ...detail, id: 990015, executionTrace: emptyTrace, reasoningSummary: undefined,
+        } }));
+        await page.goto('/codex/requests/990015');
+        await expect(page.getByRole('button', { name: 'Copiar trace completo' })).toBeDisabled();
+      });
+    }
+
+    for (const mode of ['denied', 'unavailable', 'false', 'throw']) {
+      test(`clipboard ${mode}: fallback, feedback e limpeza`, async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.addInitScript((mode) => {
+          if (mode === 'unavailable') Object.defineProperty(navigator, 'clipboard', { value: undefined });
+          else Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: async () => { throw new Error('denied'); } });
+          const original = document.execCommand.bind(document);
+          document.execCommand = (command: string) => {
+            if (mode === 'false') return false;
+            if (mode === 'throw') throw new Error('copy failed');
+            return original(command);
+          };
+        }, mode);
+        await page.route('**/api/codex/requests/*/{previous,next}', (route) => route.fulfill({ status: 404, json: {} }));
+        await page.route('**/api/codex/requests/990016', (route) => route.fulfill({ json: { ...detail, id: 990016, executionTrace: syntheticTrace } }));
+        await page.goto('/codex/requests/990016');
+        const copy = page.getByRole('button', { name: 'Copiar trace completo' });
+        await copy.click();
+        const failed = ['false', 'throw'].includes(mode);
+        await expect(page.getByText(failed ? /Não foi possível copiar o trace/ : 'Trace copiado para a área de transferência.', { exact: !failed })).toBeVisible();
+        await expect(copy).toBeEnabled();
+        await expect(copy).toBeFocused();
+        await expect(page.locator('textarea[readonly]')).toHaveCount(0);
+        if (failed) {
+          await expect(page.getByText('Trace copiado para a área de transferência.', { exact: true })).toHaveCount(0);
+          await page.evaluate(() => Object.defineProperty(navigator.clipboard, 'writeText', { value: async () => {} }));
+          await copy.click();
+          await expect(page.getByText('Trace copiado para a área de transferência.', { exact: true })).toBeVisible();
+        } else {
+          // Read from another page when the tested page intentionally lacks navigator.clipboard.
+          const reader = await context.newPage();
+          await reader.goto('/favicon.svg');
+          const clipboard = await reader.evaluate(() => navigator.clipboard.readText());
+          expect(JSON.parse(clipboard)).toEqual({ requestId: 990016, executionTrace: syntheticTrace });
+          await reader.close();
+        }
+      });
+    }
   });
 }

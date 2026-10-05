@@ -48,7 +48,8 @@ function PlanSteps({ plan, events, plans, onEvidence }: {
   </ol>;
 }
 
-export default function CodexExecutionTrace({ trace, legacySteps = [] }: { trace?: ExecutionTrace; legacySteps?: TracePlan['steps'] }) {
+export default function CodexExecutionTrace({ trace, legacySteps = [], onCopy }: { trace?: ExecutionTrace; legacySteps?: TracePlan['steps']; onCopy?: () => Promise<void> }) {
+  const [copying, setCopying] = useState(false);
   const [visibleCount, setVisibleCount] = useState(40);
   const plans = trace?.plans ?? [];
   const plan = plans[plans.length - 1];
@@ -58,7 +59,19 @@ export default function CodexExecutionTrace({ trace, legacySteps = [] }: { trace
   const shown = events.slice(-visibleCount);
   return <div className="min-w-0 space-y-4" data-testid="codex-execution-trace">
     <section className="rounded-lg border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60" aria-labelledby="execution-checklist-title">
-      <h4 id="execution-checklist-title" className="text-sm font-semibold">Checklist da execução</h4>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 id="execution-checklist-title" className="text-sm font-semibold">Checklist da execução</h4>
+        {onCopy ? <button type="button" disabled={!trace && !legacySteps.length} aria-disabled={copying || (!trace && !legacySteps.length)} aria-busy={copying}
+          title="Copia todo o trace disponível, incluindo histórico e detalhes técnicos, em JSON"
+          onClick={async () => {
+            if (copying) return;
+            setCopying(true);
+            try { await onCopy(); } finally { setCopying(false); }
+          }}
+          className="rounded-md border border-sky-200 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:text-sky-300 dark:hover:bg-sky-950">
+          {copying ? 'Copiando…' : 'Copiar trace completo'}
+        </button> : null}
+      </div>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Os estados do plano são declarados pelo modelo. Consulte os resultados das operações para verificar as evidências.</p>
       {plan ? <>
         <p className="mt-2 text-xs text-slate-500">Atualizado em {when(plan.receivedAt)}</p>

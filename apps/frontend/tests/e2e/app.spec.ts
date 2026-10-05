@@ -1426,14 +1426,15 @@ test('shows a code generation icon on marketing comment cards with repository ch
 
   await page.goto('/codex-chatgpt-mkt');
 
-  const codeCommentCard = page.locator('section').filter({ hasText: 'Ajuste aplicado em' }).first();
+  const dialogue = page.getByLabel('Diálogo recente', { exact: true });
+  const codeCommentCard = dialogue.locator('section').filter({ hasText: 'Ajuste aplicado em' }).first();
   await expect(codeCommentCard.getByText('Gerou código')).toBeVisible();
   await expect(codeCommentCard.getByLabel('Impacto em vendas: baixo')).toBeVisible();
   await expect(page.getByText('Recomendo testar uma promessa')).toBeVisible();
-  await expect(page.getByLabel('Impacto em vendas: alto')).toBeVisible();
-  await expect(page.getByLabel('Impacto em vendas: médio')).toBeVisible();
-  await expect(page.getByLabel('Impacto em vendas: muito baixo')).toBeVisible();
-  await expect(page.getByLabel('Impacto em vendas: muito alto')).toBeVisible();
+  await expect(dialogue.getByLabel('Impacto em vendas: alto')).toBeVisible();
+  await expect(dialogue.getByLabel('Impacto em vendas: médio')).toBeVisible();
+  await expect(dialogue.getByLabel('Impacto em vendas: muito baixo')).toBeVisible();
+  await expect(dialogue.getByLabel('Impacto em vendas: muito alto')).toBeVisible();
   await expect(page.getByText('Gerou código')).toHaveCount(1);
   const copyCodeButton = codeCommentCard.getByRole('button', { name: 'Copiar código' });
   await expect(copyCodeButton).toBeVisible();
