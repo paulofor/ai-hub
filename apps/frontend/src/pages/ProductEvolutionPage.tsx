@@ -90,6 +90,7 @@ function ProductCard({ product }: { product: ProductHistory }) {
         <div className="min-w-0">
           <h3 className="break-words text-xl font-semibold">{product.productName}</h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{product.requestCount.toLocaleString('pt-BR')} solicitações MKT</p>
+          <Link to={`/codex-chatgpt-mkt/produtos/dialogo?${new URLSearchParams({ productName: product.productName })}`} aria-label={`Ver diálogo de ${product.productName}`} className="mt-3 inline-block rounded-md border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950">Ver diálogo</Link>
         </div>
         {product.latestRequestAt ? <p className="text-xs text-slate-500 dark:text-slate-400">Última solicitação: {formatDateTime(product.latestRequestAt)}</p> : null}
       </header>

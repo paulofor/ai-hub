@@ -117,7 +117,7 @@ for (const device of ['desktop', 'Pixel 7', 'iPhone 15 Pro'] as const) {
       await expect(historyPagination.getByRole('button', { name: 'Anterior' })).toBeDisabled();
       await historyPagination.getByRole('button', { name: 'Próxima' }).click();
       await expect(card.getByRole('row')).toHaveCount(3);
-      await expect(card.getByRole('link').first()).toHaveText('#990185');
+      await expect(card.getByRole('table').getByRole('link').first()).toHaveText('#990185');
       await expect(historyPagination).toContainText('Página 2 de 2');
       await expect(historyPagination.getByRole('button', { name: 'Próxima' })).toBeDisabled();
       expect(calls.find((url) => url.pathname.endsWith('/requests'))?.searchParams.get('productName')).toBe(productName);

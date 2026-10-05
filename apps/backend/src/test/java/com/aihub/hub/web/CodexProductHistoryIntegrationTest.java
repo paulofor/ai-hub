@@ -17,8 +17,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -164,6 +169,118 @@ class CodexProductHistoryIntegrationTest {
         mvc.perform(get(URL + "/requests").param("productName", "test/Não existe"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(0))
             .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    void selectsFourLatestMktRequestsOfProductBeforeReturningChronologicalPublicDialogue() throws Exception {
+        String name = "test/Oferta ' especial & + %";
+        var selected = new ArrayList<CodexRequest>();
+        for (int index = 0; index < 6; index++) {
+            CodexRequest item = request(name, CodexIntegrationProfile.CHATGPT_CODEX_MKT, NOW.plusSeconds(index));
+            item.setUserMessage("Pedido sintético " + index);
+            item.setResponseText("Resposta sintética " + index);
+            item.setExecutionLog("INTERNAL_LOG_TEST_ONLY");
+            item.setModelTranscript("INTERNAL_TRANSCRIPT_TEST_ONLY");
+            item.setStatus(CodexRequestStatus.values()[index % 5]);
+            // Completion order must not reorder the request/response pairs.
+            item.setFinishedAt(NOW.plusSeconds(100 - index));
+            selected.add(requests.saveAndFlush(item));
+        }
+        for (int index = 0; index < 12; index++) {
+            request(name, CodexIntegrationProfile.CHATGPT_CODEX, NOW.plusSeconds(200 + index));
+            request(name, CodexIntegrationProfile.CHATGPT_CODEX_SANDBOX, NOW.plusSeconds(200 + index));
+            request("test/Outro produto", CodexIntegrationProfile.CHATGPT_CODEX_MKT, NOW.plusSeconds(200 + index));
+        }
+        long count = requests.count();
+        var interactionCount = selected.get(5).getInteractionCount();
+        clearInvocations(sandbox);
+
+        String body = mvc.perform(get(URL + "/dialogue").param("productName", name)
+                .param("profile", "STANDARD").param("size", "100").param("page", "2"))
+            .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.length()").value(4))
+            .andExpect(jsonPath("$[0].id").value(selected.get(2).getId()))
+            .andExpect(jsonPath("$[0].userMessage").value("Pedido sintético 2"))
+            .andExpect(jsonPath("$[0].responseText").value("Resposta sintética 2"))
+            .andExpect(jsonPath("$[0].status").value("COMPLETED"))
+            .andExpect(jsonPath("$[1].id").value(selected.get(3).getId()))
+            .andExpect(jsonPath("$[2].id").value(selected.get(4).getId()))
+            .andExpect(jsonPath("$[3].id").value(selected.get(5).getId()))
+            .andExpect(jsonPath("$[3].userMessage").value("Pedido sintético 5"))
+            .andExpect(jsonPath("$[3].responseText").value("Resposta sintética 5"))
+            .andExpect(jsonPath("$[3].profile").value("CHATGPT_CODEX_MKT"))
+            .andExpect(jsonPath("$[3].productName").value(name))
+            .andExpect(jsonPath("$[3].createdAt").value(NOW.plusSeconds(5).toString()))
+            .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(body).doesNotContain("INTERNAL_", "prompt", "executionLog", "modelTranscript", "imageAttachments", "quotaUsage");
+        assertThat(requests.count()).isEqualTo(count);
+        assertThat(requests.findById(selected.get(5).getId()).orElseThrow().getInteractionCount()).isEqualTo(interactionCount);
+        verifyNoInteractions(sandbox);
+    }
+
+    @Test
+    void ordersEqualDialogueTimestampsByIdAndPreservesMissingPublicContent() throws Exception {
+        var selected = new ArrayList<CodexRequest>();
+        for (int index = 0; index < 5; index++) {
+            selected.add(request("test/Empate", CodexIntegrationProfile.CHATGPT_CODEX_MKT, NOW));
+        }
+        var last = selected.get(4);
+        last.setUserMessage(null);
+        last.setResponseText(null);
+        last.setStatus(CodexRequestStatus.CANCELLED);
+        requests.saveAndFlush(last);
+        mvc.perform(get(URL + "/dialogue").param("productName", "test/Empate"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(4))
+            .andExpect(jsonPath("$[0].id").value(selected.get(1).getId()))
+            .andExpect(jsonPath("$[1].id").value(selected.get(2).getId()))
+            .andExpect(jsonPath("$[2].id").value(selected.get(3).getId()))
+            .andExpect(jsonPath("$[3].id").value(last.getId()))
+            .andExpect(jsonPath("$[3].userMessage").value(nullValue()))
+            .andExpect(jsonPath("$[3].responseText").value(nullValue()))
+            .andExpect(jsonPath("$[3].status").value("CANCELLED"));
+    }
+
+    @Test
+    void readsHistoricalProductDialogueAndFreshResponsesWithoutCatalogAssociation() throws Exception {
+        var product = product("test/Nome histórico");
+        var item = request(product.getName(), CodexIntegrationProfile.CHATGPT_CODEX_MKT, NOW);
+        item.setUserMessage("Pedido original");
+        item.setStatus(CodexRequestStatus.RUNNING);
+        requests.saveAndFlush(item);
+        product.setName("test/Nome atual");
+        products.saveAndFlush(product);
+        products.delete(product);
+        products.flush();
+        mvc.perform(get(URL + "/dialogue").param("productName", "test/Nome histórico"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].userMessage").value("Pedido original"))
+            .andExpect(jsonPath("$[0].status").value("RUNNING"));
+        item.setStatus(CodexRequestStatus.COMPLETED);
+        item.setResponseText("Resposta atualizada");
+        item.setFinishedAt(NOW.plusSeconds(60));
+        requests.saveAndFlush(item);
+        mvc.perform(get(URL + "/dialogue").param("productName", "test/Nome histórico"))
+            .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$[0].status").value("COMPLETED"))
+            .andExpect(jsonPath("$[0].responseText").value("Resposta atualizada"))
+            .andExpect(jsonPath("$[0].finishedAt").value(NOW.plusSeconds(60).toString()));
+        mvc.perform(get(URL + "/dialogue").param("productName", "test/Nome atual"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void validatesDialogueProductAndReturnsAnEmptyListForProductsWithoutMktRequests() throws Exception {
+        mvc.perform(get(URL + "/dialogue")).andExpect(status().isBadRequest());
+        for (String invalid : new String[] { "", " ", "x".repeat(151) }) {
+            mvc.perform(get(URL + "/dialogue").param("productName", invalid)).andExpect(status().isBadRequest());
+        }
+        product("test/Somente técnico");
+        request("test/Somente técnico", CodexIntegrationProfile.CHATGPT_CODEX, NOW);
+        for (String name : new String[] { "test/Não existe", "test/Somente técnico" }) {
+            mvc.perform(get(URL + "/dialogue").param("productName", name))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.length()").value(0));
+        }
     }
 
     private ProductRecord product(String name) {

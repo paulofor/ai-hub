@@ -113,7 +113,7 @@ jobs:
       - name: Test token totals in the processing time ranking in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- processingTimeRanking.spec.ts
       - name: Test MKT product histories and pagination in desktop and mobile
-        run: npm --prefix apps/frontend run test:e2e -- productEvolution.spec.ts
+        run: npm --prefix apps/frontend run test:e2e -- productEvolution.spec.ts productDialogue.spec.ts
 
   sandbox:
     runs-on: ubuntu-latest

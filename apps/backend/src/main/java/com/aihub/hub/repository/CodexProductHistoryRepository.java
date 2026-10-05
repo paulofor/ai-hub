@@ -2,6 +2,7 @@ package com.aihub.hub.repository;
 
 import com.aihub.hub.domain.CodexIntegrationProfile;
 import com.aihub.hub.domain.CodexRequest;
+import com.aihub.hub.dto.CodexDialogueRequest;
 import com.aihub.hub.dto.CodexProductRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -61,4 +62,18 @@ public interface CodexProductHistoryRepository extends Repository<CodexRequest, 
 
     @Query("select count(cr) from CodexRequest cr where cr.profile = :profile and cr.productName = :productName")
     long countRequests(@Param("profile") CodexIntegrationProfile profile, @Param("productName") String productName);
+
+    // Filter before limiting. Share the public dialogue contract; private agent
+    // prompts, execution logs and transcripts never belong in this projection.
+    @Query("""
+        select new com.aihub.hub.dto.CodexDialogueRequest(
+            cr.id, cr.environment, cr.model, cr.reasoningEffort, cr.profile, cr.status,
+            cr.userMessage, cr.responseText, cr.productName, cr.createdAt, cr.finishedAt
+        )
+        from CodexRequest cr
+        where cr.profile = :profile and cr.productName = :productName
+        order by cr.createdAt desc, cr.id desc
+        """)
+    List<CodexDialogueRequest> findRecentDialogue(@Param("profile") CodexIntegrationProfile profile,
+                                                @Param("productName") String productName, Pageable pageable);
 }
