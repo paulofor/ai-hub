@@ -194,6 +194,8 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
       expect(api.submissions[0].prompt).toContain('preserve pedidos somente de análise e autorizações comerciais');
       expect(api.submissions[0].prompt).toContain('removendo esperas e repasses manuais desnecessários');
       expect(api.submissions[0].prompt).toContain('decisão, motivo, opções, recomendação, impacto, ação exata');
+      expect(api.submissions[0].prompt).toContain('termo, unidade/base, custos considerados, exemplo fictício e modelo de resposta');
+      expect(api.submissions[0].prompt).toContain('Não escolha um valor pelo usuário');
       await expect(page.getByRole('button', { name: 'Enviar mensagem', exact: true })).toBeEnabled();
       await heading.scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath('marketing-hub-value-flow.png') });
@@ -262,6 +264,48 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
       await expect.poll(() => api.submissions.length).toBe(1);
       expect(api.submissions[0]).toMatchObject({ environment: hub, profile: 'CHATGPT_CODEX_MKT',
         userMessage: draft, productName: 'Produto sintético', processId: 91 });
+      expect(errors).toEqual([]);
+    });
+
+    test('decisão de margem explica a sobra e envia o percentual escrito pelo usuário', async ({ page }, testInfo) => {
+      const hub = 'paulofor/marketing-hub@main';
+      const pending = '**Decisão necessária para Produto sintético — economia da oferta**\n\n'
+        + 'Plutus precisa da menor sobra aceitável por venda após entrega, taxas/impostos e aquisição. Essa sobra paga custos fixos e ajuda a gerar lucro; não é lucro líquido.\n\n'
+        + '**Exemplo fictício:** venda de R$ 100 − entrega de R$ 20 − taxas/impostos de R$ 10 − aquisição de R$ 30 = R$ 40, ou 40% da venda. O exemplo não define sua margem.\n\n'
+        + 'Escreva no campo Sua resposta à pendência: “Para Produto sintético, quero margem mínima de [X]% do valor cobrado por venda, após entrega, taxas/impostos e aquisição.” '
+        + 'Clique em Preparar resposta à pendência, revise e clique em Enviar mensagem. Se não souber escolher, peça a análise dos custos e cenários antes de decidir. '
+        + 'Após receber e conferir a decisão, Plutus poderá avaliar a economia. Isso não autoriza mídia nem resolve pendências técnicas.';
+      const pendingResponse = JSON.stringify({ titulo: 'Defina a sobra mínima', comentario: 'Custos do exemplo são fictícios. Nenhuma configuração aplicada.',
+        orientacaoProximaAcao: pending, impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' });
+      const row = { ...item('CHATGPT_CODEX_MKT', 990411, 'COMPLETED', pendingResponse),
+        environment: hub, productName: 'Produto sintético', processNumber: '01' };
+      const api = await mockApi(page, 'CHATGPT_CODEX_MKT', [row], [hub]);
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto('/codex-chatgpt-mkt');
+      const decision = page.getByRole('region', { name: 'Sua decisão ou informação', exact: true });
+      await expect(decision).toContainText('menor sobra aceitável por venda');
+      await expect(decision).toContainText('R$ 40, ou 40% da venda');
+      await expect(decision).toContainText('não autoriza mídia');
+      const answer = decision.getByLabel('Sua resposta à pendência');
+      const prepare = decision.getByRole('button', { name: 'Preparar resposta à pendência' });
+      await expect(answer).toHaveValue('');
+      await expect(prepare).toBeDisabled();
+      const reply = 'Para Produto sintético, quero margem mínima de 30% do valor cobrado por venda, após entrega, taxas/impostos e aquisição.';
+      await answer.fill(reply);
+      await prepare.click();
+      const composer = page.locator('textarea[required]');
+      const draft = await composer.inputValue();
+      expect(draft.split('Minha decisão ou informação:\n')[1]).toBe(reply);
+      expect(api.submissions).toHaveLength(0);
+      await decision.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath('contribution-margin-decision.png') });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+      await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+      await expect.poll(() => api.submissions.length).toBe(1);
+      expect(api.submissions[0]).toMatchObject({ environment: hub, profile: 'CHATGPT_CODEX_MKT', productName: 'Produto sintético',
+        processId: 91, userMessage: draft });
+      expect(String(api.submissions[0].userMessage).split('Minha decisão ou informação:\n')[1]).toBe(reply);
       expect(errors).toEqual([]);
     });
 

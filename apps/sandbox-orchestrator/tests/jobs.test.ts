@@ -1124,6 +1124,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('qual agente é responsável pelo próximo passo'));
     assert.ok(input?.[0]?.text?.includes('aguarde resposta explícita antes das ações dependentes'));
     assert.ok(input?.[0]?.text?.includes('ação exata do usuário'));
+    assert.ok(input?.[0]?.text?.includes('menor sobra aceitável por venda'));
+    assert.ok(input?.[0]?.text?.includes('Sua resposta à pendência'));
+    assert.ok(input?.[0]?.text?.includes('Não escolha um percentual padrão pelo usuário'));
     assert.ok(input?.[0]?.text?.includes('resolva o caso atual e previna a mesma classe de falha em outros produtos'));
     assertGithubDeliveryInstruction(input?.[0]?.text ?? '');
     assert.ok(input?.[0]?.text?.includes('arquivos Markdown'));
