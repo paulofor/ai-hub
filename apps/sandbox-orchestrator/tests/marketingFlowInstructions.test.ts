@@ -4,7 +4,7 @@ import { buildMarketingHubFlowInstruction, MARKETING_HUB_VALUE_FLOW_INSTRUCTION 
 import { SandboxJobProcessor } from '../src/jobProcessor.js';
 import type { SandboxJob, SandboxProfile } from '../src/types.js';
 
-const marker = 'MARKETING_HUB_VALUE_FLOW_V1';
+const marker = 'MARKETING_HUB_VALUE_FLOW_V2';
 const target = { profile: 'CHATGPT_CODEX_MKT' as const, repoSlug: 'paulofor/marketing-hub' };
 
 test('ativa a política somente pelo perfil e pela identidade exata do repositório', () => {
@@ -58,6 +58,10 @@ const cases: Array<[string, RegExp[]]> = [
   ['retentativa paga sem corrigir a causa', [/não há tarefa equivalente em andamento/, /replay suportado/, /sem nova inferência ou cobrança duplicada/, /falta de autorização para gasto futuro não impede preparação local/]],
   ['confusão entre prontidão e mercado', [/READY não comprova capacidade/, /Pouco tráfego não prova rejeição/, /compras líquidas conciliadas/, /valor é desconhecido, não zero/, /Separe testes, bots e simulações/]],
   ['autoridade, identidade e escopo', [/somente de análise continuam somente de análise/, /Sem produto definido/, /não são snapshots|não snapshots/, /Respeite STOP/, /Não recrute participantes/, /ação indispensável do usuário/]],
+  ['produto parado e repasse manual entre agentes', [/Reduza o tempo até a próxima entrega aceita/, /remova esperas, repasses manuais e retrabalho/, /qual agente é responsável pelo próximo passo/, /o que ele recebe\/entrega/, /verifique aceite e continuação/]],
+  ['decisão humana sem explicação acionável', [/visível assim que for identificada/, /destaque-a no campo orientacaoProximaAcao/, /qual produto e etapa estão parados/, /por que o modelo não pode resolvê-la/, /opções viáveis e recomendação justificada/, /prazo, custo\/limite e risco/, /ação exata do usuário/, /condição de retomada/]],
+  ['recomendação reenviada como autorização', [/não são decisões do usuário/, /aguarde resposta explícita antes das ações dependentes/, /continue o trabalho independente autorizado/, /Não peça nova autorização para passos já autorizados/, /simples reenvio da pergunta autoriza/, /sem duplicar tarefas ou custos/]],
+  ['automação opaca ou continuação não comprovada', [/Diferencie execução em andamento, espera por decisão do usuário e bloqueio externo/, /fonte e o horário do estado/, /sem confirmar um mecanismo de execução ativo/, /como a retomada realmente ocorrerá/, /omita orientacaoProximaAcao/]],
 ];
 
 for (const [scenario, requirements] of cases) {
