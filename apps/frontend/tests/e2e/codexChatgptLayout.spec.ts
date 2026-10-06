@@ -192,6 +192,8 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
       expect(api.submissions[0].prompt).toContain('chainId=26');
       expect(api.submissions[0].prompt).toContain('próximos produtos, com evidência e teste de regressão');
       expect(api.submissions[0].prompt).toContain('preserve pedidos somente de análise e autorizações comerciais');
+      expect(api.submissions[0].prompt).toContain('removendo esperas e repasses manuais desnecessários');
+      expect(api.submissions[0].prompt).toContain('decisão, motivo, opções, recomendação, impacto, ação exata');
       await expect(page.getByRole('button', { name: 'Enviar mensagem', exact: true })).toBeEnabled();
       await heading.scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath('marketing-hub-value-flow.png') });
@@ -206,6 +208,101 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
       expect(api.submissions[1].prompt).not.toContain('chainId=26');
       expect(api.submissions[1].prompt).not.toContain('Corrija o bloqueio da atividade');
       expect(errors).toEqual([]);
+    });
+
+    test('pendência MKT exige resposta explícita e prepara continuação no ambiente original', async ({ page }, testInfo) => {
+      const hub = 'paulofor/marketing-hub@main';
+      const pending = 'Produto sintético, aquisição: falta definir o limite de mídia. Hermes depende dessa decisão para iniciar a campanha. Opções: manter pausada ou informar um limite. Recomendo manter pausada até definir o orçamento. Responda aqui com sua escolha; a retomada depende da conferência do limite.';
+      const pendingResponse = JSON.stringify({ titulo: 'Aquisição aguarda decisão', comentario: 'Preparação local concluída. Nenhuma campanha iniciada.',
+        orientacaoProximaAcao: pending, impactoAumentoVendas: 'medio', alterouCodigoRepositorio: false, resumoCodigoPr: '', sugestaoMelhoriaAmbiente: '' });
+      const row = { ...item('CHATGPT_CODEX_MKT', 990401, 'COMPLETED', pendingResponse), environment: hub,
+        productName: 'Produto sintético', processNumber: '01' };
+      const api = await mockApi(page, 'CHATGPT_CODEX_MKT', [row], [environment, hub]);
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto('/codex-chatgpt-mkt');
+      // History can contain another environment: presentation follows the request.
+      await page.getByLabel('Ambiente', { exact: true }).selectOption(environment);
+      const decision = page.getByRole('region', { name: 'Sua decisão ou informação', exact: true });
+      await expect(decision).toBeVisible();
+      await expect(decision).toContainText(pending);
+      await expect(page.getByRole('button', { name: 'Enviar orientação para a solicitação' })).toHaveCount(0);
+      const prepare = decision.getByRole('button', { name: 'Preparar resposta à pendência' });
+      await expect(prepare).toBeDisabled();
+      await decision.getByLabel('Sua resposta à pendência').fill('   ');
+      await expect(prepare).toBeDisabled();
+      const reply = 'Mantenha a campanha pausada. Continue somente a preparação sem gasto.';
+      await decision.getByLabel('Sua resposta à pendência').fill(reply);
+      await prepare.click();
+      const composer = page.locator('textarea[required]');
+      await expect(composer).toBeFocused();
+      await expect(composer).toContainText('Resposta à pendência da solicitação #990401');
+      const draft = await composer.inputValue();
+      expect(draft).toContain(pending);
+      expect(draft).toContain(`Minha decisão ou informação:\n${reply}`);
+      expect(draft).not.toContain('Execute sua orientação');
+      expect(api.submissions).toHaveLength(0);
+      await expect(page.getByLabel('Ambiente', { exact: true })).toHaveValue(hub);
+      await expect(page.getByLabel('Produto', { exact: true })).toHaveValue('Produto sintético');
+      await expect(page.getByLabel('Processo', { exact: true })).toHaveValue('91');
+      const decisionBox = await decision.boundingBox();
+      const commentBox = await page.getByRole('heading', { name: 'Comentário', exact: true }).boundingBox();
+      expect(decisionBox!.y).toBeLessThan(commentBox!.y);
+      await decision.scrollIntoViewIfNeeded();
+      const visibleDecision = await decision.boundingBox();
+      const metricsBox = await page.getByRole('button', { name: 'Fechar quadro de indicadores' }).locator('xpath=../..').boundingBox();
+      const overlaps = visibleDecision!.x < metricsBox!.x + metricsBox!.width
+        && visibleDecision!.x + visibleDecision!.width > metricsBox!.x
+        && visibleDecision!.y < metricsBox!.y + metricsBox!.height
+        && visibleDecision!.y + visibleDecision!.height > metricsBox!.y;
+      expect(overlaps, 'Os indicadores não podem cobrir a decisão do usuário').toBe(false);
+      await page.screenshot({ path: testInfo.outputPath('marketing-hub-decision.png') });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+      await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+      await expect.poll(() => api.submissions.length).toBe(1);
+      expect(api.submissions[0]).toMatchObject({ environment: hub, profile: 'CHATGPT_CODEX_MKT',
+        userMessage: draft, productName: 'Produto sintético', processId: 91 });
+      expect(errors).toEqual([]);
+    });
+
+    test('falha ao enviar resposta à pendência preserva a decisão do usuário', async ({ page }) => {
+      const hub = 'paulofor/marketing-hub@main';
+      const api = await mockApi(page, 'CHATGPT_CODEX_MKT', [{ ...item('CHATGPT_CODEX_MKT'), environment: hub }], [hub]);
+      api.fail();
+      await page.goto('/codex-chatgpt-mkt');
+      await page.getByLabel('Sua resposta à pendência').fill('O acesso de homologação está disponível; use apenas dados sintéticos.');
+      await page.getByRole('button', { name: 'Preparar resposta à pendência' }).click();
+      const composer = page.locator('textarea[required]');
+      const draft = await composer.inputValue();
+      await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+      await expect(page.getByText('Falha sintética de envio', { exact: false }).first()).toBeVisible();
+      await expect(composer).toHaveValue(draft);
+      expect(api.submissions).toHaveLength(0);
+    });
+
+    test('decisão segue a origem da mensagem e não aparece sem pendência humana', async ({ page }) => {
+      const hub = 'paulofor/marketing-hub@main';
+      const automatic = JSON.stringify({ titulo: 'Atividade em andamento', comentario: 'Íris está processando a tarefa sintética; acompanhe no monitor. Não há ação necessária do usuário.' });
+      await mockApi(page, 'CHATGPT_CODEX_MKT', [item('CHATGPT_CODEX_MKT'),
+        { ...item('CHATGPT_CODEX_MKT', 990402, 'COMPLETED', automatic), environment: hub }], [hub, environment]);
+      await page.goto('/codex-chatgpt-mkt');
+      await page.getByLabel('Ambiente', { exact: true }).selectOption(hub);
+      await expect(page.getByRole('heading', { name: 'Orientação', exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Sua decisão ou informação', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Atividade em andamento', { exact: true })).toBeVisible();
+    });
+
+    test('pendência de ambiente inativo não prepara resposta em outro ambiente', async ({ page }) => {
+      const hub = 'paulofor/marketing-hub@main';
+      const api = await mockApi(page, 'CHATGPT_CODEX_MKT', [{ ...item('CHATGPT_CODEX_MKT'), environment: hub }]);
+      await page.goto('/codex-chatgpt-mkt');
+      await page.getByLabel('Ambiente', { exact: true }).selectOption(environment);
+      await page.getByLabel('Sua resposta à pendência').fill('Acesso disponível.');
+      await page.getByRole('button', { name: 'Preparar resposta à pendência' }).click();
+      await expect(page.getByText('O ambiente desta pendência não está ativo.', { exact: false })).toBeVisible();
+      await expect(page.locator('textarea[required]')).toHaveValue('');
+      await expect(page.getByLabel('Ambiente', { exact: true })).toHaveValue(environment);
+      expect(api.submissions).toHaveLength(0);
     });
 
     test('perfil técnico no marketing-hub preserva seu contrato', async ({ page }) => {

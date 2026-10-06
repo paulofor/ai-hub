@@ -1026,12 +1026,14 @@ interface AssistantMessageBodyProps {
   onDismissRequest?: () => void;
   isOrientationRequested: (orientation: string) => boolean;
   onRequestOrientation: (orientation: string) => void;
+  onPrepareDecisionReply?: (orientation: string, reply: string) => void;
 }
 
-const AssistantMessageBody = ({ content, structuredResponse, commentFallback = false, commentRead = false, onCommentReadChange, onDismissRequest, isOrientationRequested, onRequestOrientation }: AssistantMessageBodyProps) => {
+const AssistantMessageBody = ({ content, structuredResponse, commentFallback = false, commentRead = false, onCommentReadChange, onDismissRequest, isOrientationRequested, onRequestOrientation, onPrepareDecisionReply }: AssistantMessageBodyProps) => {
   const structured: MarketingStructuredResponse | null = (structuredResponse ? parseMarketingStructuredResponse(content) : null)
     ?? (commentFallback ? { titulo: '', comentario: content, resumoCodigoPr: '', orientacaoProximaAcao: '', sugestaoMelhoriaAmbiente: '' } : null);
   const [copiedField, setCopiedField] = useState<'comentario' | 'orientacao' | 'melhoria' | null>(null);
+  const [decisionReply, setDecisionReply] = useState('');
   const copiedTimeoutRef = useRef<number | null>(null);
   const orientationRequested = structured?.orientacaoProximaAcao ? isOrientationRequested(structured.orientacaoProximaAcao) : false;
 
@@ -1069,6 +1071,35 @@ const AssistantMessageBody = ({ content, structuredResponse, commentFallback = f
     {structured.titulo ? <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm dark:border-sky-900 dark:bg-sky-950/30">
       <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">Título</h4>
       <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">{structured.titulo}</p>
+    </section> : null}
+    {structured.orientacaoProximaAcao && onPrepareDecisionReply ? <section aria-label="Sua decisão ou informação" className="rounded-lg border border-amber-300 bg-amber-50 p-4 shadow-sm dark:border-amber-700 dark:bg-amber-950/30">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Sua decisão ou informação</h4>
+        <button
+          type="button"
+          onClick={() => handleCopyStructuredText('orientacao', structured.orientacaoProximaAcao)}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-white/80 text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+          title="Copiar pendência"
+          aria-label="Copiar pendência"
+        ><CopyIcon copied={copiedField === 'orientacao'} /></button>
+      </div>
+      <MarkdownMessage content={structured.orientacaoProximaAcao} />
+      <p className="mt-3 text-xs text-amber-900 dark:text-amber-100">Escreva sua decisão ou a informação solicitada. Depois, revise a mensagem preparada e clique em Enviar mensagem para retomar o atendimento.</p>
+      <label className="mt-3 block text-sm font-medium text-amber-900 dark:text-amber-100">
+        Sua resposta à pendência
+        <textarea
+          value={decisionReply}
+          onChange={(event) => setDecisionReply(event.target.value)}
+          rows={3}
+          className="mt-1 w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700 dark:bg-slate-900 dark:text-slate-100"
+        />
+      </label>
+      <button
+        type="button"
+        disabled={!decisionReply.trim()}
+        onClick={() => onPrepareDecisionReply(structured.orientacaoProximaAcao, decisionReply.trim())}
+        className="mt-2 rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+      >Preparar resposta à pendência</button>
     </section> : null}
     {structured.comentario ? <section className={`rounded-lg border p-4 shadow-sm transition ${commentRead ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/10'}`}>
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -1115,7 +1146,7 @@ const AssistantMessageBody = ({ content, structuredResponse, commentFallback = f
       </div>
       <MarkdownMessage content={structured.comentario} />
     </section> : null}
-    {structured.orientacaoProximaAcao ? <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30">
+    {structured.orientacaoProximaAcao && !onPrepareDecisionReply ? <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Orientação</h4>
         <div className="flex items-center gap-2">
@@ -2447,6 +2478,12 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     return requestIds.size;
   }, [conversation, hiddenRequestIds]);
   const visibleConversation = recentVisibleConversation(productFilteredConversationPool, recentDialogueRequestIds);
+  const hasMarketingHubDecision = visibleConversation.some((message) => {
+    const request = message.requestId ? requestById.get(message.requestId) : undefined;
+    return message.role === 'assistant'
+      && isMarketingHubFlow(request?.profile ?? config.profile, message.environment ?? request?.environment ?? '')
+      && Boolean(parseMarketingStructuredResponse(message.content)?.orientacaoProximaAcao);
+  });
   const hiddenConversationMessages = Math.max(0, productFilteredConversationPool.length - visibleConversation.length);
   const firstUnreadModelResponseId = useMemo(() => {
     if (!hasResponseReadControls) {
@@ -2929,6 +2966,21 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
   }, []);
 
+  const handlePrepareDecisionReply = useCallback((orientation: string, reply: string, replyEnvironment: string, requestId?: number) => {
+    if (!environments.some((item) => item.name === replyEnvironment)) {
+      setError('O ambiente desta pendência não está ativo. Ative-o em Ambientes para responder à solicitação original.');
+      return;
+    }
+    setEnvironment(replyEnvironment);
+    const sourceRequest = requestId ? requestById.get(requestId) : undefined;
+    setSelectedProductName(sourceRequest?.productName ?? '');
+    const matchingProcesses = processes.filter((process) => process.number === sourceRequest?.processNumber);
+    setSelectedProcessId(matchingProcesses.length === 1 ? String(matchingProcesses[0].id) : '');
+    setPrompt(`Resposta à pendência${requestId ? ` da solicitação #${requestId}` : ''}\n\nPendência apresentada pelo modelo (contexto):\n${orientation}\n\nMinha decisão ou informação:\n${reply}`);
+    setError(null);
+    window.setTimeout(() => promptTextareaRef.current?.focus(), 0);
+  }, [environments, processes, requestById]);
+
   const handlePreparePostPrContinuation = useCallback((prUrl?: string) => {
     setPrompt(buildPostPrContinuationPrompt(prUrl, selectedEnvironment));
     setError(null);
@@ -3172,7 +3224,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h2 className="text-2xl font-semibold">{config.title}</h2>
-        {!technicalChat && operationalSummaryVisible ? <div className={`fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))] rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
+        {!technicalChat && operationalSummaryVisible ? <div className={`${marketingHubFlow || hasMarketingHubDecision ? 'w-full max-w-[236px]' : 'fixed right-4 top-4 z-40 w-[min(236px,calc(100vw-2rem))]'} rounded-lg border bg-white/95 px-3 py-2 text-right shadow-lg backdrop-blur dark:bg-slate-900/90 ${runningTokensAreStale ? 'border-amber-500 ring-2 ring-amber-300/70 dark:border-amber-500 dark:ring-amber-700/60' : 'border-slate-200 dark:border-slate-800'}`}>
           <div className="flex items-start justify-between gap-3">
             {config.profile === 'CHATGPT_CODEX_MKT' ? (
               <div className="min-w-[78px] rounded border border-slate-200 bg-slate-50 px-2 py-1 text-center dark:border-slate-700 dark:bg-slate-800/80" title="Média das notas de impacto estimado em vendas no dia operacional">
@@ -3307,7 +3359,7 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
       <form onSubmit={handleRun} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-5 space-y-3">
         <h3 className="text-lg font-semibold">{marketingHubFlow ? 'Produtos, vendas e melhoria da cadeia' : config.formTitle}</h3>
         <p className="text-sm text-slate-500">{marketingHubFlow
-          ? 'Destrave a próxima entrega de valor e aprimore o processo e os agentes para os próximos produtos. Cada avanço deve ter evidência; vendas e margem dependem de resultados reais.'
+          ? 'Agilize a passagem dos produtos até o mercado e aprimore o processo e os agentes. Cada avanço deve ter evidência. Acompanhe o gargalo, o próximo responsável e, quando necessário, a decisão que depende de você e como tomá-la.'
           : config.description}</p>
         {sandboxOnly ? <div className="flex flex-wrap justify-end gap-2">
           <button
@@ -3486,6 +3538,9 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
                   onDismissRequest={hasResponseReadControls && message.role === 'assistant' && message.requestId && readCommentIds.has(message.id) ? () => handleDismissConversationRequest(message.requestId!) : undefined}
                   isOrientationRequested={isOrientationRequested}
                   onRequestOrientation={handleRequestOrientation}
+                  onPrepareDecisionReply={isMarketingHubFlow(messageRequest?.profile ?? config.profile, messageEnvironment ?? '')
+                    ? (orientation, reply) => handlePrepareDecisionReply(orientation, reply, messageEnvironment!, message.requestId)
+                    : undefined}
                 />}
               </div>
             </article>;
