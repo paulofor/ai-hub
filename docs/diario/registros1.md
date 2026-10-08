@@ -4980,3 +4980,63 @@ cria o software que a atividade seguinte precisa validar.
   autenticada é autora do PR e não fará autoaprovação. Checks/revisões do HEAD final
   serão consultados antes do merge. SHA de merge, runs e versão publicada serão
   registrados no mesmo PR #764 para não criar entrega redundante de metadados.
+
+## 2026-10-08 — Remoção do corte manual de contexto
+
+- Pedido: retirar “Cortar contexto antigo”, pois solicitações novas podem depender
+  de solicitações anteriores. A imagem anexada mostra o controle no perfil MKT.
+  Main conferida em `becbf22aba46ba106b8cade983d7b60c8c8aad4b`, com PR #764
+  integrado e CI/deploy `37712915120` concluídos com sucesso. Esta alteração tem
+  escopo próprio, na branch `codex/remove-context-trim`.
+- **“Por que esse erro aconteceu?”** `handleTrimConversationContext` usa
+  `conversation.slice(-keepLast)` sem avaliar referências entre solicitações e
+  limpa também a conversa salva selecionada. O mesmo estado alimenta o prompt e
+  o armazenamento local. A remoção só visual de solicitações e o filtro por produto
+  usam estados separados e não precisam cortar esse histórico.
+- Alternativas comparadas: (1) retirar somente o botão: baixo esforço, mas deixa
+  lógica e testes obsoletos; (2) remover botão, campo, explicação e handler, com
+  regressão do contexto enviado: baixo esforço e melhor aderência, escolhida;
+  (3) implementar corte que percorre dependências: custo/risco maiores e uma nova
+  funcionalidade que não foi solicitada. Mantida a contagem do prompt.
+- Harness examinado: montagem do prompt, isolamento por ambiente, armazenamento
+  local, restauração das solicitações e testes Playwright existentes. Lacuna concreta:
+  os testes exigiam que o histórico antigo fosse descartado. Serão atualizados para
+  proteger mensagens referenciadas e contexto salvo no payload enviado ao modelo,
+  usando o harness existente, sem novas instruções genéricas ou infraestrutura.
+- Matriz de aceite definida antes dos testes:
+
+  | Caso | Evidência local exigida |
+  | --- | --- |
+  | Interface compartilhada | Botão, campo e explicação ausentes em técnico, MKT e sandbox |
+  | Referência a solicitação anterior | Novo envio preserva pedido e resposta antigos no payload |
+  | Contexto salvo | Conversa selecionada continua incluída no prompt |
+  | Visibilidade e persistência | Filtrar, retirar da tela, atualizar e recarregar preservam o contexto |
+  | Falha de consulta | Diálogo preservado e recuperação pelo controle existente |
+  | Isolamento | Apenas mensagens do ambiente/perfil pertinente no prompt |
+  | Navegadores e observabilidade | Chromium desktop e Pixel 7, sem erro JS/overflow; contagem coerente |
+  | Integração/build | API simulada local, TypeScript, build e lint aprovados |
+
+- Dados e métricas de homologação: IDs sintéticos `990xxx`, ambientes `test/*` e
+  `sandbox`, APIs interceptadas no navegador; nenhuma solicitação real de modelo,
+  dado comercial, campanha, custo de inferência ou métrica produtiva de teste.
+  Sem alteração de backend, changelog, scripts ou topologia Docker.
+- Implementação: removidos estado, handler, campo numérico, botão e texto explicativo
+  do corte no componente compartilhado. Contagem do prompt preservada. Não há endpoint
+  de corte a remover: a operação era inteiramente local ao frontend.
+- Validação local: 49 cenários Playwright aprovados (diálogo recente, layout dos três
+  perfis, contexto legado e isolamento por ambiente), TypeScript/build/lint e
+  `git diff --check` aprovados. Os seis casos novos verificam pedido e resposta
+  referenciados, contexto salvo e o payload efetivo da próxima solicitação.
+- Após a revisão, os seis casos novos passaram novamente com espera explícita pela
+  resposta do servidor simulado, novo cartão, limpeza do campo e desbloqueio do envio.
+  Capturas desktop/mobile inspecionadas: somente envio, PR quando aplicável e contagem
+  de histórico; sem overflow ou erro JavaScript. Avisos Vite de conexão recusada no
+  encerramento de algumas páginas referem-se ao polling local após desmontagem das
+  rotas simuladas; os asserts do fluxo e da resposta simulada passaram. Nenhum backend
+  real foi utilizado.
+- Diff revisado: quatro arquivos, somente componente, regressões e diário; anexo do
+  usuário fora do commit. Main não tem rulesets/proteção e a identidade autenticada
+  é autora do PR; não será feita autoaprovação. Entrega pelo PR desta branch, com
+  checks/revisões do HEAD conferidos antes do merge e imagens construídas pelo
+  workflow versionado. SHA final, runs e verificação publicada serão registrados
+  no PR e na resposta da solicitação, sem criar publicação redundante de metadados.

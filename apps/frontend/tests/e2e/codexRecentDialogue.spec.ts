@@ -14,6 +14,7 @@ const row = (number: number, requestProfile: CodexProfile = profile) => ({
   finishedAt: new Date(new Date(timestamp).getTime() + number * 1_000 + 500).toISOString()
 });
 const server = () => ({ rows: Array.from({ length: 13 }, (_, index) => row(index + 1)), failRecent: false, submitDelayMs: 0,
+  submissions: [] as { prompt: string; profile: CodexProfile; environment: string }[],
   calls: [] as { path: string; method: string; profile: string | null }[] });
 type Server = ReturnType<typeof server>;
 
@@ -38,6 +39,7 @@ async function mockApi(page: Page, state: Server) {
     if (path === '/api/codex/requests') {
       if (request.method() === 'POST') {
         const payload = request.postDataJSON();
+        state.submissions.push(payload);
         const created = { ...row(Math.max(...state.rows.map(item => item.id)) - 990000 + 1),
           ...payload, status: 'PENDING' as CodexStatus, responseText: null };
         state.rows.push(created);
@@ -173,7 +175,67 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
       }
     });
 
-    test('recupera falha sem perder o diálogo e respeita retirada, filtro e corte de contexto', async ({ page }) => {
+    for (const [requestProfile, path] of [
+      ['CHATGPT_CODEX', '/codex-chatgpt'], ['CHATGPT_CODEX_MKT', '/codex-chatgpt-mkt'],
+      ['CHATGPT_CODEX_SANDBOX', '/codex-chatgpt-sandbox']
+    ] as const) {
+      test(`${requestProfile} preserva referências e contexto salvo sem corte manual`, async ({ page }, testInfo) => {
+        const state = server();
+        const requestEnvironment = requestProfile === 'CHATGPT_CODEX_SANDBOX' ? 'sandbox' : environment;
+        state.rows = state.rows.map(item => ({ ...item, profile: requestProfile, environment: requestEnvironment }));
+        state.rows[12].userMessage = 'Continue a oferta definida na solicitação #990004.';
+        const errors: string[] = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await mockApi(page, state);
+        const saved = { id: 990500, title: 'Contexto sintético da oferta', profile: requestProfile, environment: requestEnvironment,
+          messageCount: 2, createdAt: timestamp, updatedAt: timestamp, messages: [
+            { role: 'user', content: 'Premissa anterior da oferta salva' },
+            { role: 'assistant', content: 'Decisão preservada da oferta salva' }
+          ] };
+        await page.route(url => url.pathname === '/api/codex/conversations' || url.pathname === '/api/codex/conversations/990500',
+          route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/990500') ? saved : [saved] }));
+        await page.goto(path);
+        await expect(page.getByText('Prompt atual: 20 mensagens de histórico', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Cortar contexto antigo', exact: true })).toHaveCount(0);
+        await expect(page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto')).toHaveCount(0);
+        await expect(page.getByText(/Este corte controla o histórico/)).toHaveCount(0);
+        if (requestProfile !== 'CHATGPT_CODEX_SANDBOX') {
+          await assistant(page, 990004).getByRole('checkbox', { name: 'Lido', exact: true }).check();
+          await assistant(page, 990004).getByRole('button', { name: 'Retirar solicitação da tela', exact: true }).click();
+          await expect(assistant(page, 990004)).toHaveCount(0);
+        }
+        if (requestProfile === 'CHATGPT_CODEX_MKT') {
+          await page.getByLabel('Filtrar diálogo por produto').selectOption('Produto A');
+        }
+        await page.getByRole('button', { name: 'Atualizar diálogo', exact: true }).click();
+        await expect(page.getByText('Prompt atual: 20 mensagens de histórico', { exact: true })).toBeVisible();
+        await page.reload();
+        await expect(page.getByText('Prompt atual: 20 mensagens de histórico', { exact: true })).toBeVisible();
+        await page.getByLabel('Conversa salva para contexto').selectOption('990500');
+        await expect(page.getByText('Prompt atual: 22 mensagens de histórico', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).locator('..')
+          .screenshot({ path: testInfo.outputPath('composer-without-context-cutoff.png') });
+        await page.locator('textarea[required]').fill('Aperfeiçoe a oferta da solicitação #990004 com a decisão salva.');
+        await page.getByRole('button', { name: 'Enviar mensagem', exact: true }).click();
+        await expect.poll(() => state.submissions.length).toBe(1);
+        await expect(assistant(page, 990014)).toBeVisible();
+        await expect(page.locator('textarea[required]')).toHaveValue('');
+        await expect(page.getByRole('button', { name: 'Enviar mensagem', exact: true })).toBeEnabled();
+        const payload = state.submissions[0];
+        expect(payload.profile).toBe(requestProfile);
+        expect(payload.environment).toBe(requestEnvironment);
+        expect(payload.prompt).toContain('Pedido sintético 990004');
+        expect(payload.prompt).toContain('Conteúdo público 990004');
+        expect(payload.prompt).toContain('Continue a oferta definida na solicitação #990004.');
+        expect(payload.prompt).toContain('Premissa anterior da oferta salva');
+        expect(payload.prompt).toContain('Decisão preservada da oferta salva');
+        expect(payload.prompt).toContain('Última mensagem do usuário:\nAperfeiçoe a oferta da solicitação #990004 com a decisão salva.');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+        expect(errors).toEqual([]);
+      });
+    }
+
+    test('recupera falha sem perder o contexto e respeita retirada e filtro visuais', async ({ page }) => {
       const state = server();
       state.failRecent = true;
       await mockApi(page, state);
@@ -200,12 +262,11 @@ for (const deviceName of ['Desktop Chrome', 'Pixel 7']) {
       await page.getByLabel('Filtrar diálogo por produto').selectOption('Produto A');
       await expect.poll(() => displayedRequestIds(page)).toEqual([990005, 990007, 990009, 990011, 990013]);
       await page.getByLabel('Filtrar diálogo por produto').selectOption('');
-      await page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto').fill('8');
-      page.once('dialog', prompt => prompt.accept());
-      await page.getByRole('button', { name: 'Cortar contexto antigo', exact: true }).click();
-      await expect(dialogue(page).locator('article')).toHaveCount(8);
+      await expect(dialogue(page).locator('article')).toHaveCount(20);
+      await expect(page.getByText('Prompt atual: 20 mensagens de histórico', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Atualizar diálogo', exact: true }).click();
-      await expect(dialogue(page).locator('article')).toHaveCount(8);
+      await expect(dialogue(page).locator('article')).toHaveCount(20);
+      await expect(page.getByText('Prompt atual: 20 mensagens de histórico', { exact: true })).toBeVisible();
     });
   });
 }
