@@ -1,5 +1,6 @@
 import { GITHUB_DELIVERY_INSTRUCTION, PRODUCTION_PUBLICATION_INSTRUCTION, CODEX_OPERATIONAL_INSTRUCTION, SANDBOX_OPERATIONAL_INSTRUCTION } from './deliveryInstructions.js';
 import { buildMarketingHubFlowInstruction } from './marketingFlowInstructions.js';
+import { buildMarketingHubCompletionReview, MARKETING_HUB_COMPLETION_REVIEW_MARKER } from './marketingFlowReview.js';
 import { type QuotaUsage, readQuotaSnapshot, finishQuotaUsage, observeQuota } from './quotaUsage.js';
 import { exec as execCallback, execFile as execFileCallback, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -25,7 +26,7 @@ import { readCodexAccount } from './codexAppServerAuth.js';
 import { buildAuthRepoUrl, extractTokenFromRepoUrl, redactUrlCredentials } from './git.js';
 import { buildJobPayload } from './jobPayload.js';
 import { ReasoningSummaryCollector, requestsReasoningSummary } from './reasoningSummary.js';
-import { ExecutionTraceCollector } from './executionTrace.js';
+import { ExecutionTraceCollector, type TracePlan } from './executionTrace.js';
 import {
   JobProcessor,
   SandboxJob,
@@ -1397,6 +1398,10 @@ export class SandboxJobProcessor implements JobProcessor {
     const reasoningSummaries = new ReasoningSummaryCollector(this.traceSecrets(job));
     const publishTrace = (): void => { job.executionTrace = trace.snapshot(); };
     let currentTurnId = 'attempt-1';
+    const previousTurnIds = new Set<string>();
+    // Keep the original acceptance criteria even if subsequent plans replace them
+    // or the bounded public trace evicts older snapshots.
+    let initialPlan: TracePlan | undefined;
     const reasoningTurnId = (params: unknown): string =>
       this.extractCodexId(params, ['turnId'], 'turn.id') ?? currentTurnId;
     const collectCompletedReasoning = (params: unknown, terminal = true): void => {
@@ -1412,6 +1417,10 @@ export class SandboxJobProcessor implements JobProcessor {
           const finalized = terminal && !['inprogress', 'in_progress', 'running', 'pending'].includes(itemStatus ?? '');
           if (finalized) reasoningSummaries.completeItem(turnId, item);
           trace.item(turnId, item, finalized);
+          // A terminal snapshot can carry the final answer without separate
+          // item/completed notifications (including during the completion review).
+          const text = finalized ? this.extractCodexAgentMessageText({ item }) : undefined;
+          if (text) finalAgentMessage = text;
         });
       }
       job.reasoningSummary = reasoningSummaries.text();
@@ -1422,6 +1431,8 @@ export class SandboxJobProcessor implements JobProcessor {
       client.onNotification(method, (params) => {
         const eventThreadId = this.extractCodexId(params, ['threadId'], 'thread.id');
         if (eventThreadId !== threadId) return;
+        const eventTurnId = this.extractCodexId(params, ['turnId'], 'turn.id');
+        if (eventTurnId && previousTurnIds.has(eventTurnId)) return;
         listener(params);
       });
     const unsubscribeCallbacks = [
@@ -1438,6 +1449,7 @@ export class SandboxJobProcessor implements JobProcessor {
         markActivity();
         trace.addPlan(reasoningTurnId(params), params);
         publishTrace();
+        initialPlan ??= job.executionTrace?.plans[0];
       }),
       onThreadNotification('item/agentMessage/delta', (params) => {
         markActivity();
@@ -1515,16 +1527,23 @@ export class SandboxJobProcessor implements JobProcessor {
       let transientAttempts = 0;
       let capacityAttempts = 0;
       let previousFailureWasCapacity = false;
+      let retrying = false;
+      let completionReviewInput: string | undefined;
       while (true) {
+        this.ensureNotCancelled(job);
         attempt += 1;
         const previousTurnId = currentTurnId;
+        if (attempt > 1) previousTurnIds.add(previousTurnId);
         currentTurnId = `attempt-${attempt}`;
         completed = false;
         failedReason = undefined;
+        lastActivityAt = undefined;
         activeCommandItems.clear();
         if (attempt > 1) {
-          trace.retry(previousTurnId);
-          publishTrace();
+          if (retrying) {
+            trace.retry(previousTurnId);
+            publishTrace();
+          }
           finalAgentMessage = '';
           summary = '';
           streamingAgentMessage = '';
@@ -1535,9 +1554,10 @@ export class SandboxJobProcessor implements JobProcessor {
             ? this.buildCodexAppServerInput(job)
             : [{
                 type: 'text',
-                text: previousFailureWasCapacity
+                text: !retrying && completionReviewInput ? completionReviewInput : (previousFailureWasCapacity
                   ? 'A tentativa anterior aguardou porque o modelo estava temporariamente sem capacidade. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.'
-                  : 'A tentativa anterior foi encerrada por uma falha transitória de conexão. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.',
+                  : 'A tentativa anterior foi encerrada por uma falha transitória de conexão. Continue a mesma tarefa a partir do estado e dos arquivos já existentes, verifique o trabalho realizado antes de repetir ações e conclua a resposta solicitada.')
+                    + (completionReviewInput ? ' Retome a conferência do resultado já iniciada; preserve o pedido original, as restrições e as evidências, sem aceitar automaticamente a resposta anterior.' : ''),
               }],
           effort: job.reasoningEffort ?? this.codexReasoningEffort,
           summary: 'auto',
@@ -1566,13 +1586,31 @@ export class SandboxJobProcessor implements JobProcessor {
 
           await this.waitForCodexTurn(job, () => completed, () => failedReason, () => lastActivityAt, () => activeCommandItems.size > 0);
           if (failedReason) throw new Error(failedReason);
+          this.ensureNotCancelled(job);
           const firstEventMs = firstEventAt ? firstEventAt - startedAt : undefined;
           this.log(job, `Codex App Server turn/completed recebido threadId=${threadId} turnId=${turnId}${firstEventMs !== undefined ? ` firstEventMs=${firstEventMs}` : ''}`);
-          return (finalAgentMessage || summary || streamingAgentMessage).trim() || 'Codex App Server concluiu o turno sem mensagem final.';
+          const result = (finalAgentMessage || summary || (completionReviewInput ? '' : streamingAgentMessage)).trim();
+          if (!completionReviewInput && buildMarketingHubFlowInstruction(job)) {
+            completionReviewInput = buildMarketingHubCompletionReview(initialPlan, result, this.traceSecrets(job));
+            retrying = false;
+            transientAttempts = 0;
+            capacityAttempts = 0;
+            this.log(job, `${MARKETING_HUB_COMPLETION_REVIEW_MARKER} iniciada na mesma thread; solicitação permanece em execução`);
+            trace.item(turnId, { id: 'marketing-completion-review', type: 'agentMessage', phase: 'commentary',
+              text: 'Conferindo se a entrega atende ao pedido original e se há trabalho autorizado pendente antes de encerrar.' }, true);
+            publishTrace();
+            continue;
+          }
+          if (completionReviewInput) {
+            if (!result) throw new Error('MARKETING_HUB_COMPLETION_REVIEW_EMPTY: conferência sem resposta final');
+            this.log(job, `${MARKETING_HUB_COMPLETION_REVIEW_MARKER} concluída; resposta conferida recebida`);
+          }
+          return result || 'Codex App Server concluiu o turno sem mensagem final.';
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           trace.finishTurn(currentTurnId, job.status === 'CANCELLED' ? 'cancelled' : 'failed', reason);
           publishTrace();
+          retrying = true;
           previousFailureWasCapacity = this.isCodexCapacityFailure(reason);
           if (previousFailureWasCapacity) {
             capacityAttempts += 1;
@@ -1926,7 +1964,8 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
       const itemRecord = item as Record<string, unknown>;
       const type = typeof itemRecord.type === 'string' ? itemRecord.type.toLowerCase() : '';
       const text = itemRecord.text;
-      if ((!type || type === 'agentmessage' || type === 'agent_message') && typeof text === 'string' && text.trim()) {
+      if ((!type || type === 'agentmessage' || type === 'agent_message') && itemRecord.phase !== 'commentary'
+        && typeof text === 'string' && text.trim()) {
         return text.trim();
       }
     }

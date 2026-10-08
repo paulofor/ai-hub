@@ -4,7 +4,7 @@ import { buildMarketingHubFlowInstruction, MARKETING_HUB_VALUE_FLOW_INSTRUCTION 
 import { SandboxJobProcessor } from '../src/jobProcessor.js';
 import type { SandboxJob, SandboxProfile } from '../src/types.js';
 
-const marker = 'MARKETING_HUB_VALUE_FLOW_V2';
+const marker = 'MARKETING_HUB_VALUE_FLOW_V3';
 const target = { profile: 'CHATGPT_CODEX_MKT' as const, repoSlug: 'paulofor/marketing-hub' };
 
 test('ativa a política somente pelo perfil e pela identidade exata do repositório', () => {
@@ -52,6 +52,8 @@ test('o payload real inclui a política uma vez sem depender de botão, produto 
 // Contract regressions derived from observed failures, not claims about an LLM's
 // decisions or product sales. No paid inference or production writes are needed.
 const cases: Array<[string, RegExp[]]> = [
+  ['relato contextual tratado como orientação sem destravar', [/relata o que tentou e onde ficou parado/, /não precisa escrever “implemente”/, /Perguntas informativas, pedidos somente de análise/, /não autoriza novos gastos/]],
+  ['aceite reduzido depois de descobrir dependência técnica', [/não autoriza reduzir o escopo/, /Mantenha o aceite do percurso original/, /especificação e a atividade seguinte precisa de software funcionando/, /não substitui a continuação solicitada/, /confronte a última mensagem do usuário, o checklist inicial/]],
   ['orientação sem execução ou aceite', [/preparação autorizada agora/, /aceite da saída/, /retorno ao processo pai/, /disponibilidade da próxima atividade/]],
   ['correção pontual sem prevenção', [/resolva o caso atual e previna/, /outro produto\/execução com identificadores diferentes/, /caminho antes válido/, /causa, evidência, mudança reutilizável/]],
   ['revisão repetida em referência encerrada', [/Experimento encerrado mantém suas provas/, /não renove parecer/, /novo ciclo e novo experimento/, /sem herdar autorizações vencidas/]],

@@ -4782,3 +4782,201 @@ Fontes: `GET /api/experiments/{91,92}/post-deploy-monitor`, gerados em `2026-09-
 - Critérios locais concluídos: typecheck do spec, lint e as duas jornadas afetadas aprovados após o ajuste; capturas desktop/Pixel 7 inspecionadas. Total de 222 testes do orquestrador e 30 cenários browser distintos aprovados. Evidências em `/tmp/mkt-margin-*.log` e `/tmp/mkt-margin-evidence`, fora do Git. Warnings existentes de bundle/Browserslist e polling de encerramento não impediram as asserções de comportamento; nenhum dado de teste foi persistido na operação.
 - Revisão do diff: somente contrato/contexto MKT, regressões relacionadas e documentação; sem valor financeiro aplicado ou mudança de banco/shell/workflow. PR #762/main `1ed37d828f7060d69a3b415c58d871296bf4fa60` reconsultado por SHA: CI/main/deploy [37488774610](https://github.com/paulofor/ai-hub/actions/runs/37488774610) concluídos com sucesso. A nova entrega seguirá PR próprio, sem repetir a anterior; revisão por comentário sem autoaprovação pela identidade autora `paulofor`, main sem proteção ou rulesets ativos na consulta atual.
 - Vínculo permanente desta solicitação: [PR #763 — margem e resposta à decisão MKT](https://github.com/paulofor/ai-hub/pull/763), implementação local validada `1fa34efb2c442abf1ef9293eb142682c6286639e`, branch `codex/mkt-decision-margins`. Esta atualização registra apenas o vínculo; checks/revisões serão conferidos no HEAD atual. SHA de merge, runs e evidências públicas serão preservados no fechamento do PR e na resposta desta solicitação, sem publicar novamente apenas para metadados finais.
+
+
+## 2026-10-06 — Diagnóstico da complexidade e dos produtos parados no Marketing Hub
+
+- Pedido: examinar solicitações recentes e explicar como simplificar o uso e fazer
+  os produtos chegarem ao mercado. Escopo desta execução: diagnóstico, consultas
+  somente leitura e recomendações; não disparar tarefas, alterar produtos, aprovar
+  gastos ou publicar uma nova funcionalidade por inferência.
+- A entrega anterior do AI Hub já estava integrada: PR #763, main
+  `f46bed3b941dd7c4489118da19072193a685d7fe`, CI/main/deploy
+  [37492264219](https://github.com/paulofor/ai-hub/actions/runs/37492264219) com sucesso.
+  Não foi repetida. Marketing Hub clonado em `/tmp/mkt-audit/marketing-hub`, no SHA
+  `caa5ff6a81ca194a1b91a83b5454f074fc2926de` (PR #5520).
+- Amostra: 100 solicitações recentes do perfil MKT retornadas pela API; 85 do
+  ambiente marketing-hub, entre 01/10 e 06/10, sendo 77 COMPLETED, cinco FAILED,
+  uma CANCELLED e duas PENDING. No recorte desde 05/10: 27, sendo 21 COMPLETED,
+  quatro FAILED e duas PENDING. Foram consultados os detalhes das 22 mais recentes
+  desse ambiente. Esses números medem solicitações técnicas, não vendas nem
+  sucesso dos produtos. Documentos, respostas finais e estado vivo foram comparados.
+
+### Evidências atuais e causa
+
+**Por que esse erro aconteceu?** Há uma passagem incompleta entre especificar e
+implementar o produto, e a apresentação distribui o acompanhamento entre estados
+que não significam a mesma coisa. Acrescentar orientação ou concluir contratos não
+cria o software que a atividade seguinte precisa validar.
+
+- **Capella, ciclo 5/experimento 98:** o backend informa quatro atividades concluídas
+  e seis restantes. `journey`, `deliverables` e `access` aparecem concluídas; a
+  atividade `access` se chama “Implementar acesso, continuidade e instrumentação”.
+  Entretanto, o contrato efetivo de Dédalo em
+  `landing-generator-agent-worker/src/main/resources/prompts/pde-construction/v2/specification-boundary.md`
+  declara que essas atividades só devolvem especificações JSON. O consumer mantém
+  `read-only` e desabilita shell nessas atividades. A homologação seguinte não
+  iniciou porque falta URL e aceitação de implementação executável. A indicação
+  principal mostra Psique, embora o impedimento dependa de Dédalo. A janela de
+  08/10 a 16/10 já foi registrada. Repetir datas ou Psique não cria o produto.
+  Fontes: solicitações #3253/#3276, API do processo 117/produto 7 e ciclo 5,
+  `PdeTechnicalHomologationReadinessProvider.java` e
+  `docs/homologacao/capella-contratos-construcao-v1.md`. O antecedente está em
+  `docs/registros/loops.md`, LOOP-DEDALO-CONTRATO-MARCADO-COMO-PROTOTIPO.
+- **Mira e Vega:** sucessores 6/99 e 7/100 existem; atividade de planejamento
+  `NOT_STARTED`, nenhuma tarefa/instância registrada e `automaticContinuation=false`.
+  As solicitações #3274/#3275 pediram teto próprio de IA; o usuário já respondeu
+  nas #3281/#3282, autorizando US$ 10 por produto conforme o texto de cada pedido.
+  Às 20:00:14 UTC, a fila MKT tinha esta análise #3277 em execução e #3281/#3282
+  nas posições 1/2. A autorização está na mensagem, ainda aguardando processamento;
+  isso não comprova aplicação no Marketing Hub nem permite duplicar as execuções.
+  Não se deve pedir o teto novamente ou classificar essa espera como falta de decisão.
+- **Alcyone, experimento 97:** a comunicação tem zero tarefas e aguarda prova da
+  geração personalizada integrada, economia aceita e estratégia compatível. A
+  consulta confirma a mensagem que confundiu o usuário em #3259; essa solicitação
+  falhou por `workspace routing discovery timed out`. A #3230 já distinguia a
+  preparação técnica dos pareceres. O diagnóstico não afirma que a margem sozinha
+  destrava o produto, nem reexecuta Íris sobre as mesmas entradas.
+- **Monitor dos agentes:** Argos e Íris têm `workStatus=BLOCKED` e
+  `combinedStatus=READY`; o código só acrescenta “parecer bloqueado” para fontes
+  `opportunity-dossier`. O READY comprova saúde do executor. Não comprova avanço.
+  Dédalo também expõe uma execução antiga de landing, não a implementação atual
+  de Capella. Quatro agentes permanecem NAO_INTEGRADO no indicador de maturidade;
+  isso evidencia cobertura parcial do indicador, não ausência de toda execução.
+- **Uso da tela:** navegação somente leitura em Produtos e nos ciclos de Capella/Mira,
+  Chromium desktop e Pixel 7. O estado corrente fica depois de alertas gerais,
+  explicação da cadeia, seletores e histórico. No ciclo de Mira, “Em andamento”
+  convive com “Nenhuma tarefa ou instância foi registrada”. No de Capella, o texto
+  explica a dependência de Dédalo e atribui a atividade a Psique, sem uma execução
+  que resolva a dependência. Há melhoria real sobre o histórico anterior, porém
+  ainda se exige que o usuário interprete o processo e acompanhe várias telas.
+
+### Alternativas comparadas e recomendação
+
+| Alternativa | Benefício | Risco / esforço | Aderência e decisão |
+| --- | --- | --- | --- |
+| Simplificar somente textos e prompts | Baixo esforço; reduz leitura | A passagem de implementação continua incompleta | Útil como apoio, insuficiente sozinha |
+| Fechar a passagem existente e apresentar o estado operacional por produto | Liga especificação, execução, prova e próxima atividade; mantém os mecanismos atuais | Esforço moderado; exige testar capacidade executora, identidade, retomada e custos | Recomendada, começando pela lacuna comprovada de Capella |
+| Reestruturar toda a cadeia ou criar outra camada de agentes | Pode redesenhar a experiência de ponta a ponta | Alto esforço, migração e risco de duplicar a orquestração | Não justificada pelas evidências atuais |
+
+- Proposta principal: fechar o percurso contrato de construção → executor capaz de
+  implementar → versão real validada → aceite independente → próxima atividade,
+  sem exigir que o usuário costure essa passagem. A correção deve preservar as
+  provas, limites e autorizações vigentes e funcionar para outro produto.
+- Apresentação proposta no card existente: **o que está sendo feito**, **o que falta
+  para vender**, **quem está resolvendo** e **se há decisão do usuário**. Distinguir
+  fila, execução comprovada, decisão pendente e falha técnica. Abrir detalhes da
+  cadeia, pareceres e PRs sob demanda. Fonte externa consultada:
+  [GOV.UK Task list](https://design-system.service.gov.uk/components/task-list/),
+  que recomenda simplificar o serviço antes de recorrer a listas de tarefas, e
+  [NN/g Progressive Disclosure](https://www.nngroup.com/articles/progressive-disclosure/).
+- Decisões: pedir uma escolha compreensível, com dados preparados, consequência e
+  local de resposta. Para margem, Plutus deve apresentar os custos reais disponíveis
+  e cenários de sobra por venda; não atribuir cálculo ao usuário nem inventar um
+  percentual. Reaproveitar decisões já recebidas no contexto correto.
+- Critério comercial proposto: uma versão utilizável, oferta e demonstração coerentes,
+  checkout/entrega/eventos validados e aquisição somente dentro dos limites aprovados.
+  Medir tempo até teste no mercado, tempo parado, intervenções humanas, compras
+  conciliadas e contribuição. Não usar quantidade de tarefas ou PRs como resultado.
+
+### Harness, validação e limites
+
+- Harness examinado: contrato central V2 do AI Hub, seus testes de distribuição,
+  template de ajuda do Marketing Hub, contratos de Dédalo, gate técnico, projeção
+  do trabalho atual e monitor dos agentes. O contrato central já pede execução,
+  prevenção e decisões acionáveis. Acrescentar outra instrução genérica duplicaria
+  o mecanismo sem fornecer a capacidade de implementação faltante. Nenhuma mudança
+  funcional foi feita nesta análise; a lacuna e os casos abaixo ficam registrados
+  como insumos de avaliação, não como testes executados ou correção entregue.
+- Casos de aceite recomendados para a implementação: contrato pronto com protótipo
+  ausente deve resultar em trabalho real do responsável ou bloqueio técnico preciso;
+  não deve aparecer como ação de Psique/usuário. Autorização recebida e ainda na fila
+  deve aparecer como recebida/aguardando execução. Callback repetido/reinício não
+  duplica tarefas nem gasto. Executor saudável com tarefa bloqueada deve mostrar os
+  dois estados. Repetir com outra identidade e comprovar a passagem até publicação
+  comercial autorizada e instrumentada, preservando o caminho antes válido.
+- Consultas HTTP reais foram somente GET. O navegador bloqueou outros métodos nos
+  endpoints `/api/`; não criou artefatos ou eventos comerciais de teste. As evidências
+  brutas e capturas ficam em `/tmp/mkt-audit`, fora do Git, sem credenciais versionadas.
+  A primeira consulta do monitor pela porta 5173 expirou; a rota oficial de diagnóstico
+  pela porta 80 respondeu. Não foi presumida falta de acesso.
+- Ambiente: o link `/usr/local/bin/node` aponta para workspace removido de outro job.
+  Foi usado o executável já disponível `/opt/stag-node/bin/node`, sem alterar serviços
+  nem instalar dependências. Melhoria de ambiente pertinente: fornecer Node em caminho
+  persistente na imagem da sandbox, independente dos workspaces temporários.
+- Este registro é a única alteração local no repositório. Não houve implementação,
+  commit, push, PR, deploy, campanha ou cobrança nesta análise. As recomendações
+  permanecem propostas e não são apresentadas como produtos já levados ao mercado.
+- Validação concluída: seis navegações de leitura (Produtos, Capella e Mira em
+  desktop/Pixel 7), sem erros JavaScript ou overflow observados; capturas de Capella
+  mobile e Mira desktop inspecionadas. As afirmações quantitativas foram conferidas
+  contra os snapshots. `git diff --check` aprovado; apenas este diário foi alterado.
+
+## 2026-10-08 — Solicitação #3276 e encerramento MKT sem avanço do percurso
+
+- Pedido: investigar solicitação, resposta e trace da #3276 e melhorar o comportamento
+  que devolve orientações sem resolver a dificuldade relatada. Consultada a API real
+  do AI Hub e o PR #5520 do Marketing Hub, somente leitura. A entrega histórica já
+  foi integrada em `caa5ff6a81ca194a1b91a83b5454f074fc2926de`; não foi repetida.
+  O PR #764 desta branch contém o diagnóstico anterior e será reutilizado para a
+  correção do harness, preservando o registro histórico e o vínculo desta solicitação.
+- **“Por que esse erro aconteceu?”** O trace público mostra redução de escopo:
+  18:38:45 UTC de 06/10, corrigir continuidade; 18:43:33, orientar a dependência;
+  19:52:50, checklist concluído com o protótipo ainda pendente. Foram examinados
+  os seis planos, 296 eventos sem descarte e a resposta. Houve implementação de
+  interface/gate e deploy; isso não comprova avanço do produto. O contrato versionado
+  `specification-boundary.md` no SHA publicado confirma que as atividades de Dédalo
+  consultadas produzem especificações, não o software exigido pela homologação.
+- Lacuna do harness: V2 orientava avanço, mas não explicitava como interpretar o
+  relato contextual de dificuldade nem preservava o aceite contra redução do plano.
+  O servidor aceitava o primeiro turno concluído e arquivava a thread. O caminho
+  escolhido adiciona uma conferência limitada na mesma execução, antes do resumo
+  final/callback. Compara pedido e primeiro plano; pede execução das omissões
+  autorizadas. Não cria outro orquestrador, agente, gate comercial ou exceção por ID.
+- Alternativas: apenas reforçar texto (baixo esforço, insuficiente diante da V2);
+  conferir na execução existente (esforço moderado e um turno adicional, escolhida);
+  nova orquestração completa (alto esforço/duplicação sem necessidade). A política V3
+  complementa a conferência com interpretação de dificuldade, preservação do resultado,
+  distinção entre especificar/construir e evidência de bloqueio externo. Mantém análise,
+  somente local, autorizações e limites de gasto/campanha.
+- Matriz definida antes dos testes em
+  `docs/homologacao/marketing-hub-completion-review-v1.md`. Inclui caso original,
+  outro produto, caminho válido, contexto, falhas, cancelamento, isolamento, métricas,
+  trace e navegador. Repositórios Git temporários e App Server simulado; nenhuma
+  inferência paga, tarefa de agente, campanha ou dado comercial criado na validação.
+- A regressão #3276 falhou antes da correção: o callback devolvia a orientação com
+  construção parada. Após a correção, a conferência mantém RUNNING, o primeiro plano
+  sobrevive à rotação do trace, eventos de turnos anteriores são ignorados, retomadas
+  transitórias preservam a fase e somente a resposta conferida encerra com sucesso.
+  Conferência vazia, atualização sem resposta final e falha definitiva não usam o
+  candidato anterior como sucesso. Cancelamento é preservado. Snapshots terminais
+  sem notificações separadas também são suportados.
+- Validação local do orquestrador: 238 testes aprovados, incluindo integração com
+  clone local, status, callback, outra identidade, acúmulo de tokens e limpeza de
+  listeners. TypeScript e build aprovados. O payload real do teste gerou fixture
+  transitória para o navegador, sem importar transcript ou raciocínio interno.
+- Navegador: 22 cenários existentes do trace passaram; os dois novos inicialmente
+  falharam antes de renderizar. **“Por que esse erro aconteceu?”** A interceptação
+  ampla da fixture também capturava módulos Vite em `/src/api/`. Restrita a URLs
+  cujo pathname começa em `/api/`; revalidação somente dos dois cenários afetados.
+- Build/lint frontend, `bash -n` e ShellCheck dos 20 scripts versionados e Actionlint
+  estrutural aprovados. Nenhum script shell ou changelog foi alterado. Actionlint
+  usa `-shellcheck=` devido aos avisos SSH anteriores; scripts são validados
+  separadamente. Sem topologia Docker criada nesta tarefa.
+- Ambiente: `/usr/local/bin/node` continua apontando a workspace antigo removido.
+  Foi usado `/opt/stag-node/bin` no PATH dos comandos locais, sem alterar o host.
+  Evidências brutas em `/tmp/aihub-3276`, fora do Git. Sugestão pertinente: Node em
+  caminho persistente da imagem da sandbox.
+- Limite: testes determinísticos comprovam a conferência obrigatória e a recuperação
+  do servidor, não obediência futura de toda inferência nem sucesso comercial. A
+  entrega melhora o encerramento do AI Hub; não declara Capella implementada ou
+  levada ao mercado. Consumo/duração do turno adicional ficam na mesma solicitação.
+- Aceite local concluído: os dois cenários afetados passaram com o payload produzido
+  pelo orquestrador e com a fixture autônoma da CI; 24 cenários distintos de navegador
+  aprovados. Captura mobile inspecionada, sem overflow/erro JS. Lint e diff finais
+  aprovados. A revisão conferiu escopo por perfil/repositório, uma única conferência,
+  preservação de restrições, ausência de novo gasto de homologação e publicação
+  exclusivamente pelas imagens do pipeline. Main sem rulesets/proteção; identidade
+  autenticada é autora do PR e não fará autoaprovação. Checks/revisões do HEAD final
+  serão consultados antes do merge. SHA de merge, runs e versão publicada serão
+  registrados no mesmo PR #764 para não criar entrega redundante de metadados.
