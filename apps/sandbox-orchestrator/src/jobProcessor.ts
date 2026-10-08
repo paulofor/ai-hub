@@ -843,6 +843,8 @@ export class SandboxJobProcessor implements JobProcessor {
         );
       }
 
+      await this.validateNodeRuntime(job);
+      this.ensureNotCancelled(job);
       let githubAuth: { token?: string; username: string; source: string } = { username: 'x-access-token', source: 'sandbox-only' };
       let baseCommit: string | undefined;
       if (this.isChatgptCodexSandbox(job)) {
@@ -1798,6 +1800,10 @@ export class SandboxJobProcessor implements JobProcessor {
     return 'A sandbox dos modelos possui Playwright e @playwright/test instalados, com Chromium em /usr/bin/chromium e variáveis CHROME_BIN, CHROMIUM_BIN, PUPPETEER_EXECUTABLE_PATH, PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD e NODE_PATH configuradas. A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium, usando dispositivos de @playwright/test como devices["iPhone 15 Pro"] ou devices["Pixel 7"]; sempre que precisar testar uma URL como usuário de celular, use esse recurso para abrir a página com viewport, user agent, touch e deviceScaleFactor de celular, gerar screenshots e validar interações. Para vídeos, áudio e animações em mobile, combine essa emulação com sandbox-media-player, ffmpeg e ffprobe para testar reprodução, duração, frames, sincronia, controles nativos e comportamento visual no layout mobile.';
   }
 
+  private buildNodeRuntimeInstruction(): string {
+    return 'Node, npm e npx pertencem à instalação persistente da imagem em /usr/local, independente dos workspaces temporários. Nunca substitua os executáveis ou atalhos compartilhados em /usr/local/bin/node, /usr/local/bin/npm e /usr/local/bin/npx por arquivos de um job. Se o projeto exigir outra versão, instale-a somente no workspace e ajuste o PATH apenas do comando ou processo desse job. Use sandbox-node-health para verificar a instalação da imagem; se falhar, registre o diagnóstico sem vincular ferramentas globais ao workspace.';
+  }
+
   private buildCodexChatgptOperationalInstruction(job: SandboxJob): string {
     return this.isChatgptCodexSandbox(job) ? SANDBOX_OPERATIONAL_INSTRUCTION : CODEX_OPERATIONAL_INSTRUCTION;
   }
@@ -1849,7 +1855,7 @@ ${job.taskDescription}${this.buildAttachmentContext(job)}`
 
 ${job.taskDescription}${this.buildAttachmentContext(job)}`
         : `${job.taskDescription}${this.buildAttachmentContext(job)}`;
-    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${agentHarnessImprovementInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${taskDescription}`;
+    const taskDescriptionWithValidationGate = `${CODEX_PLAN_OBJECTIVE_INSTRUCTION}\n\n${REASONING_SUMMARY_INSTRUCTION}\n\n${localValidationBeforePublicationInstruction}\n\n${agentHarnessImprovementInstruction}\n\n${this.buildGithubDeliveryInstruction(job)}\n\n${shellCheckInstruction}\n\n${this.buildNodeRuntimeInstruction()}\n\n${taskDescription}`;
     return [
       { type: 'text', text: taskDescriptionWithValidationGate },
       ...(job.imageAttachments ?? []).filter((attachment) => this.isImageAttachment(attachment)).map((attachment) => ({
@@ -2196,7 +2202,7 @@ Modo ChatGPT Codex ativo: replique a experiência do app (chatgpt.com/codex) des
             type: 'input_text',
             text: `Você está operando em um sandbox isolado em ${repoPath}. Use as tools para ler, alterar arquivos e executar comandos. ${CODEX_PLAN_OBJECTIVE_INSTRUCTION} ${REASONING_SUMMARY_INSTRUCTION} Test command sugerido: ${
               job.testCommand ?? 'n/d'
-            }. ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} ${agentHarnessImprovementInstruction} ${this.buildGithubDeliveryInstruction(job)} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
+            }. ${this.buildNodeRuntimeInstruction()} ${this.buildBrowserTestingInstruction()} Use read_image para visualizar screenshots/arquivos PNG/JPG/WebP/GIF locais e fetch_image para visualizar imagens externas públicas por URL. ${awsCliInstruction} ${externalApiKeysInstruction} ${dockerCliInstruction} ${liquibaseMysql57RunnerInstruction} ${githubCiInstruction} ${sshClientInstruction} ${mediaToolsInstruction} ${repositoryModuleTestInstruction} ${localValidationBeforePublicationInstruction} ${agentHarnessImprovementInstruction} ${this.buildGithubDeliveryInstruction(job)} Sempre trabalhe somente dentro do diretório do repositório. Prefira usar o comando rg para buscas recursivas em vez de grep -R, que é mais lento. Não deixe para o usuário tarefas que você consegue executar: se precisar ajustar arquivos, criar commits, atualizar PR ou escrever mensagens, faça você mesmo. Só peça intervenção humana quando for impossível concluir algo dentro do sandbox (por exemplo, falta de credenciais ou acesso externo). Sempre verifique se o objetivo da tarefa foi cumprido executando ou detalhando os testes relevantes (use o comando de testes sugerido quando existir) e relate claramente os resultados. O resumo final e qualquer explicação para PRs devem ser escritos em português. Para integrações com APIs externas, busque e cite a documentação oficial usando a tool http_get antes de implementar.
 
 Em toda mensagem de assistant, inclua obrigatoriamente duas frases objetivas com os prefixos exatos abaixo:
 - "Objetivo da interação:" descrevendo, em uma frase, o que você está tentando fazer neste turno.
@@ -4872,6 +4878,22 @@ ${stderr}`);
       startLine,
       endLine,
     };
+  }
+
+  private async validateNodeRuntime(job: SandboxJob): Promise<void> {
+    // Development hosts need not use the image's /usr/local installation.
+    // Every shipped image includes this check, also verified at build/deploy time.
+    if (!await this.isCommandAvailable('sandbox-node-health')) return;
+    try {
+      const { stdout } = await execFile('sandbox-node-health', [], {
+        timeout: 35_000,
+        maxBuffer: 64 * 1024,
+      });
+      this.log(job, stdout.trim());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`preflight falhou: instalação persistente de Node/npm/npx inválida. ${message}`);
+    }
   }
 
   private async runRunnerPreflight(job: SandboxJob, repoPath: string): Promise<void> {

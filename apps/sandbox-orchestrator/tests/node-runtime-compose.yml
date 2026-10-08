@@ -1,0 +1,6 @@
+services:
+  node-runtime:
+    build:
+      context: ..
+      target: node-runtime-test
+    command: ["sandbox-node-health"]
