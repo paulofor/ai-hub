@@ -6,6 +6,27 @@ Serviço responsável por receber jobs do backend do AI Hub, preparar um sandbox
 
 Os perfis `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX` usam o Codex App Server. Cada `thread/start` habilita explicitamente `config: { "tools.update_plan.enabled": true }`, pois o checklist nativo passou a ser opt-in no Codex 0.152.0. A instrução de publicar o plano antes da primeira ação depende dessa configuração. As notificações `turn/plan/updated` atualizam a seção **Objetivos** do resumo público, preservando somente o checklist mais recente de cada turno. A ativação vale para novas execuções, inclusive a próxima solicitação em uma conversa existente; não modifica o catálogo de ferramentas de turnos já iniciados.
 
+## Conferência do resultado no Marketing Hub
+
+Para `CHATGPT_CODEX_MKT` no repositório exato `paulofor/marketing-hub`, a política
+`MARKETING_HUB_VALUE_FLOW_V3` preserva o resultado solicitado quando o usuário
+relata dificuldade no percurso. Antes de aceitar a primeira resposta, o runner
+abre uma única conferência adicional na mesma thread, com o primeiro checklist
+e a resposta candidata. O job continua `RUNNING`; resumo final, callback e
+arquivamento aguardam essa conferência. Os demais perfis/repositórios preservam
+o comportamento anterior.
+
+O marcador `MARKETING_HUB_COMPLETION_REVIEW_V1` aparece no log e nas interações;
+uma atualização pública explica a conferência no trace existente. Retentativas
+transitórias retomam essa fase, sem outro ciclo de revisão. Cancelamento ou
+falha não convertem o candidato anterior em sucesso. O consumo e a duração do
+turno adicional entram nas métricas da mesma solicitação.
+
+A conferência permite ao modelo corrigir omissões, mantendo análises, limites e
+autorizações. Não é avaliação independente de especialista, autorização de
+gasto ou garantia de avanço comercial. Critérios e limites estão na
+[matriz de homologação](../../docs/homologacao/marketing-hub-completion-review-v1.md).
+
 ## Scripts disponíveis
 
 - `npm start`: inicia o servidor em modo de produção.

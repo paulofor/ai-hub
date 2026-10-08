@@ -4911,3 +4911,72 @@ cria o software que a atividade seguinte precisa validar.
   desktop/Pixel 7), sem erros JavaScript ou overflow observados; capturas de Capella
   mobile e Mira desktop inspecionadas. As afirmações quantitativas foram conferidas
   contra os snapshots. `git diff --check` aprovado; apenas este diário foi alterado.
+
+## 2026-10-08 — Solicitação #3276 e encerramento MKT sem avanço do percurso
+
+- Pedido: investigar solicitação, resposta e trace da #3276 e melhorar o comportamento
+  que devolve orientações sem resolver a dificuldade relatada. Consultada a API real
+  do AI Hub e o PR #5520 do Marketing Hub, somente leitura. A entrega histórica já
+  foi integrada em `caa5ff6a81ca194a1b91a83b5454f074fc2926de`; não foi repetida.
+  O PR #764 desta branch contém o diagnóstico anterior e será reutilizado para a
+  correção do harness, preservando o registro histórico e o vínculo desta solicitação.
+- **“Por que esse erro aconteceu?”** O trace público mostra redução de escopo:
+  18:38:45 UTC de 06/10, corrigir continuidade; 18:43:33, orientar a dependência;
+  19:52:50, checklist concluído com o protótipo ainda pendente. Foram examinados
+  os seis planos, 296 eventos sem descarte e a resposta. Houve implementação de
+  interface/gate e deploy; isso não comprova avanço do produto. O contrato versionado
+  `specification-boundary.md` no SHA publicado confirma que as atividades de Dédalo
+  consultadas produzem especificações, não o software exigido pela homologação.
+- Lacuna do harness: V2 orientava avanço, mas não explicitava como interpretar o
+  relato contextual de dificuldade nem preservava o aceite contra redução do plano.
+  O servidor aceitava o primeiro turno concluído e arquivava a thread. O caminho
+  escolhido adiciona uma conferência limitada na mesma execução, antes do resumo
+  final/callback. Compara pedido e primeiro plano; pede execução das omissões
+  autorizadas. Não cria outro orquestrador, agente, gate comercial ou exceção por ID.
+- Alternativas: apenas reforçar texto (baixo esforço, insuficiente diante da V2);
+  conferir na execução existente (esforço moderado e um turno adicional, escolhida);
+  nova orquestração completa (alto esforço/duplicação sem necessidade). A política V3
+  complementa a conferência com interpretação de dificuldade, preservação do resultado,
+  distinção entre especificar/construir e evidência de bloqueio externo. Mantém análise,
+  somente local, autorizações e limites de gasto/campanha.
+- Matriz definida antes dos testes em
+  `docs/homologacao/marketing-hub-completion-review-v1.md`. Inclui caso original,
+  outro produto, caminho válido, contexto, falhas, cancelamento, isolamento, métricas,
+  trace e navegador. Repositórios Git temporários e App Server simulado; nenhuma
+  inferência paga, tarefa de agente, campanha ou dado comercial criado na validação.
+- A regressão #3276 falhou antes da correção: o callback devolvia a orientação com
+  construção parada. Após a correção, a conferência mantém RUNNING, o primeiro plano
+  sobrevive à rotação do trace, eventos de turnos anteriores são ignorados, retomadas
+  transitórias preservam a fase e somente a resposta conferida encerra com sucesso.
+  Conferência vazia, atualização sem resposta final e falha definitiva não usam o
+  candidato anterior como sucesso. Cancelamento é preservado. Snapshots terminais
+  sem notificações separadas também são suportados.
+- Validação local do orquestrador: 238 testes aprovados, incluindo integração com
+  clone local, status, callback, outra identidade, acúmulo de tokens e limpeza de
+  listeners. TypeScript e build aprovados. O payload real do teste gerou fixture
+  transitória para o navegador, sem importar transcript ou raciocínio interno.
+- Navegador: 22 cenários existentes do trace passaram; os dois novos inicialmente
+  falharam antes de renderizar. **“Por que esse erro aconteceu?”** A interceptação
+  ampla da fixture também capturava módulos Vite em `/src/api/`. Restrita a URLs
+  cujo pathname começa em `/api/`; revalidação somente dos dois cenários afetados.
+- Build/lint frontend, `bash -n` e ShellCheck dos 20 scripts versionados e Actionlint
+  estrutural aprovados. Nenhum script shell ou changelog foi alterado. Actionlint
+  usa `-shellcheck=` devido aos avisos SSH anteriores; scripts são validados
+  separadamente. Sem topologia Docker criada nesta tarefa.
+- Ambiente: `/usr/local/bin/node` continua apontando a workspace antigo removido.
+  Foi usado `/opt/stag-node/bin` no PATH dos comandos locais, sem alterar o host.
+  Evidências brutas em `/tmp/aihub-3276`, fora do Git. Sugestão pertinente: Node em
+  caminho persistente da imagem da sandbox.
+- Limite: testes determinísticos comprovam a conferência obrigatória e a recuperação
+  do servidor, não obediência futura de toda inferência nem sucesso comercial. A
+  entrega melhora o encerramento do AI Hub; não declara Capella implementada ou
+  levada ao mercado. Consumo/duração do turno adicional ficam na mesma solicitação.
+- Aceite local concluído: os dois cenários afetados passaram com o payload produzido
+  pelo orquestrador e com a fixture autônoma da CI; 24 cenários distintos de navegador
+  aprovados. Captura mobile inspecionada, sem overflow/erro JS. Lint e diff finais
+  aprovados. A revisão conferiu escopo por perfil/repositório, uma única conferência,
+  preservação de restrições, ausência de novo gasto de homologação e publicação
+  exclusivamente pelas imagens do pipeline. Main sem rulesets/proteção; identidade
+  autenticada é autora do PR e não fará autoaprovação. Checks/revisões do HEAD final
+  serão consultados antes do merge. SHA de merge, runs e versão publicada serão
+  registrados no mesmo PR #764 para não criar entrega redundante de metadados.
