@@ -27,6 +27,21 @@ autorizações. Não é avaliação independente de especialista, autorização 
 gasto ou garantia de avanço comercial. Critérios e limites estão na
 [matriz de homologação](../../docs/homologacao/marketing-hub-completion-review-v1.md).
 
+## Node persistente da sandbox
+
+Node, npm e npx são instalados pela imagem oficial em `/usr/local`, fora dos
+workspaces descartáveis. `sandbox-node-health` verifica caminhos reais e execução
+das três ferramentas no build, antes de cada job e após o deploy. Um atalho para
+outro workspace é rejeitado mesmo enquanto seu destino ainda existe. Falhas
+encerram o job antes do clone e da inferência, com diagnóstico no log existente.
+Hosts de desenvolvimento sem esse helper preservam o toolchain local.
+
+Ambos os runners orientam o modelo a preservar os executáveis globais. Versões
+adicionais exigidas pelo projeto ficam no próprio workspace, com PATH apenas do
+processo do job. A CI verifica a camada real da imagem com dois jobs sucessivos,
+removendo o primeiro antes de executar Node, npm e npx no segundo. Casos de falha
+e limites estão na [matriz de homologação](../../docs/homologacao/sandbox-node-runtime-v1.md).
+
 ## Scripts disponíveis
 
 - `npm start`: inicia o servidor em modo de produção.

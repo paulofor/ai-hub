@@ -6,7 +6,15 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-bookworm-slim AS production
+FROM node:20-bookworm-slim AS node-runtime
+COPY scripts/sandbox-node-health /usr/local/bin/sandbox-node-health
+RUN chmod +x /usr/local/bin/sandbox-node-health && sandbox-node-health
+
+FROM node-runtime AS node-runtime-test
+COPY tests/test-node-runtime-image.sh /tmp/test-node-runtime-image.sh
+RUN bash /tmp/test-node-runtime-image.sh && rm /tmp/test-node-runtime-image.sh
+
+FROM node-runtime AS production
 WORKDIR /app
 ARG ACTIONLINT_VERSION=1.7.12
 ARG GH_CLI_VERSION=2.101.0
@@ -235,5 +243,6 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV NODE_PATH=/usr/local/lib/node_modules
 ENV CURL_CONNECT_TIMEOUT_SECONDS=10
 ENV CURL_MAX_TIME_SECONDS=120
+RUN sandbox-node-health
 EXPOSE 8083
 CMD ["node", "dist/src/index.js"]

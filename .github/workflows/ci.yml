@@ -137,6 +137,17 @@ jobs:
         run: bash .github/scripts/validate-shell-scripts.sh
       - name: Test
         run: npm --prefix apps/sandbox-orchestrator test
+      - name: Test Node runtime after deleting the previous job workspace
+        run: >-
+          docker compose -p aihub-node-runtime-${{ github.run_id }}
+          -f apps/sandbox-orchestrator/tests/node-runtime-compose.yml
+          run --build --rm node-runtime
+      - name: Clean up Node runtime test
+        if: always()
+        run: >-
+          docker compose -p aihub-node-runtime-${{ github.run_id }}
+          -f apps/sandbox-orchestrator/tests/node-runtime-compose.yml
+          down --volumes --remove-orphans
       - name: Test protected remote Docker lifecycle
         env:
           SANDBOX_REMOTE_DOCKER_TEST_PROJECT: aihub-remote-docker-${{ github.run_id }}-${{ github.run_attempt }}
@@ -436,6 +447,9 @@ jobs:
 
             sleep 2
           done
+
+          echo "== checking persistent Node runtime =="
+          docker compose exec -T sandbox-orchestrator sandbox-node-health
 
           echo "== checking protected sandbox SSH agent =="
           expected_ssh_fingerprint="$(ssh-keygen -lf apps/sandbox-orchestrator/ssh/operator_key.pub -E sha256 | awk '{ print $2 }')"

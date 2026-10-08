@@ -5040,3 +5040,60 @@ cria o software que a atividade seguinte precisa validar.
   checks/revisões do HEAD conferidos antes do merge e imagens construídas pelo
   workflow versionado. SHA final, runs e verificação publicada serão registrados
   no PR e na resposta da solicitação, sem criar publicação redundante de metadados.
+## 2026-10-08 09:33 UTC-3 — Node persistente e independente do workspace de outro job
+
+- Pedido: resolver a recomendação “Manter o Node em caminho estável na sandbox,
+  sem depender do workspace de outro job”. Main e entregas anteriores conferidas
+  em `70a66e79ffda30b6c1be411d01aa2f270d259f4e`, PR #765 e run
+  `37748568007` já concluídos; nenhuma entrega anterior foi repetida.
+- **“Por que esse erro aconteceu?”** Os registros anteriores desta data comprovam
+  que `/usr/local/bin/node` era um link para workspace removido. Na sandbox atual
+  é um arquivo regular da imagem, Node `v20.20.2`; npm/npx `10.8.2` resolvem em
+  `/usr/local/lib/node_modules/npm`. O Dockerfile já herdava a instalação oficial
+  `node:20-bookworm-slim`; não foi encontrada criação desse atalho no código.
+  Não há evidência para atribuir quem o alterou. A limpeza de um job invalidou
+  uma dependência global que deveria permanecer fora dele.
+- Alternativas comparadas: (1) reinstalar no job: baixo esforço, mas repete uma
+  recuperação temporária da instalação já saudável; (2) criar outro runtime/cache:
+  maior esforço e duplicação sem necessidade; (3) preservar a instalação existente
+  e proteger seu contrato: esforço pequeno, detecta links fora dela antes da
+  inferência e reduz recorrência por instrução explícita; escolhida.
+- Harness: `sandbox-node-health` valida caminho real e execução de Node/npm/npx
+  com timeout. Roda no build da imagem, antes de clone/inferência em todos os
+  perfis e no deploy. Links para outro workspace são rejeitados mesmo antes de
+  sua limpeza. Versões e diagnóstico usam o log existente. Hosts de desenvolvimento
+  sem o helper preservam compatibilidade; a imagem versionada o inclui.
+- Instrução distribuída pelos runners App Server e Responses API: preservar os
+  executáveis/atalhos compartilhados; se um projeto exigir versão adicional,
+  instalá-la no próprio workspace com PATH restrito ao processo do job. Não foi
+  criado runtime paralelo, mecanismo de reinstalação ou link global temporário.
+- Matriz definida antes dos testes em
+  `docs/homologacao/sandbox-node-runtime-v1.md`: caminho saudável, dois jobs,
+  links externos/quebrados para as três ferramentas, comando ausente/defeituoso,
+  preflight dos quatro tipos de perfil, prompts, isolamento, métricas e publicação.
+  Sem alteração visual; navegadores/dispositivos não se aplicam.
+- Container real da camada herdada por produção: Node, script npm e binário local
+  via npx executados no primeiro job; workspace eliminado; os mesmos comandos
+  aprovados no segundo job. npm offline, fixtures sintéticas, nenhuma inferência
+  paga, credencial, campanha ou dado comercial. Compose exclusivo
+  `aihub-164b8963-cf26-4ba1-90c8-7ea5887d02c0-a8116decdd`; topologia removida
+  com `down --volumes --remove-orphans`.
+- Suíte local: 245 de 246 testes passaram inicialmente. **“Por que esse erro
+  aconteceu?”** A fixture do novo teste de prompt não tinha `jobId`, exigido
+  pela orientação Docker existente. Fixture corrigida; oito cenários novos
+  revalidados com sucesso, sem alteração de produção para contornar o teste.
+  Revalidação dos testes de prompt afetados e TypeScript/build aprovados.
+- Durante a revisão do harness de shell, observada outra lacuna concreta:
+  `bash -n` com uma lista de arquivos só analisa o primeiro. Validador existente
+  ajustado para percorrer cada script antes do ShellCheck, sem infraestrutura nova.
+  Os dois scripts novos foram validados individualmente, além de Actionlint
+  estrutural do workflow e revisão do diff. Actionlint usa `-shellcheck=` por
+  avisos SSH anteriores; shell versionado é analisado separadamente pelo ShellCheck.
+- Limite: a sandbox permite alterações privilegiadas. Esta proteção detecta
+  dependência indevida antes da inferência e orienta prevenção; não promete
+  imutabilidade dos arquivos nem corrige danos criando outro link para um job.
+  CI testa a camada real no PR; produção mantém imagens construídas somente pelo
+  pipeline versionado. Não houve publicação direta por SSH.
+- Entrega será feita no PR específico desta tarefa após aceite local e revisão.
+  SHA de merge, runs, checagem das ferramentas publicadas e saúde serão registrados
+  no PR e na resposta final, sem criar uma publicação redundante só de metadados.

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The official Node image owns this prefix; job workspaces must never own it.
+# An alternate prefix is useful for isolated tests without changing system tools.
+install_root="$(readlink -e "${SANDBOX_NODE_INSTALL_ROOT:-/usr/local}")"
+for tool in node npm npx; do
+  tool_path="$(command -v "${tool}" || true)"
+  resolved_path="$(readlink -e "${tool_path}" || true)"
+  if [[ -z "${resolved_path}" || ! -x "${resolved_path}" || "${resolved_path}" != "${install_root}/"* ]]; then
+    printf '[NODE] %s indisponível ou fora da instalação persistente %s (atalho: %s).\n' \
+      "${tool}" "${install_root}" "${tool_path:-ausente}" >&2
+    exit 1
+  fi
+  version="$(timeout 10 "${tool_path}" --version)"
+  printf '[NODE] %s %s (%s)\n' "${tool}" "${version}" "${resolved_path}"
+done

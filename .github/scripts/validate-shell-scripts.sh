@@ -24,7 +24,9 @@ if [ "${#shell_files[@]}" -eq 0 ]; then
 fi
 
 printf '%s\n' "[SHELL] Validando ${#shell_files[@]} scripts com bash -n..."
-bash -n "${shell_files[@]}"
+for shell_file in "${shell_files[@]}"; do
+  bash -n "${shell_file}"
+done
 
 printf '%s\n' '[SHELL] Executando análise estática com ShellCheck...'
 shellcheck -x "${shell_files[@]}"

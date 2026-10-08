@@ -1166,6 +1166,7 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.ok(input?.[0]?.text?.includes('não avance para PR, merge ou deploy enquanto algum critério local de aceite estiver pendente'));
     assert.ok(input?.[0]?.text?.includes('possui Playwright e @playwright/test instalados'));
     assert.ok(input?.[0]?.text?.includes('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'));
+    assert.ok(input?.[0]?.text?.includes('Nunca substitua os executáveis ou atalhos compartilhados'));
     assert.ok(input?.[0]?.text?.includes('A melhor opção de simulador de celular disponível na sandbox é o Playwright com emulação mobile do Chromium'));
     assert.ok(input?.[0]?.text?.includes('devices["iPhone 15 Pro"]'));
     assert.ok(input?.[0]?.text?.includes('devices["Pixel 7"]'));
@@ -3350,6 +3351,8 @@ test('inclui checklist de ambiente OK no prompt inicial do runner', async () => 
     assert.match(promptText, /navegador headless disponível para screenshots: playwright, chromium|navegador headless disponível para screenshots: chromium/i);
     assert.match(promptText, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1/i);
     assert.match(promptText, /NODE_PATH=\/usr\/local\/lib\/node_modules/i);
+    assert.match(promptText, /Nunca substitua os executáveis ou atalhos compartilhados/);
+    assert.match(promptText, /PATH apenas do comando ou processo desse job/);
     assert.ok(job.logs.some((entry) => entry.includes('preflight do runner concluído com sucesso')));
   } finally {
     await fs.rm(tempRepo, { recursive: true, force: true });
