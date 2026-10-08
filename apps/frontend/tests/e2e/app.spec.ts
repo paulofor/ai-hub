@@ -431,7 +431,7 @@ test('explains why old history does not enable trimming the open batch', async (
   await expect(page.getByRole('link', { name: 'Abrir detalhes' })).toHaveCount(6);
 });
 
-test('cuts old dialog messages out of subsequent model prompts', async ({ page }) => {
+test('preserves old dialog messages in subsequent model prompts without a manual cutoff', async ({ page }) => {
   await page.route('**/api/account/read', (route) => route.fulfill({ json: { connected: true, status: 'connected', executable: true } }));
   await page.route('**/api/environments/active', (route) => route.fulfill({ json: [{ id: 1, name: 'produção' }] }));
   await page.route('**/api/codex/models/active', (route) => route.fulfill({ json: [{ id: 'gpt-5', modelName: 'gpt-5', displayName: 'GPT-5' }] }));
@@ -456,14 +456,13 @@ test('cuts old dialog messages out of subsequent model prompts', async ({ page }
 
   await page.goto('/codex-chatgpt');
   await expect(page.getByText('Prompt atual: 4 mensagens de histórico')).toBeVisible();
-  await page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto').fill('2');
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Cortar contexto antigo' }).click();
-  await expect(page.getByText('Prompt atual: 2 mensagens de histórico')).toBeVisible();
+  await expect(page.getByLabel('Quantidade de mensagens mais recentes a manter no contexto')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cortar contexto antigo' })).toHaveCount(0);
   await page.getByPlaceholder(/Digite sua mensagem para o modelo/).fill('próxima pergunta');
   await page.getByRole('button', { name: 'Enviar mensagem' }).click();
 
-  await expect.poll(() => submittedPrompt).not.toContain('mensagem muito antiga');
+  await expect.poll(() => submittedPrompt).toContain('mensagem muito antiga');
+  await expect.poll(() => submittedPrompt).toContain('resposta muito antiga');
   await expect.poll(() => submittedPrompt).toContain('mensagem recente');
   await expect.poll(() => submittedPrompt).toContain('resposta recente');
 });

@@ -1785,7 +1785,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
   const [pendingPrRequest, setPendingPrRequest] = useState<PendingPrRequest | null>(() => loadPendingPrRequest(config.profile));
   const [bulkDiscardLoading, setBulkDiscardLoading] = useState(false);
   const [requestsToKeep, setRequestsToKeep] = useState(5);
-  const [contextMessagesToKeep, setContextMessagesToKeep] = useState(8);
   const [prResult, setPrResult] = useState<{ url?: string; title?: string } | null>(null);
   const [deletingRequestId, setDeletingRequestId] = useState<number | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<number | null>(null);
@@ -3136,22 +3135,6 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
     }
   }, [bulkDiscardLoading, config.profile, loadRequests, registerTelemetry, requestsToKeep, selectedEnvironment]);
 
-  const handleTrimConversationContext = useCallback(() => {
-    const keepLast = Math.min(Math.max(1, contextMessagesToKeep), conversation.length);
-    const discardCount = conversation.length - keepLast;
-    if (discardCount <= 0) return;
-
-    const confirmed = window.confirm(`Remover ${discardCount} mensagem(ns) mais antiga(s) do contexto deste diálogo e manter somente as ${keepLast} mais recentes? O histórico de execuções não será apagado.`);
-    if (!confirmed) return;
-
-    setConversation((current) => current.slice(-keepLast));
-    setSelectedSavedConversationId('');
-    setSelectedSavedConversationMessages([]);
-    setEditingRequestId(null);
-    setEditingDraft('');
-    registerTelemetry('execution_success', `${discardCount} mensagem(ns) antiga(s) removida(s) do contexto enviado ao modelo; ${keepLast} mantida(s).`);
-  }, [contextMessagesToKeep, conversation.length, registerTelemetry]);
-
   const activeBatchKey = findOpenBatchKey(requests, selectedEnvironment, config.profile);
   const activeBatchRequests = getOpenBatchRequests(requests, selectedEnvironment, config.profile, activeBatchKey);
   const trimBatchDisabledReason = bulkDiscardLoading
@@ -3750,15 +3733,8 @@ export default function CodexChatgptPage({ variant = 'default' }: CodexChatgptPa
             <span className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200" aria-live="polite">
               Prompt atual: {currentPromptHistoryMessageCount} {currentPromptHistoryMessageCount === 1 ? 'mensagem' : 'mensagens'} de histórico
             </span>
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              Contexto: manter últimas
-              <input type="number" min="1" step="1" value={contextMessagesToKeep} onChange={(event) => setContextMessagesToKeep(Math.max(1, Number.parseInt(event.target.value, 10) || 1))} className="w-16 rounded-md border border-slate-300 bg-white px-2 py-2 text-center dark:border-slate-700 dark:bg-slate-900" aria-label="Quantidade de mensagens mais recentes a manter no contexto" />
-              mensagens
-            </label>
-            <button type="button" onClick={handleTrimConversationContext} disabled={conversation.length <= contextMessagesToKeep} title={conversation.length <= contextMessagesToKeep ? `O diálogo possui ${conversation.length} mensagem(ns); escolha um limite menor para cortar o contexto.` : 'Remove mensagens antigas apenas do contexto deste diálogo.'} className="rounded-md border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300">Cortar contexto antigo</button>
           </div>
         </div>
-        <p className="text-xs text-slate-500">Este corte controla o histórico incluído nos próximos prompts. Ele não apaga as execuções listadas abaixo nem altera o lote de trabalho.</p>
         {!sandboxOnly ? <p className="text-xs text-slate-500">{prBlockedReason}</p> : null}
         {prResult ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-2">
