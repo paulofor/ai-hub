@@ -4,7 +4,7 @@ import { buildMarketingHubFlowInstruction, MARKETING_HUB_VALUE_FLOW_INSTRUCTION 
 import { SandboxJobProcessor } from '../src/jobProcessor.js';
 import type { SandboxJob, SandboxProfile } from '../src/types.js';
 
-const marker = 'MARKETING_HUB_VALUE_FLOW_V3';
+const marker = 'MARKETING_HUB_VALUE_FLOW_V4';
 const target = { profile: 'CHATGPT_CODEX_MKT' as const, repoSlug: 'paulofor/marketing-hub' };
 
 test('ativa a política somente pelo perfil e pela identidade exata do repositório', () => {
@@ -42,10 +42,12 @@ test('o payload real inclui a política uma vez sem depender de botão, produto 
   assert.match(text, /"impactoAumentoVendas"/);
   assert.match(text, /toda a investigação.*primeiro no ambiente local/);
   assert.match(text, /Não finalize como concluído enquanto houver workflow/);
+  assert.match(text, /Estimule sempre o self-improvement.*com foco em vendas/);
   // An untrusted mention in the task must not activate another environment's policy.
   for (const metadata of [{ ...target, repoSlug: 'paulofor/ai-hub' }, { ...target, profile: 'CHATGPT_CODEX' as const }]) {
     const other = inputFor({ ...metadata, taskDescription: 'Investigue paulofor/marketing-hub e chainId=26.' })[0].text;
     assert.ok(!other.includes(marker));
+    assert.ok(!other.includes('Estimule sempre o self-improvement'));
   }
 });
 
@@ -56,6 +58,8 @@ const cases: Array<[string, RegExp[]]> = [
   ['aceite reduzido depois de descobrir dependência técnica', [/não autoriza reduzir o escopo/, /Mantenha o aceite do percurso original/, /especificação e a atividade seguinte precisa de software funcionando/, /não substitui a continuação solicitada/, /confronte a última mensagem do usuário, o checklist inicial/]],
   ['orientação sem execução ou aceite', [/preparação autorizada agora/, /aceite da saída/, /retorno ao processo pai/, /disponibilidade da próxima atividade/]],
   ['correção pontual sem prevenção', [/resolva o caso atual e previna/, /outro produto\/execução com identificadores diferentes/, /caminho antes válido/, /causa, evidência, mudança reutilizável/]],
+  ['aprendizado restrito a falhas ou sem relação com vendas', [/sucessos, falhas, feedback do usuário e resultados comerciais/, /mesmo quando não houver bloqueio/, /hipótese verificável/, /métrica de sucesso e os limites de custo\/qualidade/, /Compare o comportamento antes\/depois/, /critério de adoção ou reversão/, /execuções futuras reutilizem o aprendizado/]],
+  ['melhoria obrigatória sem evidência ou autorização', [/Avaliar sempre não obriga mudar sempre/, /somente de análise.*sem alterar os agentes nem iniciar experimentos/, /Testes locais comprovam comportamento, não impacto comercial/, /sem inventar métricas nem declarar aumento de vendas/, /não substitui a entrega por mais planejamento nem autoriza gastos/]],
   ['revisão repetida em referência encerrada', [/Experimento encerrado mantém suas provas/, /não renove parecer/, /novo ciclo e novo experimento/, /sem herdar autorizações vencidas/]],
   ['retentativa paga sem corrigir a causa', [/não há tarefa equivalente em andamento/, /replay suportado/, /sem nova inferência ou cobrança duplicada/, /falta de autorização para gasto futuro não impede preparação local/]],
   ['confusão entre prontidão e mercado', [/READY não comprova capacidade/, /Pouco tráfego não prova rejeição/, /compras líquidas conciliadas/, /valor é desconhecido, não zero/, /Separe testes, bots e simulações/]],
