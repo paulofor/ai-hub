@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface PromptHintRepository extends JpaRepository<PromptHintRecord, Long> {
 
-    List<PromptHintRecord> findAllByEnvironmentIsNullOrderByLabelAsc();
+    List<PromptHintRecord> findAllByActiveTrueAndEnvironmentIsNullOrderByLabelAsc();
 
-    List<PromptHintRecord> findAllByEnvironmentOrderByLabelAsc(EnvironmentRecord environment);
+    List<PromptHintRecord> findAllByActiveTrueAndEnvironmentOrderByLabelAsc(EnvironmentRecord environment);
 }

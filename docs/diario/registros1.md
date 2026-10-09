@@ -5097,3 +5097,90 @@ cria o software que a atividade seguinte precisa validar.
 - Entrega será feita no PR específico desta tarefa após aceite local e revisão.
   SHA de merge, runs, checagem das ferramentas publicadas e saúde serão registrados
   no PR e na resposta final, sem criar uma publicação redundante só de metadados.
+
+## 2026-10-09 — Inativação dos itens opcionais de prompt
+
+- Pedido: permitir marcar os itens de `/prompt-hints` como inativos para que
+  deixem de aparecer na composição de solicitações. Imagem anexada conferida.
+  Main em `b3247c9bdd39a793a96df7e050391ec002414d99`, PR #766 e CI/deploy
+  `37778397172` já concluídos; nenhuma publicação anterior repetida.
+- **“Por que esse erro aconteceu?”** O cadastro só persiste nome, frase, tipo e
+  ambiente; a consulta por ambiente sempre retorna todos os itens. Não há status
+  de atividade, e o usuário teria que excluir conteúdo para retirar uma opção.
+- Alternativas: (1) ocultar no navegador: esforço baixo, mas sem persistência nem
+  efeito nas outras sessões; (2) excluir/arquivar em outro catálogo: perde conteúdo
+  ou duplica gestão, com esforço e risco maiores; (3) status persistente com botão
+  Inativar/Ativar e filtro no backend: pequeno esforço, reversível, mantém conteúdo,
+  escopo e histórico; escolhida pela aderência ao pedido.
+- Harness examinado: consultas compartilhadas pelos quatro perfis de solicitações,
+  composição dos prompts, snapshots dos itens de tela, migrações e Playwright/CI.
+  Lacuna observada: não há regressão do ciclo cadastro → seleção → inativação →
+  reativação; a lista também só é consultada ao trocar de ambiente. Serão usadas
+  as estruturas de testes existentes para cobrir o fluxo e retorno à aba, sem
+  nova infraestrutura de agentes ou alteração de prompts gerais.
+- Matriz de aceite definida antes da execução dos testes:
+
+  | Caso | Evidência exigida |
+  | --- | --- |
+  | Cadastro e edição | Ativo por padrão; criação/edição como inativo; status persistido |
+  | Inativar e reativar | Mesmo ID, frase, tipo e ambiente; tabela mantém os inativos |
+  | Seleção e isolamento | Só ativos globais e do ambiente; técnico, ChatGPT, MKT e sandbox |
+  | Retorno à aba | Atualiza opções e retira seleção obsoleta sem apagar texto já editado |
+  | Validações e falhas | Status ausente/nulo, ID inexistente, falha de gravação e nova tentativa |
+  | Compatibilidade e histórico | Edição antiga não reativa; solicitações aceitas e snapshots preservados |
+  | Migrações | Legados ativos, padrão para novos, repetição preserva inativos; H2/MySQL 5.7 |
+  | Navegador e observabilidade | Chromium desktop/Pixel 7, status acessível, erro visível, sem overflow/erro JS |
+  | Integração e qualidade | API/banco locais, payload de envio, testes relevantes, build/lint e diff |
+
+- Homologação isolada: ambientes `test/*`/`sandbox`, IDs e itens sintéticos; nenhuma
+  inferência paga, campanha, email real ou métrica comercial de produção. Containers
+  locais usarão somente o projeto Compose exclusivo autorizado, removido ao final.
+  A inativação afeta opções futuras; o texto já copiado e o histórico permanecem.
+
+- Implementação: campo `active` persistido, ativo por padrão para itens existentes
+  e novos; PATCH de status validado e opção no formulário. Edição de cliente antigo
+  sem `active` preserva a inatividade. Cadastro lista ambos os estados, com status,
+  botão Inativar/Ativar e contador; falha de gravação mantém a tabela para tentativa.
+  A consulta por ambiente exclui inativos no banco. Os dois componentes consumidores
+  filtram respostas antigas, atualizam ao retornar à aba e ignoram respostas atrasadas.
+  Solicitações aceitas e snapshots permanecem intactos.
+- Validação local: 17 testes backend/H2 aprovados, incluindo migração, DTO, serviço,
+  API, isolamento, histórico e regressões de ambientes/diálogo; quatro cenários API
+  passaram também com MySQL 5.7.44 real. A execução direta da V64 em tabela MySQL
+  legada confirmou backfill ativo, padrão para novos e repetição que mantém inativos
+  e frases. Variante PostgreSQL validada por execução SQL compatível no H2, sem
+  declarar homologação em servidor PostgreSQL real.
+- Navegador: 15 cenários novos de inativação/reativação, falhas, quatro perfis,
+  desktop/Pixel 7, respostas antigas e consultas concorrentes aprovados. Uma asserção
+  inicial usava frase diferente da tela; **“Por que esse erro aconteceu?”** O teste
+  supôs um texto não existente. Corrigida a expectativa e repetido somente esse caso.
+- Regressões: 43 cenários de ambientes/layout e dois de contexto/itens legados
+  aprovados. Dois processos Chromium caíram durante homologações simultâneas;
+  cgroup registrou OOM com limite de 8 GiB. Repetidos somente esses dois casos com
+  um worker após encerrar o Java que aguardava a conexão, ambos aprovados. O teste
+  antigo de itens esperava placeholder MKT substituído em entrega anterior e faltava
+  simular três endpoints; seletor estável e fixtures existentes corrigidos, caso
+  revalidado sem alterar comportamento produtivo para contornar a falha.
+- Fluxo real adicional: frontend, API Spring e MySQL locais, cadastro criado pela
+  interface, inativado, recarregado, ausente no seletor MKT e reativado com mesmo ID
+  e conteúdo em desktop e Pixel 7. Serviços de modelo e demais consultas simulados;
+  nenhuma inferência enviada. Capturas inspecionadas, sem erro JavaScript nem overflow
+  horizontal da página; tabela mobile usa rolagem horizontal local.
+- Ambiente MySQL: o primeiro teste tentou loopback da sandbox, mas a engine dedicada
+  está em `sandbox-docker`. Conexão corrigida apenas na topologia/comando temporários,
+  com timeout e publicação de porta na rede da engine isolada. CI usa o seu próprio
+  serviço local MySQL já existente; não há alteração de infraestrutura produtiva.
+- Harness melhorado: cenários novos e compatibilidade legada entram no Playwright
+  da CI; a mesma classe API roda também no serviço MySQL 5.7 existente. Não foram
+  criados agentes, mecanismos de coordenação ou infraestrutura especulativa.
+- TypeScript/build/lint, versões únicas de migração, Actionlint estrutural e diff
+  aprovados. Script de versões investigado e validado com `bash -n` e ShellCheck.
+  Nenhum script shell ou changelog Liquibase foi alterado; seu workflow não se aplica.
+  Node/npm/npx persistentes conferidos por `sandbox-node-health`, sem mudanças globais.
+- Aceite local e revisão do diff concluídos. Backend/Vite temporários encerrados;
+  Compose removido com `down --volumes --remove-orphans`. Anexo e evidências brutas
+  ficam fora do commit. Entrega seguirá o PR desta tarefa, usando imagens do pipeline
+  versionado. Main não tem proteção/rulesets; identidade autenticada é autora e não
+  fará autoaprovação. Revisões e checks do HEAD serão consultados antes do merge.
+  SHA final, runs e saúde publicada serão registrados no PR e na resposta, evitando
+  uma nova publicação apenas para metadados da entrega já confirmada.

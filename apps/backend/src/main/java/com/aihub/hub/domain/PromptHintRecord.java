@@ -37,6 +37,9 @@ public class PromptHintRecord {
     @Column(name = "item_type", nullable = false, length = 20)
     private PromptHintType type = PromptHintType.PROMPT;
 
+    @Column(nullable = false)
+    private boolean active = true;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "environment_id")
     private EnvironmentRecord environment;
@@ -98,6 +101,14 @@ public class PromptHintRecord {
 
     public EnvironmentRecord getEnvironment() {
         return environment;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 
     public void setEnvironment(EnvironmentRecord environment) {

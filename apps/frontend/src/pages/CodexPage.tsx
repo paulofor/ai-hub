@@ -39,6 +39,7 @@ interface PromptHintOption {
   id: number;
   label: string;
   phrase: string;
+  active?: boolean;
   environmentId?: number | null;
   environmentName?: string | null;
 }
@@ -295,33 +296,43 @@ export default function CodexPage() {
     }
 
     let cancelled = false;
-    setLoadingPromptHints(true);
-    client
-      .get<PromptHintOption[]>('/prompt-hints', {
-        params: { environment: trimmedEnvironment }
-      })
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setPromptHints(response.data);
-        setPromptHintsError(null);
-        setSelectedPromptHintIds((prev) => prev.filter((id) => response.data.some((hint) => hint.id === id)));
-      })
-      .catch((err: Error) => {
-        if (cancelled) {
-          return;
-        }
-        setPromptHintsError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingPromptHints(false);
-        }
-      });
+    let requestSequence = 0;
+    const refresh = () => {
+      const sequence = ++requestSequence;
+      setLoadingPromptHints(true);
+      client
+        .get<PromptHintOption[]>('/prompt-hints', {
+          params: { environment: trimmedEnvironment }
+        })
+        .then((response) => {
+          if (cancelled || sequence !== requestSequence) {
+            return;
+          }
+          const available = response.data.filter((hint) => hint.active !== false);
+          setPromptHints(available);
+          setPromptHintsError(null);
+          setSelectedPromptHintIds((prev) => prev.filter((id) => available.some((hint) => hint.id === id)));
+        })
+        .catch((err: Error) => {
+          if (cancelled || sequence !== requestSequence) {
+            return;
+          }
+          setPromptHintsError(err.message);
+          setPromptHints([]);
+          setSelectedPromptHintIds([]);
+        })
+        .finally(() => {
+          if (!cancelled && sequence === requestSequence) {
+            setLoadingPromptHints(false);
+          }
+        });
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
 
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', refresh);
     };
   }, [environment]);
 

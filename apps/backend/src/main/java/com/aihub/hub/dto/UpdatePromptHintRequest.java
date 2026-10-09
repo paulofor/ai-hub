@@ -13,6 +13,7 @@ public record UpdatePromptHintRequest(
     String phrase,
     String type,
     @Positive(message = "Informe um ambiente válido")
-    Long environmentId
+    Long environmentId,
+    Boolean active
 ) {
 }

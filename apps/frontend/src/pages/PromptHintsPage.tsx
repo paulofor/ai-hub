@@ -7,6 +7,7 @@ interface PromptHintRecord {
   label: string;
   phrase: string;
   type?: 'prompt' | 'text' | string | null;
+  active?: boolean;
   environmentId?: number | null;
   environmentName?: string | null;
   createdAt: string;
@@ -57,11 +58,13 @@ export default function PromptHintsPage() {
   const [formLabel, setFormLabel] = useState('');
   const [formPhrase, setFormPhrase] = useState('');
   const [formType, setFormType] = useState<'prompt' | 'text'>('prompt');
+  const [formActive, setFormActive] = useState(true);
   const [formEnvironmentId, setFormEnvironmentId] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [editingHint, setEditingHint] = useState<PromptHintRecord | null>(null);
+  const [updatingStatusIds, setUpdatingStatusIds] = useState<number[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -86,6 +89,7 @@ export default function PromptHintsPage() {
     setFormLabel('');
     setFormPhrase('');
     setFormType('prompt');
+    setFormActive(true);
     setFormEnvironmentId('');
     setEditingHint(null);
   };
@@ -113,6 +117,7 @@ export default function PromptHintsPage() {
       label: trimmedLabel,
       phrase: trimmedPhrase,
       type: formType,
+      active: formActive,
       environmentId
     };
 
@@ -141,6 +146,7 @@ export default function PromptHintsPage() {
     setFormLabel(hint.label);
     setFormPhrase(hint.phrase);
     setFormType(normalizePromptHintType(hint.type));
+    setFormActive(hint.active !== false);
     setFormEnvironmentId(hint.environmentId ? String(hint.environmentId) : '');
     setFormError(null);
     setFormSuccess(null);
@@ -159,12 +165,32 @@ export default function PromptHintsPage() {
     }
   };
 
+  const handleToggleActive = async (hint: PromptHintRecord) => {
+    setError(null);
+    setFormSuccess(null);
+    setUpdatingStatusIds((current) => [...current, hint.id]);
+    try {
+      const response = await client.patch<PromptHintRecord>(`/prompt-hints/${hint.id}/status`, {
+        active: hint.active === false
+      });
+      setPromptHints((current) => sortPromptHints(current.map((item) => item.id === hint.id ? response.data : item)));
+      setFormSuccess(response.data.active === false
+        ? 'Item inativado. Ele não aparecerá nas opções de novas solicitações.'
+        : 'Item ativado. Ele voltará a aparecer nas opções de solicitações.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUpdatingStatusIds((current) => current.filter((id) => id !== hint.id));
+    }
+  };
+
   const totalGlobalHints = useMemo(() => promptHints.filter((hint) => !hint.environmentId).length, [promptHints]);
   const totalScopedHints = promptHints.length - totalGlobalHints;
+  const totalInactiveHints = promptHints.filter((hint) => hint.active === false).length;
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold">Itens opcionais do prompt</h2>
           <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -175,6 +201,7 @@ export default function PromptHintsPage() {
         <div className="text-right text-xs text-slate-500 dark:text-slate-400">
           <p>Itens gerais: {totalGlobalHints}</p>
           <p>Itens por ambiente: {totalScopedHints}</p>
+          <p>Itens inativos: {totalInactiveHints}</p>
         </div>
       </div>
 
@@ -244,6 +271,22 @@ export default function PromptHintsPage() {
             </select>
           </div>
 
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={formActive}
+                onChange={(event) => setFormActive(event.target.checked)}
+                aria-describedby="prompt-hint-active-help"
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Ativo nas solicitações
+            </label>
+            <p id="prompt-hint-active-help" className="text-xs text-slate-500 dark:text-slate-400">
+              Itens inativos ficam neste cadastro e podem ser reativados, mas não aparecem nas opções de solicitações.
+            </p>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
@@ -261,20 +304,22 @@ export default function PromptHintsPage() {
                 Cancelar edição
               </button>
             )}
-            {formError && <span className="text-sm text-red-500">{formError}</span>}
-            {formSuccess && <span className="text-sm text-emerald-600">{formSuccess}</span>}
+            {formError && <span role="alert" className="text-sm text-red-500">{formError}</span>}
+            {formSuccess && <span role="status" className="text-sm text-emerald-600">{formSuccess}</span>}
           </div>
         </form>
       </div>
 
       <div className="space-y-3">
         <h3 className="text-lg font-semibold">Itens cadastrados</h3>
-        <div className="rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
+        {error && !loading && <p role="alert" className="text-sm text-red-500">{error}</p>}
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
           <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
             <thead className="bg-slate-50 dark:bg-slate-800/60">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">Nome</th>
                 <th className="px-4 py-3 text-left font-semibold">Tipo</th>
+                <th className="px-4 py-3 text-left font-semibold">Status</th>
                 <th className="px-4 py-3 text-left font-semibold">Escopo</th>
                 <th className="px-4 py-3 text-left font-semibold">Frase</th>
                 <th className="px-4 py-3 text-left font-semibold">Atualizado em</th>
@@ -284,31 +329,31 @@ export default function PromptHintsPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-3 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-3 text-center text-slate-500">
                     Carregando itens cadastrados...
-                  </td>
-                </tr>
-              )}
-              {error && !loading && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-3 text-center text-red-500">
-                    {error}
                   </td>
                 </tr>
               )}
               {!loading && !error && promptHints.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-3 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-3 text-center text-slate-500">
                     Nenhum item cadastrado até o momento.
                   </td>
                 </tr>
               )}
-              {!loading && !error && promptHints.map((hint) => (
+              {!loading && promptHints.map((hint) => (
                 <tr key={hint.id}>
                   <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{hint.label}</td>
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-300">
                     <span className="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300">
                       {promptHintTypeLabel(hint.type)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded px-2 py-1 text-xs font-semibold ${hint.active === false
+                      ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'}`}>
+                      {hint.active === false ? 'Inativo' : 'Ativo'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-300">
@@ -325,12 +370,23 @@ export default function PromptHintsPage() {
                       <button
                         type="button"
                         onClick={() => handleEdit(hint)}
+                        disabled={saving || updatingStatusIds.length > 0}
                         className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
                         Editar
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(hint)}
+                        disabled={saving || Boolean(editingHint) || updatingStatusIds.includes(hint.id)}
+                        aria-label={`${hint.active === false ? 'Ativar' : 'Inativar'} ${hint.label}`}
+                        className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        {updatingStatusIds.includes(hint.id) ? 'Salvando...' : hint.active === false ? 'Ativar' : 'Inativar'}
+                      </button>
                       <ConfirmButton
                         onConfirm={() => handleDelete(hint.id)}
+                        disabled={saving || updatingStatusIds.includes(hint.id)}
                         label="Excluir"
                         confirmLabel="Confirmar exclusão"
                       />
