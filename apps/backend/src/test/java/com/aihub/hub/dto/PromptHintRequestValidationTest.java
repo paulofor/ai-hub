@@ -20,14 +20,14 @@ class PromptHintRequestValidationTest {
     void updateAcceptsLongPromptHintText() {
         String phrase = "a".repeat(5000);
 
-        assertThat(validator.validate(new UpdatePromptHintRequest("Cockpit PDE", phrase, "text", 1L))).isEmpty();
+        assertThat(validator.validate(new UpdatePromptHintRequest("Cockpit PDE", phrase, "text", 1L, null))).isEmpty();
     }
 
     @Test
     void updateRejectsPromptHintTextAboveConfiguredLimit() {
         String phrase = "a".repeat(10001);
 
-        assertThat(validator.validate(new UpdatePromptHintRequest("Cockpit PDE", phrase, "text", 1L)))
+        assertThat(validator.validate(new UpdatePromptHintRequest("Cockpit PDE", phrase, "text", 1L, null)))
             .anySatisfy(violation -> {
                 assertThat(violation.getPropertyPath().toString()).isEqualTo("phrase");
                 assertThat(violation.getMessage()).contains("10000 caracteres");
@@ -38,7 +38,7 @@ class PromptHintRequestValidationTest {
     void createRejectsPromptHintTextAboveConfiguredLimit() {
         String phrase = "a".repeat(10001);
 
-        assertThat(validator.validate(new CreatePromptHintRequest("Cockpit PDE", phrase, "text", 1L)))
+        assertThat(validator.validate(new CreatePromptHintRequest("Cockpit PDE", phrase, "text", 1L, null)))
             .anySatisfy(violation -> {
                 assertThat(violation.getPropertyPath().toString()).isEqualTo("phrase");
                 assertThat(violation.getMessage()).contains("10000 caracteres");

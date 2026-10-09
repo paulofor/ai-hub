@@ -57,6 +57,14 @@ jobs:
           -Dproduct-history-test-db-password=mkt-local-only
           -Dproduct-history-test-db-driver=com.mysql.cj.jdbc.Driver
           -Dproduct-history-test-migrations=classpath:db/migration/mysql test
+      - name: Test prompt item activation on MySQL 5.7
+        run: >-
+          mvn -f apps/backend -B -Dtest=PromptHintActivationIntegrationTest
+          -Dprompt-hint-test-db-url='jdbc:mysql://127.0.0.1:3306/mkt_product_history_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          -Dprompt-hint-test-db-user=root
+          -Dprompt-hint-test-db-password=mkt-local-only
+          -Dprompt-hint-test-db-driver=com.mysql.cj.jdbc.Driver
+          -Dprompt-hint-test-migrations=classpath:db/migration/mysql test
 
   mcp-server:
     # Serializa os dois consumidores do Maven Central: o backend aquece o cache
@@ -102,6 +110,10 @@ jobs:
         run: npm --prefix apps/frontend exec -- playwright install --with-deps chromium
       - name: Test environment activation in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- environmentActivation.spec.ts
+      - name: Test prompt item activation and request selection in desktop and mobile
+        run: npm --prefix apps/frontend run test:e2e -- promptHintActivation.spec.ts
+      - name: Test prompt context compatibility with legacy items
+        run: npm --prefix apps/frontend run test:e2e -- app.spec.ts --grep 'sends selected prompt hint phrases'
       - name: Test Codex ChatGPT layout and preserve MKT in desktop and mobile
         run: npm --prefix apps/frontend run test:e2e -- codexChatgptLayout.spec.ts
       - name: Test dialogues without queue polling across independent browser sessions

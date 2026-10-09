@@ -59,10 +59,10 @@ public class PromptHintService {
 
     @Transactional(readOnly = true)
     public List<PromptHintView> listForEnvironment(String environmentName) {
-        List<PromptHintRecord> result = new ArrayList<>(promptHintRepository.findAllByEnvironmentIsNullOrderByLabelAsc());
+        List<PromptHintRecord> result = new ArrayList<>(promptHintRepository.findAllByActiveTrueAndEnvironmentIsNullOrderByLabelAsc());
         if (StringUtils.hasText(environmentName)) {
             environmentRepository.findByNameIgnoreCase(environmentName.trim())
-                .ifPresent(environment -> result.addAll(promptHintRepository.findAllByEnvironmentOrderByLabelAsc(environment)));
+                .ifPresent(environment -> result.addAll(promptHintRepository.findAllByActiveTrueAndEnvironmentOrderByLabelAsc(environment)));
         }
         result.sort(scopeComparator);
         return result.stream().map(this::toView).toList();
@@ -75,20 +75,35 @@ public class PromptHintService {
         record.setPhrase(request.phrase().trim());
         record.setType(resolveType(request.type()));
         record.setEnvironment(resolveEnvironment(request.environmentId()));
+        record.setActive(request.active() == null || request.active());
         PromptHintRecord saved = promptHintRepository.save(record);
         return toView(saved);
     }
 
     @Transactional
     public PromptHintView update(Long id, UpdatePromptHintRequest request) {
-        PromptHintRecord record = promptHintRepository.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item opcional não encontrado"));
+        PromptHintRecord record = findRecord(id);
         record.setLabel(request.label().trim());
         record.setPhrase(request.phrase().trim());
         record.setType(resolveType(request.type()));
         record.setEnvironment(resolveEnvironment(request.environmentId()));
+        if (request.active() != null) {
+            record.setActive(request.active());
+        }
         PromptHintRecord saved = promptHintRepository.save(record);
         return toView(saved);
+    }
+
+    @Transactional
+    public PromptHintView setActive(Long id, boolean active) {
+        PromptHintRecord record = findRecord(id);
+        record.setActive(active);
+        return toView(promptHintRepository.save(record));
+    }
+
+    private PromptHintRecord findRecord(Long id) {
+        return promptHintRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item opcional não encontrado"));
     }
 
     @Transactional
@@ -124,6 +139,7 @@ public class PromptHintService {
             record.getLabel(),
             record.getPhrase(),
             record.getType().getValue(),
+            record.isActive(),
             environmentId,
             environmentName,
             record.getCreatedAt(),

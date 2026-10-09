@@ -740,6 +740,9 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   }));
   await page.route('**/api/codex/conversations?**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/products', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/processes', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/recent-dialogue?**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/codex/requests/open-batch?**', (route) => route.fulfill({ json: null }));
   await page.route('**/api/prompt-hints?**', (route) => route.fulfill({
     json: [
       { id: 1, label: 'Arquitetura', phrase: 'Manter o padrao de arquitetura definido.', environmentId: null },
@@ -793,7 +796,7 @@ test('sends selected prompt hint phrases in the ChatGPT request prompt', async (
   await expect(page.getByText('Use as licoes aprendidas dos experimentos finalizados.')).toHaveCount(0);
   await expect(page.getByText('Leia e use como base o documento estrada.')).toHaveCount(0);
   await page.getByRole('checkbox', { name: /Texto editável/ }).check();
-  const promptTextarea = page.getByPlaceholder(/Digite sua solicitação de análise de marketing/);
+  const promptTextarea = page.locator('textarea[required]');
   await expect(promptTextarea).toHaveValue('Texto inicial para editar antes de enviar.');
   await page.getByRole('button', { name: 'Limpar texto da solicitação' }).click();
   await expect(promptTextarea).toHaveValue('');

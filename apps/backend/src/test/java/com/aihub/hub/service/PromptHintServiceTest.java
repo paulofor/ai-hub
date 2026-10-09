@@ -24,23 +24,25 @@ class PromptHintServiceTest {
     void createStoresPromptTypeWhenTypeIsOmitted() {
         when(promptHintRepository.save(any(PromptHintRecord.class))).thenAnswer((invocation) -> invocation.getArgument(0));
 
-        PromptHintView view = service.create(new CreatePromptHintRequest("Arquitetura", "Manter padrao.", null, null));
+        PromptHintView view = service.create(new CreatePromptHintRequest("Arquitetura", "Manter padrao.", null, null, null));
 
         assertThat(view.type()).isEqualTo("prompt");
+        assertThat(view.active()).isTrue();
     }
 
     @Test
     void createStoresTextTypeForEditableScreenItems() {
         when(promptHintRepository.save(any(PromptHintRecord.class))).thenAnswer((invocation) -> invocation.getArgument(0));
 
-        PromptHintView view = service.create(new CreatePromptHintRequest("Texto editavel", "Texto para editar.", "text", null));
+        PromptHintView view = service.create(new CreatePromptHintRequest("Texto editavel", "Texto para editar.", "text", null, false));
 
         assertThat(view.type()).isEqualTo("text");
+        assertThat(view.active()).isFalse();
     }
 
     @Test
     void createRejectsInvalidType() {
-        assertThatThrownBy(() -> service.create(new CreatePromptHintRequest("Item", "Texto", "screen", null)))
+        assertThatThrownBy(() -> service.create(new CreatePromptHintRequest("Item", "Texto", "screen", null, null)))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("Tipo de item opcional inválido");
     }

@@ -3,6 +3,7 @@ package com.aihub.hub.web;
 import com.aihub.hub.dto.CreatePromptHintRequest;
 import com.aihub.hub.dto.PromptHintView;
 import com.aihub.hub.dto.UpdatePromptHintRequest;
+import com.aihub.hub.dto.UpdatePromptHintStatusRequest;
 import com.aihub.hub.service.PromptHintService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -10,6 +11,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -52,5 +54,10 @@ public class PromptHintController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         promptHintService.delete(id);
+    }
+
+    @PatchMapping("/{id}/status")
+    public PromptHintView updateStatus(@PathVariable Long id, @Valid @RequestBody UpdatePromptHintStatusRequest request) {
+        return promptHintService.setActive(id, request.active());
     }
 }
