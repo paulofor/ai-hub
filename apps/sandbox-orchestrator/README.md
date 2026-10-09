@@ -9,18 +9,30 @@ Os perfis `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX` usam o 
 ## Conferência do resultado no Marketing Hub
 
 Para `CHATGPT_CODEX_MKT` no repositório exato `paulofor/marketing-hub`, a política
-`MARKETING_HUB_VALUE_FLOW_V3` preserva o resultado solicitado quando o usuário
+`MARKETING_HUB_VALUE_FLOW_V4` preserva o resultado solicitado quando o usuário
 relata dificuldade no percurso. Antes de aceitar a primeira resposta, o runner
 abre uma única conferência adicional na mesma thread, com o primeiro checklist
 e a resposta candidata. O job continua `RUNNING`; resumo final, callback e
 arquivamento aguardam essa conferência. Os demais perfis/repositórios preservam
 o comportamento anterior.
 
-O marcador `MARKETING_HUB_COMPLETION_REVIEW_V1` aparece no log e nas interações;
+A política também estimula o self-improvement dos agentes com foco em vendas em
+toda solicitação: aprender com sucessos, falhas, feedback e resultados disponíveis,
+relacionar a melhoria a uma hipótese comercial e validar o comportamento antes/depois.
+Mudanças seguras e pertinentes usam capacidades, ciclos de aprendizado e registros
+existentes, com versão, evidência e critério de adoção ou reversão. Avaliar não obriga
+mudar: pedidos somente de análise e ausência de oportunidade pertinente são
+preservados. Testes locais não comprovam aumento de vendas, e o aprendizado não
+autoriza gastos nem cria novas etapas para o usuário. A orientação entra no prompt
+de cada nova execução, independentemente do botão de cópia ou do histórico.
+
+O marcador `MARKETING_HUB_COMPLETION_REVIEW_V2` aparece no log e nas interações;
 uma atualização pública explica a conferência no trace existente. Retentativas
 transitórias retomam essa fase, sem outro ciclo de revisão. Cancelamento ou
 falha não convertem o candidato anterior em sucesso. O consumo e a duração do
-turno adicional entram nas métricas da mesma solicitação.
+turno adicional entram nas métricas da mesma solicitação. Essa mesma conferência
+verifica a avaliação do aprendizado, sem adicionar outra rodada ou exigir mudanças
+para encerrar uma entrega já comprovada.
 
 A conferência permite ao modelo corrigir omissões, mantendo análises, limites e
 autorizações. Não é avaliação independente de especialista, autorização de

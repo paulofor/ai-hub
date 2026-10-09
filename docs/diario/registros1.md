@@ -5184,3 +5184,69 @@ cria o software que a atividade seguinte precisa validar.
   fará autoaprovação. Revisões e checks do HEAD serão consultados antes do merge.
   SHA final, runs e saúde publicada serão registrados no PR e na resposta, evitando
   uma nova publicação apenas para metadados da entrega já confirmada.
+
+## 2026-10-09 — Self-improvement dos agentes MKT com foco em vendas
+
+- Pedido: estimular sempre o aprendizado e aperfeiçoamento dos agentes de IA nas
+  solicitações `codex-chatgpt-mkt` do ambiente exato `paulofor/marketing-hub`.
+  Checkout inicial limpo em `cd689f58994a4aa87d4d8ae3f84d219679f3a3db`;
+  PR #767 integrado e CI/deploy `37969160064` concluídos com sucesso. Os pedidos
+  anteriores não foram repetidos e não há PR prévio desta nova alteração.
+- Harness examinado: contrato `marketingFlowInstructions.ts`, montagem real do
+  prompt em `jobProcessor.ts`, conferência em `marketingFlowReview.ts`, testes de
+  isolamento por metadados e integrações com App Server simulado. A política V3
+  já previne recorrência de falhas e há uma conferência final na mesma thread.
+- **Por que essa lacuna aconteceu?** O item de melhoria específica enfatizava
+  correções de bloqueios. A regra geral de harness não explicitava o aprendizado
+  contínuo com sucessos, feedback e resultados comerciais em toda solicitação.
+  A conferência final tampouco verificava essa avaliação. É uma lacuna do contrato;
+  não se inferiu falha dos especialistas nem resultado de venda sem dados.
+- Alternativas consideradas:
+
+  | Alternativa | Benefício | Risco e esforço | Aderência |
+  | --- | --- | --- | --- |
+  | Acrescentar orientação geral em todos os perfis | Implementação simples | Afeta ambientes alheios e repete o harness geral; baixo esforço | Parcial |
+  | Criar um agente ou worker de melhoria contínua | Poderia automatizar ciclos próprios | Novos custos, coordenação e escopo; alto esforço | Excessiva para o pedido |
+  | Ampliar contrato e conferência já condicionados ao perfil/repositório | Instrução em cada execução e conferência existente, com isolamento e evidência | Baixo esforço; orientação não garante comportamento ou venda | Escolhida |
+
+- Implementação: contrato V4 exige avaliar melhorias orientadas a vendas mesmo
+  sem bloqueio, formular hipótese e métrica, comparar comportamento antes/depois
+  e reutilizar os registros de aprendizado com versão, evidência e critério de
+  adoção/reversão. A conferência V2 cobre a mesma avaliação na rodada já existente.
+  Análise, escopo, autorizações e ausência de oportunidade pertinente são preservados;
+  o aprendizado não acrescenta etapas ao usuário nem substitui a entrega concreta.
+- Matriz de aceite definida antes dos testes:
+
+  | Caso | Evidência local exigida |
+  | --- | --- |
+  | Perfil MKT + Marketing Hub | Contrato V4 uma vez no payload real, sem depender de botão/histórico |
+  | Outros perfis e repositórios | Orientação específica ausente, inclusive mera menção no texto |
+  | Sucessos, falhas e feedback | Avaliação sempre, hipótese comercial, métrica, evidência e reutilização |
+  | Análise ou nenhuma melhoria pertinente | Sem mudança forçada, novo gasto ou ampliação de escopo |
+  | Integração e encerramento | Clone local e App Server simulado recebem instrução inicial e conferência; dois turnos, callback final e trace preservados |
+  | Falhas e regressões | Cancelamento, retentativa e conferência sem resultado mantêm os contratos existentes |
+  | Métricas e segregação | Fixtures sintéticas; teste local não vira prova de aprendizado real ou aumento de vendas |
+  | Interface | Nenhuma alteração de tela, payload público ou interação; homologação visual adicional não se aplica |
+  | Qualidade | Build TypeScript, suíte do orquestrador e diff revisado antes de commit/push |
+
+- `sandbox-node-health` aprovou Node/npm/npx persistentes, sem alterações globais.
+  Homologação usa Git local e provedor simulado, sem inferência paga nem ações no
+  Marketing Hub produtivo. Não há alteração de shell, banco, imagem ou workflow.
+- Validação local concluída: `npm --prefix apps/sandbox-orchestrator test`
+  compilou o TypeScript e aprovou 248 testes, sem falhas ou skips. A integração
+  confirmou a orientação no turno inicial e na conferência existente, isolamento
+  dos demais perfis/repositórios, preservação de análise/limites, callbacks e
+  tratamento de falhas. Os testes comprovam a entrega do contrato ao modelo;
+  não afirmam que especialistas aprenderam ou que vendas aumentaram.
+- Diff e critérios de aceite revisados; `git diff --check` aprovado. Fonte do
+  backend conferida: o slug é composto pelas coordenadas owner/repo, separado
+  da branch. Não houve alteração de seleção de ambiente, interface ou protocolo.
+- Entrega pelo PR específico desta tarefa. Main sem proteção/rulesets e identidade
+  autenticada autora: não haverá autoaprovação. Revisões reais e checks do HEAD
+  serão consultados antes do merge; CI de PR/main, build das imagens versionadas
+  e deploy serão acompanhados até o fim. Liquibase não se aplica, pois nenhum
+  changelog foi alterado. SHA, links e saúde publicada serão vinculados ao PR e à
+  resposta final, sem outra publicação apenas para metadados da entrega.
+- A primeira tentativa de commit parou antes de criar qualquer commit porque o
+  checkout não tinha identidade Git. Configurados nome e email noreply da conta
+  autenticada somente neste repositório; nenhuma configuração global alterada.

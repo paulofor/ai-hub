@@ -132,6 +132,8 @@ test('regressão #3276: não encerra no botão corrigido, confere o plano origin
       assert.equal(activeJob.summary, undefined);
       assert.match(input, new RegExp(MARKETING_HUB_COMPLETION_REVIEW_MARKER));
       assert.match(input, /Corrigir a continuidade e conferir a entrega aceita/);
+      assert.match(input, /Confira também o self-improvement dos agentes com foco em vendas/);
+      assert.match(input, /hipótese, comportamento validado localmente e resultado comercial medido/);
       assert.ok(input.includes(stalledResponse));
     } });
     assert.equal(job.status, 'COMPLETED');
@@ -139,6 +141,7 @@ test('regressão #3276: não encerra no botão corrigido, confere o plano origin
     assert.equal(payload.summary, acceptedResponse);
     const turns = calls.filter(c => c.method === 'turn/start');
     assert.equal(turns.length, 2);
+    assert.match(turns[0].params.input[0].text, /Estimule sempre o self-improvement/);
     assert.ok(turns.every(c => c.params.threadId === 'fixture-thread'));
     assert.equal(calls.filter(c => c.method === 'thread/start').length, 1);
     assert.equal(calls.filter(c => c.method === 'thread/archive').length, 1);
@@ -161,6 +164,8 @@ test('conferência preserva análise, limites e entrega já comprovada sem um te
       assert.match(input, /Preserve “somente local”, STOP, limites de IA\/mídia/);
       assert.match(input, /não autoriza gastos, campanhas, publicação comercial ou novo escopo/);
       assert.match(input, /sem refazer implementação, PR ou deploy/);
+      assert.match(input, /por que nenhuma mudança segura e pertinente se aplica/);
+      assert.match(input, /sem abrir outro ciclo de revisão, criar tarefas extras ou atrasar a entrega/);
     } });
     assert.equal(job.summary, acceptedResponse);
     assert.equal(calls.filter(c => c.method === 'turn/start').length, 2);
@@ -172,7 +177,9 @@ test('outros perfis e repositórios mantêm um único turno', async () => {
     const { job, calls } = await runScenario(metadata);
     assert.equal(job.status, 'COMPLETED');
     assert.equal(job.summary, stalledResponse);
-    assert.equal(calls.filter(c => c.method === 'turn/start').length, 1);
+    const turns = calls.filter(c => c.method === 'turn/start');
+    assert.equal(turns.length, 1);
+    assert.doesNotMatch(turns[0].params.input[0].text, /Estimule sempre o self-improvement/);
   }
 });
 

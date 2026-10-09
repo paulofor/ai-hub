@@ -1121,7 +1121,9 @@ test('executa CHATGPT_CODEX_MKT via Codex App Server com instruções de marketi
     assert.equal((turnStartCall.params as { effort?: string }).effort, 'max');
     const input = (turnStartCall.params as { input?: Array<{ text?: string }> }).input;
     assert.ok(input?.[0]?.text?.includes('Modo Codex ChatGPT MKT ativo'));
-    assert.equal(input?.[0]?.text?.split('MARKETING_HUB_VALUE_FLOW_V3').length, 2);
+    assert.equal(input?.[0]?.text?.split('MARKETING_HUB_VALUE_FLOW_V4').length, 2);
+    assert.ok(input?.[0]?.text?.includes('Estimule sempre o self-improvement'));
+    assert.ok(input?.[0]?.text?.includes('mesmo quando não houver bloqueio'));
     assert.ok(input?.[0]?.text?.includes('qual agente é responsável pelo próximo passo'));
     assert.ok(input?.[0]?.text?.includes('aguarde resposta explícita antes das ações dependentes'));
     assert.ok(input?.[0]?.text?.includes('ação exata do usuário'));
